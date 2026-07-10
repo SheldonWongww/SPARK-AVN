@@ -1,0 +1,73 @@
+README.md
+  s_c21962e3ccdd94::t_216e0118d23b6d 9,129-134 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a50f7d8e1e3d4fb30a9de09","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":9},{"Range":[129,134]}]}]}
+  s_c21962e3ccdd94::t_7e3b7947b388c7 135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "badcc1935f38558e7d0b0cfd5ab1a0518ef38278",
+  "prompts": {},
+  "sessions": {
+    "s_c21962e3ccdd94": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a48b78fbbc2d24fd44acb7d",
+        "model": "gpt-5.5__dev"
+      },
+      "human_author": "wangxiaoyu.taylor <wangxiaoyu.taylor@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "README.md": [
+      {
+        "hash": "s_c21962e3ccdd94::t_216e0118d23b6d",
+        "line_ranges": [
+          {
+            "Single": 9
+          },
+          {
+            "Range": [
+              129,
+              134
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a50f7d8e1e3d4fb30a9de09",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 9
+              },
+              {
+                "Range": [
+                  129,
+                  134
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_c21962e3ccdd94": {
+      "tool": "trae",
+      "conversation_id": "6a48b78fbbc2d24fd44acb7d",
+      "session_id": "6a48b78fbbc2d24fd44acb7d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_c21962e3ccdd94::t_216e0118d23b6d": {
+      "tool": "trae",
+      "conversation_id": "6a48b78fbbc2d24fd44acb7d",
+      "session_id": "6a48b78fbbc2d24fd44acb7d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
