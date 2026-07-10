@@ -54,8 +54,8 @@ Follow the official instructions of Matterport3D, SoundSpaces, and ENMuS to obta
 This project uses [Habitat](https://github.com/facebookresearch/habitat-lab),
 [Habitat-Sim](https://github.com/facebookresearch/habitat-sim), and
 [SoundSpaces](https://github.com/facebookresearch/sound-spaces). For detailed
-base environment installation, please refer to the ENMuS guide:
-https://github.com/ZhanboShiAI/ENMuS/blob/main/ENV_INSTALL.md.
+base environment installation, please refer to the
+[ENMuS environment installation guide](https://github.com/ZhanboShiAI/ENMuS/blob/main/ENV_INSTALL.md).
 
 Create the conda environment:
 
@@ -139,10 +139,10 @@ data/pretrained_weights/enmus/single_source_best_val.pth
 data/pretrained_weights/enmus/multi_source_best_val.pth
 ```
 
-Train the single-source base policy:
+All training commands below use two GPUs. Train the single-source base policy:
 
 ```bash
-python run.py \
+CUDA_VISIBLE_DEVICES=0,1 python run.py \
     --run-type train \
     --exp-config cfgs/pretrain/single_source/train.yaml \
     --model-dir data/results/pretrain/single_source/seed_1 \
@@ -163,7 +163,7 @@ python run.py \
 Train the multi-source base policy:
 
 ```bash
-python run.py \
+CUDA_VISIBLE_DEVICES=0,1 python run.py \
     --run-type train \
     --exp-config cfgs/pretrain/multi_source/train.yaml \
     --model-dir data/results/pretrain/multi_source/seed_1 \
@@ -192,7 +192,7 @@ bash run_continual_training.sh \
     --exp-config cfgs/cl_exp/single_source/spark_avn/train.yaml \
     --model-dir data/results/spark_avn/single_source/seed_1 \
     --seed 1 \
-    --gpus 0 \
+    --gpus 0,1 \
     --overwrite
 
 for i in $(seq 2 20); do
@@ -200,7 +200,7 @@ for i in $(seq 2 20); do
         --exp-config cfgs/cl_exp/single_source/spark_avn/train.yaml \
         --model-dir data/results/spark_avn/single_source/seed_1 \
         --seed 1 \
-        --gpus 0
+        --gpus 0,1
 done
 ```
 
@@ -223,7 +223,7 @@ bash run_continual_training.sh \
     --exp-config cfgs/cl_exp/single_source/finetune/train.yaml \
     --model-dir data/results/finetune/single_source/seed_1 \
     --seed 1 \
-    --gpus 0 \
+    --gpus 0,1 \
     --overwrite
 ```
 
@@ -232,7 +232,7 @@ Use the corresponding `multi_source/finetune` config for the multi-source settin
 ### Joint Upper Bound
 
 ```bash
-python run.py \
+CUDA_VISIBLE_DEVICES=0,1 python run.py \
     --run-type train \
     --exp-config cfgs/cl_exp/single_source/joint/train.yaml \
     --model-dir data/results/joint/single_source/seed_1 \
