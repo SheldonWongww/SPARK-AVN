@@ -1,0 +1,16 @@
+scripts/compute_cl_metrics.py
+  h_aa41a4df4b1a59 1-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d7bad2f0ea352370dfe8389b7d1befe69e462533",
+  "prompts": {},
+  "humans": {
+    "h_aa41a4df4b1a59": {
+      "author": "wangxiaoyu.taylor <wangxiaoyu.taylor@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
