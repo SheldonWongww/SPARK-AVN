@@ -1,0 +1,35 @@
+# Core Python dependencies for C-AVN/SPARK-AVN.
+#
+# Install habitat-sim v0.2.2, habitat-lab v0.2.2, sound-spaces, and
+# ss_baselines manually following README.md. 
+attrs>=19.1.0
+gym==0.23.0
+numpy==1.26.4
+numpy-quaternion==2023.0.4
+pandas>=2.0.0
+scipy==1.13.1
+scikit-image==0.24.0
+opencv-python==4.11.0.86
+Pillow>=9.0.0
+tqdm==4.67.1
+matplotlib==3.9.4
+networkx==3.2.1
+PyYAML==6.0.2
+yacs==0.1.8
+librosa==0.11.0
+soundfile==0.13.1
+pydub==0.25.1
+spaudiopy==0.2.0
+torch==2.4.0
+torchvision==0.19.0
+torchaudio==2.4.0
+tensorboard==2.19.0
+tensorflow==2.19.0
+h5py==3.14.0
+moviepy==1.0.3
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+GitPython==3.1.44
+getch==1.0
+ifcfg==0.24
+protobuf>=3.20.0
