@@ -6,6 +6,7 @@ This repository provides the C-AVN benchmark and the implementation of SPARK-AVN
 
 This repository includes the C-AVN episode definitions under `data/datasets/`.
 It also includes the ENMuS pretrained weights under `data/pretrained_weights/enmus/`.
+The released single-source and multi-source base policy weights are trained on 60 pretraining environments.
 Other resources should be prepared separately:
 
 - Matterport3D scene meshes
@@ -124,6 +125,13 @@ cavn/
 ```
 
 ## Pretraining
+
+The released base policy weights are pretrained on 60 environments:
+
+```text
+data/pretrained_weights/enmus/single_source_best_val.pth
+data/pretrained_weights/enmus/multi_source_best_val.pth
+```
 
 Train the single-source base policy:
 
