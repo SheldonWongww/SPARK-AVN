@@ -51,6 +51,12 @@ Follow the official instructions of Matterport3D, SoundSpaces, and ENMuS to obta
 
 ## Environment
 
+This project uses [Habitat](https://github.com/facebookresearch/habitat-lab),
+[Habitat-Sim](https://github.com/facebookresearch/habitat-sim), and
+[SoundSpaces](https://github.com/facebookresearch/sound-spaces). For detailed
+base environment installation, please refer to the ENMuS guide:
+https://github.com/ZhanboShiAI/ENMuS/blob/main/ENV_INSTALL.md.
+
 Create the conda environment:
 
 ```bash
@@ -58,7 +64,7 @@ conda create -n cavn python=3.9 cmake=3.14.0 -y
 conda activate cavn
 ```
 
-Install Habitat-Sim v0.2.2 with audio support:
+Install [Habitat-Sim](https://github.com/facebookresearch/habitat-sim) v0.2.2 with audio support:
 
 ```bash
 git clone https://github.com/facebookresearch/habitat-sim.git
@@ -67,7 +73,7 @@ git checkout RLRAudioPropagationUpdate
 python setup.py install --headless --audio
 ```
 
-Install Habitat-Lab v0.2.2:
+Install [Habitat-Lab](https://github.com/facebookresearch/habitat-lab) v0.2.2:
 
 ```bash
 git clone https://github.com/facebookresearch/habitat-lab.git
@@ -76,7 +82,7 @@ git checkout v0.2.2
 pip install -e .
 ```
 
-Install SoundSpaces:
+Install [SoundSpaces](https://github.com/facebookresearch/sound-spaces):
 
 ```bash
 git clone https://github.com/facebookresearch/sound-spaces.git
