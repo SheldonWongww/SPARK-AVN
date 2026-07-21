@@ -48,5 +48,17 @@ The supervisor waits for all 12 runs in each batch to exit successfully before
 launching the next batch. Queue progress remains visible inside its `screen`
 session and is also written under `results/logs/tent_grid/`.
 
+After selecting a LayerNorm scope, isolate Tent update-frequency effects with
+fixed `LR=1e-7` and `UPDATE_INTERVAL={2,3,4}`:
+
+```bash
+bash avn/scripts/run_tent_interval_grid.sh \
+  smt_audio single_source last_ln
+```
+
+The three runs use GPUs 0, 1, and 2 by default. Reuse the matching interval-1
+run from the earlier Tent grid as the control; use `--dry-run` to inspect all
+commands before launch.
+
 Baseline-specific environments are documented inside each baseline; no second
 environment abstraction is maintained at the AVN root.
