@@ -24,5 +24,17 @@ bash avn/scripts/eval_smt_audio.sh single_source source 0
 bash avn/scripts/eval_enmus.sh multi_source tent 0
 ```
 
+Launch the complete Tent grid for one model and source setting (three learning
+rates by four LayerNorm scopes across four detached `screen` sessions):
+
+```bash
+bash avn/scripts/run_tent_grid.sh smt_audio single_source
+bash avn/scripts/run_tent_grid.sh enmus multi_source
+```
+
+Use `bash avn/scripts/run_tent_grid.sh --help` for GPU, seed, learning-rate,
+episode-count, batch-id, and dry-run options. Run it from the corresponding
+activated model environment; every detached session inherits that environment.
+
 Baseline-specific environments are documented inside each baseline; no second
 environment abstraction is maintained at the AVN root.
