@@ -36,5 +36,17 @@ Use `bash avn/scripts/run_tent_grid.sh --help` for GPU, seed, learning-rate,
 episode-count, batch-id, and dry-run options. Run it from the corresponding
 activated model environment; every detached session inherits that environment.
 
+Queue additional grids without oversubscribing already-busy GPUs:
+
+```bash
+screen -dmS tent_remaining_queue \
+  bash avn/scripts/queue_tent_grids.sh --wait-batch latest \
+    smt_audio:multi_source enmus:single_source enmus:multi_source
+```
+
+The supervisor waits for all 12 runs in each batch to exit successfully before
+launching the next batch. Queue progress remains visible inside its `screen`
+session and is also written under `results/logs/tent_grid/`.
+
 Baseline-specific environments are documented inside each baseline; no second
 environment abstraction is maintained at the AVN root.
