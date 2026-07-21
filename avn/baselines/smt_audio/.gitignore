@@ -1,0 +1,9 @@
+data
+data_
+*.egg-info
+.ipynb_checkpoints/
+__pycache__
+logs/
+my_script
+.idea
+.vscode/

@@ -1,0 +1,39 @@
+task: avn
+status: implementation_validation
+benchmark:
+  scene_dataset: mp3d
+  episode_stream:
+    scenes: 20
+    episodes_per_scene: 100
+    total_episodes: 2000
+    sequential: true
+models:
+  - smt_audio
+  - enmus
+source_settings:
+  - single_source
+  - multi_source
+methods:
+  - id: source
+    config_method: none
+    feedback: none
+  - id: tent
+    config_method: tent
+    feedback: none
+  - id: fstta
+    config_method: fstta
+    feedback: none
+  - id: eam
+    config_method: eam
+    feedback: none
+  - id: feedtta
+    config_method: feedtta
+    feedback: binary_episode_success
+  - id: atena
+    config_method: atena
+    feedback: active_binary_episode_success
+formal_seeds: []
+notes:
+  - Hyperparameters and formal seeds must be frozen after implementation validation.
+  - Source uses the identical sequential episode stream with TTA disabled.
+  - Feedback-dependent methods must be reported separately from fully unsupervised methods.

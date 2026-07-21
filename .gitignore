@@ -1,0 +1,76 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Python caches and local environments
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Downloaded, pinned upstream repositories
+/references/repos/
+
+# Local AVN datasets (README/manifests remain tracked)
+/avn/data/datasets/*
+!/avn/data/datasets/.gitkeep
+/avn/data/scene_datasets/
+/avn/data/scene_observations/
+/avn/data/metadata/
+/avn/data/sounds/
+/avn/data/binaural_rirs/*
+!/avn/data/binaural_rirs/.gitkeep
+
+# Future task assets stay local when those task lines are activated.
+/vln/data/
+/vln/checkpoints/
+/objectnav/data/
+/objectnav/checkpoints/
+
+# Task checkpoints
+/avn/checkpoints/source/*
+!/avn/checkpoints/source/.gitkeep
+
+# Runtime data accidentally created inside vendored baselines
+/avn/baselines/*/data/
+
+# Large/raw experiment artifacts; summaries and manifests stay trackable
+**/results/**/raw/
+**/results/**/logs/
+**/results/**/videos/
+**/results/**/tensorboard/
+**/results/**/*.pth
+**/results/**/*.pt
+**/results/**/*.ckpt
+**/results/**/events.out.tfevents*
+
+# Archives and temporary files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.tmp
+*.bak
+
+# Audio and video assets stay local
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+/avn/baselines/smt_audio/res/soundspaces-demo.gif
+
+# Local machine path overrides
+.env
+.env.*
+!.env.example

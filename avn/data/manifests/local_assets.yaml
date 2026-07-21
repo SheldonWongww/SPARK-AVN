@@ -1,0 +1,56 @@
+schema_version: 1
+updated: "2026-07-21"
+status: local_only_not_formalized
+
+assets:
+  scene_datasets:
+    path: avn/data/scene_datasets
+    available: true
+    approximate_size: 22G
+    file_count: 361
+    directory_count: 92
+    provenance: user-provided local download; source URL and archive digest pending
+    sha256: pending
+
+  scene_observations:
+    path: avn/data/scene_observations
+    available: true
+    approximate_size: 11G
+    file_count: 87
+    directory_count: 2
+    provenance: user-provided local download; generation/source details pending
+    sha256: pending
+
+  metadata:
+    path: avn/data/metadata
+    available: true
+    approximate_size: 5.0M
+    file_count: 173
+    directory_count: 87
+    provenance: user-provided local download; source URL and archive digest pending
+    sha256: pending
+
+  sounds:
+    path: avn/data/sounds
+    available: true
+    approximate_size: 3.7G
+    file_count: 2261
+    directory_count: 83
+    provenance: user-provided local download; source URL and archive digest pending
+    sha256: pending
+
+  binaural_rirs:
+    path: avn/data/binaural_rirs
+    available: false
+    reason: not downloaded because the dataset requires several hundred GB
+    provenance: pending
+    sha256: not_available
+
+known_gaps:
+  - path: avn/data/scene_datasets/mp3d/mp3d.scene_dataset_config.json
+    status: missing
+    impact: referenced explicitly by the SMT+Audio and ENMuS simulators; verify the required upstream file before running
+
+formal_use:
+  allowed: false
+  reason: provenance and SHA256 records are incomplete; resolve them before formal experiments

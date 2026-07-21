@@ -1,0 +1,182 @@
+{
+  "0": {
+    "distance_to_goal": 9.15,
+    "normalized_distance_to_goal": 0.5856,
+    "success": 0.33,
+    "spl": 0.1551,
+    "num_action": 196.37,
+    "success_weighted_by_num_action": 0.2099,
+    "success_when_silent": 0.0
+  },
+  "1": {
+    "distance_to_goal": 7.44,
+    "normalized_distance_to_goal": 0.5126,
+    "success": 0.36,
+    "spl": 0.2111,
+    "num_action": 162.48,
+    "success_weighted_by_num_action": 0.2908,
+    "success_when_silent": 0.01
+  },
+  "2": {
+    "distance_to_goal": 5.21,
+    "normalized_distance_to_goal": 0.4987,
+    "success": 0.49,
+    "spl": 0.2509,
+    "num_action": 117.15,
+    "success_weighted_by_num_action": 0.3668,
+    "success_when_silent": 0.0
+  },
+  "3": {
+    "distance_to_goal": 9.05,
+    "normalized_distance_to_goal": 0.6121,
+    "success": 0.34,
+    "spl": 0.1689,
+    "num_action": 203.77,
+    "success_weighted_by_num_action": 0.2396,
+    "success_when_silent": 0.01
+  },
+  "4": {
+    "distance_to_goal": 5.13,
+    "normalized_distance_to_goal": 0.4516,
+    "success": 0.35,
+    "spl": 0.1859,
+    "num_action": 163.57,
+    "success_weighted_by_num_action": 0.2831,
+    "success_when_silent": 0.0
+  },
+  "5": {
+    "distance_to_goal": 7.59,
+    "normalized_distance_to_goal": 0.6492,
+    "success": 0.27,
+    "spl": 0.1311,
+    "num_action": 166.44,
+    "success_weighted_by_num_action": 0.1887,
+    "success_when_silent": 0.0
+  },
+  "6": {
+    "distance_to_goal": 10.58,
+    "normalized_distance_to_goal": 0.7174,
+    "success": 0.29,
+    "spl": 0.1572,
+    "num_action": 144.72,
+    "success_weighted_by_num_action": 0.2454,
+    "success_when_silent": 0.01
+  },
+  "7": {
+    "distance_to_goal": 6.65,
+    "normalized_distance_to_goal": 0.5515,
+    "success": 0.45,
+    "spl": 0.198,
+    "num_action": 191.78,
+    "success_weighted_by_num_action": 0.3233,
+    "success_when_silent": 0.0
+  },
+  "8": {
+    "distance_to_goal": 6.01,
+    "normalized_distance_to_goal": 0.5252,
+    "success": 0.37,
+    "spl": 0.1902,
+    "num_action": 176.22,
+    "success_weighted_by_num_action": 0.278,
+    "success_when_silent": 0.01
+  },
+  "9": {
+    "distance_to_goal": 2.62,
+    "normalized_distance_to_goal": 0.3515,
+    "success": 0.50,
+    "spl": 0.2671,
+    "num_action": 78.44,
+    "success_weighted_by_num_action": 0.4066,
+    "success_when_silent": 0.0
+  },
+  "10": {
+    "distance_to_goal": 4.65,
+    "normalized_distance_to_goal": 0.4979,
+    "success": 0.41,
+    "spl": 0.2135,
+    "num_action": 103.69,
+    "success_weighted_by_num_action": 0.3087,
+    "success_when_silent": 0.02
+  },
+  "11": {
+    "distance_to_goal": 6.6,
+    "normalized_distance_to_goal": 0.5587,
+    "success": 0.32,
+    "spl": 0.1574,
+    "num_action": 167.77,
+    "success_weighted_by_num_action": 0.245,
+    "success_when_silent": 0.03
+  },
+  "12": {
+    "distance_to_goal": 8.78,
+    "normalized_distance_to_goal": 0.5222,
+    "success": 0.31,
+    "spl": 0.177,
+    "num_action": 203.0,
+    "success_weighted_by_num_action": 0.2497,
+    "success_when_silent": 0.01
+  },
+  "13": {
+    "distance_to_goal": 4.55,
+    "normalized_distance_to_goal": 0.4566,
+    "success": 0.42,
+    "spl": 0.2181,
+    "num_action": 99.04,
+    "success_weighted_by_num_action": 0.3161,
+    "success_when_silent": 0.0
+  },
+  "14": {
+    "distance_to_goal": 5.51,
+    "normalized_distance_to_goal": 0.4667,
+    "success": 0.4,
+    "spl": 0.179,
+    "num_action": 157.48,
+    "success_weighted_by_num_action": 0.2901,
+    "success_when_silent": 0.0
+  },
+  "15": {
+    "distance_to_goal": 10.13,
+    "normalized_distance_to_goal": 0.7054,
+    "success": 0.24,
+    "spl": 0.1142,
+    "num_action": 229.11,
+    "success_weighted_by_num_action": 0.1578,
+    "success_when_silent": 0.02
+  },
+  "16": {
+    "distance_to_goal": 3.73,
+    "normalized_distance_to_goal": 0.467,
+    "success": 0.51,
+    "spl": 0.2378,
+    "num_action": 82.78,
+    "success_weighted_by_num_action": 0.3607,
+    "success_when_silent": 0.01
+  },
+  "17": {
+    "distance_to_goal": 10.86,
+    "normalized_distance_to_goal": 0.7051,
+    "success": 0.23,
+    "spl": 0.1061,
+    "num_action": 219.65,
+    "success_weighted_by_num_action": 0.1619,
+    "success_when_silent": 0.0
+  },
+  "18": {
+    "distance_to_goal": 4.09,
+    "normalized_distance_to_goal": 0.5261,
+    "success": 0.39,
+    "spl": 0.2161,
+    "num_action": 92.79,
+    "success_weighted_by_num_action": 0.3334,
+    "success_when_silent": 0.01
+  },
+  "19": {
+    "distance_to_goal": 9.88,
+    "normalized_distance_to_goal": 0.6195,
+    "success": 0.34,
+    "spl": 0.1273,
+    "num_action": 217.77,
+    "success_weighted_by_num_action": 0.2322,
+    "success_when_silent": 0.0
+  }
+}

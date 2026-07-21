@@ -1,0 +1,132 @@
+BASE_TASK_CONFIG_PATH: "configs/single_source_scenario/enmus/mp3d/semantic_audiogoal_tta_test.yaml"
+TRAINER_NAME: "ddppo_enmus"
+NUM_PROCESSES: 1
+SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
+TEST_EPISODE_COUNT: 2000
+VIDEO_OPTION: []
+VISUALIZATION_OPTION: []
+
+EVAL:
+  # Use exactly the same fixed 20 x 100 TTA set as SMT+Audio.
+  SPLIT: "val"
+  # Keep the TTA config below instead of replacing it with the training config.
+  USE_CKPT_CONFIG: False
+
+TTA:
+  METHOD: "tent"
+  EPISODIC: False
+  # Tent default. The recommended FSTTA command overrides this to 1.0e-5.
+  LR: 1.0e-6
+  STEPS: 1
+  # Tent-LN variants: ln (all) | last_k_ln | first_ln | last_ln
+  NORM_SCOPE: "last_k_ln"
+  LAST_K_LN: 4
+  RESET_BN_STATS: True
+  OPTIMIZER: "Adam"
+  BETA1: 0.9
+  BETA2: 0.999
+  WEIGHT_DECAY: 0.0
+  MAX_GRAD_NORM: 1.0
+  UPDATE_INTERVAL: 1
+  LOG_INTERVAL_EPISODES: 50
+  FSTTA:
+    M: 3
+    N: 4
+    Q: 0.1
+    LR_SLOW: 1.0e-4
+    RHO: 0.95
+    TAU: 0.7
+    A: 0.9
+    B: 1.1
+    USE_SLOW: True
+    OPTIMIZER: "AdamW"
+    BETA1: 0.9
+    BETA2: 0.99
+    WEIGHT_DECAY: 0.0
+    RESET_OPTIMIZER_EACH_EPISODE: True
+    EIGEN_EPS: 1.0e-6
+  EAM:
+    LR: 1.0e-5
+    CONFIDENCE_SCALE: 0.4
+    MEMORY_SIZE: 32
+    BATCH_SIZE: 8
+    UPDATE_INTERVAL: 1
+    PARAM_SCOPE: "all"
+    LAST_K_LN: 4
+    OPTIMIZER: "Adam"
+    MAX_GRAD_NORM: 0.0
+  FEEDTTA:
+    LR: 5.0e-6
+    P: 0.05
+    ALPHA: 0.1
+    GAMMA: 0.99
+    NORMALIZE_GRADIENT: False
+    PARAM_SCOPE: "module_prefixes"
+    TRAINABLE_PREFIXES: ["net.smt_state_encoder", "action_distribution"]
+    OPTIMIZER: "Adam"
+    EPS: 1.0e-5
+    MAX_GRAD_NORM: 0.0
+  ATENA:
+    # Deliberately blocked; approve only in a reviewed run-specific overlay.
+    PREFLIGHT_APPROVED: False
+    LR_QUERY: 1.0e-6
+    LR_SELF: 1.0e-7
+    MIX_LAMBDA: 0.5
+    QUERY_THRESHOLD: 0.1
+    SELF_LOSS_WEIGHT: 0.1
+    PARAM_SCOPE: "all"
+    OPTIMIZER: "AdamW"
+    WEIGHT_DECAY: 0.01
+    MAX_GRAD_NORM: 0.0
+
+RL:
+  PPO:
+    norm_first: False
+    clip_param: 0.2
+    ppo_epoch: 2
+    num_mini_batch: 2
+    value_loss_coef: 0.5
+    entropy_coef: 0.05
+    lr: 2.5e-4
+    eps: 1e-5
+    max_grad_norm: 0.2
+    num_steps: 160
+    hidden_size: 512
+    use_gae: True
+    gamma: 0.99
+    tau: 0.95
+    use_linear_clip_decay: False
+    use_linear_lr_decay: False
+    reward_window_size: 50
+    use_normalized_advantage: False
+    policy_type: "msmt"
+    use_external_memory: True
+    SCENE_MEMORY_TRANSFORMER:
+      memory_size: 159
+      hidden_size: 256
+      nhead: 8
+      num_encoder_layers: 1
+      num_decoder_layers: 1
+      dropout: 0.0
+      activation: "relu"
+      use_pretrained: True
+      actor_critic_pretrained_path: "-1"
+      audio_pretrained_path: "data/pretrained_weights/semantic_audionav/enmus/audio_encoder_best_val.pth"
+      visual_pretrained_path: "data/pretrained_weights/semantic_audionav/enmus/visual_encoder_best_val.pth"
+      seld_pretrained_path: "data/pretrained_weights/semantic_audionav/enmus/seld_crnn_best_val.h5"
+      freeze_encoders: True
+      pretraining: False
+      use_belief_encoding: False
+      use_goal_descriptor: True
+    SELD_ENCODER:
+      gd_encoder_type: "CRNN"
+      use_downsample: True
+      use_goal_similarity: False
+  DDPPO:
+    sync_frac: 0.6
+    distrib_backend: "GLOO"
+    rnn_type: "GRU"
+    num_recurrent_layers: 1
+    backbone: "custom_resnet18"
+    pretrained: False
+    reset_critic: False

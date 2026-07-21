@@ -1,0 +1,26 @@
+name: avn_dataset_definitions
+status: partial
+root: avn/data/datasets
+datasets:
+  - name: single_source
+    path: train/single_source
+    files: 122
+    approximate_size: 45M
+  - name: multi_source
+    path: train/multi_source
+    files: 122
+    approximate_size: 44M
+  - name: tta_test_single_source
+    path: tta_test/single_source
+    files: 45
+    approximate_size: 1.5M
+  - name: tta_test_multi_source
+    path: tta_test/multi_source
+    files: 42
+    approximate_size: 1.6M
+missing_runtime_assets:
+  - avn/data/binaural_rirs
+notes:
+  - Episode files were migrated from the pre-refactor SoundSpaces working tree.
+  - `train/` contains both the train and validation splits supplied for source-model development.
+  - The several-hundred-GB RIR assets remain unavailable on this machine.

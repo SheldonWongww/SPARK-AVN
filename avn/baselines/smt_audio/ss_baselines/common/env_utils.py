@@ -1,0 +1,169 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+# All rights reserved.
+
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Type, Union
+import logging
+import copy
+import random
+
+import numpy as np
+import torch
+
+import habitat
+from habitat import Config, Env, RLEnv, VectorEnv
+from habitat.datasets import make_dataset
+from ss_baselines.common.sync_vector_env import SyncVectorEnv
+
+REPLICA_SCENES = ['apartment_0', 'apartment_1', 'apartment_2', 'frl_apartment_0', 'frl_apartment_1', 'frl_apartment_2',
+          'frl_apartment_3', 'frl_apartment_4', 'frl_apartment_5', 'office_0', 'office_1', 'office_2',
+          'office_3', 'office_4', 'hotel_0', 'room_0', 'room_1', 'room_2']
+
+
+def construct_envs(
+    config: Config, env_class: Type[Union[Env, RLEnv]], auto_reset_done=True
+) -> VectorEnv:
+    r"""Create VectorEnv object with specified config and env class type.
+    To allow better performance, dataset are split into small ones for
+    each individual env, grouped by scenes.
+
+    Args:
+        config: configs that contain num_processes as well as information
+        necessary to create individual environments.
+        env_class: class type of the envs to be created
+        auto_reset_done: automatically reset environments when done
+    Returns:
+        VectorEnv object created according to specification.
+    """
+
+    num_processes = config.NUM_PROCESSES
+    tta_episodes_per_scene = int(
+        getattr(config.TASK_CONFIG.DATASET, "TTA_EPISODES_PER_SCENE", -1)
+    )
+    if tta_episodes_per_scene > 0 and num_processes != 1:
+        raise ValueError(
+            "The online TTA episode stream requires NUM_PROCESSES=1 so that "
+            "one global episode order is preserved."
+        )
+    configs = []
+    env_classes = [env_class for _ in range(num_processes)]
+    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
+    # scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET)
+
+    # ===================== 新增代码开始 =====================
+    # 检查传入的 CONTENT_SCENES 是否是我们为单场景训练特制的“重复列表”
+    # 如果列表不为空，且所有元素都相同，则判定为单场景训练模式
+    config_scenes = config.TASK_CONFIG.DATASET.CONTENT_SCENES
+    is_single_scene_mode = (
+        len(config_scenes) > 1 and all(s == config_scenes[0] for s in config_scenes)
+    )
+
+    if is_single_scene_mode:
+        # 在单场景模式下，直接使用我们传入的列表，
+        # 从而跳过下面那行会导致问题的 get_scenes_to_load
+        scenes = config_scenes
+        logging.info(f"检测到单场景多进程模式，强制所有进程使用场景: {scenes[0]}")
+    else:
+        # 否则，执行原始的场景加载逻辑
+        scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET)
+    # ===================== 新增代码结束 =====================
+
+
+    if not config.TASK_CONFIG.SIMULATOR.USE_RENDERED_OBSERVATIONS and '2n8kARJN3HM' in scenes:
+        # this scene does not work for continuous rendering
+        scenes.remove('2n8kARJN3HM')
+
+    # rearrange scenes in the order of scene size since there is a severe imbalance of data size
+    if "replica" in config.TASK_CONFIG.DATASET.SCENES_DIR:
+        scenes_new = list()
+        for scene in REPLICA_SCENES:
+            if scene in scenes:
+                scenes_new.append(scene)
+        scenes = scenes_new
+
+    if len(scenes) > 0:
+        # random.shuffle(scenes)
+        assert len(scenes) >= num_processes, (
+            "reduce the number of processes as there "
+            "aren't enough number of scenes"
+        )
+
+    scene_splits = [[] for _ in range(num_processes)]
+    for idx, scene in enumerate(scenes):
+        scene_splits[idx % len(scene_splits)].append(scene)
+
+    assert sum(map(len, scene_splits)) == len(scenes)
+
+    for i in range(num_processes):
+        task_config = config.TASK_CONFIG.clone()
+        task_config.defrost()
+        if len(scenes) > 0:
+            task_config.DATASET.CONTENT_SCENES = scene_splits[i]
+            logging.debug('All scenes: {}'.format(','.join(scene_splits[i])))
+
+        if tta_episodes_per_scene > 0:
+            # The selected episode set is seed-independent.  This seed is used
+            # only by build_tta_episode_stream to permute the fixed set.
+            task_config.DATASET.TTA_EPISODE_SEED = int(config.SEED)
+
+        # overwrite the task config with top-level config file
+        task_config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = (
+            config.SIMULATOR_GPU_ID
+        )
+        task_config.SIMULATOR.AGENT_0.SENSORS = config.SENSORS
+        task_config.freeze()
+
+        config.defrost()
+        config.TASK_CONFIG = task_config
+        config.freeze()
+        configs.append(config.clone())
+
+    # use VectorEnv for the best performance and ThreadedVectorEnv for debugging
+    if config.USE_SYNC_VECENV:
+        env_launcher = SyncVectorEnv
+        logging.info('Using SyncVectorEnv')
+    elif config.USE_VECENV:
+        env_launcher = habitat.VectorEnv
+        logging.info('Using VectorEnv')
+    else:
+        env_launcher = habitat.ThreadedVectorEnv
+        logging.info('Using ThreadedVectorEnv')
+
+    envs = env_launcher(
+        make_env_fn=make_env_fn,
+        env_fn_args=tuple(
+            tuple(zip(configs, env_classes, range(num_processes)))),
+        auto_reset_done=auto_reset_done
+    )
+    return envs
+
+
+def make_env_fn(
+    config: Config, env_class: Type[Union[Env, RLEnv]], rank: int
+) -> Union[Env, RLEnv]:
+    r"""Creates an env of type env_class with specified config and rank.
+    This is to be passed in as an argument when creating VectorEnv.
+    Args:
+        config: root exp config that has core env config node as well as
+            env-specific config node.
+        env_class: class type of the env to be created.
+        rank: rank of env to be created (for seeding).
+    Returns:
+        env object created according to specification.
+    """
+    if not config.USE_SYNC_VECENV:
+        level = logging.DEBUG if config.DEBUG else logging.INFO
+        logging.basicConfig(level=level, format='%(asctime)s, %(levelname)s: %(message)s',
+                            datefmt="%Y-%m-%d %H:%M:%S")
+        random.seed(rank)
+        np.random.seed(rank)
+        torch.manual_seed(rank)
+
+    dataset = make_dataset(
+        config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET
+    )
+    env = env_class(config=config, dataset=dataset)
+    env.seed(rank)
+    return env

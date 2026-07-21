@@ -1,0 +1,34 @@
+name: pre_refactor_avn_checkpoints
+status: provenance_incomplete
+root: avn/checkpoints/source
+checkpoints:
+  - path: av_nav/multi_best_val.pth
+    sha256: 590e969732deb0cd4ef1d635fd2c0fd31f12e1f7279003667757f52cd0e7a678
+  - path: av_nav/single_best_val.pth
+    sha256: a208d4559de417a175506cf0f0f7a389f2ba264bd070ab6140ec064dd27cd0e7
+  - path: enmus/audio_encoder_best_val.pth
+    sha256: 0939d0546f47b291eac35f6570c3fdb97c46dd45e0730d5e559f5696d4233b47
+  - path: enmus/enmus_best_val.pth
+    sha256: e759bcbc07c9cc0b7027829f70e0f430cdebc346567f76dec85daa53591a279e
+  - path: enmus/multi_source_best_val.pth
+    sha256: 3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464
+  - path: enmus/single_source_best_val.pth
+    sha256: 4f37a377cc7fcb888c545850c91883560a908ba5366072df787e4c8238ecefcd
+  - path: enmus/visual_encoder_best_val.pth
+    sha256: daa326623772a5fb2db3abd74413ea0bbc822f2dc66029db5a25828df95a69b5
+  - path: savi/best_val.pth
+    sha256: daa326623772a5fb2db3abd74413ea0bbc822f2dc66029db5a25828df95a69b5
+  - path: savi/label_predictor.pth
+    sha256: 2e2d1efeb058b37a8904d7f4abb648082af3af908fbb4e14c2dc82a4e6949491
+  - path: savi/multi_best_val.pth
+    sha256: 2e810719a24c221f67f1c18f2f79db55a9ec0bcc959266fa7f20053bfd4238c3
+  - path: savi/single_best_val.pth
+    sha256: 7567441cce071c43ddd2f6643e84cc987ad692d5b4504595c9523e90f94c1db3
+  - path: smt_audio/multi_best_val.pth
+    sha256: c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8
+  - path: smt_audio/single_best_val.pth
+    sha256: 8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03
+notes:
+  - These binaries existed before the refactor and are intentionally excluded from Git.
+  - Training command, source commit, seed, and checkpoint-selection evidence must be recovered before formal use.
+  - The ENMuS visual encoder and SAVi best-val files are byte-identical and require provenance review.
