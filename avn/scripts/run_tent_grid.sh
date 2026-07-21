@@ -155,7 +155,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUNNER="${REPO_ROOT}/${RUNNER_REL}"
 CHECKPOINT="${REPO_ROOT}/${CHECKPOINT_REL}"
 DATASET_FILE="${REPO_ROOT}/avn/data/datasets/tta_test/${SOURCE_SETTING}/mp3d/v1/val/val.json.gz"
-SCENE_CONFIG="${REPO_ROOT}/avn/data/scene_datasets/mp3d/mp3d.scene_dataset_config.json"
 LOG_ROOT="${REPO_ROOT}/avn/results/logs/tent_grid/${BATCH_ID}/${MODEL}/${SOURCE_SETTING}"
 
 [[ -f "$RUNNER" ]] || die "runner is missing: $RUNNER"
@@ -165,7 +164,6 @@ if [[ $DRY_RUN -eq 0 ]]; then
     command -v python3 >/dev/null 2>&1 || die "python3 is not available in PATH"
     [[ -f "$CHECKPOINT" ]] || die "checkpoint is missing: $CHECKPOINT"
     [[ -f "$DATASET_FILE" ]] || die "TTA dataset is missing: $DATASET_FILE"
-    [[ -f "$SCENE_CONFIG" ]] || die "MP3D scene config is missing: $SCENE_CONFIG"
 fi
 
 printf 'Tent grid configuration\n'
