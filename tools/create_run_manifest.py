@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--method", required=True)
+    parser.add_argument("--run-tag", default="")
     parser.add_argument("--source-setting", default="")
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--config", required=True)
@@ -53,6 +54,7 @@ def main():
         "benchmark": args.benchmark,
         "model": args.model,
         "method": args.method,
+        "run_tag": args.run_tag,
         "source_setting": args.source_setting,
         "seed": args.seed,
         "git_commit": git_commit(repo_root),

@@ -60,5 +60,20 @@ The three runs use GPUs 0, 1, and 2 by default. Reuse the matching interval-1
 run from the earlier Tent grid as the control; use `--dry-run` to inspect all
 commands before launch.
 
+Run the canonical comprehensive Tent development grid on SMT+Audio
+single-source (5 learning rates x 6 update intervals x 4 LayerNorm scopes =
+120 jobs):
+
+```bash
+screen -dmS tent_core_grid \
+  bash avn/scripts/run_tent_core_grid.sh --jobs-per-gpu 4
+```
+
+The scheduler uses four GPUs, enforces a per-GPU concurrency limit, assigns a
+unique run tag to every job, and records separate logs and exit codes. Inspect
+the full matrix first with `--dry-run`. To resume an interrupted batch, reuse
+its explicit batch id with `--resume`, but only after confirming that its old
+scheduler and worker processes are no longer running.
+
 Baseline-specific environments are documented inside each baseline; no second
 environment abstraction is maintained at the AVN root.

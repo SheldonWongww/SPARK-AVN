@@ -23,7 +23,13 @@ BASELINE_ROOT="${REPO_ROOT}/avn/baselines/smt_audio"
 CONFIG="ss_baselines/savi/config/tta_avn/${SOURCE_SETTING}/smt_audio_tta_test.yaml"
 CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/smt_audio/${CHECKPOINT_NAME}"
 COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || printf 'uncommitted')"
-RUN_ID="avn-mp3d-smt_audio-${METHOD}-${SOURCE_SETTING}-seed${SEED}-$(date -u +%Y%m%dT%H%M%SZ)-${COMMIT}"
+RUN_TAG="${NAVTTA_RUN_TAG:-}"
+if [[ -n "${RUN_TAG}" && ! "${RUN_TAG}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'invalid NAVTTA_RUN_TAG: %s\n' "${RUN_TAG}" >&2
+    exit 2
+fi
+RUN_TAG_SUFFIX="${RUN_TAG:+-${RUN_TAG}}"
+RUN_ID="avn-mp3d-smt_audio-${METHOD}-${SOURCE_SETTING}-seed${SEED}${RUN_TAG_SUFFIX}-$(date -u +%Y%m%dT%H%M%SZ)-${COMMIT}"
 RUN_DIR="${REPO_ROOT}/avn/results/runs/${RUN_ID}"
 
 test -f "${CHECKPOINT}" || { printf 'missing checkpoint: %s\n' "${CHECKPOINT}" >&2; exit 1; }
@@ -32,7 +38,8 @@ mkdir -p "${RUN_DIR}/raw/model"
 python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --output "${RUN_DIR}/manifest.json" \
     --run-id "${RUN_ID}" --task avn --benchmark mp3d \
-    --model smt_audio --method "${METHOD}" --source-setting "${SOURCE_SETTING}" \
+    --model smt_audio --method "${METHOD}" --run-tag "${RUN_TAG}" \
+    --source-setting "${SOURCE_SETTING}" \
     --seed "${SEED}" --config "${CONFIG}" --checkpoint "${CHECKPOINT}" --extra "$@"
 
 cd "${BASELINE_ROOT}"
