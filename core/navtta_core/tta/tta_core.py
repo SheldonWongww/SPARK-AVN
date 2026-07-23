@@ -355,6 +355,7 @@ class TentAdapter(_AdapterDiagnostics):
         beta2=0.999,
         weight_decay=0.0,
         update_interval=1,
+        max_updates_per_episode=-1,
         max_grad_norm=1.0,
     ):
         if int(steps) != 1:
@@ -366,6 +367,12 @@ class TentAdapter(_AdapterDiagnostics):
         self.episodic = bool(episodic)
         self.base_lr = float(lr)
         self.update_interval = max(1, int(update_interval))
+        self.max_updates_per_episode = int(max_updates_per_episode)
+        if self.max_updates_per_episode < -1:
+            raise ValueError(
+                "TTA.MAX_UPDATES_PER_EPISODE must be -1 (unlimited) or "
+                "a nonnegative integer"
+            )
         self.max_grad_norm = float(max_grad_norm)
         self.params, self.names = configure_tta_model(
             model, reset_bn_stats, scope, last_k
@@ -383,12 +390,21 @@ class TentAdapter(_AdapterDiagnostics):
         self._optim_state = deepcopy(self.optimizer.state_dict())
         self._source_flat = _flatten_params(self.params).clone()
         self.episode_count = 0
+        self.episode_update_count = 0
+        self.skipped_updates_by_budget = 0
         self._init_diagnostics()
 
     @torch.enable_grad()
     def adapt(self, logits, **kwargs):
         loss = softmax_entropy(logits).mean()
-        should_update = ((self.action_steps + 1) % self.update_interval == 0)
+        scheduled_update = (
+            (self.action_steps + 1) % self.update_interval == 0
+        )
+        within_episode_budget = (
+            self.max_updates_per_episode < 0
+            or self.episode_update_count < self.max_updates_per_episode
+        )
+        should_update = scheduled_update and within_episode_budget
         self._record_loss(loss)
         if should_update:
             self.optimizer.zero_grad(set_to_none=True)
@@ -400,6 +416,9 @@ class TentAdapter(_AdapterDiagnostics):
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
             self.update_count += 1
+            self.episode_update_count += 1
+        elif scheduled_update:
+            self.skipped_updates_by_budget += 1
         return loss.detach()
 
     def reset(self):
@@ -409,9 +428,19 @@ class TentAdapter(_AdapterDiagnostics):
     def episode_start(self):
         if self.episodic:
             self.reset()
+        self.episode_update_count = 0
 
     def episode_end(self, episode_stats=None):
         self.episode_count += 1
+
+    def diagnostics(self):
+        output = super().diagnostics()
+        output.update({
+            "episode_updates": self.episode_update_count,
+            "max_updates_per_episode": self.max_updates_per_episode,
+            "skipped_updates_by_budget": self.skipped_updates_by_budget,
+        })
+        return output
 
 
 class FSTTAAdapter(_AdapterDiagnostics):
@@ -1285,6 +1314,9 @@ def build_adapter(model, tta_cfg):
             model,
             lr=lr,
             update_interval=int(value("UPDATE_INTERVAL", 1)),
+            max_updates_per_episode=int(
+                value("MAX_UPDATES_PER_EPISODE", -1)
+            ),
             **common
         )
     if method == "fstta":

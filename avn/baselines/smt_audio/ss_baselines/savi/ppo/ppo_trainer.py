@@ -686,6 +686,14 @@ class PPOTrainer(BaseRLTrainer):
             config = self.config.clone()
 
         ppo_cfg = config.RL.PPO
+        action_selection = str(
+            getattr(config.EVAL, "ACTION_SELECTION", "sample")
+        ).lower()
+        if action_selection not in ("sample", "argmax"):
+            raise ValueError(
+                "EVAL.ACTION_SELECTION must be 'sample' or 'argmax'; got {}"
+                .format(action_selection)
+            )
 
         config.defrost()
         config.TASK_CONFIG.DATASET.SPLIT = config.EVAL.SPLIT
@@ -709,6 +717,7 @@ class PPOTrainer(BaseRLTrainer):
             config.freeze()
 
         logger.info(f"env config: {config}")
+        logging.info("[EVAL] action_selection=%s", action_selection)
         # Force CUDA initialization before forking env workers (avoid SIGSEGV
         # in torch.cuda._lazy_init triggered by actor_critic.to(self.device)).
         if torch.cuda.is_available():
@@ -865,7 +874,7 @@ class PPOTrainer(BaseRLTrainer):
                         not_done_masks,
                         test_em.memory[:, 0] if ppo_cfg.use_external_memory else None,
                         test_em.masks if ppo_cfg.use_external_memory else None,
-                        deterministic=False
+                        deterministic=(action_selection == "argmax")
                     )
                     prev_actions.copy_(actions)
             else:
@@ -903,7 +912,12 @@ class PPOTrainer(BaseRLTrainer):
                     )
                     distribution = source_distribution.__class__(logits=action_logits)
                 with torch.no_grad():
-                    actions = tta_adapter.select_action(distribution)
+                    if action_selection == "argmax":
+                        actions = distribution.probs.argmax(
+                            dim=-1, keepdim=True
+                        )
+                    else:
+                        actions = tta_adapter.select_action(distribution)
                     tta_max_prob_sum += distribution.probs.max(dim=-1)[0].mean().item()
                     tta_probability_steps += 1
                 tta_adapter.adapt(

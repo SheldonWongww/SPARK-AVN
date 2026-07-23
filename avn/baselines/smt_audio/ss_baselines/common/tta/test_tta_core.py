@@ -8,6 +8,7 @@ from navtta_core.tta.tta_core import (
     EAMAdapter,
     FEEDTTAAdapter,
     FSTTAAdapter,
+    TentAdapter,
     _concordant_grad_and_trace,
     configure_tta_model,
 )
@@ -136,6 +137,32 @@ class TTACoreTest(unittest.TestCase):
             adapter.episode_end()
         self.assertEqual(adapter.update_count, 2)
         self.assertEqual(adapter.slow_update_count, 1)
+
+    def test_tent_caps_updates_per_episode_without_resetting_model(self):
+        policy = _TinyPolicy()
+        adapter = TentAdapter(
+            policy,
+            lr=1e-3,
+            update_interval=1,
+            max_updates_per_episode=2,
+            last_k=1,
+            max_grad_norm=10.0,
+        )
+        adapter.episode_start()
+        for _ in range(5):
+            _, logits = _forward(policy, _inputs())
+            adapter.adapt(logits)
+        self.assertEqual(adapter.update_count, 2)
+        self.assertEqual(adapter.episode_update_count, 2)
+        self.assertEqual(adapter.skipped_updates_by_budget, 3)
+
+        adapter.episode_end()
+        adapter.episode_start()
+        _, logits = _forward(policy, _inputs())
+        adapter.adapt(logits)
+        self.assertEqual(adapter.update_count, 3)
+        self.assertEqual(adapter.episode_update_count, 1)
+        self.assertEqual(adapter.skipped_updates_by_budget, 3)
 
     def test_eam_warms_replay_then_updates_auxiliary_branch_only(self):
         policy = _TinyPolicy()

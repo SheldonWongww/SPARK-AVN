@@ -60,6 +60,9 @@ _C.EVAL = CN()
 # The split to evaluate on
 _C.EVAL.SPLIT = "val"
 _C.EVAL.USE_CKPT_CONFIG = True
+# sample preserves the official AVN policy evaluation. argmax is available for
+# controlled mechanism studies against deterministic VLN evaluation.
+_C.EVAL.ACTION_SELECTION = "sample"
 # -----------------------------------------------------------------------------
 # REINFORCEMENT LEARNING (RL) ENVIRONMENT CONFIG
 # -----------------------------------------------------------------------------
@@ -160,6 +163,9 @@ _C.TTA.BETA2 = 0.999
 _C.TTA.WEIGHT_DECAY = 0.0
 _C.TTA.MAX_GRAD_NORM = 1.0
 _C.TTA.UPDATE_INTERVAL = 1
+# -1 keeps the original continual-Tent behavior. Nonnegative values cap the
+# number of optimizer updates inside each episode without resetting the model.
+_C.TTA.MAX_UPDATES_PER_EPISODE = -1
 _C.TTA.LOG_INTERVAL_EPISODES = 50
 _C.TTA.FSTTA = CN()
 _C.TTA.FSTTA.M = 3
