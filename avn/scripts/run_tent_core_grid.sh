@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Run the canonical 120-job Tent core grid on SMT+Audio single-source AVN.
+Run the canonical 120-job Tent core grid on single-source AVN.
 
 Fixed Cartesian product:
   LR:              1e-8, 3e-8, 1e-7, 3e-7, 1e-6
@@ -18,6 +18,7 @@ Usage:
   bash avn/scripts/run_tent_core_grid.sh [options]
 
 Options:
+  --model MODEL        smt_audio|enmus (default: smt_audio)
   --seed N              Evaluation/order seed (default: 0)
   --gpus LIST           Four physical GPU ids (default: 0,1,2,3)
   --jobs-per-gpu N      Concurrent jobs per GPU (default: 4; maximum: 16)
@@ -30,6 +31,10 @@ Options:
 Recommended detached launch:
   screen -dmS tent_core_grid \
     bash avn/scripts/run_tent_core_grid.sh --jobs-per-gpu 4
+
+ENMuS convenience entry point:
+  screen -dmS enmus_tent_core \
+    bash avn/scripts/run_enmus_tent_core_grid.sh --jobs-per-gpu 4
 
 Attach with:
   screen -d -r tent_core_grid
@@ -44,16 +49,22 @@ die() {
     exit 2
 }
 
+MODEL="smt_audio"
 SEED=0
 GPU_CSV="0,1,2,3"
 JOBS_PER_GPU=4
 EPISODES=2000
-BATCH_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+BATCH_ID=""
 RESUME=0
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --model)
+            [[ $# -ge 2 ]] || die "--model requires a value"
+            MODEL="$2"
+            shift 2
+            ;;
         --seed)
             [[ $# -ge 2 ]] || die "--seed requires a value"
             SEED="$2"
@@ -97,6 +108,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+case "$MODEL" in
+    smt_audio|enmus) ;;
+    *) die "model must be smt_audio or enmus: $MODEL" ;;
+esac
+if [[ -z "$BATCH_ID" ]]; then
+    BATCH_ID="tent-core-${MODEL}-v1-seed${SEED}-$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+
 [[ "$SEED" =~ ^[0-9]+$ ]] || die "seed must be a nonnegative integer"
 [[ "$EPISODES" =~ ^[1-9][0-9]*$ ]] || die "episodes must be a positive integer"
 [[ "$JOBS_PER_GPU" =~ ^[1-9][0-9]*$ ]] || \
@@ -118,8 +137,16 @@ EXPECTED_JOBS=$((${#LRS[@]} * ${#UPDATE_INTERVALS[@]} * ${#NORM_SCOPES[@]}))
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-RUNNER="${REPO_ROOT}/avn/scripts/eval_smt_audio.sh"
-CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/smt_audio/single_best_val.pth"
+case "$MODEL" in
+    smt_audio)
+        RUNNER="${REPO_ROOT}/avn/scripts/eval_smt_audio.sh"
+        CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/smt_audio/single_best_val.pth"
+        ;;
+    enmus)
+        RUNNER="${REPO_ROOT}/avn/scripts/eval_enmus.sh"
+        CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/enmus/single_source_best_val.pth"
+        ;;
+esac
 DATASET_FILE="${REPO_ROOT}/avn/data/datasets/tta_test/single_source/mp3d/v1/val/val.json.gz"
 LOG_ROOT="${REPO_ROOT}/avn/results/logs/tent_core_grid/${BATCH_ID}"
 JOBS_ROOT="${LOG_ROOT}/jobs"
@@ -128,7 +155,7 @@ JOBS_ROOT="${LOG_ROOT}/jobs"
 
 printf 'Tent core Cartesian grid\n'
 printf '  repository:       %s\n' "$REPO_ROOT"
-printf '  model/source:     smt_audio/single_source\n'
+printf '  model/source:     %s/single_source\n' "$MODEL"
 printf '  LRs:              1e-8,3e-8,1e-7,3e-7,1e-6\n'
 printf '  update intervals: 1,2,3,4,8,16\n'
 printf '  norm scopes:      first_ln,last_ln,last_k_ln,ln\n'
@@ -312,6 +339,7 @@ launch_job() {
         printf 'job_id=%s\n' "$job_index"
         printf 'run_tag=%s\n' "$tag"
         printf 'gpu=%s\n' "$gpu"
+        printf 'model=%s\n' "$MODEL"
         printf 'norm_scope=%s\n' "$scope"
         printf 'lr=%s\n' "$lr"
         printf 'update_interval=%s\n' "$interval"
@@ -337,6 +365,7 @@ launch_job() {
             TTA.EPISODIC False \
             TTA.STEPS 1 \
             TTA.UPDATE_INTERVAL "$interval" \
+            TTA.MAX_UPDATES_PER_EPISODE -1 \
             TTA.OPTIMIZER Adam \
             TTA.BETA1 0.9 \
             TTA.BETA2 0.999 \
@@ -411,4 +440,5 @@ if [[ $FAILED -ne 0 || $MISSING -ne 0 ]]; then
     exit 1
 fi
 
-printf 'All %s Tent core-grid jobs completed successfully.\n' "$EXPECTED_JOBS"
+printf 'All %s %s Tent core-grid jobs completed successfully.\n' \
+    "$EXPECTED_JOBS" "$MODEL"
