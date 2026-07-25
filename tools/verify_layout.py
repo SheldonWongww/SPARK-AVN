@@ -25,8 +25,8 @@ def main():
 
     with open(os.path.join(repo_root, "references", "catalog.json"), encoding="utf-8") as handle:
         catalog = json.load(handle)
-    if len(catalog.get("repositories", [])) != 13:
-        errors.append("reference catalog must contain 13 repositories")
+    if len(catalog.get("repositories", [])) != 15:
+        errors.append("reference catalog must contain 15 repositories")
 
     for current, directories, _ in os.walk(repo_root):
         relative = os.path.relpath(current, repo_root)

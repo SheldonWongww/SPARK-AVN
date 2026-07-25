@@ -12,6 +12,8 @@
     {"name": "NeurIPS25-ATENA", "category": "tta/vln", "url": "https://github.com/kuai-lab/NeurIPS25_att_vln.git", "commit": "122b56990d46fea2aab7cc270f30cb2424cfe95f", "path": "references/repos/tta/vln/NeurIPS25_att_vln"},
     {"name": "PEA-TTA", "category": "tta/general", "url": "https://github.com/TheMaXiao/PEA_TTA.git", "commit": "9c358ba682052862df0739fbbadb71f1b586614d", "path": "references/repos/tta/general/PEA_TTA"},
     {"name": "GOLD", "category": "tta/general", "url": "https://github.com/AIGNLAI/GOLD.git", "commit": "94908dd7cd72ca95c0bb0210fbe59021a30a133a", "path": "references/repos/tta/general/GOLD"},
-    {"name": "TTRV", "category": "tta/general", "url": "https://github.com/Akshit21112002/TTRV.git", "commit": "1a2ad07cfdefd4383b07ee6109a3e564d416c079", "path": "references/repos/tta/general/TTRV"}
+    {"name": "TTRV", "category": "tta/general", "url": "https://github.com/Akshit21112002/TTRV.git", "commit": "1a2ad07cfdefd4383b07ee6109a3e564d416c079", "path": "references/repos/tta/general/TTRV"},
+    {"name": "phd-skills", "category": "research/skills", "url": "https://github.com/fcakyon/phd-skills.git", "commit": "8d642d3e114ee1d1e4d000f918d71e9bf0453dc2", "path": "references/repos/research/phd-skills"},
+    {"name": "academic-research-skills-codex", "category": "research/skills", "url": "https://github.com/Imbad0202/academic-research-skills-codex.git", "commit": "f8d6b061efe98564a3f554c917fce66dcef6ca54", "path": "references/repos/research/academic-research-skills-codex"}
   ]
 }
