@@ -1,5 +1,12 @@
 ENVIRONMENT:
   MAX_EPISODE_STEPS: 500
+  ITERATOR_OPTIONS:
+    CYCLE: True
+    SHUFFLE: False
+    GROUP_BY_SCENE: False
+    NUM_EPISODE_SAMPLE: -1
+    MAX_SCENE_REPEAT_EPISODES: -1
+    MAX_SCENE_REPEAT_STEPS: -1
 SIMULATOR:
   HABITAT_SIM_V0:
     GPU_DEVICE_ID: 0
@@ -40,8 +47,13 @@ TASK:
 
 DATASET:
   TYPE: "TTAAudioNav"
-  SPLIT: "train"
+  SPLIT: "val"
   CONTENT_SCENES: ["*"]
   VERSION: 'v1'
   SCENES_DIR: "data/scene_datasets/mp3d"
   DATA_PATH: "data/datasets/tta_test/multi_source/mp3d/{version}/{split}/{split}.json.gz"
+  # Same fixed 20 x 100 stream used by the Tent hyperparameter grids.
+  TTA_EPISODES_PER_SCENE: 100
+  TTA_EXPECTED_SCENES: 20
+  TTA_EPISODE_SEED: 0
+  TTA_GLOBAL_SHUFFLE: True

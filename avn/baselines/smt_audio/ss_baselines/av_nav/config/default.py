@@ -141,6 +141,11 @@ _TC.TASK.SUCCESS_WHEN_SILENT.TYPE = "SWS"
 # -----------------------------------------------------------------------------
 _TC.DATASET.VERSION = 'v1'
 _TC.DATASET.CONTINUOUS = False
+# Reproducible sequential evaluation stream used by AVN TTA experiments.
+_TC.DATASET.TTA_EPISODES_PER_SCENE = -1
+_TC.DATASET.TTA_EXPECTED_SCENES = -1
+_TC.DATASET.TTA_EPISODE_SEED = 0
+_TC.DATASET.TTA_GLOBAL_SHUFFLE = False
 # -----------------------------------------------------------------------------
 # NumberOfAction Measure
 # -----------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 BASE_TASK_CONFIG_PATH: "configs/tta_avn/multi_source/mp3d/semantic_audiogoal_savi_test.yaml"
 TRAINER_NAME: "ddppo"
-NUM_PROCESSES: 12
+# One environment is required to preserve the global TTA episode order.
+NUM_PROCESSES: 1
 SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
 NUM_UPDATES: 30000
 LOG_INTERVAL: 10
@@ -10,7 +11,7 @@ VISUALIZATION_OPTION: []
 TEST_EPISODE_COUNT: 2000
 
 EVAL:
-  SPLIT: "train"
+  SPLIT: "val"
   USE_CKPT_CONFIG: False
 
 RL:

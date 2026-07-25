@@ -24,6 +24,28 @@ bash avn/scripts/eval_smt_audio.sh single_source source 0
 bash avn/scripts/eval_enmus.sh multi_source tent 0
 ```
 
+Re-evaluate the four pretrained Source baselines on exactly the same
+seed-0, 20-scene x 100-episode streams used by the Tent searches:
+
+```bash
+bash avn/scripts/run_source_reval.sh --dry-run --seed 0 --gpus 0,1,2,3
+screen -dmS avn_source_reval \
+  bash avn/scripts/run_source_reval.sh --seed 0 --gpus 0,1,2,3 \
+    --batch-id source-reval-v1-seed0
+screen -d -r avn_source_reval
+```
+
+The GPU order is AV-Nav, SAVi, SMT+Audio, and ENMuS. Each GPU runs the
+single-source and multi-source Source evaluations concurrently. Raw batch logs
+are written under `avn/results/logs/source_reval/<batch-id>/`; the compact
+`metrics.csv`, validated run manifests, stream fingerprints, and batch
+specification are retained under
+`avn/results/legacy/source_reval/<batch-id>/`. They remain legacy results until
+the imported source-checkpoint provenance is completed.
+If the scheduler is interrupted by HUP/INT/TERM, it deliberately retains the
+batch's `.scheduler.lock`; verify that no worker remains before removing that
+lock and resuming the same `--batch-id` with `--resume`.
+
 Launch the complete Tent grid for one model and source setting (three learning
 rates by four LayerNorm scopes across four detached `screen` sessions):
 
