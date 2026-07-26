@@ -97,5 +97,25 @@ the full matrix first with `--dry-run`. To resume an interrupted batch, reuse
 its explicit batch id with `--resume`, but only after confirming that its old
 scheduler and worker processes are no longer running.
 
+After freezing the Tent configuration, run the two multi-source main-table
+jobs concurrently on SMT+Audio and ENMuS:
+
+```bash
+bash avn/scripts/run_tent_main_multi_source.sh --dry-run \
+  --gpus 0,1 --seed 0 --batch-id tent-main-multi-v1-seed0
+screen -dmS tent_main_multi \
+  bash avn/scripts/run_tent_main_multi_source.sh \
+    --gpus 0,1 --seed 0 --batch-id tent-main-multi-v1-seed0
+screen -d -r tent_main_multi
+```
+
+This runner fixes `NORM_SCOPE=ln`, `LR=1e-8`, `UPDATE_INTERVAL=1`,
+`EPISODIC=False`, and `STEPS=1`. It only evaluates `multi_source`; selected
+single-source results remain in their original hyperparameter-search batches.
+Raw scheduler/job logs and `metrics.csv` are written under
+`avn/results/logs/tent_main_multi/<batch-id>/`. Each evaluation also creates a
+run manifest, compact `summary.json`, and diagnostics under
+`avn/results/runs/<run-id>/`.
+
 Baseline-specific environments are documented inside each baseline; no second
 environment abstraction is maintained at the AVN root.

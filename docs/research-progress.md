@@ -79,6 +79,7 @@
 - 同一方法必须使用相同的 Source checkpoint、episode 集合、顺序、动作选择协议和评估指标。
 - 每次运行记录 Git commit、配置、数据版本、checkpoint SHA256、随机种子、硬件和实际更新参数。
 - 保留逐 episode 结果和完整超参数实验，不只保留汇总数字或 TensorBoard 截图。
-- Source 与所有 TTA 方法至少完成多随机种子评估，并报告均值与标准差。
+- 主对比表使用预先固定且所有方法共享的一条适应顺序；不同顺序的稳定性
+  与更长 episode 流作为独立实验报告，不混入主表。
 - 在 Source 基线未稳定复现之前，不开始该模型的大规模 TTA sweep。
 - 只有带完整 manifest 且可重复的实验才能进入正式对比表；旧结果或来源不完整的结果只能保留在 `results/legacy/`。

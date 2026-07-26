@@ -20,6 +20,12 @@ methods:
   - id: tent
     config_method: tent
     feedback: none
+    frozen_config:
+      norm_scope: ln
+      lr: 1.0e-8
+      update_interval: 1
+      episodic: false
+      steps: 1
   - id: fstta
     config_method: fstta
     feedback: none
@@ -32,8 +38,10 @@ methods:
   - id: atena
     config_method: atena
     feedback: active_binary_episode_success
-formal_seeds: []
+formal_seeds: [0]
 notes:
   - Hyperparameters and formal seeds must be frozen after implementation validation.
+  - The main comparison uses one fixed, globally shuffled episode order (seed 0).
+  - Episode-order robustness and longer continual streams are separate experiments.
   - Source uses the identical sequential episode stream with TTA disabled.
   - Feedback-dependent methods must be reported separately from fully unsupervised methods.
