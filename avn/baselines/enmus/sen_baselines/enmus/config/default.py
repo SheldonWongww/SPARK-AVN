@@ -154,6 +154,7 @@ _C.TTA.FSTTA.TAU = 0.7
 _C.TTA.FSTTA.A = 0.9
 _C.TTA.FSTTA.B = 1.1
 _C.TTA.FSTTA.USE_SLOW = True
+# Used by independent FAST and persistent SLOW optimizers.
 _C.TTA.FSTTA.OPTIMIZER = "AdamW"
 _C.TTA.FSTTA.BETA1 = 0.9
 _C.TTA.FSTTA.BETA2 = 0.99

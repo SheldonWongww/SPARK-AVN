@@ -1,0 +1,83 @@
+experiment_id: fstta_core_grid_v1
+status: planned
+purpose: >-
+  Jointly characterize FSTTA's fast gradient-aggregation window and persistent
+  slow AdamW update on the fixed SMT+Audio single-source TTA stream.
+
+task: avn
+benchmark: mp3d
+model: smt_audio
+source_setting: single_source
+method: fstta
+action_selection: sample
+
+search_space:
+  TTA.LR: [1.0e-8, 1.0e-7, 3.0e-7, 1.0e-6]
+  TTA.FSTTA.M: [2, 3, 4, 8, 16]
+  TTA.FSTTA.LR_SLOW: [1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3]
+  TTA.FSTTA.N: [2, 4, 8]
+
+fixed:
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  EVAL.ACTION_SELECTION: sample
+  TTA.NORM_SCOPE: last_k_ln
+  TTA.LAST_K_LN: 4
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  TTA.RESET_BN_STATS: true
+  TTA.MAX_GRAD_NORM: 1.0
+  TTA.FSTTA.Q: 0.1
+  TTA.FSTTA.RHO: 0.95
+  TTA.FSTTA.TAU: 0.7
+  TTA.FSTTA.A: 0.9
+  TTA.FSTTA.B: 1.1
+  TTA.FSTTA.USE_SLOW: true
+  TTA.FSTTA.OPTIMIZER: AdamW
+  TTA.FSTTA.BETA1: 0.9
+  TTA.FSTTA.BETA2: 0.99
+  TTA.FSTTA.WEIGHT_DECAY: 0.0
+  TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE: true
+  TTA.FSTTA.EIGEN_EPS: 1.0e-6
+  TEST_EPISODE_COUNT: 2000
+  seed: 0
+
+optimizer_protocol:
+  fast: AdamW over the selected normalization parameters
+  slow: independent persistent AdamW over the slow anchor
+  episode_boundary: clear fast optimizer moments only
+  slow_boundary: preserve slow optimizer moments across N-episode windows
+
+job_count: 240
+launcher: avn/scripts/run_fstta_grid.sh
+log_root: avn/results/logs/fstta_grid
+
+excluded_fast_learning_rates:
+  - value: 1.0e-5
+    reason: excluded after the Tent stability study showed excessive AVN drift
+  - value: 6.0e-5
+    reason: excluded as substantially above the empirically stable AVN range
+
+reported_metrics:
+  - success
+  - spl
+  - softspl
+  - sna
+  - na
+  - distance_to_goal
+  - normalized_distance_to_goal
+
+selection_protocol:
+  primary_metric: spl
+  secondary_metric: success
+  reject_on_numerical_failure: true
+  require_no_late_stream_collapse: true
+  note: >-
+    Treat all 240 jobs as one Cartesian screening experiment. Do not alter the
+    search space in response to partial results from the same running batch.
+
+data_protocol:
+  role: development
+  note: >-
+    This grid selects hyperparameters on the seed-0 stream. Freeze the selected
+    configuration before using it in a separately declared comparison run.

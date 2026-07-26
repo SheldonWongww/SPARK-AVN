@@ -97,6 +97,26 @@ the full matrix first with `--dry-run`. To resume an interrupted batch, reuse
 its explicit batch id with `--resume`, but only after confirming that its old
 scheduler and worker processes are no longer running.
 
+Run the complete SMT+Audio single-source FSTTA grid (4 fast learning rates x
+5 fast windows x 4 slow learning rates x 3 slow windows = 240 jobs):
+
+```bash
+bash avn/scripts/run_fstta_grid.sh --dry-run \
+  --batch-id fstta-smt-single-v1-seed0
+screen -dmS fstta_grid \
+  bash avn/scripts/run_fstta_grid.sh \
+    --gpus 0,1,2,3 --jobs-per-gpu 4 \
+    --batch-id fstta-smt-single-v1-seed0
+```
+
+The fast learning-rate axis is `1e-8,1e-7,3e-7,1e-6`; `1e-5` and `6e-5` are
+deliberately excluded. FSTTA uses separate FAST and SLOW AdamW optimizers, and
+the SLOW moments persist across its episode windows. Logs are written under
+`avn/results/logs/fstta_grid/<batch-id>/`. Resume an interrupted batch with the
+same arguments plus `--resume` after ensuring no old worker is still running.
+Signal interruption deliberately retains `.scheduler.lock`; inspect its owner,
+then remove `owner` and the empty lock directory before resuming.
+
 After freezing the Tent configuration, run the two multi-source main-table
 jobs concurrently on SMT+Audio and ENMuS:
 

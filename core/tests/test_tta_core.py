@@ -80,6 +80,31 @@ def _forward(policy, inputs):
     return features, distribution.logits
 
 
+def _run_fast_update(adapter, policy):
+    """Run one complete fast window for adapters configured with ``M=1``."""
+    features, logits = _forward(policy, _inputs())
+    adapter.adapt(logits)
+    return features
+
+
+def _run_nondegenerate_slow_window(adapter, scale=0.05):
+    """Install a deterministic, full-rank-enough trajectory and update SLOW."""
+    if adapter.N != 2:
+        raise ValueError("The test helper requires an FSTTA slow window of N=2")
+    anchor = adapter.slow_anchor.detach().clone()
+    first = torch.zeros_like(anchor)
+    second = torch.zeros_like(anchor)
+    first[0] = scale
+    second[1] = 2.0 * scale
+    adapter.slow_trajectory = [anchor + first, anchor + second]
+    adapter._slow_step()
+
+
+def _optimizer_step_value(state):
+    step = state["step"]
+    return float(step.item()) if torch.is_tensor(step) else float(step)
+
+
 class TTACoreTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(7)
@@ -136,6 +161,179 @@ class TTACoreTest(unittest.TestCase):
             adapter.episode_end()
         self.assertEqual(adapter.update_count, 2)
         self.assertEqual(adapter.slow_update_count, 1)
+
+    def test_fstta_fast_and_slow_adamw_optimizers_are_independent(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=1, N=2, lr_fast=1e-3, lr_slow=3e-3,
+            last_k=1, max_grad_norm=10.0,
+        )
+
+        self.assertIsInstance(adapter.optimizer, torch.optim.AdamW)
+        self.assertIsInstance(adapter.slow_optimizer, torch.optim.AdamW)
+        fast_params = {
+            id(param)
+            for group in adapter.optimizer.param_groups
+            for param in group["params"]
+        }
+        slow_params = {
+            id(param)
+            for group in adapter.slow_optimizer.param_groups
+            for param in group["params"]
+        }
+        self.assertTrue(fast_params)
+        self.assertEqual(slow_params, {id(adapter.slow_anchor)})
+        self.assertTrue(fast_params.isdisjoint(slow_params))
+        self.assertEqual(adapter.optimizer.param_groups[0]["lr"], 1e-3)
+        self.assertEqual(adapter.slow_optimizer.param_groups[0]["lr"], 3e-3)
+
+    def test_fstta_slow_adamw_moments_persist_across_windows(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(), M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+        )
+
+        anchor_before = adapter.slow_anchor.detach().clone()
+        _run_nondegenerate_slow_window(adapter)
+        first_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        self.assertEqual(_optimizer_step_value(first_state), 1.0)
+        self.assertEqual(first_state["exp_avg"].shape, adapter.slow_anchor.shape)
+        self.assertEqual(
+            first_state["exp_avg_sq"].shape, adapter.slow_anchor.shape
+        )
+        self.assertGreater(float(first_state["exp_avg"].norm().item()), 0.0)
+        self.assertGreater(float(first_state["exp_avg_sq"].norm().item()), 0.0)
+
+        # Reconstruct the first bias-corrected AdamW step. This catches the
+        # previous implementation, which applied LR_SLOW as plain SGD.
+        group = adapter.slow_optimizer.param_groups[0]
+        beta1, beta2 = group["betas"]
+        exp_avg = first_state["exp_avg"]
+        exp_avg_sq = first_state["exp_avg_sq"]
+        expected = anchor_before - group["lr"] * (
+            exp_avg / (1.0 - beta1)
+        ) / (
+            (exp_avg_sq / (1.0 - beta2)).sqrt() + group["eps"]
+        )
+        torch.testing.assert_close(adapter.slow_anchor.detach(), expected)
+        reconstructed_grad = exp_avg / (1.0 - beta1)
+        plain_sgd = anchor_before - group["lr"] * reconstructed_grad
+        self.assertFalse(torch.allclose(adapter.slow_anchor.detach(), plain_sgd))
+
+        first_exp_avg = first_state["exp_avg"].detach().clone()
+        _run_nondegenerate_slow_window(adapter, scale=0.025)
+        second_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        self.assertEqual(_optimizer_step_value(second_state), 2.0)
+        self.assertFalse(torch.equal(second_state["exp_avg"], first_exp_avg))
+        self.assertEqual(adapter.slow_update_count, 2)
+        self.assertEqual(adapter.slow_attempt_count, 2)
+        self.assertEqual(adapter.slow_skip_count, 0)
+
+    def test_fstta_episode_start_clears_only_fast_adamw_moments(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+            reset_optimizer_each_episode=True,
+        )
+        _run_nondegenerate_slow_window(adapter)
+        _run_fast_update(adapter, policy)
+        self.assertTrue(adapter.optimizer.state)
+        self.assertTrue(adapter.slow_optimizer.state)
+
+        slow_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        slow_step = _optimizer_step_value(slow_state)
+        slow_exp_avg = slow_state["exp_avg"].detach().clone()
+        slow_exp_avg_sq = slow_state["exp_avg_sq"].detach().clone()
+        slow_anchor = adapter.slow_anchor.detach().clone()
+        pending = slow_anchor + 0.01
+        adapter.slow_trajectory = [pending]
+        adapter.var_hist = torch.tensor(2.0)
+        adapter.episode_start()
+
+        self.assertEqual(len(adapter.optimizer.state), 0)
+        persistent_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        self.assertEqual(_optimizer_step_value(persistent_state), slow_step)
+        torch.testing.assert_close(persistent_state["exp_avg"], slow_exp_avg)
+        torch.testing.assert_close(
+            persistent_state["exp_avg_sq"], slow_exp_avg_sq
+        )
+        torch.testing.assert_close(adapter.slow_anchor.detach(), slow_anchor)
+        torch.testing.assert_close(adapter.slow_trajectory[0], pending)
+        self.assertIsNone(adapter.var_hist)
+
+    def test_fstta_reset_restores_anchor_in_place_and_clears_all_state(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+        )
+        anchor_object = adapter.slow_anchor
+        _run_nondegenerate_slow_window(adapter)
+        _run_fast_update(adapter, policy)
+        adapter.episode_count = 3
+        self.assertTrue(adapter.optimizer.state)
+        self.assertTrue(adapter.slow_optimizer.state)
+        self.assertGreater(adapter.update_count, 0)
+        self.assertGreater(adapter.slow_update_count, 0)
+
+        adapter.reset()
+
+        self.assertIs(adapter.slow_anchor, anchor_object)
+        self.assertIs(
+            adapter.slow_optimizer.param_groups[0]["params"][0],
+            anchor_object,
+        )
+        torch.testing.assert_close(
+            adapter.slow_anchor.detach(), adapter._source_flat
+        )
+        current = torch.cat([
+            param.detach().reshape(-1) for param in adapter.params
+        ])
+        torch.testing.assert_close(current, adapter._source_flat)
+        self.assertEqual(len(adapter.optimizer.state), 0)
+        self.assertEqual(len(adapter.slow_optimizer.state), 0)
+        self.assertEqual(adapter.grad_buffer, [])
+        self.assertEqual(adapter.slow_trajectory, [])
+        self.assertIsNone(adapter.var_hist)
+        self.assertEqual(adapter.action_steps, 0)
+        self.assertEqual(adapter.update_count, 0)
+        self.assertEqual(adapter.episode_count, 0)
+        self.assertEqual(adapter.slow_update_count, 0)
+        self.assertEqual(adapter.slow_attempt_count, 0)
+        self.assertEqual(adapter.slow_skip_count, 0)
+        self.assertEqual(adapter.discarded_fast_gradients, 0)
+        self.assertEqual(
+            adapter.diagnostics()["relative_slow_anchor_drift"], 0.0
+        )
+
+    def test_fstta_degenerate_slow_window_is_skipped_and_cleared(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(), M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+        )
+        source_anchor = adapter.slow_anchor.detach().clone()
+
+        # No action-level updates make both episode snapshots identical to the
+        # slow anchor, so PDA has neither variance nor a reference direction.
+        for _ in range(2):
+            adapter.episode_start()
+            adapter.episode_end()
+
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["episodes"], 2)
+        self.assertEqual(diagnostics["slow_attempts"], 1)
+        self.assertEqual(diagnostics["slow_skipped_updates"], 1)
+        self.assertEqual(diagnostics["slow_updates"], 0)
+        self.assertEqual(diagnostics["slow_pending_episodes"], 0)
+        self.assertEqual(len(adapter.slow_optimizer.state), 0)
+        torch.testing.assert_close(adapter.slow_anchor.detach(), source_anchor)
+
+    def test_fstta_rejects_episodic_slow_configuration(self):
+        with self.assertRaisesRegex(ValueError, "EPISODIC=False"):
+            FSTTAAdapter(
+                _TinyPolicy(), episodic=True, use_slow=True, last_k=1
+            )
 
     def test_eam_warms_replay_then_updates_auxiliary_branch_only(self):
         policy = _TinyPolicy()

@@ -477,6 +477,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
             raise ValueError("FSTTA supports one policy forward/update per action")
         if not 0.0 < float(q) < 1.0:
             raise ValueError("FSTTA.Q must be in (0, 1)")
+        if bool(episodic) and bool(use_slow):
+            raise ValueError(
+                "FSTTA slow adaptation requires TTA.EPISODIC=False so its "
+                "trajectory and slow optimizer can persist across episodes"
+            )
         self.model = model
         self.M = max(1, int(M))
         self.N = max(1, int(N))
@@ -509,19 +514,88 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self._optim_state = deepcopy(self.optimizer.state_dict())
         self._source_flat = _flatten_params(self.params).clone()
 
+        # Keep an independent, persistent optimizer for the SLOW parameter
+        # anchor.  The released FSTTA implementation uses a separate AdamW
+        # optimizer for this stage; treating LR_SLOW as a raw interpolation
+        # coefficient makes the paper's learning-rate scale inapplicable.
+        # A single flat Parameter is element-wise equivalent to optimizing the
+        # selected normalization tensors with one shared optimizer group, and
+        # avoids retaining a second full policy on the GPU.
+        self.slow_anchor = nn.Parameter(
+            self._source_flat.detach().clone(), requires_grad=True
+        )
+        self._slow_optimizer_args = dict(
+            name=optimizer_name,
+            lr=self.lr_slow,
+            momentum=momentum,
+            beta1=beta1,
+            beta2=beta2,
+            weight_decay=weight_decay,
+        )
+        self.slow_optimizer = _make_optimizer(
+            [self.slow_anchor], **self._slow_optimizer_args
+        )
+        self._slow_optim_state = deepcopy(self.slow_optimizer.state_dict())
+
         self.grad_buffer = []
         self.var_hist = None
         self.episode_count = 0
         self.slow_update_count = 0
-        self.slow_anchor = self._source_flat.clone()
         self.slow_trajectory = []
         self._init_diagnostics()
+        self._init_fstta_diagnostics()
+
+    def _init_fstta_diagnostics(self):
+        self.slow_attempt_count = 0
+        self.slow_skip_count = 0
+        self.discarded_fast_gradients = 0
+        self.last_sigma = 0.0
+        self.lr_scale_count = 0
+        self.lr_scale_sum = 0.0
+        self.lr_scale_min = math.inf
+        self.lr_scale_max = -math.inf
+        self.lr_scale_lower_hits = 0
+        self.lr_scale_upper_hits = 0
+        self.last_slow_reference_norm = 0.0
+        self.last_slow_grad_norm = 0.0
+        self.last_slow_step_norm = 0.0
+        self.last_slow_snap_norm = 0.0
+
+    def _record_lr_scale(self, scale, sigma):
+        scale = float(scale)
+        self.current_lr = scale * self.base_lr
+        self.last_sigma = float(sigma.detach().item())
+        self.lr_scale_count += 1
+        self.lr_scale_sum += scale
+        self.lr_scale_min = min(self.lr_scale_min, scale)
+        self.lr_scale_max = max(self.lr_scale_max, scale)
+        tolerance = 1e-12
+        if abs(scale - self.a) <= tolerance:
+            self.lr_scale_lower_hits += 1
+        if abs(scale - self.b) <= tolerance:
+            self.lr_scale_upper_hits += 1
 
     def _clear_optimizer_state(self):
         self.optimizer.state.clear()
+        self._reset_fast_lr()
+
+    def _reset_fast_lr(self):
         for group in self.optimizer.param_groups:
             group["lr"] = self.base_lr
         self.current_lr = self.base_lr
+
+    @torch.no_grad()
+    def _snap_fast_to_slow_anchor(self, fast_before_snap=None):
+        if fast_before_snap is None:
+            fast_before_snap = _flatten_params(self.params)
+        anchor = self.slow_anchor.detach()
+        self.last_slow_snap_norm = float(
+            (fast_before_snap - anchor).norm().item()
+        )
+        _copy_flat_to_params(anchor, self.params)
+        # Fast optimizer moments describe the pre-snap trajectory and must not
+        # be applied to the newly deployed slow anchor. Slow moments persist.
+        self._clear_optimizer_state()
 
     @torch.enable_grad()
     def adapt(self, logits, **kwargs):
@@ -545,7 +619,7 @@ class FSTTAAdapter(_AdapterDiagnostics):
                     self.rho * self.var_hist
                     + (1.0 - self.rho) * sigma.detach()
                 )
-            self.current_lr = scale * self.base_lr
+            self._record_lr_scale(scale, sigma)
             for group in self.optimizer.param_groups:
                 group["lr"] = self.current_lr
 
@@ -565,14 +639,23 @@ class FSTTAAdapter(_AdapterDiagnostics):
 
     @torch.no_grad()
     def _slow_step(self):
-        states = [self.slow_anchor] + self.slow_trajectory
+        self.slow_attempt_count += 1
+        self.last_slow_reference_norm = 0.0
+        self.last_slow_grad_norm = 0.0
+        self.last_slow_step_norm = 0.0
+        self.last_slow_snap_norm = 0.0
+        anchor = self.slow_anchor.detach()
+        fast_before_snap = _flatten_params(self.params).clone()
+        states = [anchor.clone()] + self.slow_trajectory
         matrix = torch.stack(states, dim=0)
         centered = matrix - matrix.mean(dim=0, keepdim=True)
         _, singular_values, vh = torch.linalg.svd(centered, full_matrices=False)
         eigenvalues = singular_values.square() / float(max(1, self.N))
         if eigenvalues.numel() == 0 or eigenvalues.norm() <= 1e-12:
             logging.warning("[FSTTA] slow update skipped: degenerate trajectory")
+            self.slow_skip_count += 1
             self.slow_trajectory = []
+            self._snap_fast_to_slow_anchor(fast_before_snap)
             return
 
         # Eq. (8): recent episode states receive larger weights (q < 1).
@@ -583,13 +666,16 @@ class FSTTAAdapter(_AdapterDiagnostics):
         )
         weights = weights / weights.sum()
         deviations = torch.stack(
-            [self.slow_anchor - state for state in self.slow_trajectory], dim=0
+            [anchor - state for state in self.slow_trajectory], dim=0
         )
         reference = (weights.unsqueeze(1) * deviations).sum(dim=0)
         reference_norm = reference.norm()
+        self.last_slow_reference_norm = float(reference_norm.item())
         if reference_norm <= 1e-12:
             logging.warning("[FSTTA] slow update skipped: zero reference direction")
+            self.slow_skip_count += 1
             self.slow_trajectory = []
+            self._snap_fast_to_slow_anchor(fast_before_snap)
             return
 
         valid = eigenvalues > eigenvalues.max().clamp_min(1e-12) * self.eigen_eps
@@ -604,39 +690,98 @@ class FSTTAAdapter(_AdapterDiagnostics):
             * basis
         ).sum(dim=0)
         slow_grad = slow_grad * reference_norm
+        self.last_slow_grad_norm = float(slow_grad.norm().item())
 
-        self.slow_anchor = self.slow_anchor - self.lr_slow * slow_grad
-        _copy_flat_to_params(self.slow_anchor, self.params)
+        anchor_before = self.slow_anchor.detach().clone()
+        self.slow_optimizer.zero_grad(set_to_none=True)
+        self.slow_anchor.grad = slow_grad.detach().clone()
+        self.slow_optimizer.step()
+        self.slow_optimizer.zero_grad(set_to_none=True)
+        anchor_after = self.slow_anchor.detach()
+        self.last_slow_step_norm = float(
+            (anchor_after - anchor_before).norm().item()
+        )
+
         self.slow_trajectory = []
         self.slow_update_count += 1
-        self._clear_optimizer_state()
+        self._snap_fast_to_slow_anchor(fast_before_snap)
 
     def reset(self):
         self.model.load_state_dict(self._model_state, strict=True)
         self.optimizer.load_state_dict(self._optim_state)
+        with torch.no_grad():
+            self.slow_anchor.copy_(_flatten_params(self.params))
+        self.slow_optimizer.load_state_dict(
+            deepcopy(self._slow_optim_state)
+        )
+        self.slow_optimizer.zero_grad(set_to_none=True)
         self.grad_buffer = []
         self.var_hist = None
         self.episode_count = 0
         self.slow_update_count = 0
-        self.slow_anchor = _flatten_params(self.params).clone()
         self.slow_trajectory = []
         self._init_diagnostics()
+        self._init_fstta_diagnostics()
 
     def episode_start(self):
         if self.episodic:
             self.reset()
         self.grad_buffer = []
+        # FAST variance statistics are intra-episode in FSTTA. The slow
+        # trajectory, anchor, and slow AdamW moments intentionally persist.
+        self.var_hist = None
         if self.reset_optimizer_each_episode:
             self._clear_optimizer_state()
+        else:
+            self._reset_fast_lr()
 
     def episode_end(self, episode_stats=None):
         self.episode_count += 1
         # Never combine gradients from two unrelated trajectories.
+        self.discarded_fast_gradients += len(self.grad_buffer)
         self.grad_buffer = []
         if self.use_slow:
             self.slow_trajectory.append(_flatten_params(self.params).clone())
             if len(self.slow_trajectory) == self.N:
                 self._slow_step()
+
+    def diagnostics(self):
+        output = super().diagnostics()
+        scale_count = max(1, self.lr_scale_count)
+        current = _flatten_params(self.params)
+        anchor = self.slow_anchor.detach()
+        output.update({
+            "fast_window": self.M,
+            "slow_window": self.N,
+            "slow_lr": self.lr_slow,
+            "fast_optimizer": self.optimizer.__class__.__name__,
+            "slow_optimizer": self.slow_optimizer.__class__.__name__,
+            "slow_attempts": self.slow_attempt_count,
+            "slow_skipped_updates": self.slow_skip_count,
+            "slow_pending_episodes": len(self.slow_trajectory),
+            "discarded_fast_gradients": self.discarded_fast_gradients,
+            "last_sigma": self.last_sigma,
+            "lr_scale_mean": self.lr_scale_sum / scale_count,
+            "lr_scale_min": (
+                self.lr_scale_min if self.lr_scale_count else 0.0
+            ),
+            "lr_scale_max": (
+                self.lr_scale_max if self.lr_scale_count else 0.0
+            ),
+            "lr_scale_lower_hits": self.lr_scale_lower_hits,
+            "lr_scale_upper_hits": self.lr_scale_upper_hits,
+            "last_slow_reference_norm": self.last_slow_reference_norm,
+            "last_slow_grad_norm": self.last_slow_grad_norm,
+            "last_slow_step_norm": self.last_slow_step_norm,
+            "last_slow_snap_norm": self.last_slow_snap_norm,
+            "relative_slow_anchor_drift": _relative_drift(
+                anchor, self._source_flat
+            ),
+            "relative_fast_to_slow_anchor": _relative_drift(
+                current, anchor
+            ),
+        })
+        return output
 
 
 class EAMAdapter(_AdapterDiagnostics):
@@ -1325,7 +1470,8 @@ def build_adapter(model, tta_cfg):
         def fvalue(key, default):
             return getattr(fstta_cfg, key, default) if fstta_cfg is not None else default
 
-        # FSTTA can use optimizer settings independently from Tent.
+        # These FSTTA optimizer settings apply to two independent optimizers:
+        # FAST policy parameters and the persistent SLOW parameter anchor.
         common["optimizer_name"] = str(fvalue("OPTIMIZER", "AdamW"))
         common["beta1"] = float(fvalue("BETA1", 0.9))
         common["beta2"] = float(fvalue("BETA2", 0.99))

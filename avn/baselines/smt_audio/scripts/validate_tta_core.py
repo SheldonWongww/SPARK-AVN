@@ -72,6 +72,16 @@ def test_fstta_episode_schedule():
         scope="last_k_ln",
         last_k=4,
     )
+    assert isinstance(adapter.optimizer, torch.optim.AdamW)
+    assert isinstance(adapter.slow_optimizer, torch.optim.AdamW)
+    slow_params = adapter.slow_optimizer.param_groups[0]["params"]
+    assert len(slow_params) == 1 and slow_params[0] is adapter.slow_anchor
+    fast_param_ids = {
+        id(param)
+        for group in adapter.optimizer.param_groups
+        for param in group["params"]
+    }
+    assert id(adapter.slow_anchor) not in fast_param_ids
     for _ in range(2):
         adapter.episode_start()
         for _ in range(4):
@@ -81,6 +91,11 @@ def test_fstta_episode_schedule():
     assert diagnostics["episodes"] == 2, diagnostics
     assert diagnostics["updates"] == 4, diagnostics
     assert diagnostics["slow_updates"] == 1, diagnostics
+    assert diagnostics["slow_optimizer"] == "AdamW", diagnostics
+    slow_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+    slow_step = slow_state["step"]
+    slow_step = slow_step.item() if torch.is_tensor(slow_step) else slow_step
+    assert slow_step == 1, slow_state
 
 
 if __name__ == "__main__":
