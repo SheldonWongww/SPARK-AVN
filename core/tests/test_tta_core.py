@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import unittest
 
 import torch
@@ -9,6 +10,7 @@ from navtta_core.tta.tta_core import (
     FEEDTTAAdapter,
     FSTTAAdapter,
     _concordant_grad_and_trace,
+    build_adapter,
     configure_tta_model,
 )
 
@@ -147,6 +149,123 @@ class TTACoreTest(unittest.TestCase):
             concordant.norm().item(), mean_grad.norm().item(), places=5
         )
 
+    def test_fstta_fast_gradient_modes_select_expected_values_and_trace(self):
+        grads = [
+            torch.tensor([1.0, 3.0]),
+            torch.tensor([3.0, 7.0]),
+            torch.tensor([5.0, 11.0]),
+        ]
+        expected = {
+            "concordant": _concordant_grad_and_trace(grads)[0],
+            "mean": torch.tensor([3.0, 7.0]),
+            "last": torch.tensor([5.0, 11.0]),
+        }
+        for mode, expected_grad in expected.items():
+            with self.subTest(mode=mode):
+                adapter = FSTTAAdapter(
+                    _TinyPolicy(), M=3, fast_grad_mode=mode,
+                    use_slow=False, last_k=1,
+                )
+                fast_grad, sigma = adapter._fast_grad_and_trace(grads)
+                torch.testing.assert_close(fast_grad, expected_grad)
+                torch.testing.assert_close(sigma, torch.tensor(20.0))
+
+    def test_fstta_all_fast_gradient_modes_update_every_m_steps(self):
+        for mode in ("concordant", "mean", "last"):
+            with self.subTest(mode=mode):
+                policy = _TinyPolicy()
+                adapter = FSTTAAdapter(
+                    policy, M=2, fast_grad_mode=mode, use_slow=False,
+                    last_k=1, max_grad_norm=10.0,
+                )
+                for step in range(1, 6):
+                    _, logits = _forward(policy, _inputs())
+                    adapter.adapt(logits)
+                    self.assertEqual(adapter.update_count, step // 2)
+                    self.assertEqual(len(adapter.grad_buffer), step % 2)
+
+    def test_fstta_disabled_fast_lr_scaler_records_unit_scale_and_sigma(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=2, use_fast_lr_scaler=False, use_slow=False,
+            lr_fast=2e-3, last_k=1, max_grad_norm=10.0,
+        )
+        for _ in range(2):
+            _, logits = _forward(policy, _inputs())
+            adapter.adapt(logits)
+
+        diagnostics = adapter.diagnostics()
+        self.assertGreater(diagnostics["last_sigma"], 0.0)
+        self.assertEqual(adapter.lr_scale_count, 1)
+        self.assertEqual(diagnostics["lr_scale_mean"], 1.0)
+        self.assertEqual(diagnostics["lr_scale_min"], 1.0)
+        self.assertEqual(diagnostics["lr_scale_max"], 1.0)
+        self.assertEqual(diagnostics["current_lr"], 2e-3)
+        self.assertEqual(adapter.optimizer.param_groups[0]["lr"], 2e-3)
+
+    def test_fstta_factory_reads_fast_controls_and_reports_diagnostics(self):
+        config = SimpleNamespace(
+            METHOD="fstta",
+            LR=1e-3,
+            LAST_K_LN=1,
+            FSTTA=SimpleNamespace(
+                FAST_GRAD_MODE="last",
+                USE_FAST_LR_SCALER=False,
+                USE_SLOW=False,
+                SLOW_OPTIMIZER="SGD",
+                SLOW_MOMENTUM=0.0,
+                RESET_SLOW_OPTIMIZER_EACH_WINDOW=True,
+            ),
+        )
+        adapter = build_adapter(_TinyPolicy(), config)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["fast_grad_mode"], "last")
+        self.assertFalse(diagnostics["use_fast_lr_scaler"])
+        self.assertIsInstance(adapter.slow_optimizer, torch.optim.SGD)
+        self.assertEqual(diagnostics["slow_momentum"], 0.0)
+        self.assertTrue(diagnostics["reset_slow_optimizer_each_window"])
+
+    def test_fstta_rejects_unknown_fast_gradient_mode(self):
+        with self.assertRaisesRegex(ValueError, "FAST_GRAD_MODE"):
+            FSTTAAdapter(
+                _TinyPolicy(), fast_grad_mode="sum", use_slow=False,
+                last_k=1,
+            )
+
+    def test_fstta_legacy_positional_arguments_keep_their_meaning(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(),
+            1e-3, 2e-3, 1, 2, 0.1, 0.95, 0.7, 0.9, 1.1,
+            1, False, True, True, "last_k_ln", 1,
+            "SGD", 0.25, 0.9, 0.99, 0.0, 2.0, True, 1e-5,
+        )
+
+        self.assertIsInstance(adapter.optimizer, torch.optim.SGD)
+        self.assertIsInstance(adapter.slow_optimizer, torch.optim.SGD)
+        self.assertEqual(adapter.slow_momentum, 0.25)
+        self.assertEqual(adapter.max_grad_norm, 2.0)
+        self.assertEqual(adapter.eigen_eps, 1e-5)
+
+    def test_fstta_legacy_config_inherits_fast_optimizer_for_slow(self):
+        config = SimpleNamespace(
+            METHOD="fstta",
+            LR=1e-3,
+            MOMENTUM=0.25,
+            LAST_K_LN=1,
+            FSTTA=SimpleNamespace(
+                OPTIMIZER="SGD",
+                USE_SLOW=False,
+            ),
+        )
+        adapter = build_adapter(_TinyPolicy(), config)
+
+        self.assertIsInstance(adapter.optimizer, torch.optim.SGD)
+        self.assertIsInstance(adapter.slow_optimizer, torch.optim.SGD)
+        self.assertEqual(adapter.slow_momentum, 0.25)
+        self.assertEqual(adapter.fast_grad_mode, "concordant")
+        self.assertTrue(adapter.use_fast_lr_scaler)
+        self.assertFalse(adapter.reset_slow_optimizer_each_window)
+
     def test_fstta_fast_and_slow_schedules_use_steps_and_episodes(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
@@ -186,6 +305,64 @@ class TTACoreTest(unittest.TestCase):
         self.assertTrue(fast_params.isdisjoint(slow_params))
         self.assertEqual(adapter.optimizer.param_groups[0]["lr"], 1e-3)
         self.assertEqual(adapter.slow_optimizer.param_groups[0]["lr"], 3e-3)
+
+    def test_fstta_slow_optimizer_supports_plain_sgd(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(), M=1, N=2, lr_fast=1e-3, lr_slow=3e-3,
+            last_k=1, max_grad_norm=10.0,
+            slow_optimizer_name="SGD", slow_momentum=0.0,
+        )
+
+        self.assertIsInstance(adapter.optimizer, torch.optim.AdamW)
+        self.assertIsInstance(adapter.slow_optimizer, torch.optim.SGD)
+        _run_nondegenerate_slow_window(adapter)
+        self.assertAlmostEqual(
+            adapter.last_slow_step_norm,
+            adapter.lr_slow * adapter.last_slow_grad_norm,
+            places=6,
+        )
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["slow_optimizer"], "SGD")
+        self.assertEqual(diagnostics["slow_momentum"], 0.0)
+        self.assertEqual(diagnostics["slow_optimizer_resets"], 0)
+
+    def test_fstta_can_reset_slow_adamw_moments_each_window(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(), M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+            reset_slow_optimizer_each_window=True,
+        )
+
+        _run_nondegenerate_slow_window(adapter)
+        first_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        self.assertEqual(_optimizer_step_value(first_state), 1.0)
+        _run_nondegenerate_slow_window(adapter, scale=0.025)
+        second_state = adapter.slow_optimizer.state[adapter.slow_anchor]
+        self.assertEqual(_optimizer_step_value(second_state), 1.0)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["slow_updates"], 2)
+        self.assertEqual(diagnostics["slow_optimizer_resets"], 2)
+        self.assertTrue(diagnostics["reset_slow_optimizer_each_window"])
+
+    def test_fstta_window_reset_clears_moments_for_degenerate_window(self):
+        adapter = FSTTAAdapter(
+            _TinyPolicy(), M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+            reset_slow_optimizer_each_window=True,
+        )
+        _run_nondegenerate_slow_window(adapter)
+        self.assertTrue(adapter.slow_optimizer.state)
+
+        anchor = adapter.slow_anchor.detach().clone()
+        adapter.slow_trajectory = [anchor.clone(), anchor.clone()]
+        adapter._slow_step()
+
+        self.assertFalse(adapter.slow_optimizer.state)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["slow_attempts"], 2)
+        self.assertEqual(diagnostics["slow_updates"], 1)
+        self.assertEqual(diagnostics["slow_skipped_updates"], 1)
+        self.assertEqual(diagnostics["slow_optimizer_resets"], 2)
 
     def test_fstta_slow_adamw_moments_persist_across_windows(self):
         adapter = FSTTAAdapter(

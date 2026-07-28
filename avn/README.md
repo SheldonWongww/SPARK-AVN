@@ -117,6 +117,17 @@ same arguments plus `--resume` after ensuring no old worker is still running.
 Signal interruption deliberately retains `.scheduler.lock`; inspect its owner,
 then remove `owner` and the empty lock directory before resuming.
 
+Run all four FSTTA mechanism-exploration suites on SMT+Audio single-source
+(92 jobs total):
+
+```bash
+python3 avn/scripts/run_fstta_explorations.py all --gpus 0,1,2,3 --jobs-per-gpu 5
+```
+
+The selectable suites are `slow_boundary` (40 jobs), `fast_geometry` (24),
+`slow_optimizer` (12), and `q_scaler` (16); `all` schedules all 92 jobs. Logs
+are written under `avn/results/logs/fstta_exploration/<batch-id>/`.
+
 After freezing the Tent configuration, run the two multi-source main-table
 jobs concurrently on SMT+Audio and ENMuS:
 

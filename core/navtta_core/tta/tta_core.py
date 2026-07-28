@@ -472,6 +472,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
         max_grad_norm=1.0,
         reset_optimizer_each_episode=True,
         eigen_eps=1e-6,
+        fast_grad_mode="concordant",
+        use_fast_lr_scaler=True,
+        slow_optimizer_name=None,
+        slow_momentum=None,
+        reset_slow_optimizer_each_window=False,
     ):
         if int(steps) != 1:
             raise ValueError("FSTTA supports one policy forward/update per action")
@@ -481,6 +486,14 @@ class FSTTAAdapter(_AdapterDiagnostics):
             raise ValueError(
                 "FSTTA slow adaptation requires TTA.EPISODIC=False so its "
                 "trajectory and slow optimizer can persist across episodes"
+            )
+        fast_grad_mode = str(fast_grad_mode).lower()
+        valid_fast_grad_modes = ("concordant", "mean", "last")
+        if fast_grad_mode not in valid_fast_grad_modes:
+            raise ValueError(
+                "Unknown FSTTA.FAST_GRAD_MODE {!r}; expected one of {}".format(
+                    fast_grad_mode, valid_fast_grad_modes
+                )
             )
         self.model = model
         self.M = max(1, int(M))
@@ -494,6 +507,14 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.lr_slow = float(lr_slow)
         self.episodic = bool(episodic)
         self.use_slow = bool(use_slow)
+        self.fast_grad_mode = fast_grad_mode
+        self.use_fast_lr_scaler = bool(use_fast_lr_scaler)
+        self.slow_momentum = float(
+            momentum if slow_momentum is None else slow_momentum
+        )
+        self.reset_slow_optimizer_each_window = bool(
+            reset_slow_optimizer_each_window
+        )
         self.max_grad_norm = float(max_grad_norm)
         self.reset_optimizer_each_episode = bool(reset_optimizer_each_episode)
         self.eigen_eps = float(eigen_eps)
@@ -514,20 +535,22 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self._optim_state = deepcopy(self.optimizer.state_dict())
         self._source_flat = _flatten_params(self.params).clone()
 
-        # Keep an independent, persistent optimizer for the SLOW parameter
-        # anchor.  The released FSTTA implementation uses a separate AdamW
-        # optimizer for this stage; treating LR_SLOW as a raw interpolation
-        # coefficient makes the paper's learning-rate scale inapplicable.
+        # Keep an independent optimizer for the SLOW parameter anchor. The
+        # default follows the released FSTTA implementation's persistent
+        # AdamW, while explicit ablations can reset its moments per window or
+        # use the paper equation's plain SGD step.
         # A single flat Parameter is element-wise equivalent to optimizing the
         # selected normalization tensors with one shared optimizer group, and
         # avoids retaining a second full policy on the GPU.
         self.slow_anchor = nn.Parameter(
             self._source_flat.detach().clone(), requires_grad=True
         )
+        if slow_optimizer_name is None:
+            slow_optimizer_name = optimizer_name
         self._slow_optimizer_args = dict(
-            name=optimizer_name,
+            name=slow_optimizer_name,
             lr=self.lr_slow,
-            momentum=momentum,
+            momentum=self.slow_momentum,
             beta1=beta1,
             beta2=beta2,
             weight_decay=weight_decay,
@@ -560,6 +583,7 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.last_slow_grad_norm = 0.0
         self.last_slow_step_norm = 0.0
         self.last_slow_snap_norm = 0.0
+        self.slow_optimizer_reset_count = 0
 
     def _record_lr_scale(self, scale, sigma):
         scale = float(scale)
@@ -584,6 +608,20 @@ class FSTTAAdapter(_AdapterDiagnostics):
             group["lr"] = self.base_lr
         self.current_lr = self.base_lr
 
+    def _fast_grad_and_trace(self, grad_list):
+        if self.fast_grad_mode == "concordant":
+            return _concordant_grad_and_trace(grad_list, self.eigen_eps)
+
+        gradients = torch.stack(grad_list, dim=0)
+        mean_grad = gradients.mean(dim=0)
+        if len(grad_list) < 2:
+            sigma = mean_grad.new_zeros(())
+        else:
+            centered = gradients - mean_grad.unsqueeze(0)
+            sigma = centered.square().sum() / float(len(grad_list) - 1)
+        fast_grad = mean_grad if self.fast_grad_mode == "mean" else gradients[-1]
+        return fast_grad, sigma
+
     @torch.no_grad()
     def _snap_fast_to_slow_anchor(self, fast_before_snap=None):
         if fast_before_snap is None:
@@ -606,9 +644,7 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self._record_loss(loss)
 
         if len(self.grad_buffer) == self.M:
-            concordant, sigma = _concordant_grad_and_trace(
-                self.grad_buffer, self.eigen_eps
-            )
+            fast_grad, sigma = self._fast_grad_and_trace(self.grad_buffer)
             if self.var_hist is None:
                 scale = min(self.b, max(self.a, 1.0 + self.tau))
                 self.var_hist = sigma.detach()
@@ -619,12 +655,14 @@ class FSTTAAdapter(_AdapterDiagnostics):
                     self.rho * self.var_hist
                     + (1.0 - self.rho) * sigma.detach()
                 )
+            if not self.use_fast_lr_scaler:
+                scale = 1.0
             self._record_lr_scale(scale, sigma)
             for group in self.optimizer.param_groups:
                 group["lr"] = self.current_lr
 
             self.optimizer.zero_grad(set_to_none=True)
-            _copy_flat_to_grads(concordant, self.params)
+            _copy_flat_to_grads(fast_grad, self.params)
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 self.params, self.max_grad_norm
             )
@@ -640,6 +678,12 @@ class FSTTAAdapter(_AdapterDiagnostics):
     @torch.no_grad()
     def _slow_step(self):
         self.slow_attempt_count += 1
+        if self.reset_slow_optimizer_each_window:
+            # A trajectory window is an independent SLOW optimization
+            # problem in this ablation. Clear moments even when its geometry
+            # later proves degenerate and no parameter step can be taken.
+            self.slow_optimizer.state.clear()
+            self.slow_optimizer_reset_count += 1
         self.last_slow_reference_norm = 0.0
         self.last_slow_grad_norm = 0.0
         self.last_slow_step_norm = 0.0
@@ -751,11 +795,21 @@ class FSTTAAdapter(_AdapterDiagnostics):
         current = _flatten_params(self.params)
         anchor = self.slow_anchor.detach()
         output.update({
+            "fast_lr": self.base_lr,
             "fast_window": self.M,
+            "fast_grad_mode": self.fast_grad_mode,
+            "use_fast_lr_scaler": self.use_fast_lr_scaler,
+            "use_slow": self.use_slow,
             "slow_window": self.N,
             "slow_lr": self.lr_slow,
+            "q": self.q,
             "fast_optimizer": self.optimizer.__class__.__name__,
             "slow_optimizer": self.slow_optimizer.__class__.__name__,
+            "slow_momentum": self.slow_momentum,
+            "reset_slow_optimizer_each_window": (
+                self.reset_slow_optimizer_each_window
+            ),
+            "slow_optimizer_resets": self.slow_optimizer_reset_count,
             "slow_attempts": self.slow_attempt_count,
             "slow_skipped_updates": self.slow_skip_count,
             "slow_pending_episodes": len(self.slow_trajectory),
@@ -1470,8 +1524,9 @@ def build_adapter(model, tta_cfg):
         def fvalue(key, default):
             return getattr(fstta_cfg, key, default) if fstta_cfg is not None else default
 
-        # These FSTTA optimizer settings apply to two independent optimizers:
-        # FAST policy parameters and the persistent SLOW parameter anchor.
+        # FAST and SLOW own independent optimizers. The defaults preserve the
+        # released-code-style persistent AdamW semantics for both branches;
+        # explicit exploration settings may change only the SLOW optimizer.
         common["optimizer_name"] = str(fvalue("OPTIMIZER", "AdamW"))
         common["beta1"] = float(fvalue("BETA1", 0.9))
         common["beta2"] = float(fvalue("BETA2", 0.99))
@@ -1488,6 +1543,21 @@ def build_adapter(model, tta_cfg):
             a=float(fvalue("A", 0.9)),
             b=float(fvalue("B", 1.1)),
             use_slow=bool(fvalue("USE_SLOW", True)),
+            fast_grad_mode=str(fvalue("FAST_GRAD_MODE", "concordant")),
+            use_fast_lr_scaler=bool(
+                fvalue("USE_FAST_LR_SCALER", True)
+            ),
+            slow_optimizer_name=(
+                str(fvalue("SLOW_OPTIMIZER", "")).strip() or None
+            ),
+            slow_momentum=(
+                None
+                if float(fvalue("SLOW_MOMENTUM", -1.0)) < 0.0
+                else float(fvalue("SLOW_MOMENTUM", -1.0))
+            ),
+            reset_slow_optimizer_each_window=bool(
+                fvalue("RESET_SLOW_OPTIMIZER_EACH_WINDOW", False)
+            ),
             reset_optimizer_each_episode=bool(
                 fvalue("RESET_OPTIMIZER_EACH_EPISODE", True)
             ),

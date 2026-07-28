@@ -154,12 +154,19 @@ _C.TTA.FSTTA.TAU = 0.7
 _C.TTA.FSTTA.A = 0.9
 _C.TTA.FSTTA.B = 1.1
 _C.TTA.FSTTA.USE_SLOW = True
-# Used by independent FAST and persistent SLOW optimizers.
+_C.TTA.FSTTA.FAST_GRAD_MODE = "concordant"
+_C.TTA.FSTTA.USE_FAST_LR_SCALER = True
+# FAST optimizer. The SLOW anchor has its own persistent optimizer below.
 _C.TTA.FSTTA.OPTIMIZER = "AdamW"
 _C.TTA.FSTTA.BETA1 = 0.9
 _C.TTA.FSTTA.BETA2 = 0.99
 _C.TTA.FSTTA.WEIGHT_DECAY = 0.0
+# Empty/-1 preserve the historical behavior of inheriting the FAST optimizer
+# and TTA.MOMENTUM. Exploration launchers set both fields explicitly.
+_C.TTA.FSTTA.SLOW_OPTIMIZER = ""
+_C.TTA.FSTTA.SLOW_MOMENTUM = -1.0
 _C.TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE = True
+_C.TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW = False
 _C.TTA.FSTTA.EIGEN_EPS = 1e-6
 _C.TTA.EAM = CN()
 _C.TTA.EAM.LR = 1e-5

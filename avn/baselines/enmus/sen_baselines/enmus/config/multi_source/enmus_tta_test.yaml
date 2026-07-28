@@ -38,11 +38,16 @@ TTA:
     A: 0.9
     B: 1.1
     USE_SLOW: True
+    FAST_GRAD_MODE: "concordant"
+    USE_FAST_LR_SCALER: True
     OPTIMIZER: "AdamW"
     BETA1: 0.9
     BETA2: 0.99
     WEIGHT_DECAY: 0.0
+    SLOW_OPTIMIZER: "AdamW"
+    SLOW_MOMENTUM: 0.0
     RESET_OPTIMIZER_EACH_EPISODE: True
+    RESET_SLOW_OPTIMIZER_EACH_WINDOW: False
     EIGEN_EPS: 1.0e-6
   EAM:
     LR: 1.0e-5

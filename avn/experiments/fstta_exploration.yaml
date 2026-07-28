@@ -1,0 +1,175 @@
+experiment_id: fstta_exploration_v1
+status: planned
+purpose: >-
+  Resolve the stable slow-learning boundary and separate FSTTA fast-gradient,
+  optimizer-state, recency-weight, and learning-rate-scaler mechanisms on the
+  fixed SMT+Audio single-source AVN development stream.
+
+task: avn
+benchmark: mp3d
+model: smt_audio
+source_setting: single_source
+method: fstta
+action_selection: sample
+
+suites:
+  slow_boundary:
+    purpose: >-
+      Extend the stable slow-learning boundary below 1e-4 and reduce slow
+      update frequency, with one FAST-only control for every (fast LR, M) pair.
+    slow_enabled:
+      search_space:
+        TTA.LR: [1.0e-8, 3.0e-7]
+        TTA.FSTTA.M: [8, 16]
+        TTA.FSTTA.LR_SLOW: [1.0e-5, 3.0e-5, 1.0e-4]
+        TTA.FSTTA.N: [8, 16, 32]
+      TTA.FSTTA.USE_SLOW: true
+      job_count: 36
+    fast_only_controls:
+      search_space:
+        TTA.LR: [1.0e-8, 3.0e-7]
+        TTA.FSTTA.M: [8, 16]
+      inactive_slow_controls:
+        TTA.FSTTA.LR_SLOW: 1.0e-4
+        TTA.FSTTA.N: 8
+      TTA.FSTTA.USE_SLOW: false
+      job_count: 4
+    job_count: 40
+
+  fast_geometry:
+    purpose: >-
+      Separate the effect of FAST window/update frequency from concordant,
+      arithmetic-mean, and last-gradient aggregation while the slow branch is off.
+    search_space:
+      TTA.LR: [1.0e-8, 3.0e-7]
+      TTA.FSTTA.M: [2, 4, 8, 16]
+      TTA.FSTTA.FAST_GRAD_MODE: [concordant, mean, last]
+    fixed:
+      TTA.FSTTA.USE_SLOW: false
+      TTA.FSTTA.USE_FAST_LR_SCALER: true
+    job_count: 24
+
+  slow_optimizer:
+    purpose: >-
+      Test whether persistent AdamW state is responsible for cumulative slow
+      drift by comparing it with window-reset AdamW and zero-momentum SGD.
+    fixed:
+      TTA.LR: 3.0e-7
+      TTA.FSTTA.M: 16
+      TTA.FSTTA.Q: 0.1
+      TTA.FSTTA.USE_FAST_LR_SCALER: true
+    search_space:
+      TTA.FSTTA.LR_SLOW: [3.0e-5, 1.0e-4]
+      TTA.FSTTA.N: [8, 16]
+    variants:
+      - name: persistent_adamw
+        TTA.FSTTA.SLOW_OPTIMIZER: AdamW
+        TTA.FSTTA.SLOW_MOMENTUM: 0.0
+        TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW: false
+      - name: window_reset_adamw
+        TTA.FSTTA.SLOW_OPTIMIZER: AdamW
+        TTA.FSTTA.SLOW_MOMENTUM: 0.0
+        TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW: true
+      - name: plain_sgd
+        TTA.FSTTA.SLOW_OPTIMIZER: SGD
+        TTA.FSTTA.SLOW_MOMENTUM: 0.0
+        TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW: false
+    interpretation: >-
+      Persistent versus window-reset AdamW isolates optimizer-state carryover.
+      Zero-momentum SGD probes the paper-equation optimizer semantics, but its
+      nominal learning rate is not an effective-step-size match to AdamW and
+      must not be used alone to attribute an effect to momentum.
+    job_count: 12
+
+  q_scaler:
+    purpose: >-
+      Factor slow-trajectory recency against the independent FAST learning-rate
+      scaler at the selected fast configuration and original slow-LR boundary.
+    search_space:
+      TTA.FSTTA.Q: [0.1, 0.5, 0.9, 0.99]
+      TTA.FSTTA.N: [8, 16]
+      TTA.FSTTA.USE_FAST_LR_SCALER: [true, false]
+    fixed:
+      TTA.LR: 3.0e-7
+      TTA.FSTTA.M: 16
+      TTA.FSTTA.LR_SLOW: 1.0e-4
+    job_count: 16
+
+  all:
+    composition: [slow_boundary, fast_geometry, slow_optimizer, q_scaler]
+    job_count: 92
+    note: >-
+      Cross-suite repetitions are intentional paired controls. The all suite
+      concatenates all four plans and assigns a unique run tag to every job.
+
+job_count: 92
+
+fixed:
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  EVAL.ACTION_SELECTION: sample
+  TTA.NORM_SCOPE: last_k_ln
+  TTA.LAST_K_LN: 4
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  TTA.RESET_BN_STATS: true
+  TTA.MAX_GRAD_NORM: 1.0
+  TTA.FSTTA.Q: 0.1
+  TTA.FSTTA.RHO: 0.95
+  TTA.FSTTA.TAU: 0.7
+  TTA.FSTTA.A: 0.9
+  TTA.FSTTA.B: 1.1
+  TTA.FSTTA.USE_SLOW: true
+  TTA.FSTTA.FAST_GRAD_MODE: concordant
+  TTA.FSTTA.USE_FAST_LR_SCALER: true
+  TTA.FSTTA.OPTIMIZER: AdamW
+  TTA.FSTTA.BETA1: 0.9
+  TTA.FSTTA.BETA2: 0.99
+  TTA.FSTTA.WEIGHT_DECAY: 0.0
+  TTA.FSTTA.SLOW_OPTIMIZER: AdamW
+  TTA.FSTTA.SLOW_MOMENTUM: 0.0
+  TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE: true
+  TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW: false
+  TTA.FSTTA.EIGEN_EPS: 1.0e-6
+  TEST_EPISODE_COUNT: 2000
+  seed: 0
+
+optimizer_protocol:
+  fast: AdamW over the selected normalization parameters
+  fast_episode_boundary: clear FAST optimizer moments only
+  slow_default: independent AdamW over the slow anchor
+  slow_default_boundary: preserve slow optimizer moments across N-episode windows
+
+launcher: avn/scripts/run_fstta_explorations.py
+log_root: avn/results/logs/fstta_exploration
+
+reported_metrics:
+  - success
+  - spl
+  - softspl
+  - sna
+  - na
+  - distance_to_goal
+  - normalized_distance_to_goal
+
+selection_protocol:
+  primary_metric: spl
+  secondary_metric: success
+  reject_on_numerical_failure: true
+  require_no_late_stream_collapse: true
+  late_stream_risk_heuristic: >-
+    Reject for development selection when mean SR over the final four
+    50-episode diagnostic windows is below 25%, or more than 15 percentage
+    points below whole-stream SR. This is a screening heuristic, not an FSTTA
+    paper metric or evidence of a specific causal failure mode.
+  note: >-
+    Treat each declared suite as one complete mechanism experiment. Do not
+    alter its search space in response to partial results from the same batch.
+
+data_protocol:
+  role: development
+  note: >-
+    These suites reuse the seed-0 development stream and are exploratory. Any
+    selected configuration must be frozen before confirmatory evaluation. No
+    Source job is included in the 92 FSTTA jobs; a same-commit Source run is
+    required before making a formal adaptation-gain claim.
