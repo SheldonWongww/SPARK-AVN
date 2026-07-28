@@ -1,3 +1,4 @@
+import random
 import unittest
 
 import torch
@@ -83,6 +84,7 @@ def _forward(policy, inputs):
 
 class TTACoreTest(unittest.TestCase):
     def setUp(self):
+        random.seed(7)
         torch.manual_seed(7)
 
     def test_layernorm_scope_variants_select_exact_modules(self):
@@ -164,27 +166,28 @@ class TTACoreTest(unittest.TestCase):
         self.assertEqual(adapter.episode_update_count, 1)
         self.assertEqual(adapter.skipped_updates_by_budget, 3)
 
-    def test_eam_warms_replay_then_updates_auxiliary_branch_only(self):
+    def test_eam_current_only_then_replay_updates_auxiliary_branch_only(self):
         policy = _TinyPolicy()
         source_before = [p.detach().clone() for p in policy.parameters()]
         adapter = EAMAdapter(
             policy, batch_size=2, memory_size=4, lr=1e-2,
+            trainable_prefixes=("net.norms", "action_distribution"),
         )
         self.assertEqual(adapter.update_interval, 1)
-        self.assertEqual(adapter.param_scope, "all")
+        self.assertEqual(adapter.param_scope, "module_prefixes")
         self.assertEqual(adapter.max_grad_norm, 0.0)
-        self.assertEqual(
-            adapter.names,
-            [name for name, _ in adapter.aux_model.named_parameters()],
-        )
         aux_before = [p.detach().clone() for p in adapter.params]
-        for _ in range(2):
+        adapter.episode_start()
+        for step in range(2):
             inputs = _inputs()
+            adapter.before_inference(policy_inputs=inputs)
             with torch.no_grad():
-                features, logits = _forward(policy, inputs)
+                _, logits = _forward(policy, inputs)
             adapter.prepare_action(logits, policy_inputs=inputs)
-            adapter.adapt(logits, policy_inputs=inputs)
-        self.assertEqual(adapter.update_count, 1)
+            adapter.adapt(logits, action=torch.tensor([[0]]))
+            self.assertEqual(adapter.update_count, step + 1)
+        adapter.episode_end()
+        self.assertEqual(adapter.update_count, 2)
         self.assertTrue(any(
             not torch.equal(before, after)
             for before, after in zip(aux_before, adapter.params)
@@ -195,7 +198,11 @@ class TTACoreTest(unittest.TestCase):
         ))
 
     def test_eam_applies_paper_confidence_gates(self):
-        adapter = EAMAdapter(_TinyPolicy(), batch_size=1)
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
         source_logits = torch.tensor([[2.0, 1.0, 0.0, -1.0]])
         confident_aux = torch.tensor([[10.0, -10.0, -10.0, -10.0]])
         combined, use_aux = adapter._combine(source_logits, confident_aux)
@@ -211,11 +218,23 @@ class TTACoreTest(unittest.TestCase):
 
     def test_eam_rejects_high_entropy_source_sample(self):
         policy = _TinyPolicy()
-        adapter = EAMAdapter(policy, batch_size=1, memory_size=4, lr=1e-2)
+        adapter = EAMAdapter(
+            policy,
+            batch_size=1,
+            memory_size=4,
+            lr=1e-2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        adapter.episode_start()
         inputs = _inputs()
         uncertain_source = torch.zeros(1, 4)
-        adapter.prepare_action(uncertain_source, policy_inputs=inputs)
-        adapter.adapt(uncertain_source, policy_inputs=inputs)
+        adapter.before_inference(policy_inputs=inputs)
+        adapter.prepare_action(
+            uncertain_source,
+            policy_inputs=inputs,
+        )
+        adapter.adapt(uncertain_source, action=torch.tensor([[0]]))
+        adapter.episode_end()
         self.assertEqual(adapter.update_count, 0)
         self.assertEqual(adapter.accepted_samples, 0)
         self.assertEqual(len(adapter.replay), 1)

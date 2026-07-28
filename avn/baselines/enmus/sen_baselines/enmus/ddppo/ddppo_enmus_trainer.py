@@ -849,6 +849,9 @@ class DDPPOTrainer(PPOTrainer):
                         em_masks if ppo_cfg.use_external_memory else None
                     ),
                 }
+                # EAM Algorithm 3 updates/samples its replay buffer before the
+                # original and auxiliary policy inference for this action.
+                tta_adapter.before_inference(policy_inputs=policy_inputs)
                 with torch.set_grad_enabled(tta_adapter.requires_source_grad):
                     features, test_recurrent_hidden_states, test_em_features = self.actor_critic.net(
                         policy_inputs["observations"],

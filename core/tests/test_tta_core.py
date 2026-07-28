@@ -1,5 +1,7 @@
 from types import SimpleNamespace
+import random
 import unittest
+from unittest import mock
 
 import torch
 import torch.nn as nn
@@ -58,6 +60,34 @@ class _TinyPolicy(nn.Module):
         return self.action_distribution(features)
 
 
+class _ReplayStateEncoder(nn.Module):
+    def __init__(self, width):
+        super().__init__()
+        self.fusion_encoder = nn.Linear(width, width)
+        self.transformer = nn.Linear(width, width)
+
+
+class _ReplayNet(nn.Module):
+    def __init__(self, width=8):
+        super().__init__()
+        self.visual_encoder = nn.Linear(width, width)
+        self.smt_state_encoder = _ReplayStateEncoder(width)
+
+    def forward(self, observations, hidden, prev_actions, masks, *unused):
+        memory_feature = self.visual_encoder(observations["x"])
+        fused = self.smt_state_encoder.fusion_encoder(memory_feature)
+        features = self.smt_state_encoder.transformer(fused)
+        return features, hidden, memory_feature
+
+
+class _ReplayPolicy(nn.Module):
+    def __init__(self, width=8, actions=4):
+        super().__init__()
+        self.net = _ReplayNet(width)
+        self.action_distribution = _DistributionHead(width, actions)
+        self.critic = nn.Linear(width, 1)
+
+
 def _inputs(width=8):
     return {
         "observations": {"x": torch.randn(1, width)},
@@ -109,6 +139,7 @@ def _optimizer_step_value(state):
 
 class TTACoreTest(unittest.TestCase):
     def setUp(self):
+        random.seed(7)
         torch.manual_seed(7)
 
     def test_layernorm_scope_variants_select_exact_modules(self):
@@ -512,27 +543,35 @@ class TTACoreTest(unittest.TestCase):
                 _TinyPolicy(), episodic=True, use_slow=True, last_k=1
             )
 
-    def test_eam_warms_replay_then_updates_auxiliary_branch_only(self):
+    def test_eam_current_only_then_replay_updates_auxiliary_branch_only(self):
         policy = _TinyPolicy()
         source_before = [p.detach().clone() for p in policy.parameters()]
         adapter = EAMAdapter(
             policy, batch_size=2, memory_size=4, lr=1e-2,
+            trainable_prefixes=("net.norms", "action_distribution"),
         )
         self.assertEqual(adapter.update_interval, 1)
-        self.assertEqual(adapter.param_scope, "all")
+        self.assertEqual(adapter.param_scope, "module_prefixes")
         self.assertEqual(adapter.max_grad_norm, 0.0)
-        self.assertEqual(
-            adapter.names,
-            [name for name, _ in adapter.aux_model.named_parameters()],
-        )
+        self.assertTrue(all(not name.startswith("critic.") for name in adapter.names))
         aux_before = [p.detach().clone() for p in adapter.params]
-        for _ in range(2):
+        adapter.episode_start()
+        for step in range(2):
             inputs = _inputs()
+            adapter.before_inference(policy_inputs=inputs)
             with torch.no_grad():
-                features, logits = _forward(policy, inputs)
+                _, logits = _forward(policy, inputs)
             adapter.prepare_action(logits, policy_inputs=inputs)
-            adapter.adapt(logits, policy_inputs=inputs)
-        self.assertEqual(adapter.update_count, 1)
+            adapter.adapt(logits, action=torch.tensor([[0]]))
+            # Strict Algorithm 3: when m < K, B=x still reaches Model Update.
+            self.assertEqual(adapter.update_count, step + 1)
+        adapter.episode_end()
+        self.assertEqual(adapter.update_count, 2)
+        self.assertEqual(adapter.seen_samples, 2)
+        self.assertEqual(len(adapter.replay), 2)
+        self.assertEqual(adapter.update_attempt_count, 2)
+        self.assertEqual(adapter.current_only_batches, 1)
+        self.assertEqual(adapter.replayed_step_count, 3)
         self.assertTrue(any(
             not torch.equal(before, after)
             for before, after in zip(aux_before, adapter.params)
@@ -543,7 +582,11 @@ class TTACoreTest(unittest.TestCase):
         ))
 
     def test_eam_applies_paper_confidence_gates(self):
-        adapter = EAMAdapter(_TinyPolicy(), batch_size=1)
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
         source_logits = torch.tensor([[2.0, 1.0, 0.0, -1.0]])
         confident_aux = torch.tensor([[10.0, -10.0, -10.0, -10.0]])
         combined, use_aux = adapter._combine(source_logits, confident_aux)
@@ -557,16 +600,443 @@ class TTACoreTest(unittest.TestCase):
         self.assertFalse(bool(use_aux.item()))
         torch.testing.assert_close(source_only.exp(), source_logits.softmax(dim=-1))
 
+    def test_eam_identical_initial_branches_preserve_source_distribution(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+        adapter.before_inference(policy_inputs=inputs)
+        with torch.no_grad():
+            _, source_logits = _forward(policy, inputs)
+        combined = adapter.prepare_action(
+            source_logits,
+            policy_inputs=inputs,
+        )
+        torch.testing.assert_close(
+            combined.exp(), source_logits.softmax(dim=-1)
+        )
+        adapter.adapt(source_logits, action=torch.tensor([[0]]))
+
     def test_eam_rejects_high_entropy_source_sample(self):
         policy = _TinyPolicy()
-        adapter = EAMAdapter(policy, batch_size=1, memory_size=4, lr=1e-2)
+        adapter = EAMAdapter(
+            policy, batch_size=1, memory_size=4, lr=1e-2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        adapter.episode_start()
         inputs = _inputs()
         uncertain_source = torch.zeros(1, 4)
-        adapter.prepare_action(uncertain_source, policy_inputs=inputs)
-        adapter.adapt(uncertain_source, policy_inputs=inputs)
+        adapter.before_inference(policy_inputs=inputs)
+        adapter.prepare_action(
+            uncertain_source,
+            policy_inputs=inputs,
+        )
+        adapter.adapt(uncertain_source, action=torch.tensor([[0]]))
+        adapter.episode_end()
         self.assertEqual(adapter.update_count, 0)
         self.assertEqual(adapter.accepted_samples, 0)
         self.assertEqual(len(adapter.replay), 1)
+        self.assertEqual(adapter.update_attempt_count, 1)
+        self.assertEqual(adapter.no_reliable_update_count, 1)
+
+    def test_eam_explicit_scope_freezes_pretransformer_and_critic(self):
+        policy = _ReplayPolicy()
+        with torch.no_grad():
+            policy.action_distribution.linear.bias.copy_(
+                torch.tensor([5.0, 0.0, 0.0, 0.0])
+            )
+        adapter = EAMAdapter(
+            policy,
+            batch_size=1,
+            trainable_prefixes=(
+                "net.smt_state_encoder.transformer",
+                "action_distribution",
+            ),
+        )
+        expected = {
+            "net.smt_state_encoder.transformer.weight",
+            "net.smt_state_encoder.transformer.bias",
+            "action_distribution.linear.weight",
+            "action_distribution.linear.bias",
+        }
+        self.assertEqual(set(adapter.names), expected)
+        trainable = {
+            name for name, parameter in adapter.aux_model.named_parameters()
+            if parameter.requires_grad
+        }
+        self.assertEqual(trainable, expected)
+        self.assertFalse(adapter.aux_model.net.visual_encoder.weight.requires_grad)
+        self.assertFalse(
+            adapter.aux_model.net.smt_state_encoder.fusion_encoder.weight.requires_grad
+        )
+        self.assertFalse(adapter.aux_model.critic.weight.requires_grad)
+
+        visual_before = adapter.aux_model.net.visual_encoder.weight.detach().clone()
+        fusion_before = (
+            adapter.aux_model.net.smt_state_encoder.fusion_encoder.weight
+            .detach().clone()
+        )
+        inputs = _inputs()
+        adapter.before_inference(policy_inputs=inputs)
+        with torch.no_grad():
+            _, logits = _forward(policy, inputs)
+        adapter.prepare_action(logits, policy_inputs=inputs)
+        action = torch.tensor([[2]])
+        adapter.adapt(logits, action=action)
+        self.assertEqual(adapter.update_count, 1)
+        torch.testing.assert_close(
+            adapter.aux_model.net.visual_encoder.weight, visual_before
+        )
+        torch.testing.assert_close(
+            adapter.aux_model.net.smt_state_encoder.fusion_encoder.weight,
+            fusion_before,
+        )
+        self.assertIsNone(adapter.aux_model.net.visual_encoder.weight.grad)
+        self.assertIsNone(
+            adapter.aux_model.net.smt_state_encoder.fusion_encoder.weight.grad
+        )
+
+    def test_eam_stores_each_action_as_an_independent_replay_sample(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=4,
+            memory_size=4,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        adapter.episode_start()
+        expected_actions = []
+        for step in range(3):
+            inputs = _inputs()
+            adapter.before_inference(policy_inputs=inputs)
+            with torch.no_grad():
+                _, logits = _forward(policy, inputs)
+            adapter.prepare_action(
+                logits,
+                policy_inputs=inputs,
+            )
+            action = torch.tensor([[step % 4]])
+            expected_actions.append(action)
+            adapter.adapt(logits, action=action)
+        adapter.episode_end()
+
+        self.assertEqual(adapter.action_steps, 3)
+        self.assertEqual(adapter.seen_samples, 3)
+        self.assertEqual(len(adapter.replay), 3)
+        self.assertTrue(all(
+            "policy_inputs" in entry and "steps" not in entry
+            for entry in adapter.replay
+        ))
+        for entry, action in zip(adapter.replay, expected_actions):
+            torch.testing.assert_close(entry["action"], action)
+        self.assertEqual(adapter.update_count, 3)
+        self.assertEqual(adapter.current_only_batches, 3)
+
+    def test_eam_update_interval_counts_action_steps(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy, batch_size=1, memory_size=2, update_interval=2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        adapter.episode_start()
+        for step in range(2):
+            inputs = _inputs()
+            adapter.before_inference(policy_inputs=inputs)
+            with torch.no_grad():
+                _, logits = _forward(policy, inputs)
+            adapter.prepare_action(
+                logits,
+                policy_inputs=inputs,
+            )
+            adapter.adapt(logits, action=torch.tensor([[0]]))
+            self.assertEqual(adapter.update_count, step)
+        adapter.episode_end()
+
+    def test_eam_rejects_invalid_or_episodic_replay_configs(self):
+        with self.assertRaisesRegex(ValueError, "MEMORY_SIZE"):
+            EAMAdapter(
+                _TinyPolicy(), memory_size=0,
+                trainable_prefixes=("action_distribution",),
+            )
+        with self.assertRaisesRegex(ValueError, "BATCH_SIZE"):
+            EAMAdapter(
+                _TinyPolicy(), batch_size=0,
+                trainable_prefixes=("action_distribution",),
+            )
+        with self.assertRaisesRegex(ValueError, "EPISODIC=False"):
+            EAMAdapter(
+                _TinyPolicy(),
+                episodic=True,
+                trainable_prefixes=("action_distribution",),
+            )
+        with self.assertRaisesRegex(ValueError, "module_prefixes"):
+            EAMAdapter(_TinyPolicy(), param_scope="all")
+
+    def test_eam_requires_buffer_hook_before_source_forward(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+        with torch.no_grad():
+            _, logits = _forward(policy, inputs)
+        with self.assertRaisesRegex(RuntimeError, "before_inference"):
+            adapter.prepare_action(logits, policy_inputs=inputs)
+        self.assertEqual(adapter.seen_samples, 0)
+        self.assertEqual(adapter.replay, [])
+
+    def test_eam_snapshots_the_exact_step_state_on_cpu(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+        inputs["ext_memory"] = torch.randn(3, 1, 8)
+        inputs["ext_memory_masks"] = torch.tensor([[1.0, 1.0, 0.0]])
+        expected_x = inputs["observations"]["x"].clone()
+        expected_memory = inputs["ext_memory"].clone()
+        expected_masks = inputs["ext_memory_masks"].clone()
+        adapter.before_inference(policy_inputs=inputs)
+        with torch.no_grad():
+            _, logits = _forward(policy, inputs)
+        adapter.prepare_action(logits, policy_inputs=inputs)
+        action = torch.tensor([[2]])
+        adapter.adapt(logits, action=action)
+
+        inputs["observations"]["x"].zero_()
+        inputs["ext_memory"].zero_()
+        inputs["ext_memory_masks"].zero_()
+        stored = adapter.replay[0]["policy_inputs"]
+        torch.testing.assert_close(stored["observations"]["x"], expected_x)
+        torch.testing.assert_close(stored["ext_memory"], expected_memory)
+        torch.testing.assert_close(stored["ext_memory_masks"], expected_masks)
+        torch.testing.assert_close(adapter.replay[0]["action"], action)
+        self.assertNotIn("action", stored)
+        self.assertEqual(stored["ext_memory"].device.type, "cpu")
+
+    def test_eam_replay_draw_uses_updated_reservoir_without_excluding_current(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            memory_size=3,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+
+        old_inputs = _inputs()
+        old_inputs["sample_id"] = "old"
+        adapter.before_inference(policy_inputs=old_inputs)
+        with torch.no_grad():
+            _, old_logits = _forward(policy, old_inputs)
+        adapter.prepare_action(old_logits, policy_inputs=old_inputs)
+        adapter.adapt(old_logits, action=torch.tensor([[0]]))
+
+        current_inputs = _inputs()
+        current_inputs["sample_id"] = "current"
+
+        def choose_current(population, count):
+            self.assertEqual(count, 1)
+            current = next(
+                entry for entry in population
+                if entry["policy_inputs"]["sample_id"] == "current"
+            )
+            return [current]
+
+        with mock.patch(
+            "navtta_core.tta.tta_core.random.sample",
+            side_effect=choose_current,
+        ) as sample:
+            adapter.before_inference(policy_inputs=current_inputs)
+            with torch.no_grad():
+                _, current_logits = _forward(policy, current_inputs)
+            adapter.prepare_action(current_logits, policy_inputs=current_inputs)
+
+        sample.assert_called_once()
+        cached_source = adapter._cached_current["source_batch"]
+        self.assertEqual(cached_source.shape[0], 2)
+        torch.testing.assert_close(cached_source[0], cached_source[1])
+        self.assertEqual(adapter.current_replay_duplicates, 1)
+        adapter.adapt(current_logits, action=torch.tensor([[1]]))
+
+    def test_eam_recomputes_both_branches_for_historical_replay(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            memory_size=3,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+
+        old_inputs = _inputs()
+        old_inputs["sample_id"] = "old"
+        adapter.before_inference(policy_inputs=old_inputs)
+        with torch.no_grad():
+            _, old_logits = _forward(policy, old_inputs)
+        adapter.prepare_action(old_logits, policy_inputs=old_inputs)
+        adapter.adapt(old_logits, action=torch.tensor([[0]]))
+
+        current_inputs = _inputs()
+        current_inputs["sample_id"] = "current"
+
+        def choose_old(population, count):
+            self.assertEqual(count, 1)
+            old = next(
+                entry for entry in population
+                if entry["policy_inputs"]["sample_id"] == "old"
+            )
+            return [old]
+
+        with mock.patch(
+            "navtta_core.tta.tta_core.random.sample",
+            side_effect=choose_old,
+        ), mock.patch.object(
+            adapter, "_forward_source", wraps=adapter._forward_source
+        ) as source_forward, mock.patch.object(
+            adapter, "_forward_aux", wraps=adapter._forward_aux
+        ) as aux_forward:
+            adapter.before_inference(policy_inputs=current_inputs)
+            with torch.no_grad():
+                _, current_logits = _forward(policy, current_inputs)
+            adapter.prepare_action(current_logits, policy_inputs=current_inputs)
+
+        source_forward.assert_called_once()
+        self.assertEqual(aux_forward.call_count, 2)
+        adapter.adapt(current_logits, action=torch.tensor([[1]]))
+
+    def test_eam_reservoir_replacement_and_rejection_follow_algorithm_1(self):
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            memory_size=2,
+            batch_size=3,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        first = adapter._reservoir_add(_inputs())
+        second = adapter._reservoir_add(_inputs())
+
+        with mock.patch(
+            "navtta_core.tta.tta_core.random.randrange", return_value=0
+        ) as randrange:
+            replacement = adapter._reservoir_add(_inputs())
+        randrange.assert_called_once_with(3)
+        self.assertIs(adapter.replay[0], replacement)
+        self.assertIs(adapter.replay[1], second)
+
+        retained = tuple(adapter.replay)
+        with mock.patch(
+            "navtta_core.tta.tta_core.random.randrange", return_value=2
+        ) as randrange:
+            rejected = adapter._reservoir_add(_inputs())
+        randrange.assert_called_once_with(4)
+        self.assertIsNone(rejected)
+        self.assertIs(adapter.replay[0], retained[0])
+        self.assertIs(adapter.replay[1], retained[1])
+        self.assertIsNot(first, adapter.replay[0])
+
+    def test_eam_algorithm_3_orders_buffer_inference_action_then_update(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+
+        events = []
+        reservoir_add = adapter._reservoir_add
+        forward_aux = adapter._forward_aux
+        source_forward = policy.net.forward
+        select_action = adapter.select_action
+        optimizer_step = adapter.optimizer.step
+
+        def record_buffer(*args, **kwargs):
+            events.append("buffer")
+            return reservoir_add(*args, **kwargs)
+
+        def record_inference(*args, **kwargs):
+            events.append("auxiliary_inference")
+            return forward_aux(*args, **kwargs)
+
+        def record_source_inference(*args, **kwargs):
+            events.append("source_inference")
+            return source_forward(*args, **kwargs)
+
+        def record_action(*args, **kwargs):
+            events.append("action")
+            return select_action(*args, **kwargs)
+
+        def record_update(*args, **kwargs):
+            events.append("update")
+            return optimizer_step(*args, **kwargs)
+
+        with mock.patch.object(
+            adapter, "_reservoir_add", side_effect=record_buffer
+        ), mock.patch.object(
+            adapter, "_forward_aux", side_effect=record_inference
+        ), mock.patch.object(
+            policy.net, "forward", side_effect=record_source_inference
+        ), mock.patch.object(
+            adapter, "select_action", side_effect=record_action
+        ), mock.patch.object(
+            adapter.optimizer, "step", side_effect=record_update
+        ):
+            adapter.before_inference(policy_inputs=inputs)
+            with torch.no_grad():
+                _, logits = _forward(policy, inputs)
+            action_logits = adapter.prepare_action(
+                logits, policy_inputs=inputs
+            )
+            action = adapter.select_action(
+                torch.distributions.Categorical(logits=action_logits)
+            )
+            adapter.adapt(logits, action=action)
+
+        self.assertEqual(events, [
+            "buffer",
+            "source_inference",
+            "auxiliary_inference",
+            "action",
+            "update",
+        ])
+
+    def test_eam_factory_reads_step_replay_scope(self):
+        config = SimpleNamespace(
+            METHOD="eam",
+            EPISODIC=False,
+            EAM=SimpleNamespace(
+                MEMORY_SIZE=32,
+                BATCH_SIZE=8,
+                PARAM_SCOPE="module_prefixes",
+                TRAINABLE_PREFIXES=[
+                    "net.smt_state_encoder.transformer",
+                    "action_distribution",
+                ],
+            ),
+        )
+        adapter = build_adapter(_ReplayPolicy(), config)
+        self.assertEqual(adapter.param_scope, "module_prefixes")
+        self.assertEqual(adapter.memory_size, 32)
+        self.assertEqual(adapter.batch_size, 8)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["replay_unit"], "action_step")
+        self.assertEqual(
+            diagnostics["replay_storage"],
+            "full_policy_input_action_and_decision_snapshot",
+        )
+        self.assertEqual(
+            diagnostics["replay_sampling"],
+            "updated_reservoir_including_current",
+        )
+        self.assertEqual(
+            diagnostics["short_buffer_behavior"],
+            "current_only_update",
+        )
+        self.assertEqual(diagnostics["update_interval_unit"], "action_step")
 
     def test_feedtta_updates_once_from_episode_feedback(self):
         policy = _TinyPolicy()

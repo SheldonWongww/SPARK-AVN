@@ -311,6 +311,10 @@ class _AdapterDiagnostics:
         """Return logits used to sample the environment action."""
         return source_logits
 
+    def before_inference(self, **kwargs):
+        """Optional hook that runs before the policy forward for one step."""
+        return None
+
     def select_action(self, distribution):
         """Select the environment action under the adapter's protocol."""
         return distribution.sample()
@@ -839,18 +843,24 @@ class FSTTAAdapter(_AdapterDiagnostics):
 
 
 class EAMAdapter(_AdapterDiagnostics):
-    """Paper-aligned source-free Elastic Adaptation Model.
+    """Algorithm-3-aligned, step-level Elastic Adaptation Model.
 
-    The deployed policy is the frozen source branch. A same-architecture
-    auxiliary branch is adapted from confident pseudo labels. Historical
-    policy inputs are stored on CPU and replayed without environment steps.
-    For memory-based AVN policies, replay uses the memory snapshot observed at
-    collection time; the frozen source logits are stored with that snapshot.
+    Each online action step is one sample ``x``.  Following the paper's
+    pseudocode literally, ``x`` is first offered to the reservoir and replay is
+    then sampled from that *updated* reservoir.  When ``|M| < K``, ``B`` is the
+    current sample alone and is still eligible for an update.  Otherwise,
+    ``K - 1`` entries are sampled from the whole updated reservoir and the
+    current sample is appended explicitly.  Consequently, a retained current
+    sample may occur twice in ``B``; Algorithm 3 contains no exclusion step.
 
-    The paper updates the complete auxiliary model whenever a full replay
-    mini-batch is available. ``param_scope`` and ``update_interval`` remain
-    configurable only to support explicit AVN ablations; their defaults match
-    the paper.
+    The final decision for the current action is fixed before the optimizer
+    update, so adaptation affects only later actions.
+
+    The source branch stays frozen.  The auxiliary branch is initialized from
+    the source policy and only explicitly selected post-encoder modules are
+    adapted.  Complete policy inputs and the executed action are snapshotted on
+    CPU, including the external-memory state, so historical steps can be
+    replayed without another environment interaction.
     """
 
     requires_source_grad = False
@@ -863,8 +873,8 @@ class EAMAdapter(_AdapterDiagnostics):
         memory_size=32,
         batch_size=8,
         update_interval=1,
-        param_scope="all",
-        last_k=4,
+        param_scope="module_prefixes",
+        trainable_prefixes=(),
         optimizer_name="Adam",
         momentum=0.9,
         beta1=0.9,
@@ -872,44 +882,44 @@ class EAMAdapter(_AdapterDiagnostics):
         weight_decay=0.0,
         max_grad_norm=0.0,
         episodic=False,
-        reset_bn_stats=False,
     ):
+        if bool(episodic):
+            raise ValueError(
+                "Continual step-level EAM requires TTA.EPISODIC=False"
+            )
+        self.param_scope = str(param_scope).lower()
+        if self.param_scope != "module_prefixes":
+            raise ValueError(
+                "Step-replay EAM requires PARAM_SCOPE="
+                "'module_prefixes' so frozen feature producers are selected "
+                "explicitly; got {!r}".format(self.param_scope)
+            )
+        self.trainable_prefixes = tuple(str(item) for item in trainable_prefixes)
+        self.memory_size = int(memory_size)
+        self.batch_size = int(batch_size)
+        self.update_interval = int(update_interval)
+        if self.memory_size < 1:
+            raise ValueError("EAM.MEMORY_SIZE must be positive")
+        if self.batch_size < 1:
+            raise ValueError("EAM.BATCH_SIZE must be positive")
+        if self.update_interval < 1:
+            raise ValueError("EAM.UPDATE_INTERVAL must be positive")
+
         self.source_model = model
         self.source_model.eval()
         self.source_model.requires_grad_(False)
         self.aux_model = deepcopy(model)
         self.aux_model.eval()
-        self.param_scope = str(param_scope).lower()
-        self.last_k = int(last_k)
-
-        if self.param_scope == "all":
-            self.aux_model.requires_grad_(True)
-            self.params = list(self.aux_model.parameters())
-            self.names = [name for name, _ in self.aux_model.named_parameters()]
-        elif self.param_scope == "decision_head":
-            self.aux_model.requires_grad_(False)
-            self.params, self.names = [], []
-            for name, param in self.aux_model.action_distribution.named_parameters():
-                param.requires_grad_(True)
-                self.params.append(param)
-                self.names.append("action_distribution.{}".format(name))
-        else:
-            self.params, self.names = configure_tta_model(
-                self.aux_model,
-                reset_bn_stats=reset_bn_stats,
-                scope=self.param_scope,
-                last_k=self.last_k,
-            )
+        self.params, self.names = configure_module_prefixes(
+            self.aux_model, self.trainable_prefixes
+        )
         if not self.params:
             raise ValueError("EAM did not select any auxiliary parameters")
 
         self.base_lr = float(lr)
         self.max_grad_norm = float(max_grad_norm)
         self.confidence_scale = float(confidence_scale)
-        self.memory_size = max(1, int(memory_size))
-        self.batch_size = max(1, int(batch_size))
-        self.update_interval = max(1, int(update_interval))
-        self.episodic = bool(episodic)
+        self.episodic = False
         self.optimizer = _make_optimizer(
             self.params,
             optimizer_name,
@@ -919,8 +929,8 @@ class EAMAdapter(_AdapterDiagnostics):
             beta2=beta2,
             weight_decay=weight_decay,
         )
-        # EAM already keeps source + auxiliary policies on the GPU. Store the
-        # optional episodic-reset snapshot on CPU to avoid a third GPU-sized
+        # EAM already keeps source + auxiliary policies on the GPU. Keep the
+        # explicit/manual reset snapshot on CPU to avoid a third GPU-sized
         # model copy.
         self._model_state = {
             key: value.detach().cpu().clone()
@@ -932,16 +942,27 @@ class EAMAdapter(_AdapterDiagnostics):
         self.seen_samples = 0
         self.accepted_samples = 0
         self.aux_used_steps = 0
+        self.source_confident_steps = 0
         self.episode_count = 0
+        self._pending_replay = None
         self._cached_current = None
+        self.update_attempt_count = 0
+        self.no_reliable_update_count = 0
+        self.replayed_step_count = 0
+        self.replay_aux_used_steps = 0
+        self.current_replay_duplicates = 0
+        self.current_only_batches = 0
+        self.train_loss_sum = 0.0
+        self.last_train_loss = 0.0
         self._init_diagnostics()
 
     @property
     def device(self):
         return self.params[0].device
 
-    def _forward_aux(self, policy_inputs):
-        features, _, _ = self.aux_model.net(
+    @staticmethod
+    def _forward_policy(model, policy_inputs):
+        features, _, _ = model.net(
             policy_inputs["observations"],
             policy_inputs["rnn_hidden_states"],
             policy_inputs["prev_actions"],
@@ -949,7 +970,16 @@ class EAMAdapter(_AdapterDiagnostics):
             policy_inputs.get("ext_memory"),
             policy_inputs.get("ext_memory_masks"),
         )
-        return self.aux_model.action_distribution(features).logits
+        return model.action_distribution(features).logits
+
+    def _forward_aux(self, policy_inputs):
+        return self._forward_policy(self.aux_model, policy_inputs)
+
+    def _forward_source(self, policy_inputs):
+        # Algorithm 3 runs both branches over B.  Historical source decisions
+        # are therefore recomputed instead of being read from a logits cache.
+        with torch.no_grad():
+            return self._forward_policy(self.source_model, policy_inputs)
 
     def _threshold(self, action_dim):
         return self.confidence_scale * math.log(max(2, int(action_dim)))
@@ -971,21 +1001,108 @@ class EAMAdapter(_AdapterDiagnostics):
         # categorical distribution without changing action tensor shapes.
         return combined_probs.clamp_min(1e-8).log(), use_aux
 
+    def before_inference(self, policy_inputs=None, **kwargs):
+        """Perform Algorithm 3's buffer update and replay before inference."""
+        if policy_inputs is None:
+            raise ValueError("EAM requires policy_inputs before inference")
+        if self._pending_replay is not None or self._cached_current is not None:
+            raise RuntimeError(
+                "EAM.before_inference called twice without completing the step"
+            )
+
+        current_entry = self._reservoir_add(policy_inputs)
+        if len(self.replay) < self.batch_size:
+            replay_entries = []
+            self.current_only_batches += 1
+        else:
+            replay_entries = (
+                random.sample(self.replay, self.batch_size - 1)
+                if self.batch_size > 1 else []
+            )
+        self._pending_replay = (current_entry, replay_entries)
+
     @torch.enable_grad()
     def prepare_action(self, source_logits, policy_inputs=None, **kwargs):
         if policy_inputs is None:
             raise ValueError("EAM requires policy_inputs for its auxiliary branch")
-        aux_logits = self._forward_aux(policy_inputs)
-        combined, use_aux = self._combine(source_logits.detach(), aux_logits)
-        self.aux_used_steps += int(use_aux.sum().item())
-        self._cached_current = (source_logits.detach(), aux_logits, policy_inputs)
-        self._record_loss(softmax_entropy(combined).mean())
-        return combined
+        if self._cached_current is not None:
+            raise RuntimeError(
+                "EAM.prepare_action called twice without the intervening adapt"
+            )
 
-    def _reservoir_add(self, source_logits, policy_inputs):
+        # Algorithm 3, lines 1--18: update M first, then form B from the
+        # updated M.  Do not filter the just-inserted entry from this draw.
+        source_current = source_logits.detach()
+        if self._pending_replay is None:
+            raise RuntimeError(
+                "EAM.before_inference must run before the source policy forward"
+            )
+        current_entry, replay_entries = self._pending_replay
+        self._pending_replay = None
+
+        # Algorithm 3, lines 19--21: infer both branches on B.  Variable-length
+        # navigation memories make a physical tensor batch impractical, so old
+        # entries are forwarded separately and their decisions concatenated.
+        # This is numerically the same mini-batch in eval mode.
+        aux_current = self._forward_aux(policy_inputs)
+        source_batch, aux_batch = [], []
+        for entry in replay_entries:
+            if entry is current_entry:
+                # B_h may contain x because sampling uses the updated M.  Reuse
+                # the same deterministic forward while retaining x twice in B.
+                source_replay = source_current
+                aux_replay = aux_current
+                self.current_replay_duplicates += 1
+            else:
+                replay_inputs = _tree_to_device(
+                    entry["policy_inputs"], self.device
+                )
+                source_replay = self._forward_source(replay_inputs)
+                aux_replay = self._forward_aux(replay_inputs)
+            source_batch.append(source_replay)
+            aux_batch.append(aux_replay)
+
+        # The explicit current x is the last element of B = B_h union x.
+        source_batch.append(source_current)
+        aux_batch.append(aux_current)
+        source_batch = torch.cat(source_batch, dim=0)
+        aux_batch = torch.cat(aux_batch, dim=0)
+        combined_batch, use_aux = self._combine(source_batch, aux_batch)
+        current_rows = source_current.shape[0]
+        combined_current = combined_batch[-current_rows:]
+        current_use_aux = use_aux[-current_rows:]
+
+        self.aux_used_steps += int(current_use_aux.sum().item())
+        threshold = self._threshold(source_current.shape[-1])
+        source_reliable = softmax_entropy(source_current) < threshold
+        self.source_confident_steps += int(source_reliable.sum().item())
+        if current_entry is not None:
+            # The paper describes memory units as observations plus action
+            # decisions.  These snapshots are diagnostic/reconstructive only;
+            # replay still recomputes both branches as Algorithm 3 specifies.
+            current_entry["source_decision"] = _tree_to_cpu(source_current)
+            current_entry["auxiliary_decision"] = _tree_to_cpu(aux_current)
+            current_entry["final_decision"] = _tree_to_cpu(combined_current)
+
+        self._cached_current = {
+            "entry": current_entry,
+            "source_batch": source_batch,
+            "aux_batch": aux_batch,
+            "combined_batch": combined_batch,
+            "use_aux": use_aux,
+        }
+        self._record_loss(softmax_entropy(combined_current).mean())
+        return combined_current
+
+    def _reservoir_add(self, policy_inputs, action=None):
         entry = {
-            "source_logits": source_logits.detach().cpu().clone(),
             "policy_inputs": _tree_to_cpu(policy_inputs),
+            "source_decision": None,
+            "auxiliary_decision": None,
+            "final_decision": None,
+            "action": (
+                None if action is None else action.detach().cpu().clone()
+            ),
         }
         self.seen_samples += 1
         if len(self.replay) < self.memory_size:
@@ -998,48 +1115,34 @@ class EAMAdapter(_AdapterDiagnostics):
         return None
 
     @torch.enable_grad()
-    def adapt(self, logits, policy_inputs=None, **kwargs):
+    def adapt(self, logits, action=None, **kwargs):
         if self._cached_current is None:
             raise RuntimeError("EAM.prepare_action must run before EAM.adapt")
-        source_current, aux_current, cached_inputs = self._cached_current
-        # Algorithm 3 updates the reservoir before replay. Keep the current
-        # entry out of the historical draw because it is already included
-        # explicitly in the mini-batch.
-        current_entry = self._reservoir_add(source_current, cached_inputs)
-        history_pool = [
-            entry for entry in self.replay if entry is not current_entry
-        ]
-        needed_history = self.batch_size - 1
-        can_update = (
-            len(self.replay) >= self.batch_size
-            and self.action_steps % self.update_interval == 0
-        )
+        cached = self._cached_current
+        current_entry = cached["entry"]
+        if current_entry is not None:
+            current_entry["action"] = (
+                None if action is None else _tree_to_cpu(action)
+            )
+        can_update = self.action_steps % self.update_interval == 0
 
         if can_update:
-            replay_entries = (
-                random.sample(history_pool, needed_history)
-                if needed_history else []
-            )
-            source_logits = [source_current]
-            aux_logits = [aux_current]
-            for entry in replay_entries:
-                replay_inputs = _tree_to_device(entry["policy_inputs"], self.device)
-                source_logits.append(entry["source_logits"].to(self.device))
-                aux_logits.append(self._forward_aux(replay_inputs))
-
-            source_batch = torch.cat(source_logits, dim=0)
-            aux_batch = torch.cat(aux_logits, dim=0)
-            combined, _ = self._combine(source_batch, aux_batch)
+            source_batch = cached["source_batch"]
+            aux_batch = cached["aux_batch"]
+            combined = cached["combined_batch"]
+            use_aux = cached["use_aux"]
             threshold = self._threshold(source_batch.shape[-1])
             reliable = softmax_entropy(source_batch) < threshold
+            self.update_attempt_count += 1
+            self.replayed_step_count += int(source_batch.shape[0])
+            self.replay_aux_used_steps += int(use_aux.sum().item())
             if bool(reliable.any()):
                 pseudo = combined.detach().argmax(dim=-1)
-                loss = F.cross_entropy(aux_batch[reliable], pseudo[reliable])
+                loss = F.cross_entropy(
+                    aux_batch[reliable], pseudo[reliable]
+                )
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
-                # EAM does not use gradient clipping in the paper. A positive
-                # value enables it only for an explicitly requested ablation;
-                # infinity reports the norm without altering the gradients.
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.params,
                     self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
@@ -1047,8 +1150,13 @@ class EAMAdapter(_AdapterDiagnostics):
                 self.last_grad_norm = float(grad_norm.item())
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
+                loss_value = float(loss.detach().item())
                 self.update_count += 1
                 self.accepted_samples += int(reliable.sum().item())
+                self.train_loss_sum += loss_value
+                self.last_train_loss = loss_value
+            else:
+                self.no_reliable_update_count += 1
 
         self._cached_current = None
         return None
@@ -1060,25 +1168,73 @@ class EAMAdapter(_AdapterDiagnostics):
         self.seen_samples = 0
         self.accepted_samples = 0
         self.aux_used_steps = 0
+        self.source_confident_steps = 0
+        self.episode_count = 0
+        self._pending_replay = None
         self._cached_current = None
+        self.update_attempt_count = 0
+        self.no_reliable_update_count = 0
+        self.replayed_step_count = 0
+        self.replay_aux_used_steps = 0
+        self.current_replay_duplicates = 0
+        self.current_only_batches = 0
+        self.train_loss_sum = 0.0
+        self.last_train_loss = 0.0
         self._init_diagnostics()
 
     def episode_start(self):
-        if self.episodic:
-            self.reset()
+        if self._pending_replay is not None or self._cached_current is not None:
+            raise RuntimeError(
+                "EAM episode_start called before the previous step adapted"
+            )
 
-    def episode_end(self, episode_stats=None):
+    def episode_end(self, episode_stats=None, **kwargs):
+        if self._pending_replay is not None or self._cached_current is not None:
+            raise RuntimeError("EAM episode ended before its final step adapted")
         self.episode_count += 1
 
     def diagnostics(self):
         output = super().diagnostics()
         output.update({
             "replay_size": len(self.replay),
+            "replay_unit": "action_step",
+            "replay_storage": (
+                "full_policy_input_action_and_decision_snapshot"
+            ),
+            "replay_sampling": "updated_reservoir_including_current",
+            "short_buffer_behavior": "current_only_update",
+            "update_timing": "after_preupdate_action_selection",
             "seen_samples": self.seen_samples,
+            "seen_steps": self.seen_samples,
             "accepted_samples": self.accepted_samples,
             "aux_used_steps": self.aux_used_steps,
+            "source_confident_steps": self.source_confident_steps,
+            "source_gate_rate": (
+                self.source_confident_steps / max(1, self.action_steps)
+            ),
+            "aux_gate_rate": self.aux_used_steps / max(1, self.action_steps),
+            "update_attempts": self.update_attempt_count,
+            "updates_skipped_no_reliable": self.no_reliable_update_count,
+            "replayed_steps": self.replayed_step_count,
+            "replay_aux_used_steps": self.replay_aux_used_steps,
+            "current_replay_duplicates": self.current_replay_duplicates,
+            "current_only_batches": self.current_only_batches,
+            "mean_train_loss": (
+                self.train_loss_sum / max(1, self.update_count)
+            ),
+            "last_train_loss": self.last_train_loss,
+            "confidence_scale": self.confidence_scale,
+            "optimizer": self.optimizer.__class__.__name__,
+            "adapted_parameter_count": sum(
+                parameter.numel() for parameter in self.params
+            ),
             "param_scope": self.param_scope,
+            "trainable_prefixes": list(self.trainable_prefixes),
+            "memory_size_steps": self.memory_size,
+            "batch_size_steps": self.batch_size,
             "update_interval": self.update_interval,
+            "update_interval_unit": "action_step",
+            "loss_reduction": "mean_over_reliable_replay_steps",
         })
         return output
 
@@ -1577,8 +1733,11 @@ def build_adapter(model, tta_cfg):
             memory_size=int(evalue("MEMORY_SIZE", 32)),
             batch_size=int(evalue("BATCH_SIZE", 8)),
             update_interval=int(evalue("UPDATE_INTERVAL", 1)),
-            param_scope=str(evalue("PARAM_SCOPE", "all")),
-            last_k=int(evalue("LAST_K_LN", common["last_k"])),
+            param_scope=str(evalue("PARAM_SCOPE", "module_prefixes")),
+            trainable_prefixes=tuple(evalue(
+                "TRAINABLE_PREFIXES",
+                (),
+            )),
             optimizer_name=str(evalue("OPTIMIZER", "Adam")),
             momentum=float(evalue("MOMENTUM", 0.9)),
             beta1=float(evalue("BETA1", 0.9)),
@@ -1586,7 +1745,6 @@ def build_adapter(model, tta_cfg):
             weight_decay=float(evalue("WEIGHT_DECAY", 0.0)),
             max_grad_norm=float(evalue("MAX_GRAD_NORM", 0.0)),
             episodic=common["episodic"],
-            reset_bn_stats=common["reset_bn_stats"],
         )
     if method == "feedtta":
         feed_cfg = getattr(tta_cfg, "FEEDTTA", None)

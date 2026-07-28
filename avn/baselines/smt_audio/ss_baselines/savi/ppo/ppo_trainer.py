@@ -879,7 +879,7 @@ class PPOTrainer(BaseRLTrainer):
                     prev_actions.copy_(actions)
             else:
                 # The adapter receives an immutable description of the policy
-                # forward. EAM replays it through its auxiliary branch;
+                # forward. EAM replays it through both policy branches;
                 # feedback methods use the selected action/features and update
                 # only after the episode outcome is known.
                 policy_inputs = {
@@ -895,6 +895,9 @@ class PPOTrainer(BaseRLTrainer):
                         test_em.masks if ppo_cfg.use_external_memory else None
                     ),
                 }
+                # EAM Algorithm 3 updates/samples its replay buffer before the
+                # original and auxiliary policy inference for this action.
+                tta_adapter.before_inference(policy_inputs=policy_inputs)
                 with torch.set_grad_enabled(tta_adapter.requires_source_grad):
                     features, test_recurrent_hidden_states, test_em_features = self.actor_critic.net(
                         policy_inputs["observations"],

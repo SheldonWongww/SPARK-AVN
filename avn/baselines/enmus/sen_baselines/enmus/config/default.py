@@ -171,13 +171,18 @@ _C.TTA.FSTTA.EIGEN_EPS = 1e-6
 _C.TTA.EAM = CN()
 _C.TTA.EAM.LR = 1e-5
 _C.TTA.EAM.CONFIDENCE_SCALE = 0.4
+# Replay units are online action-step snapshots.
 _C.TTA.EAM.MEMORY_SIZE = 32
 _C.TTA.EAM.BATCH_SIZE = 8
+# Action-step interval; 1 updates every step (current-only while |M| < K).
 _C.TTA.EAM.UPDATE_INTERVAL = 1
-# Paper setting: update the complete same-architecture auxiliary model.
-# last_k_ln and decision_head remain available only as explicit ablations.
-_C.TTA.EAM.PARAM_SCOPE = "all"
-_C.TTA.EAM.LAST_K_LN = 4
+# AVN mapping: freeze all pre-Transformer sensory/state encoders and update the
+# auxiliary Transformer plus action-decision head.
+_C.TTA.EAM.PARAM_SCOPE = "module_prefixes"
+_C.TTA.EAM.TRAINABLE_PREFIXES = [
+    "net.smt_state_encoder.transformer",
+    "action_distribution",
+]
 _C.TTA.EAM.OPTIMIZER = "Adam"
 _C.TTA.EAM.MOMENTUM = 0.9
 _C.TTA.EAM.BETA1 = 0.9

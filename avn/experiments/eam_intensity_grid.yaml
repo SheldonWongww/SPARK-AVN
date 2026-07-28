@@ -1,0 +1,100 @@
+experiment_id: eam_intensity_grid_v1
+status: planned
+purpose: >-
+  Screen EAM adaptation strength and trainable capacity before searching its
+  confidence and replay controls on the fixed SMT+Audio single-source AVN
+  development stream.
+
+task: avn
+benchmark: mp3d
+model: smt_audio
+source_setting: single_source
+method: eam
+action_selection: sample
+
+search_space:
+  TTA.EAM.LR: [1.0e-8, 1.0e-7, 3.0e-7, 1.0e-6, 3.0e-6, 1.0e-5]
+  TTA.EAM.UPDATE_INTERVAL: [1, 4, 16]
+  launcher_scope:
+    - head_only
+    - transformer_ln_plus_head
+    - decoder_plus_head
+    - full_transformer_plus_head
+
+scope_mapping:
+  head_only:
+    TTA.EAM.TRAINABLE_PREFIXES:
+      - action_distribution
+    expected_tensors: 2
+    expected_parameters: 1028
+  transformer_ln_plus_head:
+    TTA.EAM.TRAINABLE_PREFIXES:
+      - net.smt_state_encoder.transformer.encoder.layers.0.norm1
+      - net.smt_state_encoder.transformer.encoder.layers.0.norm2
+      - net.smt_state_encoder.transformer.encoder.norm
+      - net.smt_state_encoder.transformer.decoder.layers.0.norm1
+      - net.smt_state_encoder.transformer.decoder.layers.0.norm2
+      - net.smt_state_encoder.transformer.decoder.layers.0.norm3
+      - net.smt_state_encoder.transformer.decoder.norm
+      - action_distribution
+    expected_tensors: 16
+    expected_parameters: 4612
+  decoder_plus_head:
+    TTA.EAM.TRAINABLE_PREFIXES:
+      - net.smt_state_encoder.transformer.decoder
+      - action_distribution
+    expected_tensors: 22
+    expected_parameters: 660996
+  full_transformer_plus_head:
+    TTA.EAM.TRAINABLE_PREFIXES:
+      - net.smt_state_encoder.transformer
+      - action_distribution
+    expected_tensors: 36
+    expected_parameters: 1057284
+
+fixed:
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  EVAL.ACTION_SELECTION: sample
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  TTA.EAM.CONFIDENCE_SCALE: 0.4
+  TTA.EAM.MEMORY_SIZE: 32
+  TTA.EAM.BATCH_SIZE: 8
+  TTA.EAM.PARAM_SCOPE: module_prefixes
+  TTA.EAM.OPTIMIZER: Adam
+  TTA.EAM.BETA1: 0.9
+  TTA.EAM.BETA2: 0.999
+  TTA.EAM.WEIGHT_DECAY: 0.0
+  TTA.EAM.MAX_GRAD_NORM: 0.0
+  TEST_EPISODE_COUNT: 2000
+  seed: 0
+
+replay_protocol:
+  unit: action_step
+  sampling: updated_reservoir_including_current
+  short_buffer: current_only_update
+  update_timing: after_preupdate_action_selection
+
+job_count: 72
+launcher: avn/scripts/run_eam_intensity_grid.sh
+log_root: avn/results/logs/eam_intensity_grid
+
+reported_metrics:
+  - success
+  - spl
+  - softspl
+  - sna
+  - na
+  - distance_to_goal
+  - normalized_distance_to_goal
+
+selection_protocol:
+  primary_metric: spl
+  secondary_metric: success
+  reject_on_numerical_failure: true
+  require_no_late_stream_collapse: true
+  phase_two_design_locked_until_grid_complete: true
+  note: >-
+    Treat the seed-0 stream as development data. Design the second search only
+    after all 72 jobs and their diagnostics have been analyzed together.

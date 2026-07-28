@@ -51,13 +51,14 @@ TTA:
     RESET_SLOW_OPTIMIZER_EACH_WINDOW: False
     EIGEN_EPS: 1.0e-6
   EAM:
+    # Strict Algorithm 3: |M| < K uses B=x and still performs the gated update.
     LR: 1.0e-5
     CONFIDENCE_SCALE: 0.4
     MEMORY_SIZE: 32
     BATCH_SIZE: 8
     UPDATE_INTERVAL: 1
-    PARAM_SCOPE: "all"
-    LAST_K_LN: 4
+    PARAM_SCOPE: "module_prefixes"
+    TRAINABLE_PREFIXES: ["net.smt_state_encoder.transformer", "action_distribution"]
     OPTIMIZER: "Adam"
     MAX_GRAD_NORM: 0.0
   FEEDTTA:
