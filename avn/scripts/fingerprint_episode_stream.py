@@ -92,6 +92,11 @@ def main():
     parser.add_argument("--episodes-per-scene", type=int, default=100)
     parser.add_argument("--expected-scenes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--episode-count",
+        type=int,
+        help="fingerprint only this prefix of the constructed stream",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -101,6 +106,12 @@ def main():
         expected_scenes=args.expected_scenes,
         seed=args.seed,
     )
+    if args.episode_count is not None:
+        if args.episode_count < 1 or args.episode_count > len(stream):
+            parser.error(
+                "--episode-count must be in [1, {}]".format(len(stream))
+            )
+        stream = stream[: args.episode_count]
     order_sha256, content_sha256 = fingerprints(stream)
     result = {
         "dataset": str(Path(args.dataset).resolve()),

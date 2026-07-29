@@ -31,6 +31,15 @@ from typing import Deque, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
 
 SEED = 0
 MAX_EPISODES = 2000
+MODEL = "smt_audio"
+SOURCE_SETTING = "single_source"
+EVAL_SPLIT = "val"
+EXPLICIT_EVAL_SPLIT = False
+EXPERIMENT_TITLE = "AVN FSTTA focused exploration"
+BATCH_ID_PREFIX = "fstta-exploration"
+FIXED_SUITE: Optional[str] = None
+ALLOW_DIRTY_OPTION = True
+REQUIRED_GPU_COUNT: Optional[int] = None
 SUITE_ORDER = (
     "slow_boundary",
     "fast_geometry",
@@ -44,6 +53,12 @@ EXPECTED_SUITE_COUNTS = {
     "q_scaler": 16,
 }
 EXPECTED_ALL_COUNT = 92
+SUITE_SLUGS = {
+    "slow_boundary": "sb",
+    "fast_geometry": "fg",
+    "slow_optimizer": "so",
+    "q_scaler": "qs",
+}
 
 NORM_SCOPE = "last_k_ln"
 LAST_K_LN = 4
@@ -62,6 +77,7 @@ MAX_GRAD_NORM = "1.0"
 RESET_FAST_OPTIMIZER_EACH_EPISODE = True
 EIGEN_EPS = "1e-6"
 ACTION_SELECTION = "sample"
+RUNNER_ENV: Mapping[str, str] = {}
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "avn" / "scripts" / "eval_smt_audio.sh"
@@ -76,6 +92,24 @@ DATASET = (
     / "single_source" / "mp3d" / "v1" / "val" / "val.json.gz"
 )
 LOG_BASE = REPO_ROOT / "avn" / "results" / "logs" / "fstta_exploration"
+AUXILIARY_CHECKPOINTS: Mapping[str, Path] = {}
+PROVENANCE_SOURCE_FILES: Tuple[Path, ...] = (
+    Path(__file__).resolve(),
+    RUNNER.resolve(),
+    FINGERPRINT_TOOL.resolve(),
+    MANIFEST_VALIDATOR.resolve(),
+)
+METRICS = (
+    "reward",
+    "distance_to_goal",
+    "normalized_distance_to_goal",
+    "success",
+    "spl",
+    "softspl",
+    "na",
+    "sna",
+    "sws",
+)
 
 
 def utc_now() -> str:
@@ -122,9 +156,12 @@ class PlannedJob:
 @dataclass(frozen=True)
 class Provenance:
     git_commit: str
+    worktree_dirty: bool
     checkpoint_sha256: str
+    dataset_index_sha256: str
     stream_order_sha256: str
     stream_content_sha256: str
+    auxiliary_checkpoint_sha256: Tuple[Tuple[str, str], ...]
 
 
 @dataclass
@@ -228,12 +265,7 @@ SUITE_BUILDERS = {
 
 
 def job_tag(batch_id: str, job_id: int, config: JobConfig) -> str:
-    suite_slug = {
-        "slow_boundary": "sb",
-        "fast_geometry": "fg",
-        "slow_optimizer": "so",
-        "q_scaler": "qs",
-    }[config.suite]
+    suite_slug = SUITE_SLUGS.get(config.suite, slug(config.suite))
     optimizer_slug = "aw" if config.slow_optimizer == "AdamW" else "sgd"
     return (
         "fsttaexp-{batch}-{suite}-j{job:03d}-flr{flr}-m{m}-slr{slr}"
@@ -346,10 +378,10 @@ def plan_text(plan: Sequence[PlannedJob], episodes: int) -> str:
                 "suite": config.suite,
                 "run_tag": job.run_tag,
                 "gpu": job.gpu,
-                "model": "smt_audio",
-                "source_setting": "single_source",
+                "model": MODEL,
+                "source_setting": SOURCE_SETTING,
                 "method": "fstta",
-                "action_selection": ACTION_SELECTION,
+                "action_selection": ACTION_SELECTION or "native",
                 "fast_lr": config.fast_lr,
                 "M": config.fast_window,
                 "slow_lr": config.slow_lr,
@@ -394,17 +426,23 @@ def positive_int(value: str) -> int:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run one focused FSTTA exploration suite, or all 92 jobs, on the "
-            "fixed SMT+Audio single-source seed-0 stream."
+            "Run one configured FSTTA exploration suite on the fixed "
+            "{} {} seed-0 stream.".format(MODEL, SOURCE_SETTING)
         )
     )
-    parser.add_argument("suite", choices=(*SUITE_ORDER, "all"))
+    if FIXED_SUITE is None:
+        parser.add_argument("suite", choices=(*SUITE_ORDER, "all"))
+    else:
+        parser.set_defaults(suite=FIXED_SUITE)
+    gpu_help = "comma-separated physical GPU ids (default: 0,1,2,3)"
+    if REQUIRED_GPU_COUNT is not None:
+        gpu_help += "; exactly {} required".format(REQUIRED_GPU_COUNT)
     parser.add_argument(
         "--gpus",
         default=parse_gpus("0,1,2,3"),
         type=parse_gpus,
         metavar="LIST",
-        help="comma-separated physical GPU ids (default: 0,1,2,3)",
+        help=gpu_help,
     )
     parser.add_argument(
         "--jobs-per-gpu",
@@ -422,11 +460,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="resume an immutable named batch and skip validated jobs",
     )
-    parser.add_argument(
-        "--allow-dirty",
-        action="store_true",
-        help="permit tracked worktree changes",
-    )
+    if ALLOW_DIRTY_OPTION:
+        parser.add_argument(
+            "--allow-dirty",
+            action="store_true",
+            help="permit tracked worktree changes",
+        )
+    else:
+        parser.set_defaults(allow_dirty=False)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -442,14 +483,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.jobs_per_gpu > 16:
         parser.error("--jobs-per-gpu must not exceed 16")
+    if REQUIRED_GPU_COUNT is not None and len(args.gpus) != REQUIRED_GPU_COUNT:
+        parser.error("--gpus must contain exactly {} GPU ids".format(
+            REQUIRED_GPU_COUNT
+        ))
     if args.episodes > MAX_EPISODES:
         parser.error("the canonical stream contains only 2000 episodes")
     if args.resume and not args.batch_id:
         parser.error("--resume requires --batch-id")
     if not args.batch_id:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        args.batch_id = "fstta-exploration-{}-seed0-{}".format(
-            args.suite, timestamp
+        args.batch_id = "{}-{}-seed0-{}".format(
+            BATCH_ID_PREFIX, args.suite, timestamp
         )
     if not re.fullmatch(r"[A-Za-z0-9._-]+", args.batch_id):
         parser.error(
@@ -461,16 +506,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def print_plan_summary(args: argparse.Namespace, plan: Sequence[PlannedJob]) -> None:
-    print("AVN FSTTA focused exploration")
+    print(EXPERIMENT_TITLE)
     print("  repository:       {}".format(REPO_ROOT))
-    print("  model/source:     smt_audio/single_source")
+    print("  model/source:     {}/{}".format(MODEL, SOURCE_SETTING))
+    print("  evaluation split: {}".format(EVAL_SPLIT))
     print("  suite:            {}".format(args.suite))
     print("  jobs:             {}".format(len(plan)))
     print("  GPUs:             {}".format(",".join(args.gpus)))
     print("  jobs/GPU:         {} concurrent".format(args.jobs_per_gpu))
     print("  seed:             {}".format(SEED))
     print("  episodes/job:     {}".format(args.episodes))
-    print("  action selection: {}".format(ACTION_SELECTION))
+    print("  action selection: {}".format(ACTION_SELECTION or "native"))
     print("  batch:            {}".format(args.batch_id))
     print("  logs:             {}".format(LOG_BASE / args.batch_id))
 
@@ -502,7 +548,31 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def load_provenance(allow_dirty: bool) -> Provenance:
+def require_clean_repository(provenance: Provenance) -> None:
+    if provenance.worktree_dirty:
+        return
+    commit = run_capture(
+        ("git", "-C", str(REPO_ROOT), "rev-parse", "HEAD")
+    ).strip()
+    if commit != provenance.git_commit:
+        raise RuntimeError("repository HEAD changed while the batch was running")
+    status = run_capture(
+        (
+            "git",
+            "-C",
+            str(REPO_ROOT),
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+        )
+    )
+    if status.strip():
+        raise RuntimeError(
+            "tracked worktree changed while the batch was running"
+        )
+
+
+def load_provenance(allow_dirty: bool, episodes: int) -> Provenance:
     for executable in ("bash", "git"):
         if shutil.which(executable) is None:
             raise RuntimeError("{} is unavailable".format(executable))
@@ -511,29 +581,63 @@ def load_provenance(allow_dirty: bool) -> Provenance:
         (MANIFEST_VALIDATOR, "run-manifest validator"),
         (FINGERPRINT_TOOL, "episode-stream fingerprint tool"),
         (CHECKPOINT, "source checkpoint"),
-        (DATASET, "single-source TTA dataset"),
+        (DATASET, "configured TTA dataset"),
     ):
         if not path.is_file():
             raise RuntimeError("missing {}: {}".format(description, path))
+    for name, path in AUXILIARY_CHECKPOINTS.items():
+        if not path.is_file():
+            raise RuntimeError(
+                "missing auxiliary checkpoint '{}': {}".format(name, path)
+            )
 
     commit = run_capture(("git", "-C", str(REPO_ROOT), "rev-parse", "HEAD")).strip()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise RuntimeError("invalid Git commit: {}".format(commit))
-    if not allow_dirty:
-        status = run_capture(
+    status = run_capture(
+        (
+            "git",
+            "-C",
+            str(REPO_ROOT),
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+        )
+    )
+    untracked_sources = []
+    for source_path in PROVENANCE_SOURCE_FILES:
+        try:
+            relative = source_path.resolve().relative_to(REPO_ROOT.resolve())
+        except ValueError as error:
+            raise RuntimeError(
+                "provenance source is outside the repository: {}".format(source_path)
+            ) from error
+        tracked = subprocess.run(
             (
                 "git",
                 "-C",
                 str(REPO_ROOT),
-                "status",
-                "--porcelain",
-                "--untracked-files=no",
-            )
+                "ls-files",
+                "--error-unmatch",
+                str(relative),
+            ),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        if status.strip():
-            raise RuntimeError(
-                "tracked worktree changes detected; commit them first or use --allow-dirty"
+        if tracked.returncode != 0:
+            untracked_sources.append(str(relative))
+    worktree_dirty = bool(status.strip() or untracked_sources)
+    if worktree_dirty and not allow_dirty:
+        details = ""
+        if untracked_sources:
+            details = " (untracked experiment sources: {})".format(
+                ", ".join(untracked_sources)
             )
+        raise RuntimeError(
+            "experiment sources or tracked worktree differ from HEAD{}; "
+            "commit them first or use --allow-dirty".format(details)
+        )
 
     fingerprint_output = run_capture(
         (
@@ -543,6 +647,8 @@ def load_provenance(allow_dirty: bool) -> Provenance:
             str(DATASET),
             "--seed",
             str(SEED),
+            "--episode-count",
+            str(episodes),
         )
     )
     fingerprints = fingerprint_output.split()
@@ -557,11 +663,19 @@ def load_provenance(allow_dirty: bool) -> Provenance:
     checkpoint_sha256 = sha256_file(CHECKPOINT)
     if not re.fullmatch(r"[0-9a-f]{64}", checkpoint_sha256):
         raise RuntimeError("invalid checkpoint SHA256")
+    dataset_index_sha256 = sha256_file(DATASET)
+    auxiliary_hashes = tuple(
+        (name, sha256_file(path))
+        for name, path in sorted(AUXILIARY_CHECKPOINTS.items())
+    )
     return Provenance(
         git_commit=commit,
+        worktree_dirty=worktree_dirty,
         checkpoint_sha256=checkpoint_sha256,
+        dataset_index_sha256=dataset_index_sha256,
         stream_order_sha256=fingerprints[0],
         stream_content_sha256=fingerprints[1],
+        auxiliary_checkpoint_sha256=auxiliary_hashes,
     )
 
 
@@ -576,14 +690,15 @@ def batch_spec_text(
         ("suite", args.suite),
         ("expected_jobs", len(plan)),
         ("git_commit", provenance.git_commit),
-        ("model", "smt_audio"),
-        ("source_setting", "single_source"),
+        ("worktree_dirty", config_bool(provenance.worktree_dirty)),
+        ("model", MODEL),
+        ("source_setting", SOURCE_SETTING),
+        ("eval_split", EVAL_SPLIT),
         ("method", "fstta"),
         ("seed", SEED),
         ("episodes", args.episodes),
         ("gpus", ",".join(args.gpus)),
-        ("jobs_per_gpu", args.jobs_per_gpu),
-        ("action_selection", ACTION_SELECTION),
+        ("action_selection", ACTION_SELECTION or "native"),
         ("num_processes", 1),
         ("eval_use_ckpt_config", config_bool(False)),
         ("norm_scope", NORM_SCOPE),
@@ -614,10 +729,17 @@ def batch_spec_text(
             ),
         ),
         ("checkpoint_sha256", provenance.checkpoint_sha256),
+        ("dataset_index_sha256", provenance.dataset_index_sha256),
         ("stream_order_sha256", provenance.stream_order_sha256),
         ("stream_content_sha256", provenance.stream_content_sha256),
     )
-    return "".join("{}={}\n".format(key, value) for key, value in lines)
+    auxiliary_lines = tuple(
+        ("auxiliary_{}_sha256".format(name), digest)
+        for name, digest in provenance.auxiliary_checkpoint_sha256
+    )
+    return "".join(
+        "{}={}\n".format(key, value) for key, value in lines + auxiliary_lines
+    )
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -712,10 +834,9 @@ class SchedulerLogger:
 
 def command_for_job(job: PlannedJob, episodes: int) -> List[str]:
     config = job.config
-    pairs = (
+    pairs = [
         ("NUM_PROCESSES", "1"),
         ("EVAL.USE_CKPT_CONFIG", config_bool(False)),
-        ("EVAL.ACTION_SELECTION", ACTION_SELECTION),
         ("TTA.LR", config.fast_lr),
         ("TTA.NORM_SCOPE", NORM_SCOPE),
         ("TTA.LAST_K_LN", str(LAST_K_LN)),
@@ -753,11 +874,15 @@ def command_for_job(job: PlannedJob, episodes: int) -> List[str]:
         ),
         ("TTA.FSTTA.EIGEN_EPS", EIGEN_EPS),
         ("TEST_EPISODE_COUNT", str(episodes)),
-    )
+    ]
+    if ACTION_SELECTION is not None:
+        pairs.insert(2, ("EVAL.ACTION_SELECTION", ACTION_SELECTION))
+    if EXPLICIT_EVAL_SPLIT:
+        pairs.insert(2, ("EVAL.SPLIT", EVAL_SPLIT))
     command = [
         "bash",
         str(RUNNER),
-        "single_source",
+        SOURCE_SETTING,
         "fstta",
         str(SEED),
     ]
@@ -776,10 +901,11 @@ def parameters_text(
         ("suite", config.suite),
         ("run_tag", job.run_tag),
         ("gpu", job.gpu),
-        ("model", "smt_audio"),
-        ("source_setting", "single_source"),
+        ("model", MODEL),
+        ("source_setting", SOURCE_SETTING),
+        ("eval_split", EVAL_SPLIT),
         ("method", "fstta"),
-        ("action_selection", ACTION_SELECTION),
+        ("action_selection", ACTION_SELECTION or "native"),
         ("fast_lr", config.fast_lr),
         ("M", config.fast_window),
         ("slow_lr", config.slow_lr),
@@ -797,11 +923,20 @@ def parameters_text(
         ("seed", SEED),
         ("episodes", episodes),
         ("git_commit", provenance.git_commit),
+        ("worktree_dirty", config_bool(provenance.worktree_dirty)),
         ("checkpoint_sha256", provenance.checkpoint_sha256),
+        ("dataset_index_sha256", provenance.dataset_index_sha256),
         ("stream_order_sha256", provenance.stream_order_sha256),
         ("stream_content_sha256", provenance.stream_content_sha256),
     )
-    return "".join("{}={}\n".format(key, value) for key, value in values)
+    auxiliary_values = tuple(
+        ("auxiliary_{}_sha256".format(name), digest)
+        for name, digest in provenance.auxiliary_checkpoint_sha256
+    )
+    return "".join(
+        "{}={}\n".format(key, value)
+        for key, value in values + auxiliary_values
+    )
 
 
 def read_status(path: Path) -> str:
@@ -853,7 +988,13 @@ def validate_diagnostics(
     manifest_path: Path, job: PlannedJob, episodes: int
 ) -> None:
     run_dir = manifest_path.resolve().parent
-    stats_path = run_dir / "raw" / "model" / "tb" / "val_stats_{}.json".format(SEED)
+    stats_path = (
+        run_dir
+        / "raw"
+        / "model"
+        / "tb"
+        / "{}_stats_{}.json".format(EVAL_SPLIT, SEED)
+    )
     diagnostics_path = (
         run_dir / "raw" / "model" / "tb" / "tta_diagnostics_{}.json".format(SEED)
     )
@@ -913,6 +1054,19 @@ def validate_diagnostics(
         else 0
     )
     require_equal(diagnostics, "slow_optimizer_resets", expected_resets)
+    names = diagnostics.get("adapted_parameter_names")
+    expected_tensors = 2 * LAST_K_LN
+    if (
+        not isinstance(names, list)
+        or len(names) != expected_tensors
+        or len(set(names)) != expected_tensors
+        or any(not isinstance(name, str) or not name for name in names)
+    ):
+        raise ValueError(
+            "adapted_parameter_names do not describe {} unique tensors".format(
+                expected_tensors
+            )
+        )
 
 
 def validate_artifacts(
@@ -931,11 +1085,11 @@ def validate_artifacts(
         "--run-tag",
         job.run_tag,
         "--model",
-        "smt_audio",
+        MODEL,
         "--method",
         "fstta",
         "--source-setting",
-        "single_source",
+        SOURCE_SETTING,
         "--seed",
         str(SEED),
         "--git-commit",
@@ -962,10 +1116,132 @@ def validate_artifacts(
     if completed.returncode != 0:
         return False, validator_output or "run-manifest validation failed"
     try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return False, "run manifest could not be read: {}".format(error)
+    expected_overrides = command_for_job(job, episodes)[5:]
+    if manifest.get("config_overrides") != expected_overrides:
+        return False, "run-manifest config_overrides do not match the planned job"
+    if (
+        manifest.get("dataset", {}).get("index_sha256")
+        != provenance.dataset_index_sha256
+    ):
+        return False, "run-manifest dataset index SHA256 mismatch"
+    actual_auxiliary = {
+        item.get("name"): item.get("sha256")
+        for item in manifest.get("auxiliary_checkpoints", [])
+    }
+    expected_auxiliary = dict(provenance.auxiliary_checkpoint_sha256)
+    if actual_auxiliary != expected_auxiliary:
+        return False, "run-manifest auxiliary checkpoint SHA256 mismatch"
+    if sha256_file(DATASET) != provenance.dataset_index_sha256:
+        return False, "dataset index changed while the batch was running"
+    try:
+        current_fingerprints = run_capture(
+            (
+                sys.executable,
+                str(FINGERPRINT_TOOL),
+                "--dataset",
+                str(DATASET),
+                "--seed",
+                str(SEED),
+                "--episode-count",
+                str(episodes),
+            )
+        ).split()
+    except RuntimeError as error:
+        return False, "cannot re-fingerprint completed episode stream: {}".format(
+            error
+        )
+    expected_fingerprints = (
+        provenance.stream_order_sha256,
+        provenance.stream_content_sha256,
+    )
+    if tuple(current_fingerprints) != expected_fingerprints:
+        return False, "episode stream changed while the batch was running"
+    try:
         validate_diagnostics(manifest_path, job, episodes)
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
         return False, "artifact diagnostics validation failed: {}".format(error)
     return True, validator_output
+
+
+def collect_job_evidence(
+    manifest_path: Path,
+    job: PlannedJob,
+    job_dir: Path,
+    episodes: int,
+) -> None:
+    """Copy compact diagnostics and aggregate raw per-episode metrics."""
+    run_dir = manifest_path.resolve().parent
+    stats_path = (
+        run_dir
+        / "raw"
+        / "model"
+        / "tb"
+        / "{}_stats_{}.json".format(EVAL_SPLIT, SEED)
+    )
+    diagnostics_path = (
+        run_dir
+        / "raw"
+        / "model"
+        / "tb"
+        / "tta_diagnostics_{}.json".format(SEED)
+    )
+    stats = json.loads(stats_path.read_text(encoding="utf-8"))
+    if not isinstance(stats, dict) or len(stats) != episodes:
+        raise ValueError("cannot aggregate incomplete per-episode statistics")
+
+    metrics = {}
+    for metric in METRICS:
+        try:
+            values = [float(record[metric]) for record in stats.values()]
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("invalid per-episode metric '{}'".format(metric)) from error
+        value = sum(values) / len(values)
+        if not math.isfinite(value):
+            raise ValueError("non-finite aggregate metric '{}'".format(metric))
+        metrics[metric] = value
+
+    config = job.config
+    payload = {
+        "job_id": job.job_id,
+        "run_tag": job.run_tag,
+        "model": MODEL,
+        "source_setting": SOURCE_SETTING,
+        "eval_split": EVAL_SPLIT,
+        "result_role": (
+            "development_calibration"
+            if EVAL_SPLIT == "train"
+            else "evaluation"
+        ),
+        "method": "fstta",
+        "seed": SEED,
+        "episodes": episodes,
+        "manifest": str(manifest_path),
+        "configuration": {
+            "fast_lr": config.fast_lr,
+            "M": config.fast_window,
+            "slow_lr": config.slow_lr,
+            "N": config.slow_window,
+            "q": config.q,
+            "use_slow": config.use_slow,
+            "fast_grad_mode": config.fast_grad_mode,
+            "use_fast_lr_scaler": config.use_fast_lr_scaler,
+            "slow_optimizer": config.slow_optimizer,
+            "reset_slow_optimizer_each_window": (
+                config.reset_slow_optimizer_each_window
+            ),
+        },
+        "metrics": metrics,
+    }
+    atomic_write(
+        job_dir / "metrics.json",
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    )
+    temporary = job_dir / "diagnostics.json.tmp"
+    shutil.copy2(str(diagnostics_path), str(temporary))
+    os.replace(str(temporary), str(job_dir / "diagnostics.json"))
 
 
 ATTEMPT_ARTIFACTS = {
@@ -975,6 +1251,8 @@ ATTEMPT_ARTIFACTS = {
     "console.log": "console.previous.{stamp}.log",
     "manifest.path": "manifest.previous.{stamp}.path",
     "parameters.env": "parameters.previous.{stamp}.env",
+    "metrics.json": "metrics.previous.{stamp}.json",
+    "diagnostics.json": "diagnostics.previous.{stamp}.json",
 }
 
 
@@ -1029,6 +1307,7 @@ class Scheduler:
     def completed_and_valid(self, job: PlannedJob, job_dir: Path) -> bool:
         if not self.args.resume:
             return False
+        require_clean_repository(self.provenance)
         if read_status(job_dir / "exitcode") != "0":
             return False
         if read_status(job_dir / "validation") != "ok":
@@ -1036,10 +1315,19 @@ class Scheduler:
         manifest_text = read_status(job_dir / "manifest.path")
         if not manifest_text:
             return False
+        manifest_path = Path(manifest_text)
         valid, _ = validate_artifacts(
-            Path(manifest_text), job, self.args.episodes, self.provenance
+            manifest_path, job, self.args.episodes, self.provenance
         )
-        return valid
+        if not valid:
+            return False
+        try:
+            collect_job_evidence(
+                manifest_path, job, job_dir, self.args.episodes
+            )
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return False
+        return True
 
     def prepare_queue(self) -> Deque[PlannedJob]:
         pending: Deque[PlannedJob] = deque()
@@ -1057,6 +1345,7 @@ class Scheduler:
 
     def launch(self, job: PlannedJob) -> None:
         self.check_stop()
+        require_clean_repository(self.provenance)
         job_dir = self.jobs_root / job.run_tag
         atomic_write(
             job_dir / "parameters.env",
@@ -1081,6 +1370,7 @@ class Scheduler:
                 "NAVTTA_STREAM_CONTENT_SHA256": self.provenance.stream_content_sha256,
             }
         )
+        environment.update(RUNNER_ENV)
         try:
             process = subprocess.Popen(
                 command_for_job(job, self.args.episodes),
@@ -1116,14 +1406,31 @@ class Scheduler:
         composite_status = runner_status
         validation_detail = ""
         if runner_status == 0 and manifest_path is not None:
-            valid, validation_detail = validate_artifacts(
-                manifest_path,
-                running.job,
-                self.args.episodes,
-                self.provenance,
-            )
+            try:
+                require_clean_repository(self.provenance)
+                valid, validation_detail = validate_artifacts(
+                    manifest_path,
+                    running.job,
+                    self.args.episodes,
+                    self.provenance,
+                )
+            except RuntimeError as error:
+                valid = False
+                validation_detail = "repository validation failed: {}".format(
+                    error
+                )
             if valid:
-                validation = "ok"
+                try:
+                    collect_job_evidence(
+                        manifest_path,
+                        running.job,
+                        running.job_dir,
+                        self.args.episodes,
+                    )
+                    validation = "ok"
+                except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
+                    validation_detail = "evidence collection failed: {}".format(error)
+                    composite_status = 90
             else:
                 composite_status = 90
         elif runner_status == 0:
@@ -1213,12 +1520,100 @@ class Scheduler:
         self.active_by_gpu.clear()
 
 
+def write_batch_metrics(
+    log_root: Path,
+    plan: Sequence[PlannedJob],
+    episodes: int,
+    provenance: Provenance,
+) -> None:
+    fields = (
+        "job_id",
+        "run_tag",
+        "gpu",
+        "status",
+        "model",
+        "source_setting",
+        "eval_split",
+        "result_role",
+        "method",
+        "seed",
+        "episodes",
+        "git_commit",
+        "checkpoint_sha256",
+        "dataset_index_sha256",
+        "stream_order_sha256",
+        "stream_content_sha256",
+        "fast_lr",
+        "M",
+        "slow_lr",
+        "N",
+        "q",
+        "use_slow",
+        "fast_grad_mode",
+        "use_fast_lr_scaler",
+        "manifest",
+    ) + METRICS
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
+    writer.writeheader()
+    for job in plan:
+        job_dir = log_root / "jobs" / job.run_tag
+        status = read_status(job_dir / "exitcode") or "missing"
+        payload = {}
+        metrics_path = job_dir / "metrics.json"
+        if metrics_path.is_file():
+            try:
+                payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+        config = job.config
+        row = {
+            "job_id": job.job_id,
+            "run_tag": job.run_tag,
+            "gpu": job.gpu,
+            "status": status,
+            "model": MODEL,
+            "source_setting": SOURCE_SETTING,
+            "eval_split": EVAL_SPLIT,
+            "result_role": (
+                "development_calibration"
+                if EVAL_SPLIT == "train"
+                else "evaluation"
+            ),
+            "method": "fstta",
+            "seed": SEED,
+            "episodes": episodes,
+            "git_commit": provenance.git_commit,
+            "checkpoint_sha256": provenance.checkpoint_sha256,
+            "dataset_index_sha256": provenance.dataset_index_sha256,
+            "stream_order_sha256": provenance.stream_order_sha256,
+            "stream_content_sha256": provenance.stream_content_sha256,
+            "fast_lr": config.fast_lr,
+            "M": config.fast_window,
+            "slow_lr": config.slow_lr,
+            "N": config.slow_window,
+            "q": config.q,
+            "use_slow": config_bool(config.use_slow),
+            "fast_grad_mode": config.fast_grad_mode,
+            "use_fast_lr_scaler": config_bool(config.use_fast_lr_scaler),
+            "manifest": payload.get("manifest", ""),
+        }
+        recorded_metrics = payload.get("metrics", {})
+        for metric in METRICS:
+            row[metric] = recorded_metrics.get(metric, "")
+        writer.writerow(row)
+    atomic_write(log_root / "metrics.csv", output.getvalue())
+
+
 def summarize(
     log_root: Path,
     plan: Sequence[PlannedJob],
     scheduler: Scheduler,
     provenance: Provenance,
 ) -> Tuple[str, bool]:
+    write_batch_metrics(
+        log_root, plan, scheduler.args.episodes, provenance
+    )
     successful = 0
     failed = 0
     missing = 0
@@ -1246,6 +1641,7 @@ def summarize(
     values = (
         ("batch_id", log_root.name),
         ("git_commit", provenance.git_commit),
+        ("worktree_dirty", config_bool(provenance.worktree_dirty)),
         ("completed_at", utc_now()),
         ("expected", len(plan)),
         ("launched_this_invocation", scheduler.launched),
@@ -1257,10 +1653,21 @@ def summarize(
         ("validated", validated),
         ("reap_failures", scheduler.reap_failures),
         ("checkpoint_sha256", provenance.checkpoint_sha256),
+        ("dataset_index_sha256", provenance.dataset_index_sha256),
         ("stream_order_sha256", provenance.stream_order_sha256),
         ("stream_content_sha256", provenance.stream_content_sha256),
     )
-    return "".join("{}={}\n".format(key, value) for key, value in values), complete
+    auxiliary_values = tuple(
+        ("auxiliary_{}_sha256".format(name), digest)
+        for name, digest in provenance.auxiliary_checkpoint_sha256
+    )
+    return (
+        "".join(
+            "{}={}\n".format(key, value)
+            for key, value in values + auxiliary_values
+        ),
+        complete,
+    )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1276,7 +1683,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 0
 
-    provenance = load_provenance(args.allow_dirty)
+    provenance = load_provenance(args.allow_dirty, args.episodes)
     spec = batch_spec_text(args, plan, provenance)
     log_root, jobs_root = initialize_batch(args, csv_text, spec)
     lock = BatchLock(log_root)
@@ -1291,10 +1698,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         logger.log("scheduler_started_at={}".format(utc_now()))
         logger.log("git_commit={}".format(provenance.git_commit))
+        logger.log("worktree_dirty={}".format(config_bool(provenance.worktree_dirty)))
         logger.log("checkpoint_sha256={}".format(provenance.checkpoint_sha256))
+        logger.log("dataset_index_sha256={}".format(provenance.dataset_index_sha256))
         logger.log("stream_order_sha256={}".format(provenance.stream_order_sha256))
         logger.log("stream_content_sha256={}".format(provenance.stream_content_sha256))
+        for name, digest in provenance.auxiliary_checkpoint_sha256:
+            logger.log("auxiliary_{}_sha256={}".format(name, digest))
         logger.log("resume={}".format(config_bool(args.resume)))
+        logger.log("jobs_per_gpu={}".format(args.jobs_per_gpu))
         scheduler.run()
         summary, complete = summarize(log_root, plan, scheduler, provenance)
         atomic_write(log_root / "SUMMARY", summary)

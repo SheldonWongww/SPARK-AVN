@@ -14,6 +14,17 @@ datasets:
     path: tta_test/single_source
     files: 45
     approximate_size: 1.5M
+    calibration_split:
+      index_path: tta_test/single_source/mp3d/v1/train/train.json.gz
+      index_sha256: "816afeee2fe777d683c22aa81def2d7ec032f4119ed1c40bd909b7676a002931"
+      scenes: 20
+      available_episodes_per_scene: 900
+      fixed_stream:
+        seed: 0
+        episodes_per_scene: 100
+        episode_count: 2000
+        order_sha256: "47a2902100911402f796e0ca3c7a8a5690c82f2f14eb26e0e7e8e489b0f96981"
+        content_sha256: "92fd862fa4577047287a9b6be362071c7da6747a77b5058731c07ede7404034a"
   - name: tta_test_multi_source
     path: tta_test/multi_source
     files: 42
@@ -22,5 +33,5 @@ missing_runtime_assets:
   - avn/data/binaural_rirs
 notes:
   - Episode files were migrated from the pre-refactor SoundSpaces working tree.
-  - `train/` contains both the train and validation splits supplied for source-model development.
+  - "`train/` contains both the train and validation splits supplied for source-model development."
   - The several-hundred-GB RIR assets remain unavailable on this machine.

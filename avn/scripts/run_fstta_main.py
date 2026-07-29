@@ -313,7 +313,7 @@ def print_plan(batch_id, jobs, seed, episodes):
         )
 
 
-def collect_provenance(jobs, seed):
+def collect_provenance(jobs, seed, episodes):
     git_commit = run_checked(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"]
     )
@@ -328,6 +328,8 @@ def collect_provenance(jobs, seed):
                 str(dataset),
                 "--seed",
                 str(seed),
+                "--episode-count",
+                str(episodes),
             ]
         )
         parts = output.split()
@@ -1088,7 +1090,7 @@ def main(argv=None):
             return 0
 
         worktree_dirty = validate_inputs(jobs, args.allow_dirty)
-        provenance = collect_provenance(jobs, args.seed)
+        provenance = collect_provenance(jobs, args.seed, args.episodes)
         provenance["worktree_dirty"] = worktree_dirty
         log_root = LOG_BASE / args.batch_id
         batch_spec = batch_spec_text(

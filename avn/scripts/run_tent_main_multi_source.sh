@@ -250,7 +250,8 @@ fi
 
 fingerprints="$(
     python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${DATASET}" --seed "${SEED}"
+        --dataset "${DATASET}" --seed "${SEED}" \
+        --episode-count "${EPISODES}"
 )"
 read -r STREAM_ORDER_SHA256 STREAM_CONTENT_SHA256 <<< "${fingerprints}"
 for fingerprint in "${STREAM_ORDER_SHA256}" "${STREAM_CONTENT_SHA256}"; do

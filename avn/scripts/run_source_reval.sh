@@ -280,11 +280,13 @@ SINGLE_DATASET="${REPO_ROOT}/avn/data/datasets/tta_test/single_source/mp3d/v1/va
 MULTI_DATASET="${REPO_ROOT}/avn/data/datasets/tta_test/multi_source/mp3d/v1/val/val.json.gz"
 single_fingerprints="$(
     python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${SINGLE_DATASET}" --seed "${SEED}"
+        --dataset "${SINGLE_DATASET}" --seed "${SEED}" \
+        --episode-count "${EPISODES}"
 )"
 multi_fingerprints="$(
     python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${MULTI_DATASET}" --seed "${SEED}"
+        --dataset "${MULTI_DATASET}" --seed "${SEED}" \
+        --episode-count "${EPISODES}"
 )"
 read -r SINGLE_ORDER_SHA256 SINGLE_CONTENT_SHA256 <<< "${single_fingerprints}"
 read -r MULTI_ORDER_SHA256 MULTI_CONTENT_SHA256 <<< "${multi_fingerprints}"

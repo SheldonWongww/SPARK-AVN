@@ -23,7 +23,12 @@ BASELINE_ROOT="${REPO_ROOT}/avn/baselines/enmus"
 SOUNDSPACES_ROOT="${REPO_ROOT}/avn/baselines/smt_audio"
 CONFIG="sen_baselines/enmus/config/${SOURCE_SETTING}/enmus_tta_test.yaml"
 CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/enmus/${CHECKPOINT_NAME}"
-DATASET="${REPO_ROOT}/avn/data/datasets/tta_test/${SOURCE_SETTING}/mp3d/v1/val/val.json.gz"
+EVAL_SPLIT="${NAVTTA_EVAL_SPLIT:-val}"
+case "${EVAL_SPLIT}" in
+    train|val) ;;
+    *) printf 'invalid NAVTTA_EVAL_SPLIT: %s\n' "${EVAL_SPLIT}" >&2; exit 2 ;;
+esac
+DATASET="${REPO_ROOT}/avn/data/datasets/tta_test/${SOURCE_SETTING}/mp3d/v1/${EVAL_SPLIT}/${EVAL_SPLIT}.json.gz"
 AUDIO_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/audio_encoder_best_val.pth"
 VISUAL_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/visual_encoder_best_val.pth"
 SELD_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/seld_crnn_best_val.h5"
@@ -38,17 +43,75 @@ RUN_ID="avn-mp3d-enmus-${METHOD}-${SOURCE_SETTING}-seed${SEED}${RUN_TAG_SUFFIX}-
 RUN_DIR="${REPO_ROOT}/avn/results/runs/${RUN_ID}"
 STREAM_ORDER_SHA256="${NAVTTA_STREAM_ORDER_SHA256:-}"
 STREAM_CONTENT_SHA256="${NAVTTA_STREAM_CONTENT_SHA256:-}"
+EPISODE_COUNT=2000
+
+overrides=("$@")
+split_override_found=0
+for ((index = 0; index + 1 < ${#overrides[@]}; index += 2)); do
+    case "${overrides[$index]}" in
+        TASK_CONFIG.DATASET.*|TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.*|\
+        BASE_TASK_CONFIG_PATH)
+            printf 'unsupported stream-defining override: %s\n' \
+                "${overrides[$index]}" >&2
+            exit 2
+            ;;
+    esac
+    if [[ "${overrides[$index]}" == "EVAL.USE_CKPT_CONFIG" && \
+          "${overrides[$((index + 1))]}" != "False" ]]; then
+        printf 'EVAL.USE_CKPT_CONFIG must remain False\n' >&2
+        exit 2
+    fi
+    if [[ "${overrides[$index]}" == "NUM_PROCESSES" && \
+          "${overrides[$((index + 1))]}" != "1" ]]; then
+        printf 'manifested ENMuS evaluation requires NUM_PROCESSES=1\n' >&2
+        exit 2
+    fi
+    if [[ "${overrides[$index]}" == "EVAL.SPLIT" ]]; then
+        [[ "${overrides[$((index + 1))]}" == "${EVAL_SPLIT}" ]] || {
+            printf 'EVAL.SPLIT override does not match the manifested dataset split\n' >&2
+            exit 2
+        }
+        split_override_found=1
+    fi
+    if [[ "${overrides[$index]}" == "TEST_EPISODE_COUNT" ]]; then
+        EPISODE_COUNT="${overrides[$((index + 1))]}"
+    fi
+done
+if [[ -n "${NAVTTA_EVAL_SPLIT:-}" ]]; then
+    [[ ${split_override_found} -eq 1 ]] || {
+        printf 'NAVTTA_EVAL_SPLIT requires a matching EVAL.SPLIT override\n' >&2
+        exit 2
+    }
+fi
+[[ "${EPISODE_COUNT}" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'invalid TEST_EPISODE_COUNT: %s\n' "${EPISODE_COUNT}" >&2
+    exit 2
+}
+[[ ${EPISODE_COUNT} -le 2000 ]] || {
+    printf 'TEST_EPISODE_COUNT exceeds the configured 2000-episode stream\n' >&2
+    exit 2
+}
 
 for required_file in \
     "${CHECKPOINT}" "${DATASET}" "${AUDIO_ENCODER}" \
     "${VISUAL_ENCODER}" "${SELD_ENCODER}"; do
     test -f "${required_file}" || { printf 'missing ENMuS dependency: %s\n' "${required_file}" >&2; exit 1; }
 done
-if [[ -z "${STREAM_ORDER_SHA256}" || -z "${STREAM_CONTENT_SHA256}" ]]; then
-    fingerprints="$(python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${DATASET}" --seed "${SEED}")"
-    read -r STREAM_ORDER_SHA256 STREAM_CONTENT_SHA256 <<< "${fingerprints}"
+fingerprints="$(python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
+    --dataset "${DATASET}" --seed "${SEED}" --episode-count "${EPISODE_COUNT}")"
+read -r CURRENT_STREAM_ORDER_SHA256 CURRENT_STREAM_CONTENT_SHA256 <<< "${fingerprints}"
+if [[ -n "${STREAM_ORDER_SHA256}" && \
+      "${STREAM_ORDER_SHA256}" != "${CURRENT_STREAM_ORDER_SHA256}" ]]; then
+    printf 'launcher and runtime stream-order SHA256 differ\n' >&2
+    exit 1
 fi
+if [[ -n "${STREAM_CONTENT_SHA256}" && \
+      "${STREAM_CONTENT_SHA256}" != "${CURRENT_STREAM_CONTENT_SHA256}" ]]; then
+    printf 'launcher and runtime stream-content SHA256 differ\n' >&2
+    exit 1
+fi
+STREAM_ORDER_SHA256="${CURRENT_STREAM_ORDER_SHA256}"
+STREAM_CONTENT_SHA256="${CURRENT_STREAM_CONTENT_SHA256}"
 [[ "${STREAM_ORDER_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { printf 'invalid stream-order SHA256\n' >&2; exit 1; }
 [[ "${STREAM_CONTENT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { printf 'invalid stream-content SHA256\n' >&2; exit 1; }
 mkdir -p "${REPO_ROOT}/avn/results/runs"
