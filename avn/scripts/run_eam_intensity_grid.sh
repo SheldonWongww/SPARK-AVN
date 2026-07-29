@@ -21,13 +21,14 @@ Usage:
 
 Options:
   --seed N              Episode-order/evaluation seed (default: 0)
-  --gpus LIST           Four distinct physical GPU ids (default: 0,1,2,3)
+  --gpus LIST           One or more distinct physical GPU ids (default: 0,1,2,3)
   --jobs-per-gpu N      Concurrent jobs per GPU (default: 2; maximum: 8)
   --episodes N          Episodes per job (default: 2000; maximum: 2000)
   --batch-id ID         Stable batch id (default: UTC timestamp)
   --resume              Resume a batch; skip validated completed jobs
   --allow-dirty         Permit tracked worktree changes (not recommended)
-  --dry-run             Print all 72 planned jobs without launching
+  --smoke               Run only job 3 (full transformer, LR=1e-8, interval=1)
+  --dry-run             Print the selected plan without launching
   -h, --help            Show this help
 
 Recommended detached launch after a short resource smoke test:
@@ -45,6 +46,11 @@ Resume the same immutable batch:
     --gpus 0,1,2,3 --jobs-per-gpu 2 \
     --batch-id eam-intensity-smt-single-v1-seed0 --resume
 
+Single-GPU, two-episode full-scope smoke test:
+  bash avn/scripts/run_eam_intensity_grid.sh \
+    --gpus 3 --jobs-per-gpu 1 --episodes 2 --smoke \
+    --batch-id eam-smoke-full-scope-v1-seed0
+
 This is a development/tuning grid. Do not reuse its episode stream as an
 untouched final-test stream after selecting a configuration.
 EOF
@@ -52,6 +58,9 @@ EOF
 
 die() {
     printf 'error: %s\n' "$*" >&2
+    if [[ -n "${PREFLIGHT_LOG:-}" ]]; then
+        printf 'error: %s\n' "$*" >> "${PREFLIGHT_LOG}"
+    fi
     exit 2
 }
 
@@ -63,6 +72,7 @@ BATCH_ID=""
 BATCH_ID_GIVEN=0
 RESUME=0
 ALLOW_DIRTY=0
+SMOKE=0
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
@@ -101,6 +111,10 @@ while [[ $# -gt 0 ]]; do
             ALLOW_DIRTY=1
             shift
             ;;
+        --smoke)
+            SMOKE=1
+            shift
+            ;;
         --dry-run)
             DRY_RUN=1
             shift
@@ -130,8 +144,10 @@ fi
 [[ "${BATCH_ID}" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "batch-id may contain only letters, numbers, dot, underscore, and hyphen"
 
+[[ "${GPU_CSV}" =~ ^[0-9]+(,[0-9]+)*$ ]] || \
+    die "--gpus must be a comma-separated list of numeric GPU ids"
 IFS=',' read -r -a GPUS <<< "${GPU_CSV}"
-[[ ${#GPUS[@]} -eq 4 ]] || die "--gpus must contain exactly four GPU ids"
+[[ ${#GPUS[@]} -ge 1 ]] || die "--gpus must contain at least one GPU id"
 for gpu in "${GPUS[@]}"; do
     [[ "${gpu}" =~ ^[0-9]+$ ]] || die "invalid GPU id: ${gpu}"
 done
@@ -150,8 +166,19 @@ SCOPES=(
     "decoder_plus_head"
     "full_transformer_plus_head"
 )
-EXPECTED_JOBS=$((${#LRS[@]} * ${#UPDATE_INTERVALS[@]} * ${#SCOPES[@]}))
-[[ ${EXPECTED_JOBS} -eq 72 ]] || die "internal grid-size error: ${EXPECTED_JOBS}"
+FULL_GRID_JOBS=$((${#LRS[@]} * ${#UPDATE_INTERVALS[@]} * ${#SCOPES[@]}))
+[[ ${FULL_GRID_JOBS} -eq 72 ]] || \
+    die "internal grid-size error: ${FULL_GRID_JOBS}"
+if [[ ${SMOKE} -eq 1 ]]; then
+    EXPECTED_JOBS=1
+else
+    EXPECTED_JOBS=${FULL_GRID_JOBS}
+fi
+
+job_selected() {
+    local job_index="$1"
+    [[ ${SMOKE} -eq 0 || ${job_index} -eq 3 ]]
+}
 
 # Frozen method controls. Keep every value explicit so config-default changes
 # cannot silently alter a resumed or future run.
@@ -269,16 +296,17 @@ write_plan() {
             interval="${UPDATE_INTERVALS[$ui]}"
             for ((si = 0; si < ${#SCOPES[@]}; si++)); do
                 scope="${SCOPES[$si]}"
-                # Every (LR, interval) tuple contributes one job to each GPU;
-                # scope cost is rotated so every device receives 18 mixed jobs.
-                gpu_index=$(((li + ui + si) % ${#GPUS[@]}))
-                gpu="${GPUS[$gpu_index]}"
-                tag="$(job_tag "${job_index}" "${scope}" "${lr}" "${interval}")"
-                printf '%s,%s,%s,smt_audio,single_source,eam,%s,%s,%s,%s,%s,%s,%s\n' \
-                    "${job_index}" "${tag}" "${gpu}" "${scope}" \
-                    "$(scope_tensor_count "${scope}")" \
-                    "$(scope_parameter_count "${scope}")" \
-                    "${lr}" "${interval}" "${SEED}" "${EPISODES}"
+                if job_selected "${job_index}"; then
+                    # Rotate scope cost across however many GPUs were selected.
+                    gpu_index=$(((li + ui + si) % ${#GPUS[@]}))
+                    gpu="${GPUS[$gpu_index]}"
+                    tag="$(job_tag "${job_index}" "${scope}" "${lr}" "${interval}")"
+                    printf '%s,%s,%s,smt_audio,single_source,eam,%s,%s,%s,%s,%s,%s,%s\n' \
+                        "${job_index}" "${tag}" "${gpu}" "${scope}" \
+                        "$(scope_tensor_count "${scope}")" \
+                        "$(scope_parameter_count "${scope}")" \
+                        "${lr}" "${interval}" "${SEED}" "${EPISODES}"
+                fi
                 job_index=$((job_index + 1))
             done
         done
@@ -294,9 +322,12 @@ printf '  scopes:           %s\n' "${SCOPES[*]}"
 printf '  fixed EAM:        a=%s M=%s K=%s optimizer=%s clip=%s\n' \
     "${CONFIDENCE_SCALE}" "${MEMORY_SIZE}" "${BATCH_SIZE}" \
     "${OPTIMIZER}" "${MAX_GRAD_NORM}"
-printf '  jobs:             %s (18 assigned per GPU)\n' "${EXPECTED_JOBS}"
+printf '  jobs:             %s selected from %s\n' \
+    "${EXPECTED_JOBS}" "${FULL_GRID_JOBS}"
 printf '  GPUs:             %s\n' "${GPU_CSV}"
 printf '  jobs/GPU:         %s concurrent\n' "${JOBS_PER_GPU}"
+printf '  mode:             %s\n' \
+    "$([[ ${SMOKE} -eq 1 ]] && printf smoke || printf full_grid)"
 printf '  seed:             %s\n' "${SEED}"
 printf '  episodes/job:     %s\n' "${EPISODES}"
 printf '  batch:            %s\n' "${BATCH_ID}"
@@ -310,9 +341,17 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
     rm -f "${DRY_PLAN}"
     [[ ${PLAN_JOBS} -eq ${EXPECTED_JOBS} ]] || \
         die "dry-run plan has ${PLAN_JOBS} jobs, expected ${EXPECTED_JOBS}"
-    printf '\nDry run complete: %s jobs, nothing launched.\n' "${EXPECTED_JOBS}"
+    printf '\nDry run complete: %s selected jobs, nothing launched.\n' \
+        "${EXPECTED_JOBS}"
     exit 0
 fi
+
+PREFLIGHT_ROOT="${REPO_ROOT}/avn/results/logs/eam_intensity_grid"
+mkdir -p "${PREFLIGHT_ROOT}"
+PREFLIGHT_LOG="${PREFLIGHT_ROOT}/${BATCH_ID}.preflight.log"
+printf 'preflight_started_at=%s\nbatch_id=%s\ngit_commit=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${BATCH_ID}" "${GIT_COMMIT}" \
+    > "${PREFLIGHT_LOG}"
 
 command -v python3 >/dev/null 2>&1 || die "python3 is unavailable"
 command -v git >/dev/null 2>&1 || die "git is unavailable"
@@ -325,16 +364,25 @@ command -v pgrep >/dev/null 2>&1 || die "pgrep is unavailable"
 [[ -f "${CHECKPOINT}" ]] || die "missing source checkpoint: ${CHECKPOINT}"
 [[ -f "${DATASET}" ]] || die "missing single-source TTA dataset: ${DATASET}"
 
-if [[ ${ALLOW_DIRTY} -eq 0 ]]; then
-    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]]; then
-        die "worktree changes detected; commit them first or use --allow-dirty"
+TRACKED_STATUS="$(
+    git -C "${REPO_ROOT}" status --porcelain --untracked-files=no
+)"
+TRACKED_WORKTREE_DIRTY=0
+if [[ -n "${TRACKED_STATUS}" ]]; then
+    TRACKED_WORKTREE_DIRTY=1
+    printf '%s\n' "${TRACKED_STATUS}" >> "${PREFLIGHT_LOG}"
+    if [[ ${ALLOW_DIRTY} -eq 0 ]]; then
+        die "tracked worktree changes detected; commit them first or use --allow-dirty"
     fi
 fi
 
-fingerprints="$(
+if ! fingerprints="$(
     python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${DATASET}" --seed "${SEED}"
-)"
+        --dataset "${DATASET}" --seed "${SEED}" \
+        2>> "${PREFLIGHT_LOG}"
+)"; then
+    die "episode-stream fingerprinting failed; inspect ${PREFLIGHT_LOG}"
+fi
 read -r STREAM_ORDER_SHA256 STREAM_CONTENT_SHA256 <<< "${fingerprints}"
 for fingerprint in "${STREAM_ORDER_SHA256}" "${STREAM_CONTENT_SHA256}"; do
     [[ "${fingerprint}" =~ ^[0-9a-f]{64}$ ]] || \
@@ -343,6 +391,11 @@ done
 CHECKPOINT_SHA256="$(sha256_file "${CHECKPOINT}")"
 [[ "${CHECKPOINT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
     die "invalid checkpoint SHA256"
+printf 'preflight_passed_at=%s\ntracked_worktree_dirty=%s\nstream_order_sha256=%s\nstream_content_sha256=%s\ncheckpoint_sha256=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TRACKED_WORKTREE_DIRTY}" \
+    "${STREAM_ORDER_SHA256}" "${STREAM_CONTENT_SHA256}" \
+    "${CHECKPOINT_SHA256}" \
+    >> "${PREFLIGHT_LOG}"
 
 validate_job_artifacts() {
     local manifest_path="$1"
@@ -530,6 +583,8 @@ PY
 write_batch_spec() {
     printf 'batch_id=%s\n' "${BATCH_ID}"
     printf 'git_commit=%s\n' "${GIT_COMMIT}"
+    printf 'tracked_worktree_dirty=%s\n' "${TRACKED_WORKTREE_DIRTY}"
+    printf 'allow_dirty=%s\n' "${ALLOW_DIRTY}"
     printf 'experiment=eam_intensity_grid_v1\n'
     printf 'model=smt_audio\n'
     printf 'source_setting=single_source\n'
@@ -538,6 +593,8 @@ write_batch_spec() {
     printf 'episodes=%s\n' "${EPISODES}"
     printf 'gpus=%s\n' "${GPU_CSV}"
     printf 'jobs_per_gpu=%s\n' "${JOBS_PER_GPU}"
+    printf 'smoke=%s\n' "${SMOKE}"
+    printf 'expected_jobs=%s\n' "${EXPECTED_JOBS}"
     printf 'action_selection=%s\n' "${ACTION_SELECTION}"
     printf 'num_processes=1\n'
     printf 'eval_use_ckpt_config=False\n'
@@ -597,7 +654,10 @@ printf 'pid=%s\nhost=%s\nstarted_at=%s\n' \
     "$$" "$(hostname)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     > "${LOCK_DIR}/owner"
 
-GPU_ACTIVE=(0 0 0 0)
+GPU_ACTIVE=()
+for ((GPU_INIT_INDEX = 0; GPU_INIT_INDEX < ${#GPUS[@]}; GPU_INIT_INDEX++)); do
+    GPU_ACTIVE+=(0)
+done
 PIDS=()
 PID_GPU_INDEX=()
 PID_TAG=()
@@ -946,12 +1006,14 @@ for ((LI = 0; LI < ${#LRS[@]}; LI++)); do
         UPDATE_INTERVAL="${UPDATE_INTERVALS[$UI]}"
         for ((SI = 0; SI < ${#SCOPES[@]}; SI++)); do
             SCOPE="${SCOPES[$SI]}"
-            GPU_INDEX=$(((LI + UI + SI) % ${#GPUS[@]}))
-            GPU="${GPUS[$GPU_INDEX]}"
-            RUN_TAG="$(job_tag "${JOB_INDEX}" "${SCOPE}" "${LR}" \
-                "${UPDATE_INTERVAL}")"
-            launch_job "${JOB_INDEX}" "${GPU_INDEX}" "${GPU}" \
-                "${SCOPE}" "${LR}" "${UPDATE_INTERVAL}" "${RUN_TAG}"
+            if job_selected "${JOB_INDEX}"; then
+                GPU_INDEX=$(((LI + UI + SI) % ${#GPUS[@]}))
+                GPU="${GPUS[$GPU_INDEX]}"
+                RUN_TAG="$(job_tag "${JOB_INDEX}" "${SCOPE}" "${LR}" \
+                    "${UPDATE_INTERVAL}")"
+                launch_job "${JOB_INDEX}" "${GPU_INDEX}" "${GPU}" \
+                    "${SCOPE}" "${LR}" "${UPDATE_INTERVAL}" "${RUN_TAG}"
+            fi
             JOB_INDEX=$((JOB_INDEX + 1))
             reap_finished
         done
@@ -988,6 +1050,8 @@ done < <(find "${JOBS_ROOT}" -type f -name validation | sort)
     printf 'batch_id=%s\n' "${BATCH_ID}"
     printf 'git_commit=%s\n' "${GIT_COMMIT}"
     printf 'completed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'tracked_worktree_dirty=%s\n' "${TRACKED_WORKTREE_DIRTY}"
+    printf 'smoke=%s\n' "${SMOKE}"
     printf 'expected=%s\n' "${EXPECTED_JOBS}"
     printf 'launched_this_invocation=%s\n' "${LAUNCHED}"
     printf 'skipped_completed=%s\n' "${SKIPPED}"

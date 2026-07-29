@@ -128,6 +128,25 @@ The selectable suites are `slow_boundary` (40 jobs), `fast_geometry` (24),
 `slow_optimizer` (12), and `q_scaler` (16); `all` schedules all 92 jobs. Logs
 are written under `avn/results/logs/fstta_exploration/<batch-id>/`.
 
+Before launching the 72-job EAM intensity grid, validate its highest-memory
+scope with a short single-GPU smoke run:
+
+```bash
+bash avn/scripts/run_eam_intensity_grid.sh --dry-run \
+  --gpus 3 --jobs-per-gpu 1 --episodes 2 --smoke \
+  --batch-id eam-smoke-full-scope-v1-seed0
+bash avn/scripts/run_eam_intensity_grid.sh \
+  --gpus 3 --jobs-per-gpu 1 --episodes 2 --smoke \
+  --batch-id eam-smoke-full-scope-v1-seed0
+```
+
+After the smoke run passes, omit `--smoke` and restore `--episodes 2000` for
+the complete grid. `--gpus` accepts any non-empty list of distinct physical
+GPU ids, so GPU 3 can be isolated while another method occupies GPUs 0--2.
+The launcher checks only tracked worktree changes; expected datasets,
+checkpoints, run manifests, and result files do not block launch. Preflight
+failures are saved under `avn/results/logs/eam_intensity_grid/*.preflight.log`.
+
 After freezing the complete FAST/SLOW candidate from exploration job 35, run
 the three remaining FSTTA main-table jobs concurrently:
 
