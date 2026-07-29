@@ -460,6 +460,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="resume an immutable named batch and skip validated jobs",
     )
+    parser.add_argument(
+        "--release-lock-on-interrupt",
+        action="store_true",
+        help=(
+            "release the scheduler lock after a controlled signal only when "
+            "all worker processes are confirmed stopped"
+        ),
+    )
     if ALLOW_DIRTY_OPTION:
         parser.add_argument(
             "--allow-dirty",
@@ -1488,12 +1496,13 @@ class Scheduler:
             if (pending or self.active) and not launched_this_pass and not reaped:
                 time.sleep(1.0)
 
-    def terminate_all(self) -> None:
+    def terminate_all(self) -> bool:
         if not self.active:
-            return
+            return True
         self.logger.log(
             "{} terminating {} active worker(s)".format(utc_now(), len(self.active))
         )
+        all_stopped = True
         for running in self.active.values():
             if running.process.poll() is None:
                 try:
@@ -1514,10 +1523,11 @@ class Scheduler:
             try:
                 running.process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                pass
+                all_stopped = False
             running.console.close()
         self.active.clear()
         self.active_by_gpu.clear()
+        return all_stopped
 
 
 def write_batch_metrics(
@@ -1723,12 +1733,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             exit_code = 1
     except (InterruptedError, KeyboardInterrupt) as error:
-        scheduler.terminate_all()
+        all_workers_stopped = scheduler.terminate_all()
         signum = scheduler.stop_signal
         exit_code = 128 + signum if signum is not None else 130
         reason = "signal_{}".format(signum) if signum is not None else "keyboard_interrupt"
         logger.log("scheduler interrupted: {}".format(error))
-        lock.retain(reason, exit_code)
+        if not (args.release_lock_on_interrupt and all_workers_stopped):
+            lock.retain(reason, exit_code)
+        else:
+            logger.log(
+                "controlled interrupt stopped all workers; scheduler lock will be released"
+            )
     except Exception as error:
         scheduler.terminate_all()
         logger.log("scheduler failed: {}".format(error))

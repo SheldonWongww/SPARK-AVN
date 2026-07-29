@@ -379,6 +379,7 @@ fi
 if ! fingerprints="$(
     python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
         --dataset "${DATASET}" --seed "${SEED}" \
+        --episode-count "${EPISODES}" \
         2>> "${PREFLIGHT_LOG}"
 )"; then
     die "episode-stream fingerprinting failed; inspect ${PREFLIGHT_LOG}"
