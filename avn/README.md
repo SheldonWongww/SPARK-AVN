@@ -128,6 +128,27 @@ The selectable suites are `slow_boundary` (40 jobs), `fast_geometry` (24),
 `slow_optimizer` (12), and `q_scaler` (16); `all` schedules all 92 jobs. Logs
 are written under `avn/results/logs/fstta_exploration/<batch-id>/`.
 
+After freezing the complete FAST/SLOW candidate from exploration job 35, run
+the three remaining FSTTA main-table jobs concurrently:
+
+```bash
+python3 avn/scripts/run_fstta_main.py --dry-run \
+  --gpus 0,1,2 --seed 0 --batch-id fstta-main-v1-seed0
+screen -dmS fstta_main \
+  python3 avn/scripts/run_fstta_main.py \
+    --gpus 0,1,2 --seed 0 --batch-id fstta-main-v1-seed0
+screen -d -r fstta_main
+```
+
+The fixed plan is SMT+Audio multi-source, ENMuS single-source, and ENMuS
+multi-source. It uses the same configuration for all three jobs:
+`last_k_ln=4`, FAST `LR=3e-7, M=16`, SLOW `LR=1e-4, N=32, q=0.1`,
+concordant gradients, FAST LR scaling, and persistent AdamW SLOW state. The
+runner records immutable batch inputs, validates each run manifest, and writes
+aggregate metrics under `avn/results/logs/fstta_main/<batch-id>/`. It does not
+rerun the SMT+Audio single-source development result; that result still needs
+a final-commit confirmation run before its provisional marker can be removed.
+
 After freezing the Tent configuration, run the two multi-source main-table
 jobs concurrently on SMT+Audio and ENMuS:
 
