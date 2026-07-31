@@ -3,13 +3,16 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Run the pre-registered 72-job EAM adaptation-intensity grid.
+Run the 24-job fixed-scope EAM adaptation-intensity grid.
 
 Cartesian product:
   LR:              1e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5
-  UPDATE_INTERVAL: 1, 4, 16
-  SCOPE:           head_only, transformer_ln_plus_head,
-                   decoder_plus_head, full_transformer_plus_head
+  UPDATE_INTERVAL: 1, 4, 16, 32
+
+Fixed adaptation scope:
+  SCOPE:           full_transformer_plus_head
+                   (state Transformer and action-distribution head only;
+                   pre-Transformer encoders remain frozen)
 
 Fixed controls:
   SMT+Audio, single_source, sample actions, a=0.4, M=32, K=8,
@@ -27,7 +30,7 @@ Options:
   --batch-id ID         Stable batch id (default: UTC timestamp)
   --resume              Resume a batch; skip validated completed jobs
   --allow-dirty         Permit tracked worktree changes (not recommended)
-  --smoke               Run only job 3 (full transformer, LR=1e-8, interval=1)
+  --smoke               Run only job 0 (LR=1e-8, interval=1)
   --dry-run             Print the selected plan without launching
   -h, --help            Show this help
 
@@ -35,21 +38,21 @@ Recommended detached launch after a short resource smoke test:
   screen -dmS eam_intensity \
     bash avn/scripts/run_eam_intensity_grid.sh \
       --gpus 0,1,2,3 --jobs-per-gpu 2 \
-      --batch-id eam-intensity-smt-single-v1-seed0
+      --batch-id eam-intensity-smt-single-fixed-v2-seed0
 
 Follow progress:
   tail -f avn/results/logs/eam_intensity_grid/\
-eam-intensity-smt-single-v1-seed0/scheduler.log
+eam-intensity-smt-single-fixed-v2-seed0/scheduler.log
 
 Resume the same immutable batch:
   bash avn/scripts/run_eam_intensity_grid.sh \
     --gpus 0,1,2,3 --jobs-per-gpu 2 \
-    --batch-id eam-intensity-smt-single-v1-seed0 --resume
+    --batch-id eam-intensity-smt-single-fixed-v2-seed0 --resume
 
 Single-GPU, two-episode full-scope smoke test:
   bash avn/scripts/run_eam_intensity_grid.sh \
     --gpus 3 --jobs-per-gpu 1 --episodes 2 --smoke \
-    --batch-id eam-smoke-full-scope-v1-seed0
+    --batch-id eam-smoke-full-scope-v2-seed0
 
 This is a development/tuning grid. Do not reuse its episode stream as an
 untouched final-test stream after selecting a configuration.
@@ -135,16 +138,14 @@ done
 [[ ${EPISODES} -le 2000 ]] || die "canonical stream contains only 2000 episodes"
 [[ "${JOBS_PER_GPU}" =~ ^[1-9][0-9]*$ ]] || \
     die "jobs-per-gpu must be positive"
-[[ ${#JOBS_PER_GPU} -le 2 ]] || \
-    die "jobs-per-gpu cannot exceed the 72 selected grid jobs"
 JOBS_PER_GPU=$((10#${JOBS_PER_GPU}))
-[[ ${JOBS_PER_GPU} -le 72 ]] || \
-    die "jobs-per-gpu cannot exceed the 72 selected grid jobs"
+[[ ${JOBS_PER_GPU} -le 24 ]] || \
+    die "jobs-per-gpu cannot exceed the 24 selected grid jobs"
 if [[ ${RESUME} -eq 1 && ${BATCH_ID_GIVEN} -eq 0 ]]; then
     die "--resume requires --batch-id"
 fi
 if [[ -z "${BATCH_ID}" ]]; then
-    BATCH_ID="eam-intensity-smt-single-v1-seed${SEED}-$(date -u +%Y%m%dT%H%M%SZ)"
+    BATCH_ID="eam-intensity-smt-single-fixed-v2-seed${SEED}-$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 [[ "${BATCH_ID}" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "batch-id may contain only letters, numbers, dot, underscore, and hyphen"
@@ -164,15 +165,12 @@ for ((i = 0; i < ${#GPUS[@]}; i++)); do
 done
 
 LRS=("1e-8" "1e-7" "3e-7" "1e-6" "3e-6" "1e-5")
-UPDATE_INTERVALS=(1 4 16)
+UPDATE_INTERVALS=(1 4 16 32)
 SCOPES=(
-    "head_only"
-    "transformer_ln_plus_head"
-    "decoder_plus_head"
     "full_transformer_plus_head"
 )
 FULL_GRID_JOBS=$((${#LRS[@]} * ${#UPDATE_INTERVALS[@]} * ${#SCOPES[@]}))
-[[ ${FULL_GRID_JOBS} -eq 72 ]] || \
+[[ ${FULL_GRID_JOBS} -eq 24 ]] || \
     die "internal grid-size error: ${FULL_GRID_JOBS}"
 if [[ ${SMOKE} -eq 1 ]]; then
     EXPECTED_JOBS=1
@@ -182,7 +180,7 @@ fi
 
 job_selected() {
     local job_index="$1"
-    [[ ${SMOKE} -eq 0 || ${job_index} -eq 3 ]]
+    [[ ${SMOKE} -eq 0 || ${job_index} -eq 0 ]]
 }
 
 # Frozen method controls. Keep every value explicit so config-default changes
@@ -206,18 +204,6 @@ CANONICAL_STREAM_CONTENT_SHA256="dd411c4aafaf626b2848d20b92d1832ea46a5380c571070
 
 scope_prefixes() {
     case "$1" in
-        head_only)
-            printf '%s\n' \
-                '["action_distribution"]'
-            ;;
-        transformer_ln_plus_head)
-            printf '%s\n' \
-                '["net.smt_state_encoder.transformer.encoder.layers.0.norm1","net.smt_state_encoder.transformer.encoder.layers.0.norm2","net.smt_state_encoder.transformer.encoder.norm","net.smt_state_encoder.transformer.decoder.layers.0.norm1","net.smt_state_encoder.transformer.decoder.layers.0.norm2","net.smt_state_encoder.transformer.decoder.layers.0.norm3","net.smt_state_encoder.transformer.decoder.norm","action_distribution"]'
-            ;;
-        decoder_plus_head)
-            printf '%s\n' \
-                '["net.smt_state_encoder.transformer.decoder","action_distribution"]'
-            ;;
         full_transformer_plus_head)
             printf '%s\n' \
                 '["net.smt_state_encoder.transformer","action_distribution"]'
@@ -230,9 +216,6 @@ scope_prefixes() {
 
 scope_tensor_count() {
     case "$1" in
-        head_only) printf '2\n' ;;
-        transformer_ln_plus_head) printf '16\n' ;;
-        decoder_plus_head) printf '22\n' ;;
         full_transformer_plus_head) printf '36\n' ;;
         *) die "unknown EAM scope: $1" ;;
     esac
@@ -240,9 +223,6 @@ scope_tensor_count() {
 
 scope_parameter_count() {
     case "$1" in
-        head_only) printf '1028\n' ;;
-        transformer_ln_plus_head) printf '4612\n' ;;
-        decoder_plus_head) printf '660996\n' ;;
         full_transformer_plus_head) printf '1057284\n' ;;
         *) die "unknown EAM scope: $1" ;;
     esac
@@ -306,7 +286,7 @@ write_plan() {
             for ((si = 0; si < ${#SCOPES[@]}; si++)); do
                 scope="${SCOPES[$si]}"
                 if job_selected "${job_index}"; then
-                    # Rotate scope cost across however many GPUs were selected.
+                    # Rotate grid points across however many GPUs were selected.
                     gpu_index=$(((li + ui + si) % ${#GPUS[@]}))
                     gpu="${GPUS[$gpu_index]}"
                     tag="$(job_tag "${job_index}" "${scope}" "${lr}" "${interval}")"
@@ -326,7 +306,7 @@ printf 'AVN EAM adaptation-intensity Cartesian grid\n'
 printf '  repository:       %s\n' "${REPO_ROOT}"
 printf '  model/source:     smt_audio/single_source\n'
 printf '  LRs:              1e-8,1e-7,3e-7,1e-6,3e-6,1e-5\n'
-printf '  update intervals: 1,4,16\n'
+printf '  update intervals: 1,4,16,32\n'
 printf '  scopes:           %s\n' "${SCOPES[*]}"
 printf '  fixed EAM:        a=%s M=%s K=%s optimizer=%s clip=%s\n' \
     "${CONFIDENCE_SCALE}" "${MEMORY_SIZE}" "${BATCH_SIZE}" \
@@ -607,7 +587,7 @@ write_batch_spec() {
     printf 'git_commit=%s\n' "${GIT_COMMIT}"
     printf 'tracked_worktree_dirty=%s\n' "${TRACKED_WORKTREE_DIRTY}"
     printf 'allow_dirty=%s\n' "${ALLOW_DIRTY}"
-    printf 'experiment=eam_intensity_grid_v1\n'
+    printf 'experiment=eam_intensity_grid_fixed_scope_v2\n'
     printf 'result_role=hyperparameter_search\n'
     printf 'protocol=source_tent_aligned_val_seed0\n'
     printf 'model=smt_audio\n'
@@ -623,7 +603,7 @@ write_batch_spec() {
     printf 'num_processes=1\n'
     printf 'eval_use_ckpt_config=False\n'
     printf 'lrs=1e-8,1e-7,3e-7,1e-6,3e-6,1e-5\n'
-    printf 'update_intervals=1,4,16\n'
+    printf 'update_intervals=1,4,16,32\n'
     printf 'scopes=%s\n' "$(IFS=,; printf '%s' "${SCOPES[*]}")"
     printf 'confidence_scale=%s\n' "${CONFIDENCE_SCALE}"
     printf 'memory_size=%s\n' "${MEMORY_SIZE}"

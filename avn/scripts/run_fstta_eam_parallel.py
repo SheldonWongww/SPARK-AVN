@@ -29,7 +29,7 @@ EAM_RUNNER = REPO_ROOT / "avn" / "scripts" / "run_eam_intensity_grid.sh"
 LOG_BASE = REPO_ROOT / "avn" / "results" / "logs" / "parallel_fstta_eam"
 SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 FSTTA_TOTAL_JOBS_PER_GPU = 12
-EAM_TOTAL_JOBS_PER_GPU = 18
+EAM_TOTAL_JOBS_PER_GPU = 6
 
 
 class UserError(Exception):
@@ -130,7 +130,7 @@ def nonnegative_int(value: str) -> int:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the 48-job ENMuS FSTTA grid and 72-job SMT+Audio EAM grid "
+            "Run the 48-job ENMuS FSTTA grid and 24-job SMT+Audio EAM grid "
             "concurrently with independent schedulers."
         )
     )
