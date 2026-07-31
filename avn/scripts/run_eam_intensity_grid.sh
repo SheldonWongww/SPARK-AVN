@@ -14,15 +14,15 @@ Cartesian product:
 Fixed controls:
   SMT+Audio, single_source, sample actions, a=0.4, M=32, K=8,
   EPISODIC=False, STEPS=1, Adam betas=(0.9,0.999), weight_decay=0,
-  max_grad_norm=0, seed=0, 2000 episodes.
+  max_grad_norm=0, seed=0, canonical Source/Tent val stream, 2000 episodes.
 
 Usage:
   bash avn/scripts/run_eam_intensity_grid.sh [options]
 
 Options:
-  --seed N              Episode-order/evaluation seed (default: 0)
+  --seed N              Episode-order/evaluation seed (canonical grid: 0)
   --gpus LIST           One or more distinct physical GPU ids (default: 0,1,2,3)
-  --jobs-per-gpu N      Concurrent jobs per GPU (default: 2; maximum: 8)
+  --jobs-per-gpu N      Concurrent jobs per GPU (default: 2)
   --episodes N          Episodes per job (default: 2000; maximum: 2000)
   --batch-id ID         Stable batch id (default: UTC timestamp)
   --resume              Resume a batch; skip validated completed jobs
@@ -130,11 +130,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "${SEED}" =~ ^[0-9]+$ ]] || die "seed must be a nonnegative integer"
+[[ ${SEED} -eq 0 ]] || die "the Source/Tent-aligned EAM grid requires seed 0"
 [[ "${EPISODES}" =~ ^[1-9][0-9]*$ ]] || die "episodes must be positive"
 [[ ${EPISODES} -le 2000 ]] || die "canonical stream contains only 2000 episodes"
 [[ "${JOBS_PER_GPU}" =~ ^[1-9][0-9]*$ ]] || \
     die "jobs-per-gpu must be positive"
-[[ ${JOBS_PER_GPU} -le 8 ]] || die "jobs-per-gpu must not exceed 8"
+[[ ${#JOBS_PER_GPU} -le 2 ]] || \
+    die "jobs-per-gpu cannot exceed the 72 selected grid jobs"
+JOBS_PER_GPU=$((10#${JOBS_PER_GPU}))
+[[ ${JOBS_PER_GPU} -le 72 ]] || \
+    die "jobs-per-gpu cannot exceed the 72 selected grid jobs"
 if [[ ${RESUME} -eq 1 && ${BATCH_ID_GIVEN} -eq 0 ]]; then
     die "--resume requires --batch-id"
 fi
@@ -194,6 +199,10 @@ BETA2="0.999"
 WEIGHT_DECAY="0.0"
 MAX_GRAD_NORM="0.0"
 ACTION_SELECTION="sample"
+CANONICAL_CHECKPOINT_SHA256="8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03"
+CANONICAL_DATASET_INDEX_SHA256="838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80"
+CANONICAL_STREAM_ORDER_SHA256="07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c"
+CANONICAL_STREAM_CONTENT_SHA256="dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
 
 scope_prefixes() {
     case "$1" in
@@ -389,11 +398,23 @@ for fingerprint in "${STREAM_ORDER_SHA256}" "${STREAM_CONTENT_SHA256}"; do
     [[ "${fingerprint}" =~ ^[0-9a-f]{64}$ ]] || \
         die "invalid episode-stream fingerprint: ${fingerprint}"
 done
+DATASET_INDEX_SHA256="$(sha256_file "${DATASET}")"
+[[ "${DATASET_INDEX_SHA256}" == "${CANONICAL_DATASET_INDEX_SHA256}" ]] || \
+    die "dataset SHA256 does not match the canonical Source/Tent val index"
+if [[ ${EPISODES} -eq 2000 ]]; then
+    [[ "${STREAM_ORDER_SHA256}" == "${CANONICAL_STREAM_ORDER_SHA256}" ]] || \
+        die "episode order does not match the canonical Source/Tent val stream"
+    [[ "${STREAM_CONTENT_SHA256}" == "${CANONICAL_STREAM_CONTENT_SHA256}" ]] || \
+        die "episode content does not match the canonical Source/Tent val stream"
+fi
 CHECKPOINT_SHA256="$(sha256_file "${CHECKPOINT}")"
 [[ "${CHECKPOINT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
     die "invalid checkpoint SHA256"
-printf 'preflight_passed_at=%s\ntracked_worktree_dirty=%s\nstream_order_sha256=%s\nstream_content_sha256=%s\ncheckpoint_sha256=%s\n' \
+[[ "${CHECKPOINT_SHA256}" == "${CANONICAL_CHECKPOINT_SHA256}" ]] || \
+    die "checkpoint SHA256 does not match the canonical Source checkpoint"
+printf 'preflight_passed_at=%s\ntracked_worktree_dirty=%s\ndataset_index_sha256=%s\nstream_order_sha256=%s\nstream_content_sha256=%s\ncheckpoint_sha256=%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TRACKED_WORKTREE_DIRTY}" \
+    "${DATASET_INDEX_SHA256}" \
     "${STREAM_ORDER_SHA256}" "${STREAM_CONTENT_SHA256}" \
     "${CHECKPOINT_SHA256}" \
     >> "${PREFLIGHT_LOG}"
@@ -587,6 +608,8 @@ write_batch_spec() {
     printf 'tracked_worktree_dirty=%s\n' "${TRACKED_WORKTREE_DIRTY}"
     printf 'allow_dirty=%s\n' "${ALLOW_DIRTY}"
     printf 'experiment=eam_intensity_grid_v1\n'
+    printf 'result_role=hyperparameter_search\n'
+    printf 'protocol=source_tent_aligned_val_seed0\n'
     printf 'model=smt_audio\n'
     printf 'source_setting=single_source\n'
     printf 'method=eam\n'
@@ -619,6 +642,7 @@ write_batch_spec() {
         printf 'scope_%s_parameters=%s\n' "${scope}" "$(scope_parameter_count "${scope}")"
     done
     printf 'checkpoint_sha256=%s\n' "${CHECKPOINT_SHA256}"
+    printf 'dataset_index_sha256=%s\n' "${DATASET_INDEX_SHA256}"
     printf 'stream_order_sha256=%s\n' "${STREAM_ORDER_SHA256}"
     printf 'stream_content_sha256=%s\n' "${STREAM_CONTENT_SHA256}"
 }
@@ -1050,6 +1074,8 @@ done < <(find "${JOBS_ROOT}" -type f -name validation | sort)
 {
     printf 'batch_id=%s\n' "${BATCH_ID}"
     printf 'git_commit=%s\n' "${GIT_COMMIT}"
+    printf 'result_role=hyperparameter_search\n'
+    printf 'protocol=source_tent_aligned_val_seed0\n'
     printf 'completed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'tracked_worktree_dirty=%s\n' "${TRACKED_WORKTREE_DIRTY}"
     printf 'smoke=%s\n' "${SMOKE}"
@@ -1061,6 +1087,7 @@ done < <(find "${JOBS_ROOT}" -type f -name validation | sort)
     printf 'missing=%s\n' "${MISSING}"
     printf 'manifest_pointers=%s\n' "${MANIFEST_POINTERS}"
     printf 'validated=%s\n' "${VALIDATED}"
+    printf 'dataset_index_sha256=%s\n' "${DATASET_INDEX_SHA256}"
     printf 'stream_order_sha256=%s\n' "${STREAM_ORDER_SHA256}"
     printf 'stream_content_sha256=%s\n' "${STREAM_CONTENT_SHA256}"
 } | tee "${LOG_ROOT}/SUMMARY"

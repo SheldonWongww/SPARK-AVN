@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run the 48-job ENMuS single-source FSTTA calibration grid.
+"""Run the 48-job ENMuS single-source FSTTA grid on the canonical val stream.
 
-This is a model-level development experiment.  It samples a fixed 20 x 100
-stream from the 20 x 900 target-like ``tta_test/.../train`` pool and must not
-be reported as the final ``val`` result.  Every job keeps the complete FSTTA
-method enabled; there are no FAST-only controls in this grid.
+The dataset, seed, 2,000-episode order, native sampled-action semantics, and
+checkpoint match the Source and Tent comparisons.  Full runs fail preflight if
+the dataset or stream fingerprints differ.  Every job keeps the complete
+FSTTA method enabled; there are no FAST-only controls in this grid.
 """
 
 from pathlib import Path
@@ -114,13 +114,16 @@ def configure_runner():
 
     runner.MODEL = "enmus"
     runner.SOURCE_SETTING = "single_source"
-    runner.EVAL_SPLIT = "train"
+    runner.EVAL_SPLIT = "val"
     runner.EXPLICIT_EVAL_SPLIT = True
-    runner.EXPERIMENT_TITLE = "AVN ENMuS FSTTA model-level calibration grid"
+    runner.RESULT_ROLE = "hyperparameter_search"
+    runner.EXPERIMENT_TITLE = "AVN ENMuS FSTTA canonical-val grid"
     runner.BATCH_ID_PREFIX = "fstta-enmus-grid"
     runner.FIXED_SUITE = SUITE
     runner.ALLOW_DIRTY_OPTION = False
     runner.REQUIRED_GPU_COUNT = 4
+    # ENMuS has no EVAL.ACTION_SELECTION config key.  Its policy samples when
+    # deterministic=False, which is also the protocol used by Source/Tent.
     runner.ACTION_SELECTION = None
     runner.RUNNER = root / "avn" / "scripts" / "eval_enmus.sh"
     runner.PROVENANCE_SOURCE_FILES = (
@@ -147,8 +150,8 @@ def configure_runner():
         / "single_source"
         / "mp3d"
         / "v1"
-        / "train"
-        / "train.json.gz"
+        / "val"
+        / "val.json.gz"
     )
     runner.LOG_BASE = root / "avn" / "results" / "logs" / "fstta_enmus_grid"
     runner.AUXILIARY_CHECKPOINTS = {
@@ -156,7 +159,20 @@ def configure_runner():
         "visual_encoder": auxiliary_root / "visual_encoder_best_val.pth",
         "seld_encoder": auxiliary_root / "seld_crnn_best_val.h5",
     }
-    runner.RUNNER_ENV = {"NAVTTA_EVAL_SPLIT": "train"}
+    runner.RUNNER_ENV = {"NAVTTA_EVAL_SPLIT": "val"}
+    runner.EXPECTED_CHECKPOINT_SHA256 = (
+        "4f37a377cc7fcb888c545850c91883560a908ba5366072df787e4c8238ecefcd"
+    )
+    runner.EXPECTED_DATASET_INDEX_SHA256 = (
+        "838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80"
+    )
+    runner.EXPECTED_STREAM_EPISODES = 2000
+    runner.EXPECTED_STREAM_ORDER_SHA256 = (
+        "07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c"
+    )
+    runner.EXPECTED_STREAM_CONTENT_SHA256 = (
+        "dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
+    )
 
     runner.SUITE_ORDER = (SUITE,)
     runner.EXPECTED_SUITE_COUNTS = {SUITE: 48}

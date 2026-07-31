@@ -2,9 +2,9 @@
 """Run the ENMuS FSTTA and SMT+Audio EAM grids concurrently.
 
 The two child schedulers keep independent batch directories, locks, manifests,
-and resume state.  Static per-GPU quotas cap their combined concurrency, while
-both grids still use all four physical GPUs.  A child failure is recorded but
-does not terminate the sibling grid.
+and resume state.  User-selected per-GPU quotas control each grid independently
+while both grids still use all four physical GPUs.  A child failure is recorded
+but does not terminate the sibling grid.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ FSTTA_RUNNER = REPO_ROOT / "avn" / "scripts" / "run_fstta_enmus_grid.py"
 EAM_RUNNER = REPO_ROOT / "avn" / "scripts" / "run_eam_intensity_grid.sh"
 LOG_BASE = REPO_ROOT / "avn" / "results" / "logs" / "parallel_fstta_eam"
 SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
+FSTTA_TOTAL_JOBS_PER_GPU = 12
+EAM_TOTAL_JOBS_PER_GPU = 18
 
 
 class UserError(Exception):
@@ -182,14 +184,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="run both child dry-runs without creating batch directories",
     )
     args = parser.parse_args(argv)
-    if args.fstta_jobs_per_gpu > 16:
-        parser.error("--fstta-jobs-per-gpu must not exceed 16")
-    if args.eam_jobs_per_gpu > 8:
-        parser.error("--eam-jobs-per-gpu must not exceed 8")
-    if args.fstta_jobs_per_gpu + args.eam_jobs_per_gpu > 5:
-        parser.error(
-            "combined FSTTA+EAM concurrency must not exceed 5 jobs per GPU"
-        )
     if args.episodes > 2000:
         parser.error("--episodes must not exceed 2000")
     if args.startup_delay > 300:
@@ -254,15 +248,25 @@ def print_plan(
     fstta_batch_id: str,
     eam_batch_id: str,
 ) -> None:
-    total = args.fstta_jobs_per_gpu + args.eam_jobs_per_gpu
+    requested_total = args.fstta_jobs_per_gpu + args.eam_jobs_per_gpu
+    effective_fstta = min(
+        args.fstta_jobs_per_gpu, FSTTA_TOTAL_JOBS_PER_GPU
+    )
+    effective_eam = min(args.eam_jobs_per_gpu, EAM_TOTAL_JOBS_PER_GPU)
+    effective_total = effective_fstta + effective_eam
     print("AVN parallel FSTTA + EAM grids")
     print("  repository:             {}".format(REPO_ROOT))
     print("  group id:               {}".format(args.group_id))
     print("  GPUs:                   {}".format(",".join(args.gpus)))
     print("  FSTTA slots/GPU:        {}".format(args.fstta_jobs_per_gpu))
     print("  EAM slots/GPU:          {}".format(args.eam_jobs_per_gpu))
-    print("  combined slots/GPU:     {}".format(total))
-    print("  combined active jobs:   {}".format(total * len(args.gpus)))
+    print("  requested slots/GPU:    {}".format(requested_total))
+    print("  effective peak/GPU:     {}".format(effective_total))
+    print(
+        "  effective active jobs:  {}".format(
+            effective_total * len(args.gpus)
+        )
+    )
     print("  episodes/job:           {}".format(args.episodes))
     print("  FSTTA batch:            {}".format(fstta_batch_id))
     print("  EAM batch:              {}".format(eam_batch_id))
@@ -360,8 +364,13 @@ def plan_text(
         ("fstta_jobs_per_gpu", args.fstta_jobs_per_gpu),
         ("eam_jobs_per_gpu", args.eam_jobs_per_gpu),
         (
-            "combined_jobs_per_gpu",
+            "requested_combined_jobs_per_gpu",
             args.fstta_jobs_per_gpu + args.eam_jobs_per_gpu,
+        ),
+        (
+            "effective_peak_jobs_per_gpu",
+            min(args.fstta_jobs_per_gpu, FSTTA_TOTAL_JOBS_PER_GPU)
+            + min(args.eam_jobs_per_gpu, EAM_TOTAL_JOBS_PER_GPU),
         ),
         ("fstta_batch_id", fstta_batch_id),
         ("eam_batch_id", eam_batch_id),

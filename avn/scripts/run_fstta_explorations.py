@@ -35,6 +35,7 @@ MODEL = "smt_audio"
 SOURCE_SETTING = "single_source"
 EVAL_SPLIT = "val"
 EXPLICIT_EVAL_SPLIT = False
+RESULT_ROLE: Optional[str] = None
 EXPERIMENT_TITLE = "AVN FSTTA focused exploration"
 BATCH_ID_PREFIX = "fstta-exploration"
 FIXED_SUITE: Optional[str] = None
@@ -78,6 +79,11 @@ RESET_FAST_OPTIMIZER_EACH_EPISODE = True
 EIGEN_EPS = "1e-6"
 ACTION_SELECTION = "sample"
 RUNNER_ENV: Mapping[str, str] = {}
+EXPECTED_CHECKPOINT_SHA256: Optional[str] = None
+EXPECTED_DATASET_INDEX_SHA256: Optional[str] = None
+EXPECTED_STREAM_EPISODES: Optional[int] = None
+EXPECTED_STREAM_ORDER_SHA256: Optional[str] = None
+EXPECTED_STREAM_CONTENT_SHA256: Optional[str] = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "avn" / "scripts" / "eval_smt_audio.sh"
@@ -122,6 +128,12 @@ def attempt_stamp() -> str:
 
 def config_bool(value: bool) -> str:
     return "True" if value else "False"
+
+
+def configured_result_role() -> str:
+    if RESULT_ROLE is not None:
+        return RESULT_ROLE
+    return "development_calibration" if EVAL_SPLIT == "train" else "evaluation"
 
 
 def slug(value: object) -> str:
@@ -449,7 +461,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=5,
         type=positive_int,
         metavar="N",
-        help="concurrent jobs on each GPU (default: 5; maximum: 16)",
+        help="concurrent jobs on each GPU (default: 5)",
     )
     parser.add_argument(
         "--batch-id",
@@ -489,8 +501,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="episodes per job (default: 2000; maximum: 2000)",
     )
     args = parser.parse_args(argv)
-    if args.jobs_per_gpu > 16:
-        parser.error("--jobs-per-gpu must not exceed 16")
     if REQUIRED_GPU_COUNT is not None and len(args.gpus) != REQUIRED_GPU_COUNT:
         parser.error("--gpus must contain exactly {} GPU ids".format(
             REQUIRED_GPU_COUNT
@@ -671,7 +681,46 @@ def load_provenance(allow_dirty: bool, episodes: int) -> Provenance:
     checkpoint_sha256 = sha256_file(CHECKPOINT)
     if not re.fullmatch(r"[0-9a-f]{64}", checkpoint_sha256):
         raise RuntimeError("invalid checkpoint SHA256")
+    if (
+        EXPECTED_CHECKPOINT_SHA256 is not None
+        and checkpoint_sha256 != EXPECTED_CHECKPOINT_SHA256
+    ):
+        raise RuntimeError(
+            "source checkpoint does not match the canonical Source SHA256: "
+            "expected {}, got {}".format(
+                EXPECTED_CHECKPOINT_SHA256, checkpoint_sha256
+            )
+        )
     dataset_index_sha256 = sha256_file(DATASET)
+    if (
+        EXPECTED_DATASET_INDEX_SHA256 is not None
+        and dataset_index_sha256 != EXPECTED_DATASET_INDEX_SHA256
+    ):
+        raise RuntimeError(
+            "configured dataset does not match the canonical index SHA256: "
+            "expected {}, got {}".format(
+                EXPECTED_DATASET_INDEX_SHA256, dataset_index_sha256
+            )
+        )
+    if (
+        EXPECTED_STREAM_EPISODES is not None
+        and episodes == EXPECTED_STREAM_EPISODES
+    ):
+        expected_fingerprints = (
+            EXPECTED_STREAM_ORDER_SHA256,
+            EXPECTED_STREAM_CONTENT_SHA256,
+        )
+        if any(value is None for value in expected_fingerprints):
+            raise RuntimeError(
+                "canonical stream fingerprints are incompletely configured"
+            )
+        if tuple(fingerprints) != expected_fingerprints:
+            raise RuntimeError(
+                "episode stream does not match the canonical Source/Tent order and "
+                "content: expected {}, got {}".format(
+                    " ".join(expected_fingerprints), " ".join(fingerprints)
+                )
+            )
     auxiliary_hashes = tuple(
         (name, sha256_file(path))
         for name, path in sorted(AUXILIARY_CHECKPOINTS.items())
@@ -702,6 +751,7 @@ def batch_spec_text(
         ("model", MODEL),
         ("source_setting", SOURCE_SETTING),
         ("eval_split", EVAL_SPLIT),
+        ("result_role", configured_result_role()),
         ("method", "fstta"),
         ("seed", SEED),
         ("episodes", args.episodes),
@@ -1218,11 +1268,7 @@ def collect_job_evidence(
         "model": MODEL,
         "source_setting": SOURCE_SETTING,
         "eval_split": EVAL_SPLIT,
-        "result_role": (
-            "development_calibration"
-            if EVAL_SPLIT == "train"
-            else "evaluation"
-        ),
+        "result_role": configured_result_role(),
         "method": "fstta",
         "seed": SEED,
         "episodes": episodes,
@@ -1585,11 +1631,7 @@ def write_batch_metrics(
             "model": MODEL,
             "source_setting": SOURCE_SETTING,
             "eval_split": EVAL_SPLIT,
-            "result_role": (
-                "development_calibration"
-                if EVAL_SPLIT == "train"
-                else "evaluation"
-            ),
+            "result_role": configured_result_role(),
             "method": "fstta",
             "seed": SEED,
             "episodes": episodes,
