@@ -1,6 +1,6 @@
 # Tent 在 AVN 上的完整实验报告
 
-更新日期：2026-07-25
+更新日期：2026-07-26
 
 状态：探索性超参数开发报告。Source 已按当前 TTA 协议重评估，但导入权重的
 训练 provenance 和部分 run manifest 仍不完整，因此当前不进入正式结果表。
@@ -9,8 +9,9 @@
 
 本报告重新解析 avn/results/logs 下现有的全部 Tent 与 Source 日志，包括
 早期四组 12-run 网格、SMT+Audio 单声源 120 组核心网格、ENMuS 单声源
-120 组核心网格、12 组更新间隔实验、10 组机制验证实验，以及四个模型在
-single/multi 上的 8 组 Source 重评估。共完成 318 个 2000-episode 运行实例
+120 组核心网格、12 组更新间隔实验、10 组机制验证实验、四个模型在
+single/multi 上的 8 组 Source 重评估，以及 SMT+Audio/ENMuS 的 2 组
+multi-source 统一 Tent 主表运行。共完成 320 个 2000-episode 运行实例
 （包含配置重合的重复运行）。
 
 当前证据支持以下结论。
@@ -51,6 +52,12 @@ single/multi 上的 8 组 Source 重评估。共完成 318 个 2000-episode 运�
    增益。但 Source 与各 Tent 网格仍不是同一 Git commit，Source/TTA 的
    per-run manifest 未同步到本地，导入 checkpoint 的训练来源也不完整，
    因此这些增益仍是探索性结果。
+9. **统一主表配置在多声源上的结果具有模型差异。** 固定全部 LayerNorm、
+   lr=1e-8、interval=1 后，SMT+Audio multi 的 SR 从 25.90 升至 26.10，
+   但 SPL 从 13.4196 降至 13.0639；ENMuS multi 的 SR 从 34.75 升至
+   35.55，SPL 从 17.1118 微升至 17.1682。结合已有 single 结果，该统一
+   配置在四个模型/声源组合上均有更高 SR，但只有 3/4 同时提高 SR/SPL，且
+   ENMuS multi 的 +0.0564 SPL 应视为数值近似持平，而非可靠显著收益。
 
 因此，当前结果支持“在该 seed-0 开发流和探索性 Source 参照下，经过适当
 强度控制的 Tent 能使聚合 SR/SPL 更高”，但不能据此断言 Tent 已能稳定改善
@@ -72,11 +79,17 @@ AVN。最可靠的经验方向仍是小参数范围、受控更新预算、源�
 | tent_mechanism_validation/tent-mechanism-v1-seed0 | SMT+Audio / single | 10 | 10 | bd7fd58 |
 | tent_core_grid/tent-core-enmus-v1-seed0 | ENMuS / single | 120 | 120 | 4d7917c |
 | source_reval/source-reval-v1-seed0 | 四模型 / single+multi | 8 | 8 | 48ea628 |
-| **合计** |  | **318** | **318** |  |
+| tent_main_multi/tent-main-multi-v1-seed0 | SMT+Audio+ENMuS / multi | 2 | 2 | 1d1d158 |
+| **合计** |  | **320** | **320** |  |
 
 ENMuS 的 ln、lr=1e-6、interval=1 运行已补跑完成，最终 SR/SPL 为
 24.75/12.6760，与早期同配置重复实验的 24.40/12.7894 接近，也与高强度
 适应导致坍塌的总体趋势一致。
+
+新增 multi-source 主表批次的两个任务均为 2000 episodes、exitcode=0、
+validation=ok。批次计划、聚合 metrics、checkpoint SHA256、stream order/content
+SHA256 和精确配置均已同步到本地；两项任务的 per-run manifest 与 diagnostics
+在服务器运行结束时通过了调度脚本校验，但对应文件本体未随日志目录同步。
 
 ### 2.2 重复实验与确定性
 
@@ -98,6 +111,14 @@ sample、更新上限 -1，因此这两项没有改变 120 组网格的默认适
 4d7917c 到 Source 提交 48ea628 没有修改 TTA trainer 或适应算法核心，主要
 增加 Source 调度、指纹和 manifest 校验，并调整 AV-Nav/SAVi 的重评估配置。
 
+新增 multi-source Tent 主表运行位于 1d1d158。与 Source 重评估提交 48ea628
+相比，版本差异只涉及本报告、研究记录、比较矩阵和主表调度脚本，没有修改
+共享 TTA 实现、两模型 evaluator/trainer 或评估配置。更重要的是，两批次记录
+的 multi-source stream order/content SHA256 完全相同，两个模型各自的 Source
+checkpoint SHA256 也完全相同。因此新增 multi-source Source/Tent 对照在当前
+本地证据中具有最高的协议与二进制对齐程度；剩余限制主要是 per-run manifest、
+diagnostics 文件本体和训练 provenance 尚未一并同步。
+
 ### 2.3 形式化结果限制
 
 这些结果仍应定位为探索性和超参数开发结果，不能直接作为论文最终主表。
@@ -109,6 +130,11 @@ sample、更新上限 -1，因此这两项没有改变 120 组网格的默认适
   manifest.json；因此无法从本地材料对其 checkpoint 二进制做逐 run 哈希
   复核。Source 与 Tent 在可见的 episode 数、seed、流构造和动作方式上对齐，
   但不是同一 Git commit，也缺少早期 Tent 的 digest 级逐 run 证明。
+- 新增 multi-source 主表日志均显示完成 2000/2000 episodes；调度器已在
+  服务器端校验 checkpoint/stream digest、run manifest、diagnostics 和聚合
+  metrics，且其 digest 与 Source 批次一致。但本地只同步了日志批次，未同步
+  per-run manifest、diagnostics 和逐 episode JSON，因此仍无法在本地完成
+  独立复核或配对统计。
 - 用户提供的历史 Source 缺少 checkpoint SHA256、数据版本、Git commit 和
   硬件清单，后文只用于说明旧结论为何发生偏差，不再用于方法增益计算。
 - 所有核心搜索均为 seed 0。持续 TTA 对 episode 顺序和采样随机性敏感。
@@ -160,6 +186,21 @@ BatchNorm。核心思想仍是无监督在线最小化动作分布熵。
 
 更新上限只重置 episode 内计数；模型参数与 Adam 优化器状态继续跨 episode
 保留，因此仍是 continual TTA，而不是 episodic reset。
+
+### 3.3 冻结的统一主表 Tent 配置
+
+主表标准 Tent 候选在两个模型和两种声源设定上统一固定为：
+
+- `NORM_SCOPE=ln`，即全部 LayerNorm affine 参数；
+- `LR=1e-8`，`UPDATE_INTERVAL=1`；
+- `EPISODIC=False`，`STEPS=1`；
+- Adam，betas=(0.9, 0.999)，weight decay=0，最大梯度范数 1.0；
+- sample 动作、seed 0、2000 episodes、20 scenes × 100 episodes、全局 shuffle。
+
+single-source 数值复用核心网格中预先存在的对应配置，不是新的确认性运行；
+multi-source 两项则由 `tent_main_multi/tent-main-multi-v1-seed0` 新完成。该配置
+的目的不是分别追求两个模型的事后最优值，而是以统一、最接近标准 Tent 的全
+LayerNorm 设定形成主表基线。
 
 ## 4. Source 重评估与历史对照
 
@@ -214,6 +255,45 @@ SHA256；当前本地二进制与记录值一致。single 流的 order/content S
 commit 为 48ea628，核心 Tent 网格分别位于 a298494 和 4d7917c；Source 的
 per-run manifest 以及早期 Tent manifest 都未同步到本地。因此当前比较适合
 回顾性探索分析，不能直接当作最终论文主表，也不应继续在该流上扩展选参。
+
+### 4.4 冻结统一配置的四组合结果
+
+下表比较统一 `ln、lr=1e-8、interval=1` Tent 与当前 Source。SR/SPL 及增益
+均为百分点；single 两行复用核心网格结果，multi 两行是本次新增运行。
+
+| 模型 | 声源 | Source SR / SPL | Tent SR / SPL | ΔSR | ΔSPL | 结果性质 |
+|---|---|---:|---:|---:|---:|---|
+| SMT+Audio | single | 54.15 / 29.4229 | 55.80 / 29.8232 | +1.65 | +0.4003 | 两项提高 |
+| SMT+Audio | multi | 25.90 / 13.4196 | 26.10 / 13.0639 | +0.20 | -0.3557 | SR 微升、SPL 下降 |
+| ENMuS | single | 66.55 / 36.0480 | 67.35 / 36.6857 | +0.80 | +0.6377 | 两项提高 |
+| ENMuS | multi | 34.75 / 17.1118 | 35.55 / 17.1682 | +0.80 | +0.0564 | SPL 数值近似持平 |
+
+新增 multi-source 日志的全部聚合指标如下；SR、SPL、SoftSPL、SNA、SWS
+以百分数表示。
+
+| 模型 | Reward | SR | SPL | SoftSPL | DTG | NDTG | NA | SNA | SWS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SMT+Audio | 5.338717 | 26.10 | 13.0639 | 24.1813 | 7.7215 | 0.559223 | 173.377 | 19.0262 | 1.35 |
+| ENMuS | 7.261280 | 35.55 | 17.1682 | 25.4856 | 7.0725 | 0.553091 | 159.0205 | 26.0775 | 1.10 |
+
+与相同 digest 的 Source 相比，SMT+Audio multi 除 SR、reward、DTG/NDTG
+略有改善外，SPL、SoftSPL、NA 和 SNA 均变差；尤其 NA 增加 8.645，说明
+成功率的 +0.20 没有转化为路径效率收益。ENMuS multi 的方向更一致：SR
++0.80、SoftSPL +0.5411、DTG -0.2415、NA -0.462，但 SPL 只增加 0.0564，
+在没有逐 episode 配对置信区间时应视为近似持平。
+
+SMT+Audio multi 共执行 346,754 次 Tent 更新，最终相对参数漂移为
+0.001322，全程平均熵 0.5294；最后 50 episodes 的 SR/SPL 为
+30.00/13.7881，没有出现末段归零式坍塌。相同统一配置的 single 运行为
+307,392 次更新、漂移 0.000850，multi 的更新数和漂移分别高约 12.8% 和
+55.4%。这与“更长、更困难的流会累积更多适应和漂移”的机制一致，但单个
+对照不足以证明它是 multi 上 SPL 下降的唯一原因。ENMuS console 未记录周期
+diagnostics；调度器验证过 diagnostics 文件存在，但该文件未同步到本地。
+
+因此，冻结统一 Tent 在四个组合上均取得更高的聚合 SR，但并未在两个
+multi-source 模型上稳定提高 SPL。其证据含义弱于“分别搜索出的最好配置”，
+却更接近论文主表中固定方法设置应回答的问题：标准化 Tent 的收益有限、依赖
+模型与指标，不能概括为普遍正向。
 
 ## 5. SMT+Audio 单声源核心网格
 
@@ -446,9 +526,10 @@ Source-argmax 比 Source-sample 低 20.70 SR 和 9.0187 SPL 个百分点。该 P
 
 因此在具身导航中，纯熵最小化缺少闭环任务约束。
 
-## 9. 早期单步网格与多声源结果
+## 9. 早期单步网格（含多声源搜索）
 
-以下实验固定 interval=1，单元格为 SR/SPL 百分数。
+以下是冻结统一主表配置之前完成的早期搜索，固定 interval=1，单元格为
+SR/SPL 百分数。它们用于分析搜索空间，不应与 4.4 节的统一主表配置混为一谈。
 
 ### 9.1 SMT+Audio / single
 
@@ -499,8 +580,8 @@ last_ln、1e-7 是唯一同时提高两项的配置，达到 26.95/13.8725，增
 相对新 Source 34.75/17.1118，有 3/12 个配置同时提高 SR 和 SPL。最佳平衡
 配置 last_ln、1e-7 达到 36.35/17.5732，增益为 +1.60/+0.4614；
 first_ln、1e-7 也提高两项。last_k_ln、1e-7 的 SPL 仅提高 0.0033 个百分点，
-应视为数值持平而不是可靠收益。多声源结果仍只有单 seed 和 12 个配置，证据
-强度低于单声源核心网格。
+应视为数值持平而不是可靠收益。该早期多声源网格仍只有单 seed 和 12 个
+配置，证据强度低于单声源核心网格；冻结统一配置的独立结果见 4.4 节。
 
 ## 10. 与 FSTTA 论文中 DUET 结果的关系
 
@@ -509,6 +590,11 @@ Tent-Stable 才出现小幅收益。当前 seed-0 开发流的回顾性结果则
 大范围搜索后，弱强度 Tent 在 SMT+Audio 和 ENMuS 上都能得到更高的聚合
 SR/SPL。这两者并不矛盾：“默认 Tent 的结果”与“从 120 个配置中选择的
 最佳结果”具有不同统计含义。
+
+新增冻结配置进一步直接支持这一区分：事后搜索的 multi-source 最佳配置在
+SMT+Audio 和 ENMuS 上都能提高 SR/SPL，而统一 `ln、1e-8、u1` 配置在
+SMT+Audio multi 上降低 SPL，在 ENMuS multi 上也只提高 0.0564 SPL。因而
+“搜索空间中存在正向配置”不能替代“固定方法设置能稳定超过 Source”的证明。
 
 | 方法 | REVERIE Val Unseen ΔSR | ΔSPL | Test Unseen ΔSR | ΔSPL |
 |---|---:|---:|---:|---:|
@@ -556,12 +642,13 @@ SR/SPL。这两者并不矛盾：“默认 Tent 的结果”与“从 120 个配
    已有二进制 SHA256，但 training provenance 仍不完整。
 2. 在同一当前代码 commit 上成对重跑固定的 Source/Tent 候选，消除本报告仍有
    的跨 commit 差异。不要再根据结果重新扩大搜索空间。
-3. 主对比表在固定的 seed-0 episode 顺序上运行冻结候选，不再根据主表结果
-   重新选择配置。不同 episode 顺序的稳定性作为独立补充实验评估。建议候选：
-   - 主表标准 Tent（两模型、single/multi 统一）：ln、1e-8、u1；
-   - SMT+Audio 单声源候选：last_k_ln、1e-8、u1；
-   - ENMuS 单声源候选：last_ln、1e-8、u1；
-   - SMT+Audio 机制对照：last_k_ln、1e-6、u1、每 episode 上限 15。
+3. 主表标准 Tent 已冻结为两模型、single/multi 统一的 `ln、1e-8、u1`，本次
+   已补齐两项 multi-source 运行；不要因 SMT+Audio multi 的 SPL 下降而重新
+   选参。single 当前复用搜索网格结果，若最终主表要求严格同 commit 成对运行，
+   应在声明好的最终 commit 上按原配置重跑四组 Source/Tent，并保存逐 episode
+   JSON，而不是再次搜索。模型专用最优配置只作为超参数/消融分析：SMT+Audio
+   为 last_k_ln、1e-8、u1，ENMuS 为 last_ln、1e-8、u1；更新预算机制对照仍为
+   SMT+Audio last_k_ln、1e-6、u1、每 episode 上限 15。
 4. 保存逐 episode 结果，使用配对 bootstrap 计算 SR/SPL 的置信区间；仅有
    聚合均值无法判断 0.4–3.5 个百分点差异是否可靠。
 5. 明确区分 TTA-dev 与最终测试流。当前最佳值来自同一 2000-episode 流上的
@@ -571,12 +658,14 @@ SR/SPL。这两者并不矛盾：“默认 Tent 的结果”与“从 120 个配
 
 ## 13. 最终判断
 
-当前 310 个搜索/机制运行加 8 个 Source 重评估给出了一个更清晰的经验图景：
+当前 310 个搜索/机制运行、8 个 Source 重评估和 2 个冻结 multi-source 主表
+运行给出了一个更清晰的经验图景：
 
 - 在该 seed-0 开发流和当前探索性 Source 参照下，温和、局部的 Tent 在
   SMT+Audio 和 ENMuS 上都出现了更高的聚合 SR/SPL；
-- 两个单声源模型有 29 个共同配置同时提高 SR 和 SPL，多声源 12-run 网格也
-  各自出现了同时提高两项的配置；
+- 两个单声源模型有 29 个共同搜索配置同时提高 SR 和 SPL，早期多声源网格也
+  各自出现了正向配置；但冻结统一主表配置在 SMT+Audio multi 上降低 SPL，
+  在 ENMuS multi 上的 SPL 也仅数值微升，说明搜索最优不能代表固定基线收益；
 - 单声源精确最优配置仍不相同，跨模型共同候选应与模型专用候选分别复验；
 - 过强的持续熵最小化在两个模型上都会以高度一致的方式失败；
 - 失败不是因为熵没有降低，而是因为熵被降低到了错误策略上；

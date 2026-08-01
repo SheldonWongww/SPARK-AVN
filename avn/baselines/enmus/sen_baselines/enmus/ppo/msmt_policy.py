@@ -539,4 +539,4 @@ class AudioNavMSMTNetWithGD(Net):
         if self._use_residual_connection:
             x_att = torch.cat([x_att, x], 1)
 
-        return x_att, rnn_hidden_states, x    
+        return x_att, rnn_hidden_states, x
