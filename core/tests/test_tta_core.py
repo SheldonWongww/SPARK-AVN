@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 import random
 import unittest
@@ -1069,12 +1070,100 @@ class TTACoreTest(unittest.TestCase):
             trainable_prefixes=("action_distribution",),
         )
         width = sum(param.numel() for param in adapter.params)
-        adapter.trajectory_grads = [
-            torch.ones(width),
-            torch.full((width,), 2.0),
-        ]
+        adapter._accumulate_step_gradient(torch.ones(width))
+        adapter._accumulate_step_gradient(torch.full((width,), 2.0))
         expected = torch.full((width,), 2.5)
         torch.testing.assert_close(adapter._aggregate_trajectory(), expected)
+
+    def test_feedtta_trajectory_accumulator_has_constant_memory(self):
+        adapter = FEEDTTAAdapter(
+            _TinyPolicy(), gamma=0.99,
+            trainable_prefixes=("action_distribution",),
+        )
+        width = sum(param.numel() for param in adapter.params)
+        for _ in range(500):
+            adapter._accumulate_step_gradient(torch.ones(width))
+        self.assertEqual(adapter._trajectory_step_count, 500)
+        self.assertEqual(adapter._trajectory_gradient.numel(), width)
+        self.assertFalse(hasattr(adapter, "trajectory_grads"))
+
+    def test_feedtta_sgr_matches_main_text_equation_five(self):
+        adapter = FEEDTTAAdapter(
+            _TinyPolicy(), reversal_probability=0.5, reversal_scale=-0.2,
+            trainable_prefixes=("action_distribution",),
+        )
+        gradient = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        selected = torch.tensor([True, False, True, False])
+        with mock.patch.object(
+            adapter, "_sample_sgr_mask", return_value=selected
+        ):
+            actual = adapter._apply_sgr(gradient)
+        torch.testing.assert_close(
+            actual, torch.tensor([-0.2, 5.0, -0.6, 10.0])
+        )
+        self.assertEqual(adapter.regularizer_variant, "stochastic_gradient_reversion")
+        self.assertEqual(adapter.last_sgr_selected_dimensions, 2)
+        self.assertEqual(adapter.last_sgr_selected_fraction, 0.5)
+
+    def test_feedtta_sgr_does_not_advance_global_torch_rng(self):
+        adapter = FEEDTTAAdapter(
+            _TinyPolicy(), reversal_probability=0.5, reversal_scale=-0.2,
+            sgr_seed=17,
+            trainable_prefixes=("action_distribution",),
+        )
+        gradient = torch.ones(32)
+        torch.manual_seed(123)
+        expected = torch.rand(8)
+        torch.manual_seed(123)
+        adapter._apply_sgr(gradient)
+        actual = torch.rand(8)
+        torch.testing.assert_close(actual, expected)
+
+    def test_feedtta_success_and_failure_updates_have_opposite_signs(self):
+        source = _TinyPolicy()
+        success_policy = deepcopy(source)
+        failure_policy = deepcopy(source)
+        inputs = _inputs()
+
+        success_adapter = FEEDTTAAdapter(
+            success_policy, lr=1e-2, reversal_probability=0.0, gamma=1.0,
+            trainable_prefixes=("action_distribution",),
+            optimizer_name="SGD", momentum=0.0,
+        )
+        failure_adapter = FEEDTTAAdapter(
+            failure_policy, lr=1e-2, reversal_probability=0.0, gamma=1.0,
+            trainable_prefixes=("action_distribution",),
+            optimizer_name="SGD", momentum=0.0,
+        )
+        success_before = [param.detach().clone() for param in success_adapter.params]
+        failure_before = [param.detach().clone() for param in failure_adapter.params]
+
+        _, success_logits = _forward(success_policy, inputs)
+        success_adapter.episode_start()
+        success_adapter.adapt(success_logits, action=torch.tensor([[0]]))
+        success_adapter.episode_end({"success": 1.0})
+
+        _, failure_logits = _forward(failure_policy, inputs)
+        failure_adapter.episode_start()
+        failure_adapter.adapt(failure_logits, action=torch.tensor([[0]]))
+        failure_adapter.episode_end({"success": 0.0})
+
+        for before_success, after_success, before_failure, after_failure in zip(
+            success_before,
+            success_adapter.params,
+            failure_before,
+            failure_adapter.params,
+        ):
+            success_delta = after_success.detach() - before_success
+            failure_delta = after_failure.detach() - before_failure
+            torch.testing.assert_close(success_delta, -failure_delta)
+
+    def test_feedtta_rejects_behaviorally_inert_episodic_mode(self):
+        with self.assertRaisesRegex(ValueError, "EPISODIC=True"):
+            FEEDTTAAdapter(
+                _TinyPolicy(), episodic=True,
+                trainable_prefixes=("action_distribution",),
+            )
 
     def test_atena_uses_argmax_and_joint_episode_update(self):
         policy = _TinyPolicy()

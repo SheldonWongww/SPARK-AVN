@@ -1245,7 +1245,10 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
     Modality encoders remain frozen.  The AVN mapping of the paper's
     "cross-modal encoder and subsequent modules" is expressed explicitly by
     ``trainable_prefixes`` so that task-specific module names do not leak into
-    the shared implementation.
+    the shared implementation.  Per-action score gradients are folded into a
+    single discounted accumulator, which is exactly equivalent to Eq. (3) but
+    keeps memory O(number of adapted parameters), independent of trajectory
+    length.
     """
 
     def __init__(
@@ -1253,14 +1256,15 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         model,
         lr=5e-6,
         reversal_probability=0.05,
-        reversal_scale=0.1,
+        reversal_scale=-0.2,
+        sgr_seed=0,
         gamma=0.99,
         normalize_gradient=False,
         episodic=False,
         reset_bn_stats=False,
         scope="module_prefixes",
         last_k=4,
-        trainable_prefixes=("net.smt_state_encoder", "action_distribution"),
+        trainable_prefixes=(),
         optimizer_name="Adam",
         momentum=0.9,
         beta1=0.9,
@@ -1273,12 +1277,22 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.base_lr = float(lr)
         self.reversal_probability = float(reversal_probability)
         self.reversal_scale = float(reversal_scale)
+        self.sgr_seed = int(sgr_seed)
         self.gamma = float(gamma)
         self.normalize_gradient = bool(normalize_gradient)
         self.episodic = bool(episodic)
         self.max_grad_norm = float(max_grad_norm)
+        if self.episodic:
+            raise ValueError(
+                "FEEDTTA updates only at episode end; EPISODIC=True would "
+                "reset the update before it can affect the next episode"
+            )
         if not 0.0 <= self.reversal_probability < 1.0:
             raise ValueError("FEEDTTA reversal probability must be in [0, 1)")
+        if not math.isfinite(self.reversal_scale):
+            raise ValueError("FEEDTTA reversal scale must be finite")
+        if not math.isfinite(self.gamma) or not 0.0 <= self.gamma <= 1.0:
+            raise ValueError("FEEDTTA gamma must be finite and in [0, 1]")
         denominator = (
             self.reversal_scale * self.reversal_probability
             + (1.0 - self.reversal_probability)
@@ -1286,6 +1300,20 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         if denominator <= 0.0:
             raise ValueError("FEEDTTA SGR denominator must be positive")
         self._sgr_denominator = denominator
+        if self.reversal_probability == 0.0:
+            self.regularizer_variant = "none"
+        elif self.reversal_scale < 0.0:
+            self.regularizer_variant = "stochastic_gradient_reversion"
+        elif self.reversal_scale == 0.0:
+            self.regularizer_variant = "gradient_dropout"
+        else:
+            self.regularizer_variant = "gradient_scaling"
+            logging.warning(
+                "FEEDTTA ALPHA=%s is nonnegative, so the selected gradient "
+                "coordinates are not reversed (variant=%s)",
+                self.reversal_scale,
+                self.regularizer_variant,
+            )
 
         self.param_scope = str(scope).lower()
         self.trainable_prefixes = tuple(trainable_prefixes)
@@ -1311,10 +1339,39 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self._model_state = deepcopy(self.model.state_dict())
         self._optim_state = deepcopy(self.optimizer.state_dict())
         self._source_flat = _flatten_params(self.params).clone()
-        self.trajectory_grads = []
+        self._trajectory_gradient = None
+        self._trajectory_discount_mass = 0.0
+        self._trajectory_step_count = 0
         self.episode_count = 0
         self.successful_episodes = 0
+        self.failed_episodes = 0
+        self.total_trajectory_steps = 0
+        self.max_trajectory_steps = 0
+        self.action_nll_sum = 0.0
+        self.last_action_nll = 0.0
+        self.sgr_selected_dimensions = 0
+        self.sgr_sampled_dimensions = 0
+        self.last_sgr_selected_dimensions = 0
+        self.last_sgr_selected_fraction = 0.0
+        self._sgr_generators = {}
         self._init_diagnostics()
+
+    def _clear_trajectory(self):
+        self._trajectory_gradient = None
+        self._trajectory_discount_mass = 0.0
+        self._trajectory_step_count = 0
+
+    def _accumulate_step_gradient(self, step_gradient):
+        """Fold one score gradient into the exact Eq. (3) discounted sum."""
+        if self._trajectory_gradient is None:
+            self._trajectory_gradient = step_gradient.clone()
+            self._trajectory_discount_mass = 1.0
+        else:
+            self._trajectory_gradient.mul_(self.gamma).add_(step_gradient)
+            self._trajectory_discount_mass = (
+                self.gamma * self._trajectory_discount_mass + 1.0
+            )
+        self._trajectory_step_count += 1
 
     @torch.enable_grad()
     def adapt(self, logits, action=None, **kwargs):
@@ -1324,26 +1381,56 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         nll = -logits.log_softmax(dim=-1).gather(1, action).mean()
         self.optimizer.zero_grad(set_to_none=True)
         nll.backward()
-        self.trajectory_grads.append(_flatten_grads(self.params).clone())
+        self._accumulate_step_gradient(_flatten_grads(self.params))
         self.optimizer.zero_grad(set_to_none=True)
         self._record_loss(softmax_entropy(logits).mean())
+        nll_value = float(nll.detach().item())
+        self.action_nll_sum += nll_value
+        self.last_action_nll = nll_value
         return nll.detach()
 
     def _aggregate_trajectory(self):
-        count = len(self.trajectory_grads)
-        weights = torch.tensor(
-            [self.gamma ** (count - 1 - index) for index in range(count)],
-            device=self.trajectory_grads[0].device,
-            dtype=self.trajectory_grads[0].dtype,
-        )
+        if self._trajectory_gradient is None or self._trajectory_step_count == 0:
+            raise RuntimeError("FEEDTTA has no trajectory gradient to aggregate")
+        gradient = self._trajectory_gradient
         if self.normalize_gradient:
-            weights = weights / weights.sum().clamp_min(1e-12)
-        return (weights.unsqueeze(1) * torch.stack(self.trajectory_grads)).sum(0)
+            gradient = gradient / max(self._trajectory_discount_mass, 1e-12)
+        return gradient
+
+    def _sgr_generator(self, device):
+        key = (device.type, device.index)
+        generator = self._sgr_generators.get(key)
+        if generator is None:
+            generator = torch.Generator(device=device)
+            generator.manual_seed(self.sgr_seed)
+            self._sgr_generators[key] = generator
+        return generator
+
+    def _sample_sgr_mask(self, grad):
+        random_values = torch.rand(
+            grad.shape,
+            dtype=grad.dtype,
+            device=grad.device,
+            generator=self._sgr_generator(grad.device),
+        )
+        return random_values < self.reversal_probability
 
     def _apply_sgr(self, grad):
         if self.reversal_probability == 0.0:
+            self.last_sgr_selected_dimensions = 0
+            self.last_sgr_selected_fraction = 0.0
             return grad
-        selected = torch.rand_like(grad) < self.reversal_probability
+        selected = self._sample_sgr_mask(grad)
+        selected_count = int(selected.sum().item())
+        dimension_count = int(grad.numel())
+        self.last_sgr_selected_dimensions = selected_count
+        self.last_sgr_selected_fraction = selected_count / max(1, dimension_count)
+        self.sgr_selected_dimensions += selected_count
+        self.sgr_sampled_dimensions += dimension_count
+        # This follows main-text Eq. (5): only the non-selected coordinates
+        # receive the denominator. Appendix B.1 describes a different fully
+        # normalized variant; that paper ambiguity is intentionally not mixed
+        # into the canonical implementation.
         return torch.where(
             selected,
             self.reversal_scale * grad,
@@ -1353,27 +1440,40 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
     def reset(self):
         self.model.load_state_dict(self._model_state, strict=True)
         self.optimizer.load_state_dict(self._optim_state)
-        self.trajectory_grads = []
+        self._clear_trajectory()
         self.episode_count = 0
         self.successful_episodes = 0
+        self.failed_episodes = 0
+        self.total_trajectory_steps = 0
+        self.max_trajectory_steps = 0
+        self.action_nll_sum = 0.0
+        self.last_action_nll = 0.0
+        self.sgr_selected_dimensions = 0
+        self.sgr_sampled_dimensions = 0
+        self.last_sgr_selected_dimensions = 0
+        self.last_sgr_selected_fraction = 0.0
+        self._sgr_generators = {}
         self._init_diagnostics()
 
     def episode_start(self):
-        if self.episodic:
-            self.reset()
-        self.trajectory_grads = []
+        if self._trajectory_gradient is not None or self._trajectory_step_count:
+            raise RuntimeError(
+                "FEEDTTA episode_start called before the previous episode ended"
+            )
 
     def episode_end(self, episode_stats=None):
         success = _episode_success(episode_stats)
         self.episode_count += 1
         self.successful_episodes += int(success)
-        if not self.trajectory_grads:
+        self.failed_episodes += int(not success)
+        if self._trajectory_gradient is None:
             return
         # Optimizer performs descent on NLL. Success reinforces the sampled
         # trajectory; failure applies the opposite direction.
         grad = self._aggregate_trajectory()
         grad = grad if success else -grad
         grad = self._apply_sgr(grad)
+        trajectory_steps = self._trajectory_step_count
         self.optimizer.zero_grad(set_to_none=True)
         self.last_grad_norm = _set_flat_grad(
             grad, self.params, self.max_grad_norm
@@ -1381,18 +1481,53 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.update_count += 1
-        self.trajectory_grads = []
+        self.total_trajectory_steps += trajectory_steps
+        self.max_trajectory_steps = max(
+            self.max_trajectory_steps, trajectory_steps
+        )
+        self._clear_trajectory()
 
     def diagnostics(self):
         output = super().diagnostics()
         output.update({
             "successful_feedback_episodes": self.successful_episodes,
+            "failed_feedback_episodes": self.failed_episodes,
+            "feedback_type": "binary_episode_success",
+            "feedback_values": "+1_success_-1_failure",
+            "action_selection_protocol": "sample_from_policy",
+            "update_timing": "once_after_episode_feedback",
             "reversal_probability": self.reversal_probability,
             "reversal_scale": self.reversal_scale,
+            "sgr_seed": self.sgr_seed,
+            "sgr_rng": "dedicated_torch_generator",
+            "sgr_denominator": self._sgr_denominator,
+            "sgr_rule": "main_text_eq5_unselected_coordinates_scaled",
+            "regularizer_variant": self.regularizer_variant,
+            "last_sgr_selected_dimensions": self.last_sgr_selected_dimensions,
+            "last_sgr_selected_fraction": self.last_sgr_selected_fraction,
+            "mean_sgr_selected_fraction": (
+                self.sgr_selected_dimensions
+                / max(1, self.sgr_sampled_dimensions)
+            ),
             "param_scope": self.param_scope,
             "trainable_prefixes": list(self.trainable_prefixes),
+            "adapted_parameter_count": sum(
+                parameter.numel() for parameter in self.params
+            ),
+            "optimizer": self.optimizer.__class__.__name__,
             "gamma": self.gamma,
             "normalize_gradient": self.normalize_gradient,
+            "episodic": self.episodic,
+            "trajectory_gradient_storage": "online_discounted_accumulator",
+            "gradient_accumulator_elements": int(self._source_flat.numel()),
+            "total_trajectory_steps": self.total_trajectory_steps,
+            "max_trajectory_steps": self.max_trajectory_steps,
+            "mean_trajectory_steps": (
+                self.total_trajectory_steps / max(1, self.update_count)
+            ),
+            "current_trajectory_steps": self._trajectory_step_count,
+            "mean_action_nll": self.action_nll_sum / max(1, self.action_steps),
+            "last_action_nll": self.last_action_nll,
         })
         return output
 
@@ -1756,7 +1891,8 @@ def build_adapter(model, tta_cfg):
             model,
             lr=float(fdvalue("LR", 5e-6)),
             reversal_probability=float(fdvalue("P", 0.05)),
-            reversal_scale=float(fdvalue("ALPHA", 0.1)),
+            reversal_scale=float(fdvalue("ALPHA", -0.2)),
+            sgr_seed=int(fdvalue("SGR_SEED", 0)),
             gamma=float(fdvalue("GAMMA", 0.99)),
             normalize_gradient=bool(fdvalue("NORMALIZE_GRADIENT", False)),
             episodic=common["episodic"],
@@ -1765,7 +1901,7 @@ def build_adapter(model, tta_cfg):
             last_k=common["last_k"],
             trainable_prefixes=tuple(fdvalue(
                 "TRAINABLE_PREFIXES",
-                ("net.smt_state_encoder", "action_distribution"),
+                (),
             )),
             optimizer_name=str(fdvalue("OPTIMIZER", "Adam")),
             momentum=common["momentum"],

@@ -1,0 +1,68 @@
+experiment: feedtta_avn_sgr_grid_v1
+result_role: hyperparameter_search
+method: feedtta
+models: [smt_audio, enmus]
+source_setting: single_source
+split: val
+seed: 0
+episodes: 2000
+
+stage1_selected_inputs:
+  smt_audio: [TTA.FEEDTTA.LR, TTA.FEEDTTA.GAMMA]
+  enmus: [TTA.FEEDTTA.LR, TTA.FEEDTTA.GAMMA]
+  allowed_lr: [1.0e-8, 3.0e-8, 1.0e-7, 3.0e-7, 1.0e-6, 5.0e-6]
+  allowed_gamma: [0.90, 0.95, 0.99, 1.0]
+
+official_grid:
+  TTA.FEEDTTA.P: [0.01, 0.05, 0.1, 0.2, 0.3]
+  TTA.FEEDTTA.ALPHA: [-0.01, -0.025, -0.05, -0.075, -0.1, -0.2, -0.3]
+
+controls:
+  - {variant: no_sgr, p: 0.0, alpha: -0.2}
+  - {variant: gradient_dropout, p: 0.05, alpha: 0.0}
+  - {variant: gradient_scaling_0p05, p: 0.05, alpha: 0.05}
+  - {variant: gradient_scaling_0p1, p: 0.05, alpha: 0.1}
+
+fixed:
+  TTA.FEEDTTA.SGR_SEED: 0
+  TTA.FEEDTTA.NORMALIZE_GRADIENT: false
+  TTA.FEEDTTA.PARAM_SCOPE: module_prefixes
+  TTA.FEEDTTA.TRAINABLE_PREFIXES:
+    - net.smt_state_encoder
+    - action_distribution
+  TTA.FEEDTTA.OPTIMIZER: Adam
+  TTA.FEEDTTA.BETA1: 0.9
+  TTA.FEEDTTA.BETA2: 0.999
+  TTA.FEEDTTA.WEIGHT_DECAY: 0.0
+  TTA.FEEDTTA.EPS: 1.0e-5
+  TTA.FEEDTTA.MAX_GRAD_NORM: 0.0
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  action_selection: sample_from_policy
+  feedback: binary_episode_success_oracle
+  sgr_rule: main_text_eq5_unselected_coordinates_scaled
+
+job_count:
+  official_per_model: 35
+  controls_per_model: 4
+  per_model: 39
+  total: 78
+
+selection:
+  primary: spl
+  constraint: sr_not_below_matched_source
+  source_success:
+    smt_audio: 0.5415
+    enmus: 0.6655
+  tie_breakers: [sr, lower_relative_parameter_drift]
+  model_specific: true
+
+formal_constraints:
+  require_stage1_review_before_launch: true
+  require_complete_stage1_batch_and_metrics_digest: true
+  require_cli_selection_matches_documented_stage1_winner: true
+  require_clean_tracked_worktree: true
+  require_canonical_stream_sha256: true
+  search_result_is_not_main_table_result: true

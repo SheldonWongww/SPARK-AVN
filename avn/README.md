@@ -185,6 +185,41 @@ python3 avn/scripts/run_eam_boundary_grid.py \
 For a short pathway check, add `--smoke --episodes 2`; smoke mode selects one
 configuration per model. It does not replace the fixed 18-job search plan.
 
+FeedTTA uses a two-stage, joint SMT+Audio/ENMuS single-source search. Stage 1
+calibrates six learning rates by four discount factors (48 jobs):
+
+```bash
+python3 avn/scripts/run_feedtta_stage1.py --dry-run \
+  --gpus 0,1,2,3 --jobs-per-gpu 2 \
+  --batch-id feedtta-stage1-v1-seed0
+screen -dmS avn_feedtta_stage1 \
+  python3 avn/scripts/run_feedtta_stage1.py \
+    --gpus 0,1,2,3 --jobs-per-gpu 2 \
+    --batch-id feedtta-stage1-v1-seed0
+```
+
+After reviewing each model's Stage-1 winner, Stage 2 holds those model-specific
+`LR/gamma` values fixed and runs the official 35-point `p/alpha` grid plus four
+mechanism controls per model (78 jobs):
+
+```bash
+python3 avn/scripts/run_feedtta_stage2.py --dry-run \
+  --stage1-batch-id feedtta-stage1-v1-seed0 \
+  --smt-audio-lr 1e-7 --smt-audio-gamma 0.99 \
+  --enmus-lr 3e-8 --enmus-gamma 0.95 \
+  --gpus 0,1,2,3 --jobs-per-gpu 2 \
+  --batch-id feedtta-stage2-v1-seed0
+```
+
+The Stage-2 numbers above only illustrate CLI syntax; replace them with the
+reviewed Stage-1 choices. Both schedulers use one combined per-GPU quota,
+require a clean tracked worktree for full runs, revalidate artifacts on resume,
+and write separate logs and combined metrics under
+`avn/results/logs/feedtta_stage{1,2}/`. See
+[`experiments/FEEDTTA_EXPERIMENT_PLAN.md`](experiments/FEEDTTA_EXPERIMENT_PLAN.md)
+for the fixed protocol, paper ambiguities, selection rule, controls, and smoke
+commands.
+
 After freezing the complete FAST/SLOW candidate from exploration job 35, run
 the three remaining FSTTA main-table jobs concurrently:
 

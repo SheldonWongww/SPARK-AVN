@@ -193,8 +193,10 @@ _C.TTA.EAM.MAX_GRAD_NORM = 0.0
 _C.TTA.FEEDTTA = CN()
 _C.TTA.FEEDTTA.LR = 5e-6
 _C.TTA.FEEDTTA.P = 0.05
-# Paper R2R/R2R-CE setting. AVN must still sweep p and alpha on TTA-dev.
-_C.TTA.FEEDTTA.ALPHA = 0.1
+# True SGR anchor from REVERIE val-unseen. The paper's literal R2R value
+# (+0.1) is gradient scaling rather than reversion; AVN must sweep both signs.
+_C.TTA.FEEDTTA.ALPHA = -0.2
+_C.TTA.FEEDTTA.SGR_SEED = 0
 _C.TTA.FEEDTTA.GAMMA = 0.99
 # Eq. (3) sums discounted trajectory gradients; it does not length-normalize.
 _C.TTA.FEEDTTA.NORMALIZE_GRADIENT = False

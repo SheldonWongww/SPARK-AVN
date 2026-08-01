@@ -270,10 +270,8 @@ class TTACoreTest(unittest.TestCase):
             trainable_prefixes=("action_distribution",),
         )
         width = sum(param.numel() for param in adapter.params)
-        adapter.trajectory_grads = [
-            torch.ones(width),
-            torch.full((width,), 2.0),
-        ]
+        adapter._accumulate_step_gradient(torch.ones(width))
+        adapter._accumulate_step_gradient(torch.full((width,), 2.0))
         expected = torch.full((width,), 2.5)
         torch.testing.assert_close(adapter._aggregate_trajectory(), expected)
 

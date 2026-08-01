@@ -64,7 +64,9 @@ TTA:
   FEEDTTA:
     LR: 5.0e-6
     P: 0.05
-    ALPHA: 0.1
+    # REVERIE val-unseen true-SGR anchor; +0.1 is retained for later GS control.
+    ALPHA: -0.2
+    SGR_SEED: 0
     GAMMA: 0.99
     NORMALIZE_GRADIENT: False
     PARAM_SCOPE: "module_prefixes"

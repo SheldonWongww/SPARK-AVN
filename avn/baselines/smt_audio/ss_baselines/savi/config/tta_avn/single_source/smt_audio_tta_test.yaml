@@ -14,6 +14,8 @@ EVAL:
   # The TTA val split is the fixed 20-scene x 100-episode benchmark set.
   SPLIT: "val"
   USE_CKPT_CONFIG: False
+  # FeedTTA requires trajectories sampled from pi; its trainer rejects argmax.
+  ACTION_SELECTION: "sample"
 
 # Test-time adaptation on the 20 unseen environments (2000 episodes), online
 # continual (no per-episode reset). Override TTA.METHOD on the command line:
@@ -74,7 +76,9 @@ TTA:
   FEEDTTA:
     LR: 5.0e-6
     P: 0.05
-    ALPHA: 0.1
+    # REVERIE val-unseen true-SGR anchor; +0.1 is retained for later GS control.
+    ALPHA: -0.2
+    SGR_SEED: 0
     GAMMA: 0.99
     NORMALIZE_GRADIENT: False
     PARAM_SCOPE: "module_prefixes"

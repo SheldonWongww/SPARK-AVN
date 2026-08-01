@@ -1,0 +1,53 @@
+experiment: feedtta_avn_intensity_grid_v1
+result_role: hyperparameter_search
+method: feedtta
+models: [smt_audio, enmus]
+source_setting: single_source
+split: val
+seed: 0
+episodes: 2000
+
+grid:
+  TTA.FEEDTTA.LR: [1.0e-8, 3.0e-8, 1.0e-7, 3.0e-7, 1.0e-6, 5.0e-6]
+  TTA.FEEDTTA.GAMMA: [0.90, 0.95, 0.99, 1.0]
+
+fixed:
+  TTA.FEEDTTA.P: 0.05
+  TTA.FEEDTTA.ALPHA: -0.2
+  TTA.FEEDTTA.SGR_SEED: 0
+  TTA.FEEDTTA.NORMALIZE_GRADIENT: false
+  TTA.FEEDTTA.PARAM_SCOPE: module_prefixes
+  TTA.FEEDTTA.TRAINABLE_PREFIXES:
+    - net.smt_state_encoder
+    - action_distribution
+  TTA.FEEDTTA.OPTIMIZER: Adam
+  TTA.FEEDTTA.BETA1: 0.9
+  TTA.FEEDTTA.BETA2: 0.999
+  TTA.FEEDTTA.WEIGHT_DECAY: 0.0
+  TTA.FEEDTTA.EPS: 1.0e-5
+  TTA.FEEDTTA.MAX_GRAD_NORM: 0.0
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  action_selection: sample_from_policy
+  feedback: binary_episode_success_oracle
+  sgr_rule: main_text_eq5_unselected_coordinates_scaled
+
+job_count:
+  per_model: 24
+  total: 48
+
+selection:
+  primary: spl
+  constraint: sr_not_below_matched_source
+  source_success:
+    smt_audio: 0.5415
+    enmus: 0.6655
+  tie_breakers: [sr, lower_relative_parameter_drift]
+  model_specific: true
+
+formal_constraints:
+  require_clean_tracked_worktree: true
+  require_canonical_stream_sha256: true
+  search_result_is_not_main_table_result: true

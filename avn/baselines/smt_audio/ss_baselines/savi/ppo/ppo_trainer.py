@@ -824,6 +824,11 @@ class PPOTrainer(BaseRLTrainer):
         tta_cfg = getattr(self.config, "TTA", None)
         if tta_cfg is not None and str(getattr(tta_cfg, "METHOD", "none")).lower() not in ("none", ""):
             tta_method = str(getattr(tta_cfg, "METHOD", "none")).lower()
+            if tta_method == "feedtta" and action_selection != "sample":
+                raise ValueError(
+                    "FeedTTA REINFORCE requires actions sampled from the policy; "
+                    "set EVAL.ACTION_SELECTION=sample"
+                )
             if tta_method == "atena" and not bool(
                 getattr(getattr(tta_cfg, "ATENA", None), "PREFLIGHT_APPROVED", False)
             ):
