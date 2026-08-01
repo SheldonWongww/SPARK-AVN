@@ -1,0 +1,128 @@
+experiment_id: eam_boundary_grid_v1
+status: planned
+purpose: >-
+  Follow the SMT+Audio EAM intensity study into the weaker-update boundary and
+  apply exactly the same declared search to SMT+Audio and ENMuS. This is a
+  joint development grid, not a final-test comparison.
+
+task: avn
+benchmark: mp3d
+models:
+  - smt_audio
+  - enmus
+source_setting: single_source
+split: val
+method: eam
+
+search_space_per_model:
+  TTA.EAM.LR: [3.0e-9, 1.0e-8, 3.0e-8]
+  TTA.EAM.UPDATE_INTERVAL: [32, 64, 128]
+  cartesian_jobs: 9
+
+job_count:
+  smt_audio: 9
+  enmus: 9
+  total: 18
+
+fixed:
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  TTA.EAM.CONFIDENCE_SCALE: 0.4
+  TTA.EAM.MEMORY_SIZE: 32
+  TTA.EAM.BATCH_SIZE: 8
+  TTA.EAM.PARAM_SCOPE: module_prefixes
+  TTA.EAM.TRAINABLE_PREFIXES:
+    - net.smt_state_encoder.transformer
+    - action_distribution
+  TTA.EAM.OPTIMIZER: Adam
+  TTA.EAM.BETA1: 0.9
+  TTA.EAM.BETA2: 0.999
+  TTA.EAM.WEIGHT_DECAY: 0.0
+  TTA.EAM.MAX_GRAD_NORM: 0.0
+  TEST_EPISODE_COUNT: 2000
+  seed: 0
+
+action_protocol:
+  smt_audio:
+    EVAL.ACTION_SELECTION: sample
+  enmus:
+    mode: native_sample
+    detail: policy sampling with deterministic=false; no ACTION_SELECTION key
+
+scope_validation:
+  smt_audio:
+    expected_tensors: 36
+    expected_parameters: 1057284
+  enmus:
+    expected_tensors: 71
+    expected_parameters: 3499012
+  rule: >-
+    Every adapted parameter name must be unique and lie under one of the two
+    declared trainable prefixes. Pre-Transformer encoders remain frozen.
+
+stream_protocol:
+  role: development
+  scenes: 20
+  episodes_per_scene: 100
+  global_shuffle: true
+  seed: 0
+  episode_count: 2000
+  dataset_index_sha256: 838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80
+  stream_order_sha256: 07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c
+  stream_content_sha256: dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2
+  note: >-
+    Both models consume the same Source/Tent-aligned episode identities and
+    order. The full launcher fixes seed 0 and 2000 episodes; shorter prefixes
+    are allowed only in explicit smoke mode.
+
+replay_protocol:
+  unit: action_step
+  sampling: updated_reservoir_including_current
+  short_buffer: current_only_update
+  update_timing: after_preupdate_action_selection
+
+scheduler:
+  launcher: avn/scripts/run_eam_boundary_grid.py
+  physical_gpu_count: 4
+  jobs_per_gpu_cli: --jobs-per-gpu
+  concurrency_scope: combined_across_both_models
+  log_root: avn/results/logs/eam_boundary_grid
+  model_log_directories:
+    - <batch-id>/smt_audio/jobs
+    - <batch-id>/enmus/jobs
+  full_run_requires_clean_tracked_worktree: true
+  allow_dirty_scope: smoke_only
+  compact_evidence:
+    per_job: <batch-id>/<model>/jobs/<run-tag>/metrics.json
+    batch: <batch-id>/metrics.csv
+
+reported_metrics:
+  - reward
+  - distance_to_goal
+  - normalized_distance_to_goal
+  - success
+  - spl
+  - softspl
+  - na
+  - sna
+  - sws
+
+selection_protocol:
+  selection_unit: per_model
+  primary_metric: spl
+  secondary_metric: success
+  reject_on_numerical_failure: true
+  require_complete_cartesian_grid: true
+  require_valid_manifest: true
+  require_exact_episode_count: true
+  require_exact_parameter_scope: true
+  require_exact_replay_accounting: true
+  require_no_late_stream_collapse: true
+  no_partial_result_redesign: true
+  note: >-
+    Analyze all nine configurations for a model together and select that
+    model's candidate independently. Do not pool model metrics, change the grid
+    in response to partial results, or treat this reused seed-0 development
+    stream as an untouched final-test stream.

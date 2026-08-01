@@ -1,0 +1,64 @@
+experiment_id: fstta_enmus_multi_v1
+status: planned
+purpose: >-
+  Revalidate the ENMuS single-source FSTTA grid's selected job 0 on the
+  canonical multi-source AVN val stream for the main comparison table.
+
+task: avn
+benchmark: mp3d
+model: enmus
+source_setting: multi_source
+split: val
+method: fstta
+result_role: frozen_revalidation
+
+fixed:
+  TTA.NORM_SCOPE: last_k_ln
+  TTA.LAST_K_LN: 4
+  TTA.LR: 1.0e-8
+  TTA.EPISODIC: false
+  TTA.STEPS: 1
+  TTA.RESET_BN_STATS: true
+  TTA.MAX_GRAD_NORM: 1.0
+  TTA.FSTTA.M: 16
+  TTA.FSTTA.N: 32
+  TTA.FSTTA.Q: 0.1
+  TTA.FSTTA.LR_SLOW: 1.0e-5
+  TTA.FSTTA.RHO: 0.95
+  TTA.FSTTA.TAU: 0.7
+  TTA.FSTTA.A: 0.9
+  TTA.FSTTA.B: 1.1
+  TTA.FSTTA.USE_SLOW: true
+  TTA.FSTTA.FAST_GRAD_MODE: concordant
+  TTA.FSTTA.USE_FAST_LR_SCALER: true
+  TTA.FSTTA.OPTIMIZER: AdamW
+  TTA.FSTTA.BETA1: 0.9
+  TTA.FSTTA.BETA2: 0.99
+  TTA.FSTTA.WEIGHT_DECAY: 0.0
+  TTA.FSTTA.SLOW_OPTIMIZER: AdamW
+  TTA.FSTTA.SLOW_MOMENTUM: 0.0
+  TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE: true
+  TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW: false
+  TTA.FSTTA.EIGEN_EPS: 1.0e-6
+  TEST_EPISODE_COUNT: 2000
+  seed: 0
+
+action_protocol:
+  mode: native_sample
+  detail: policy sampling with deterministic=false; no ACTION_SELECTION key
+
+asset_provenance:
+  checkpoint_sha256: 3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464
+  dataset_index_sha256: 45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d
+  stream_order_sha256: cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525
+  stream_content_sha256: deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d
+  auxiliary_checkpoint_sha256:
+    audio_encoder: 0939d0546f47b291eac35f6570c3fdb97c46dd45e0730d5e559f5696d4233b47
+    visual_encoder: daa326623772a5fb2db3abd74413ea0bbc822f2dc66029db5a25828df95a69b5
+    seld_encoder: 7d36aa62eb6fa8043bebb8ebb8bb11a972f5fec9e039ae7260400dbdc38646db
+
+launcher: avn/scripts/run_fstta_enmus_multi.py
+log_root: avn/results/logs/fstta_enmus_multi
+selection_origin: >-
+  ENMuS single-source canonical-val grid job 0, selected SPL first and SR
+  second among configurations exceeding Source on both metrics.

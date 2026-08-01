@@ -41,6 +41,8 @@ BATCH_ID_PREFIX = "fstta-exploration"
 FIXED_SUITE: Optional[str] = None
 ALLOW_DIRTY_OPTION = True
 REQUIRED_GPU_COUNT: Optional[int] = None
+DEFAULT_GPUS = "0,1,2,3"
+DEFAULT_JOBS_PER_GPU = 5
 SUITE_ORDER = (
     "slow_boundary",
     "fast_geometry",
@@ -99,6 +101,7 @@ DATASET = (
 )
 LOG_BASE = REPO_ROOT / "avn" / "results" / "logs" / "fstta_exploration"
 AUXILIARY_CHECKPOINTS: Mapping[str, Path] = {}
+EXPECTED_AUXILIARY_CHECKPOINT_SHA256: Mapping[str, str] = {}
 PROVENANCE_SOURCE_FILES: Tuple[Path, ...] = (
     Path(__file__).resolve(),
     RUNNER.resolve(),
@@ -446,22 +449,26 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.add_argument("suite", choices=(*SUITE_ORDER, "all"))
     else:
         parser.set_defaults(suite=FIXED_SUITE)
-    gpu_help = "comma-separated physical GPU ids (default: 0,1,2,3)"
+    gpu_help = "comma-separated physical GPU ids (default: {})".format(
+        DEFAULT_GPUS
+    )
     if REQUIRED_GPU_COUNT is not None:
         gpu_help += "; exactly {} required".format(REQUIRED_GPU_COUNT)
     parser.add_argument(
         "--gpus",
-        default=parse_gpus("0,1,2,3"),
+        default=parse_gpus(DEFAULT_GPUS),
         type=parse_gpus,
         metavar="LIST",
         help=gpu_help,
     )
     parser.add_argument(
         "--jobs-per-gpu",
-        default=5,
+        default=DEFAULT_JOBS_PER_GPU,
         type=positive_int,
         metavar="N",
-        help="concurrent jobs on each GPU (default: 5)",
+        help="concurrent jobs on each GPU (default: {})".format(
+            DEFAULT_JOBS_PER_GPU
+        ),
     )
     parser.add_argument(
         "--batch-id",
@@ -725,6 +732,28 @@ def load_provenance(allow_dirty: bool, episodes: int) -> Provenance:
         (name, sha256_file(path))
         for name, path in sorted(AUXILIARY_CHECKPOINTS.items())
     )
+    actual_auxiliary_hashes = dict(auxiliary_hashes)
+    if EXPECTED_AUXILIARY_CHECKPOINT_SHA256:
+        expected_names = set(EXPECTED_AUXILIARY_CHECKPOINT_SHA256)
+        actual_names = set(actual_auxiliary_hashes)
+        if actual_names != expected_names:
+            raise RuntimeError(
+                "configured auxiliary checkpoints do not match the canonical "
+                "name set: expected {}, got {}".format(
+                    sorted(expected_names), sorted(actual_names)
+                )
+            )
+        for name, expected_digest in sorted(
+            EXPECTED_AUXILIARY_CHECKPOINT_SHA256.items()
+        ):
+            actual_digest = actual_auxiliary_hashes[name]
+            if actual_digest != expected_digest:
+                raise RuntimeError(
+                    "auxiliary checkpoint '{}' does not match the canonical "
+                    "SHA256: expected {}, got {}".format(
+                        name, expected_digest, actual_digest
+                    )
+                )
     return Provenance(
         git_commit=commit,
         worktree_dirty=worktree_dirty,

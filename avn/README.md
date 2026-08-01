@@ -150,6 +150,41 @@ The launcher checks only tracked worktree changes; expected datasets,
 checkpoints, run manifests, and result files do not block launch. Preflight
 failures are saved under `avn/results/logs/eam_intensity_grid/*.preflight.log`.
 
+Run the joint weak-update EAM boundary grid on SMT+Audio and ENMuS
+single-source (3 learning rates x 3 update intervals x 2 models = 18 jobs):
+
+```bash
+python3 avn/scripts/run_eam_boundary_grid.py --dry-run \
+  --gpus 0,1,2,3 --jobs-per-gpu 2 \
+  --batch-id eam-boundary-joint-v1-seed0
+screen -dmS eam_boundary_joint \
+  python3 avn/scripts/run_eam_boundary_grid.py \
+    --gpus 0,1,2,3 --jobs-per-gpu 2 \
+    --batch-id eam-boundary-joint-v1-seed0
+screen -d -r eam_boundary_joint
+```
+
+The boundary is `LR={3e-9,1e-8,3e-8}` x
+`UPDATE_INTERVAL={32,64,128}` for each model. Full runs are locked to the
+canonical single-source val stream, seed 0, and 2000 episodes. Exactly four
+distinct GPU ids are required, and `--jobs-per-gpu` is the combined per-GPU
+limit across both models. Logs remain separate under
+`avn/results/logs/eam_boundary_grid/<batch-id>/<model>/jobs/`. Every validated
+job also copies its aggregate metrics into that job directory's `metrics.json`;
+the batch root contains the combined `metrics.csv`. A full launch requires a
+clean tracked worktree. `--allow-dirty` is accepted only with `--smoke`.
+
+Resume an interrupted batch with exactly the same immutable arguments:
+
+```bash
+python3 avn/scripts/run_eam_boundary_grid.py \
+  --gpus 0,1,2,3 --jobs-per-gpu 2 \
+  --batch-id eam-boundary-joint-v1-seed0 --resume
+```
+
+For a short pathway check, add `--smoke --episodes 2`; smoke mode selects one
+configuration per model. It does not replace the fixed 18-job search plan.
+
 After freezing the complete FAST/SLOW candidate from exploration job 35, run
 the three remaining FSTTA main-table jobs concurrently:
 
@@ -170,6 +205,26 @@ runner records immutable batch inputs, validates each run manifest, and writes
 aggregate metrics under `avn/results/logs/fstta_main/<batch-id>/`. It does not
 rerun the SMT+Audio single-source development result; that result still needs
 a final-commit confirmation run before its provisional marker can be removed.
+
+ENMuS uses a separately calibrated FSTTA configuration. Run its frozen
+multi-source revalidation with the single-source grid's selected job 0:
+
+```bash
+python3 avn/scripts/run_fstta_enmus_multi.py --dry-run \
+  --gpus 0 --jobs-per-gpu 1 \
+  --batch-id fstta-enmus-multi-v1-seed0
+screen -dmS fstta_enmus_multi \
+  python3 avn/scripts/run_fstta_enmus_multi.py \
+    --gpus 0 --jobs-per-gpu 1 \
+    --batch-id fstta-enmus-multi-v1-seed0
+screen -d -r fstta_enmus_multi
+```
+
+This one-job runner fixes FAST `LR=1e-8, M=16`, SLOW
+`LR=1e-5, N=32, q=0.1`, concordant gradients, FAST LR scaling, persistent
+AdamW SLOW state, the canonical multi-source val stream, seed 0, and 2000
+episodes. It also pins the source and auxiliary checkpoint hashes and rejects
+tracked worktree changes.
 
 After freezing the Tent configuration, run the two multi-source main-table
 jobs concurrently on SMT+Audio and ENMuS:
