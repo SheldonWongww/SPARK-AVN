@@ -1,12 +1,15 @@
 # FSTTA 在 AVN 上的超参数搜索实验报告
 
-更新日期：2026-08-01
+更新日期：2026-08-02
 
 状态：探索性超参数开发报告。SMT+Audio 的 240 组核心网格和 92 组机制探索、
-ENMuS 的 48 组模型级强度网格均已完成。ENMuS 批次 48/48 保持 clean commit
-并通过校验；SMT+Audio 机制探索中有 28 组因运行中途代码提交发生变化而只能
-作为探索性证据。本地仍缺少逐运行 `manifest.json`，Source checkpoint 与数据
-资产 provenance 也不完整，因此当前结果不能直接进入论文正式主对比表。
+ENMuS 的 48 组模型级强度网格以及 ENMuS multi-source 冻结配置复验均已完成。
+ENMuS 网格 48/48、multi-source 复验 1/1 均保持 clean commit 并通过校验；
+SMT+Audio 机制探索中有 28 组因运行中途代码提交发生变化而只能作为探索性证据。
+本地仍缺少逐运行 `manifest.json`，Source checkpoint 与数据资产 provenance 也不
+完整，因此当前结果只能作为论文主表的 provisional 候选，不能升级为正式结果。
+其中 ENMuS single/multi-source 的数值选择已确定；`provisional` 仅指证据链尚未
+闭环，不表示还需继续调参或重跑 ENMuS。
 
 ## 1. 结论摘要
 
@@ -17,6 +20,8 @@ ENMuS 的 48 组模型级强度网格均已完成。ENMuS 批次 48/48 保持 cl
 - `fstta_exploration/fstta-exploration-all-v1-seed0`：92 组定向机制探索。
 - `fstta_enmus_grid/fstta-enmus-grid-avn-val-rerun-v2-seed0`：48 组
   ENMuS 模型级适应强度网格。
+- `fstta_enmus_multi/fstta-enmus-multi-v1-seed0`：1 组 ENMuS multi-source
+  冻结配置迁移复验。
 
 1. **宽网格结论保持不变：不受控的 SLOW 强度会使策略坍塌。** 240 组中只有
    2 组同时超过 Source 的 SR/SPL；`slow_lr` 从 `1e-4` 增至 `3e-3` 时，
@@ -65,17 +70,26 @@ ENMuS 的 48 组模型级强度网格均已完成。ENMuS 批次 48/48 保持 cl
     Source 的 SR/SPL。按 SPL 主、SR 次且要求二者均超过 Source，job 0
     (`fast_lr=1e-8, M=16, slow_lr=1e-5, N=32`) 达到
     SR/SPL/SoftSPL=68.55/37.3752/41.1575，相对 Source 提高
-    2.00/1.3272/0.9390 个百分点，同时 NA 减少 2.860。
+    2.00/1.3272/0.9390 个百分点，同时 NA 减少 2.860。**本研究将该
+    job 0 的已有运行结果直接确定为 ENMuS single-source 的 FSTTA 最终结果。**
 12. **SMT+Audio 的冻结候选不能直接迁移到 ENMuS。** SMT+Audio job 35 的
     同配置在 ENMuS 网格中对应 job 40，只得到 65.10/35.5873，低于 Source 的
     66.55/36.0480。两个模型都偏好低漂移区域，但有效学习率尺度不同；主表前
     应分别冻结模型级候选，而不能声称一套数值超参数跨模型通用。
+13. **ENMuS 多声源使用的就是单声源网格 job 0 的超参数。** 将 job 0 的
+    `1e-8/M16/1e-5/N32` 原样用于 multi-source 后，SR/SPL/SoftSPL 达到
+    35.85/17.5484/25.3055，相对 matched Source 分别提升
+    1.10/0.4366/0.3610 个百分点，DTG/NDTG 也分别下降 0.1525/0.011915。
+    相对 Tent，FSTTA 的 SR/SPL 高 0.30/0.3802 个百分点，但 SoftSPL 低
+    0.1801、DTG 高 0.0890，说明它不是所有指标一致占优。
 
 综合来看，新的证据把结论从“只有狭窄弱信号”推进为：**FSTTA 在受控慢更新
 强度下可以在 SMT+Audio 和 ENMuS AVN 上同时改善成功率与路径效率；但两个
 模型需要不同的强度校准，SMT+Audio 上完整 FAST/SLOW 方法又仅略低于
-FAST-only 最优消融，因此主表收益、跨模型泛化和 SLOW 机制贡献仍必须通过
-冻结配置复验确认。**
+FAST-only 最优消融。ENMuS 已确定 job 0 为最终模型级配置：单声源采用
+该 job 的已有搜索运行结果，多声源采用同一配置的迁移运行结果。两者的
+数值选择已经完成；但本地 manifest/provenance 仍不完整，因此证据资格
+继续按 provisional 口径记录。**
 
 ## 2. 数据范围与完整性
 
@@ -245,10 +259,12 @@ SR/SPL 上有弱增益，也没有提升路径软效率或动作效率。
 
 ## 5. 最优配置与 Pareto 前沿
 
-### 5.1 预声明规则下的推荐候选
+### 5.1 本报告选择规则下的推荐候选
 
-实验 YAML 预先规定按 SPL 主排序、SR 次排序，并拒绝数值失败和末段坍塌。
-在该规则下，job 170 是应冻结的开发候选：
+本报告在分析阶段统一采用 SPL 主排序、SR 次排序，并拒绝数值失败和
+末段坍塌的选择规则。当前仓库中没有证明该规则在运行前已预注册的
+tracked 文件，因此不把它表述为 preregistered selection rule。在该规则下，
+job 170 是应冻结的开发候选：
 
 | 配置 | fast LR | M | slow LR | N | SR | SPL | SoftSPL | DTG | NA |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -272,7 +288,7 @@ job 170 的最后四个 50-episode 窗口平均 SR 为 59.50%，最低为 50.00%
 | 53 | 1e-8 | 16 | 3e-4 | 8 | 56.10 | 29.0397 | 35.4897 | 58.50 | 0.04537 |
 | 86 | 1e-7 | 4 | 1e-4 | 8 | **56.45** | 28.8650 | 34.7425 | 55.00 | 0.02250 |
 
-job 86 的 SR 最高，但 SPL 比 Source 低 0.5579 个百分点，因此不符合预声明的
+job 86 的 SR 最高，但 SPL 比 Source 低 0.5579 个百分点，因此不符合本报告采用的
 SPL 优先选择标准。job 53 虽有较高 SR，但 SPL 仍低于 Source，且漂移约为
 job 170 的两倍。
 
@@ -433,9 +449,9 @@ mean-gradient，不再是完整的论文式 FSTTA，故只保留为机制消融�
 
 1. SMT+Audio single-source：冻结配置后的确认性复验；
 2. SMT+Audio multi-source：不再重新调参，直接检验迁移；
-3. ENMuS single/multi：沿用同一配置，判断跨模型泛化；
-4. 若统一配置严重失败，再在独立 dev stream 上声明一个很小的模型级校准实验，
-   不能在正式测试流上反复选参。
+3. ENMuS single-source：已确定使用模型级网格 job 0 的已有运行作为最终结果；
+4. ENMuS multi-source：已完成 job 0 同配置迁移，结果见第 13 节；
+5. ENMuS 的 single/multi 两项 FSTTA 数值已确定，不再扩大该模型的搜索空间。
 
 ### 9.3 当前停止继续扩网格
 
@@ -445,8 +461,8 @@ q 和 LR scaler 的主要问题。此时继续在同一开发流上扩展超参�
 
 1. 固定 SMT+Audio job 35，在单一 commit 上复验 SMT+Audio single-source；
 2. ENMuS 模型级网格已经证明 SMT+Audio 数值配置不能直接迁移；因此分别冻结
-   SMT+Audio job 35 与 ENMuS job 0，再扩展到各自的 multi-source 条件，不继续
-   扩大搜索空间；
+   SMT+Audio job 35 与 ENMuS job 0。ENMuS job 0 的 multi-source 迁移已经取得
+   正向结果，不继续扩大该模型的搜索空间；
 3. 将 job 41 作为 `w/o SLOW + mean gradient` 机制消融，而不是 FSTTA 主结果；
 4. 等主对比完成后再测试 drift threshold、Source-anchor interpolation 或回滚；
 5. 正式时延实验使用单 GPU、无并发、固定预热与重复测量。当前每卡 8 个任务的
@@ -475,6 +491,12 @@ q 和 LR scaler 的主要问题。此时继续在同一开发流上扩展超参�
 - Source 对照：
   `avn/results/logs/source_reval/source-reval-v1-seed0/metrics.csv`
 - Tent 对照与前序稳定性分析：`TENT_HYPERPARAMETER_SEARCH_REPORT.md`
+- ENMuS 模型级网格：
+  `avn/results/logs/fstta_enmus_grid/fstta-enmus-grid-avn-val-rerun-v2-seed0/`
+- ENMuS multi-source 冻结复验定义：`avn/experiments/fstta_enmus_multi.yaml`
+- ENMuS multi-source 冻结复验脚本：`avn/scripts/run_fstta_enmus_multi.py`
+- ENMuS multi-source 复验状态、指标和诊断：
+  `avn/results/logs/fstta_enmus_multi/fstta-enmus-multi-v1-seed0/`
 
 当前 `avn/experiments/fstta_core_grid.yaml` 仍写着 `status: planned`，与已经完成的
 日志状态不一致；后续在正式登记该批次时应更新实验元数据，但不应借此把缺少
@@ -598,7 +620,7 @@ scaler on 的平均 LR scale 为 1.083，接近上限 1.1，但配对效果方�
 - 这种差异可能来自 GPU 数值非确定性、sample 动作的早期微小分岔及其被在线
   适应放大，现有聚合日志不能进一步做因果归因。
 
-因此，本报告把 92 组用于机制筛选和冻结候选，不做显著性声明。论文主表仍只
+因此，本报告把 92 组用于机制筛选和冻结候选，不做显著性声明。SMT+Audio 主表仍只
 使用一次预先冻结顺序，但选定配置必须在最终 commit 上重新运行；探索日志中的
 最大值不直接进入主表。
 
@@ -606,20 +628,40 @@ scaler on 的平均 LR scale 为 1.083，接近上限 1.1，但配对效果方�
 
 ### 12.1 最优配置与 Source 对比
 
-按“SR、SPL 均高于 Source，再以 SPL 主、SR 次排序”，最佳配置是 job 0：
+按“SR、SPL 均高于 Source，再以 SPL 主、SR 次排序”，最佳配置是 **ENMuS
+single-source 网格 job 0**。该 job 就是后续 multi-source 正式实验使用的
+超参数来源：
 
 ```text
-fast_lr=1e-8
-M=16
-slow_lr=1e-5
-N=32
-q=0.1
-fast_grad_mode=concordant
-use_fast_lr_scaler=True
-use_slow=True
-slow_optimizer=AdamW
-reset_slow_optimizer_each_window=False
+NORM_SCOPE=last_k_ln
+LAST_K_LN=4
+LR=1e-8
+FSTTA.M=16
+FSTTA.LR_SLOW=1e-5
+FSTTA.N=32
+FSTTA.Q=0.1
+FSTTA.RHO=0.95
+FSTTA.TAU=0.7
+FSTTA.A=0.9
+FSTTA.B=1.1
+FSTTA.FAST_GRAD_MODE=concordant
+FSTTA.USE_FAST_LR_SCALER=True
+FSTTA.USE_SLOW=True
+FSTTA.FAST_OPTIMIZER=AdamW
+FSTTA.SLOW_OPTIMIZER=AdamW
+FSTTA.RESET_FAST_OPTIMIZER_EACH_EPISODE=True
+FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW=False
+EPISODIC=False
+STEPS=1
 ```
+
+FAST/SLOW 优化器的 `betas=(0.9, 0.99)`、`weight_decay=0`、
+`max_grad_norm=1.0`。具体映射关系为：
+
+| 场景 | 结果来源 | 配置关系 |
+|---|---|---|
+| ENMuS single-source | `fstta-enmus-grid-avn-val-rerun-v2-seed0` 的 job 0 | 该 job 的已有运行直接作为 FSTTA 最终结果 |
+| ENMuS multi-source | `fstta-enmus-multi-v1-seed0` 的 job 0 | 完全沿用 single-source job 0 的超参数，未在多声源上重新选参 |
 
 | 配置 | Reward | SR↑ | SPL↑ | SoftSPL↑ | DTG↓ | NDTG↓ | NA↓ | SNA↑ | SWS↑ |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -629,12 +671,15 @@ reset_slow_optimizer_each_window=False
 
 job 0 同时取得整个网格最高 SR 和 SPL；除 NDTG 轻微增加 0.000930、SWS 下降
 0.15 个百分点外，主要成功率、路径效率、SoftSPL、DTG、NA 和 SNA 均改善。
+因此，上表 job 0 的数值正式作为本研究当前 ENMuS single-source + FSTTA
+的最终数值，不再要求另行重跑一次 single-source 确认性复验。
 
 如果采用更严格的“SR、SPL、SoftSPL、DTG、NDTG、NA、SNA 七项方向均优于
 Source”约束，只有 job 5 和 job 9 满足。其中 SPL 更高的 job 5 为
 `1e-8/M16/1e-4/N64`，SR/SPL/SoftSPL=67.60/37.0844/41.0624，
 DTG/NDTG=3.1620/0.193793，NA/SNA=163.869/51.6325。论文主表仍应优先采用
-预声明的 SPL-first job 0，并把 job 5 作为稳健性备选，而不是事后改变选择规则。
+本报告按 SPL-first 规则选定的 job 0，并把 job 5 作为稳健性备选，而不是在
+multi-source 结果出来后改变选择规则。
 
 ### 12.2 超过 Source 的配置数
 
@@ -686,7 +731,7 @@ SLOW 更新总体更安全。`slow_lr=1e-5` 的平均漂移只有 `1e-4` 的约 
 - compact ENMuS 日志没有 50-episode 历史窗口，因此“没有数值异常”不等于
   “已经排除末段坍塌”；冻结复验应保存与 SMT+Audio 相同的窗口诊断。
 
-### 12.5 跨模型结论与冻结建议
+### 12.5 跨模型结论与 ENMuS 最终配置
 
 SMT+Audio 完整方法候选 job 35 的数值配置
 `3e-7/M16/1e-4/N32` 在 ENMuS 中对应 job 40，其 SR/SPL/SoftSPL 只有
@@ -694,7 +739,125 @@ SMT+Audio 完整方法候选 job 35 的数值配置
 因此当前证据支持的是“两个模型都需要控制累计漂移”，而不是“同一组 FSTTA
 学习率跨模型通用”。
 
-ENMuS 下一步应冻结 job 0，在同一 Git commit 下重跑 Source 和 FSTTA，并保存
-本地可解析 manifest、完整资产 provenance、硬件信息与 50-episode 窗口诊断。
-若该复验成立，再把相同 ENMuS 候选迁移到 multi-source；不应继续在同一开发流
-扩大网格或把本次 48 选 1 的最大值直接填入正式主表。
+ENMuS job 0 已被确定为该模型的 FSTTA 最终配置。single-source 使用
+48 组搜索中 job 0 的已有运行（SR/SPL=68.55/37.3752）；
+multi-source 在没有重新调参的情况下使用同一配置（SR/SPL=
+35.85/17.5484）。因此 ENMuS 的两个声源设置都已经有确定的 FSTTA
+结果，不再补跑 single-source 确认性复验，也不再扩大 ENMuS 搜索空间。
+
+需要保留的方法学说明是：single-source 数值是 48 选 1 的搜索最优值，而
+multi-source 是冻结配置的直接迁移结果。本地可解析 manifest、checkpoint 训练
+provenance 和硬件信息尚不完整，所以仍保留 `[P]` 证据标记；这不改变两组
+结果已被选为当前主表最终数值的决定。
+
+## 13. ENMuS 最终配置的 single/multi-source 结果
+
+### 13.1 批次与完整性
+
+ENMuS 的最终 FSTTA 配置来自 single-source 网格 job 0。single-source 使用
+该 job 的已有运行结果；multi-source 将 job 0 原样迁移，未使用多声源
+结果重新选择超参数。
+
+| 检查项 | 结果 |
+|---|---|
+| single-source 结果来源 | `fstta-enmus-grid-avn-val-rerun-v2-seed0` / **job 0** |
+| single-source Git commit / worktree | `4d70c032be02f83e5e298083281bb714c2c13e38` / clean |
+| single-source split / seed / episodes | canonical `val` / 0 / 2000 |
+| single-source checkpoint SHA256 | `4f37a377cc7fcb888c545850c91883560a908ba5366072df787e4c8238ecefcd` |
+| single-source stream-order SHA256 | `07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c` |
+| multi-source Batch ID | `fstta-enmus-multi-v1-seed0` |
+| multi-source 结果角色 | `frozen_revalidation` |
+| multi-source 计划/完成/成功 | 1/1/1 |
+| multi-source validation / exitcode / runner exitcode | `ok` / 0 / 0 |
+| multi-source Git commit / worktree | `f27e257cf9d5dc323919b1632fe51c1b369d9ee3` / clean |
+| multi-source split / seed / episodes | canonical `val` / 0 / 2000 |
+| multi-source checkpoint SHA256 | `3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464` |
+| multi-source stream-order SHA256 | `cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525` |
+| multi-source stream-content SHA256 | `deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d` |
+| 本地可解析 run manifest | 0；仅保留服务器路径指针 |
+| 正式论文资格 | provisional；provenance 未闭环 |
+
+该 stream-order SHA256 与主表 ENMuS multi-source Source 使用的 seed-0
+canonical 顺序一致。批次启动器校验了 checkpoint、数据索引、episode 内容与
+顺序，但 Source 重评估的逐运行 manifest 没有同步到本地，因此本机不能独立
+闭环核验两次运行的全部 provenance。
+
+### 13.2 冻结配置与结果
+
+```text
+NORM_SCOPE=last_k_ln
+LAST_K_LN=4
+LR=1e-8
+FSTTA.M=16
+FSTTA.LR_SLOW=1e-5
+FSTTA.N=32
+FSTTA.Q=0.1
+FSTTA.FAST_GRAD_MODE=concordant
+FSTTA.USE_FAST_LR_SCALER=True
+FSTTA.USE_SLOW=True
+FSTTA.SLOW_OPTIMIZER=AdamW
+FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW=False
+EPISODIC=False
+STEPS=1
+```
+
+#### 13.2.1 Single-source：job 0 已有运行作为最终结果
+
+| 方法 | Reward↑ | SR↑ | SPL↑ | SoftSPL↑ | DTG↓ | NDTG↓ | NA↓ | SNA↑ | SWS↑ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Source [P] | 14.658422 | 66.55 | 36.0480 | 40.2185 | 3.2115 | **0.195937** | 164.2560 | 51.1794 | 2.20 |
+| Tent [P] | 14.664061 | 67.35 | 36.6857 | 40.3085 | 3.2565 | 0.200093 | 166.1920 | 51.2352 | **2.50** |
+| FSTTA job 0 [P] | **15.041523** | **68.55** | **37.3752** | **41.1575** | **3.1220** | 0.196867 | **161.3960** | **52.3454** | 2.05 |
+| FSTTA − Source | +0.383101 | +2.00 | +1.3272 | +0.9390 | -0.0895 | +0.000930 | -2.8600 | +1.1660 | -0.15 |
+| FSTTA − Tent | +0.377462 | +1.20 | +0.6895 | +0.8490 | -0.1345 | -0.003226 | -4.7960 | +1.1102 | -0.45 |
+
+该行就是 ENMuS single-source 在 AVN 主对比表里采用的 FSTTA 结果。
+它来自 single-source 48 组超参搜索的 job 0，不另行生成一组数值。
+
+#### 13.2.2 Multi-source：同一 job 0 配置的迁移结果
+
+| 方法 | Reward↑ | SR↑ | SPL↑ | SoftSPL↑ | DTG↓ | NDTG↓ | NA↓ | SNA↑ | SWS↑ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Source [P] | 6.925159 | 34.75 | 17.1118 | 24.9445 | 7.3140 | 0.572916 | 159.4825 | 25.8528 | 1.00 |
+| Tent [P] | **7.261280** | 35.55 | 17.1682 | **25.4856** | **7.0725** | **0.553091** | **159.0205** | 26.0775 | 1.10 |
+| FSTTA [P] | 7.178199 | **35.85** | **17.5484** | 25.3055 | 7.1615 | 0.561001 | 159.4285 | **26.4713** | **1.25** |
+| FSTTA − Source | +0.253040 | +1.10 | +0.4366 | +0.3610 | -0.1525 | -0.011915 | -0.0540 | +0.6185 | +0.25 |
+| FSTTA − Tent | -0.083081 | +0.30 | +0.3802 | -0.1801 | +0.0890 | +0.007910 | +0.4080 | +0.3938 | +0.15 |
+
+对论文最核心的 SR/SPL 来说，冻结配置在 multi-source 上同时超过 Source，
+也略高于当前 Tent 候选。相对 Source，九项指标的方向全部改善；相对 Tent 则是
+混合结果：FSTTA 的 SR、SPL、SNA、SWS 更高，但 Reward、SoftSPL、DTG、NDTG
+和 NA 更差。因此不能表述为 FSTTA 全面优于 Tent。
+
+### 13.3 适应过程诊断
+
+| 诊断项 | 数值 |
+|---|---:|
+| action steps / FAST updates | 318857 / 19033 |
+| SLOW attempts / updates / skipped | 62 / 62 / 0 |
+| pending SLOW episodes | 16 |
+| discarded FAST gradients | 14329 |
+| relative parameter drift | 0.00049427 |
+| relative SLOW-anchor drift | 0.00049397 |
+| mean entropy / final entropy | 0.698762 / 0.120887 |
+| mean max action probability | 0.685611 |
+| mean LR scale / upper-bound hits | 1.10000002 / 1915 |
+
+漂移低于 ENMuS 网格 job 0 的 0.0005361，所有 62 次 SLOW attempt 都成功，
+没有 NaN、Inf、OOM、异常退出或退化几何 skip。LR scaler 几乎始终饱和于 1.1
+上界，与 single-source 网格观察一致，因此该批次仍不能单独证明动态 scaler 的
+贡献。下载的 compact 日志没有 50-episode 窗口历史，不能仅凭最终聚合指标排除
+短时波动或末段退化。
+
+### 13.4 ENMuS 结论
+
+ENMuS single-source 搜索最优结果和 multi-source 同配置迁移共同支持以下结论：
+
+1. ENMuS 对 FSTTA 更新强度的偏好与 SMT+Audio 不同，模型级校准是必要的；
+2. 一旦在 single-source 冻结低强度配置，它可以在不重新调参的情况下迁移到
+   multi-source，并保持 SR/SPL 正增益；
+3. multi-source 增益小于 single-source 最终采用结果的 +2.00 SR/+1.3272 SPL，
+   说明更困难声源设置下收益有所收缩；
+4. single/multi 两个数值已被选为当前主表的 ENMuS FSTTA 最终结果；
+   但当前只有一个 episode 顺序，且缺少本地 manifest、完整 checkpoint
+   训练来源和多 seed 统计，因此仍保留 `[P]` 并不宣称统计显著性。

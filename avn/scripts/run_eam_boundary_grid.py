@@ -28,6 +28,18 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, TextIO, Tu
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOG_BASE = REPO_ROOT / "avn" / "results" / "logs" / "eam_boundary_grid"
+SOURCE_SETTING = "single_source"
+EVAL_SPLIT = "val"
+RESULT_ROLE = "hyperparameter_search"
+EXPERIMENT_NAME = "eam_weak_update_boundary_joint_v1"
+PROTOCOL = "source_tent_aligned_single_source_val_seed0"
+EXPERIMENT_TITLE = "AVN joint EAM weak-update boundary grid"
+BATCH_ID_PREFIX = "eam-boundary-joint-v1-seed0"
+RUN_TAG_PREFIX = "eamboundary"
+GLOBAL_LOCK_DESCRIPTION = "joint EAM boundary scheduler"
+LAUNCHER_DISPLAY = "avn/scripts/run_eam_boundary_grid.py"
+REQUIRED_GPU_COUNT = 4
+DEFAULT_GPUS = "0,1,2,3"
 DATASET = (
     REPO_ROOT
     / "avn"
@@ -46,6 +58,10 @@ MANIFEST_VALIDATOR = REPO_ROOT / "tools" / "validate_run_manifest.py"
 MODELS = ("smt_audio", "enmus")
 LRS = ("3e-9", "1e-8", "3e-8")
 UPDATE_INTERVALS = (32, 64, 128)
+POINTS_BY_MODEL = {
+    model: tuple((lr, interval) for lr in LRS for interval in UPDATE_INTERVALS)
+    for model in MODELS
+}
 SEED = 0
 CANONICAL_EPISODES = 2000
 PREFIXES = (
@@ -147,6 +163,13 @@ ENMUS_AUXILIARY_SHA256 = {
         "7d36aa62eb6fa8043bebb8ebb8bb11a972f5fec9e039ae7260400dbdc38646db"
     ),
 }
+
+PROVENANCE_SOURCE_FILES = (
+    Path(__file__).resolve(),
+    FINGERPRINT_TOOL.resolve(),
+    MANIFEST_VALIDATOR.resolve(),
+    *(MODEL_RUNNERS[model].resolve() for model in MODELS),
+)
 
 # These counts lock the declared full-Transformer-plus-head scope.  ENMuS uses
 # its one-layer MSMT custom decoder, so its scope is larger than SMT+Audio's
@@ -276,12 +299,16 @@ def run_capture(command: Sequence[str]) -> str:
 
 
 def parse_gpu_csv(value: str) -> Tuple[str, ...]:
-    if not re.fullmatch(r"[0-9]+(?:,[0-9]+){3}", value):
-        raise argparse.ArgumentTypeError(
-            "expected exactly four comma-separated numeric GPU ids"
-        )
     values = tuple(value.split(","))
-    if len(set(values)) != 4:
+    if len(values) != REQUIRED_GPU_COUNT or any(
+        re.fullmatch(r"0|[1-9][0-9]*", item) is None for item in values
+    ):
+        raise argparse.ArgumentTypeError(
+            "expected exactly {} comma-separated numeric GPU ids".format(
+                REQUIRED_GPU_COUNT
+            )
+        )
+    if len(set(values)) != REQUIRED_GPU_COUNT:
         raise argparse.ArgumentTypeError("GPU ids must be distinct")
     return values
 
@@ -293,28 +320,38 @@ def positive_integer(value: str) -> int:
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    total_jobs = sum(len(POINTS_BY_MODEL[model]) for model in MODELS)
     parser = argparse.ArgumentParser(
         description=(
-            "Run 18 joint EAM boundary jobs: SMT+Audio and ENMuS each use "
-            "3 LRs x 3 update intervals on the canonical single-source val stream."
+            "Run {} EAM jobs for SMT+Audio and ENMuS on the canonical "
+            "{} {} stream.".format(total_jobs, SOURCE_SETTING, EVAL_SPLIT)
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Full run (fixed seed 0 and 2,000 episodes):\n"
-            "  python3 avn/scripts/run_eam_boundary_grid.py --gpus 0,1,2,3 "
-            "--jobs-per-gpu 2 --batch-id eam-boundary-joint-v1-seed0\n\n"
-            "Two-job, two-episode pathway smoke (still pass four GPU ids):\n"
-            "  python3 avn/scripts/run_eam_boundary_grid.py --gpus 0,1,2,3 "
+            "  python3 {} --gpus {} --jobs-per-gpu 1 "
+            "--batch-id {}\n\n"
+            "Two-model, two-episode pathway smoke:\n"
+            "  python3 {} --gpus {} "
             "--jobs-per-gpu 1 --smoke --episodes 2 --allow-dirty "
-            "--batch-id eam-boundary-smoke"
+            "--batch-id {}-smoke"
+        ).format(
+            LAUNCHER_DISPLAY,
+            DEFAULT_GPUS,
+            BATCH_ID_PREFIX,
+            LAUNCHER_DISPLAY,
+            DEFAULT_GPUS,
+            BATCH_ID_PREFIX,
         ),
     )
     parser.add_argument(
         "--gpus",
         type=parse_gpu_csv,
-        default=parse_gpu_csv("0,1,2,3"),
-        metavar="A,B,C,D",
-        help="exactly four distinct physical GPU ids (default: 0,1,2,3)",
+        default=parse_gpu_csv(DEFAULT_GPUS),
+        metavar="GPU_IDS",
+        help="exactly {} distinct physical GPU ids (default: {})".format(
+            REQUIRED_GPU_COUNT, DEFAULT_GPUS
+        ),
     )
     parser.add_argument(
         "--jobs-per-gpu",
@@ -346,7 +383,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="select one configuration per model instead of all 18 jobs",
+        help="select the first declared configuration per model",
     )
     parser.add_argument(
         "--dry-run",
@@ -355,18 +392,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     args = parser.parse_args(argv)
 
-    if args.jobs_per_gpu > len(MODELS) * len(LRS) * len(UPDATE_INTERVALS):
-        parser.error("--jobs-per-gpu cannot exceed the 18-job full grid")
+    if args.jobs_per_gpu > total_jobs:
+        parser.error("--jobs-per-gpu cannot exceed the selected job count")
     if args.episodes > CANONICAL_EPISODES:
         parser.error("--episodes cannot exceed the 2,000-episode canonical stream")
     if not args.smoke and args.episodes != CANONICAL_EPISODES:
-        parser.error("full boundary runs require exactly 2,000 episodes")
+        parser.error("full EAM runs require exactly 2,000 episodes")
     if args.allow_dirty and not args.smoke:
         parser.error("--allow-dirty is permitted only with --smoke")
     if args.resume and not args.batch_id:
         parser.error("--resume requires an explicit --batch-id")
     if not args.batch_id:
-        args.batch_id = "eam-boundary-joint-v1-seed0-{}".format(timestamp_slug())
+        args.batch_id = "{}-{}".format(BATCH_ID_PREFIX, timestamp_slug())
     if not re.fullmatch(r"[A-Za-z0-9._-]+", args.batch_id):
         parser.error(
             "--batch-id may contain only letters, numbers, dot, underscore, and hyphen"
@@ -383,8 +420,8 @@ def value_slug(value: str) -> str:
 def make_run_tag(
     batch_id: str, job_id: int, model: str, lr: str, interval: int
 ) -> str:
-    return "eamboundary-{}-j{:03d}-{}-lr{}-u{}".format(
-        batch_id, job_id, model, value_slug(lr), interval
+    return "{}-{}-j{:03d}-{}-lr{}-u{}".format(
+        RUN_TAG_PREFIX, batch_id, job_id, model, value_slug(lr), interval
     )
 
 
@@ -392,49 +429,55 @@ def build_plan(args: argparse.Namespace) -> List[Job]:
     plan: List[Job] = []
     global_job_id = 0
     for model_index, model in enumerate(MODELS):
-        for lr_index, lr in enumerate(LRS):
-            for interval_index, interval in enumerate(UPDATE_INTERVALS):
-                model_job_id = lr_index * len(UPDATE_INTERVALS) + interval_index
-                selected = not args.smoke or model_job_id == 0
-                if selected:
-                    # Each model touches every GPU.  The one-slot ENMuS offset
-                    # yields a balanced combined 5/5/4/4 full-grid assignment.
-                    gpu_index = (model_job_id + model_index) % len(args.gpus)
-                    plan.append(
-                        Job(
-                            job_id=global_job_id,
-                            model_job_id=model_job_id,
-                            model=model,
-                            lr=lr,
-                            update_interval=interval,
-                            gpu_index=gpu_index,
-                            gpu=args.gpus[gpu_index],
-                            run_tag=make_run_tag(
-                                args.batch_id,
-                                global_job_id,
-                                model,
-                                lr,
-                                interval,
-                            ),
-                        )
+        points = tuple(POINTS_BY_MODEL[model])
+        for model_job_id, (lr, interval) in enumerate(points):
+            selected = not args.smoke or model_job_id == 0
+            if selected:
+                # The per-model offset avoids systematically binding the two
+                # policies to the same physical GPU.
+                gpu_index = (model_job_id + model_index) % len(args.gpus)
+                plan.append(
+                    Job(
+                        job_id=global_job_id,
+                        model_job_id=model_job_id,
+                        model=model,
+                        lr=lr,
+                        update_interval=interval,
+                        gpu_index=gpu_index,
+                        gpu=args.gpus[gpu_index],
+                        run_tag=make_run_tag(
+                            args.batch_id,
+                            global_job_id,
+                            model,
+                            lr,
+                            interval,
+                        ),
                     )
-                global_job_id += 1
+                )
+            global_job_id += 1
 
-    expected = 2 if args.smoke else 18
+    expected = len(MODELS) if args.smoke else sum(
+        len(POINTS_BY_MODEL[model]) for model in MODELS
+    )
     if len(plan) != expected or len({job.run_tag for job in plan}) != expected:
         raise UserError("internal EAM boundary plan size or tag collision")
     for model in MODELS:
         model_jobs = [job for job in plan if job.model == model]
-        expected_model_jobs = 1 if args.smoke else 9
+        expected_model_jobs = 1 if args.smoke else len(POINTS_BY_MODEL[model])
         combinations = {(job.lr, job.update_interval) for job in model_jobs}
         if len(model_jobs) != expected_model_jobs or len(combinations) != expected_model_jobs:
             raise UserError("invalid {} Cartesian grid".format(model))
-    if not args.smoke:
-        gpu_counts = [sum(job.gpu_index == index for job in plan) for index in range(4)]
-        if sorted(gpu_counts) != [4, 4, 5, 5]:
-            raise UserError("joint EAM jobs are not balanced across four GPUs")
+    if not args.smoke and len(plan) >= len(args.gpus):
+        gpu_counts = [
+            sum(job.gpu_index == index for job in plan)
+            for index in range(len(args.gpus))
+        ]
+        if max(gpu_counts) - min(gpu_counts) > 1:
+            raise UserError("joint EAM jobs are not balanced across GPUs")
         if any(
-            len({job.gpu_index for job in plan if job.model == model}) != 4
+            len(POINTS_BY_MODEL[model]) >= len(args.gpus)
+            and len({job.gpu_index for job in plan if job.model == model})
+            != len(args.gpus)
             for model in MODELS
         ):
             raise UserError("each model must be represented on every GPU")
@@ -470,7 +513,7 @@ def plan_csv(plan: Iterable[Job], episodes: int) -> str:
                 job.run_tag,
                 job.gpu,
                 job.model,
-                "single_source",
+                SOURCE_SETTING,
                 "eam",
                 "full_transformer_plus_head",
                 EXPECTED_TENSORS[job.model],
@@ -485,15 +528,16 @@ def plan_csv(plan: Iterable[Job], episodes: int) -> str:
 
 
 def print_plan(args: argparse.Namespace, plan: Sequence[Job]) -> None:
-    print("AVN joint EAM weak-update boundary grid")
+    print(EXPERIMENT_TITLE)
     print("  models:              smt_audio,enmus")
-    print("  source/split:        single_source/val")
-    print("  LRs:                 {}".format(",".join(LRS)))
-    print(
-        "  update intervals:    {}".format(
-            ",".join(str(value) for value in UPDATE_INTERVALS)
+    print("  source/split:        {}/{}".format(SOURCE_SETTING, EVAL_SPLIT))
+    print("  frozen/search points:")
+    for model in MODELS:
+        rendered = ",".join(
+            "{}/{}".format(lr, interval)
+            for lr, interval in POINTS_BY_MODEL[model]
         )
-    )
+        print("    {:<18} {}".format(model + ":", rendered))
     print("  seed/episodes:       {}/{}".format(SEED, args.episodes))
     print("  GPUs:                {}".format(",".join(args.gpus)))
     print("  combined jobs/GPU:   {}".format(args.jobs_per_gpu))
@@ -541,13 +585,7 @@ def validate_preflight(args: argparse.Namespace) -> Provenance:
         if shutil.which(command) is None:
             raise UserError("{} is unavailable".format(command))
 
-    provenance_sources = (
-        Path(__file__).resolve(),
-        FINGERPRINT_TOOL.resolve(),
-        MANIFEST_VALIDATOR.resolve(),
-        *(MODEL_RUNNERS[model].resolve() for model in MODELS),
-    )
-    for path in provenance_sources:
+    for path in PROVENANCE_SOURCE_FILES:
         try:
             relative = path.relative_to(REPO_ROOT.resolve())
         except ValueError as error:
@@ -622,13 +660,13 @@ def require_repository_unchanged(provenance: Provenance) -> None:
 def batch_spec(
     args: argparse.Namespace, provenance: Provenance, plan: Sequence[Job]
 ) -> Mapping[str, object]:
-    return {
-        "experiment": "eam_weak_update_boundary_joint_v1",
-        "result_role": "hyperparameter_search",
-        "protocol": "source_tent_aligned_single_source_val_seed0",
+    specification = {
+        "experiment": EXPERIMENT_NAME,
+        "result_role": RESULT_ROLE,
+        "protocol": PROTOCOL,
         "models": list(MODELS),
-        "source_setting": "single_source",
-        "split": "val",
+        "source_setting": SOURCE_SETTING,
+        "split": EVAL_SPLIT,
         "method": "eam",
         "action_selection": {
             "smt_audio": "sample",
@@ -666,6 +704,16 @@ def batch_spec(
         "checkpoint_sha256": dict(provenance.checkpoint_sha256),
         "enmus_auxiliary_sha256": dict(provenance.auxiliary_sha256),
     }
+    cartesian = tuple((lr, interval) for lr in LRS for interval in UPDATE_INTERVALS)
+    if any(tuple(POINTS_BY_MODEL[model]) != cartesian for model in MODELS):
+        specification["points_by_model"] = {
+            model: [
+                {"lr": lr, "update_interval": interval}
+                for lr, interval in POINTS_BY_MODEL[model]
+            ]
+            for model in MODELS
+        }
+    return specification
 
 
 def json_text(value: object) -> str:
@@ -755,7 +803,7 @@ def expected_override_map(job: Job, episodes: int) -> Mapping[str, str]:
     if job.model == "smt_audio":
         values["EVAL.ACTION_SELECTION"] = "sample"
     else:
-        values["EVAL.SPLIT"] = "val"
+        values["EVAL.SPLIT"] = EVAL_SPLIT
     return values
 
 
@@ -763,7 +811,7 @@ def runner_command(job: Job, episodes: int) -> List[str]:
     command = [
         "bash",
         str(MODEL_RUNNERS[job.model]),
-        "single_source",
+        SOURCE_SETTING,
         "eam",
         str(SEED),
     ]
@@ -788,7 +836,7 @@ def job_environment(job: Job, provenance: Provenance) -> Dict[str, str]:
         }
     )
     if job.model == "enmus":
-        environment["NAVTTA_EVAL_SPLIT"] = "val"
+        environment["NAVTTA_EVAL_SPLIT"] = EVAL_SPLIT
     return environment
 
 
@@ -799,8 +847,8 @@ def parameters_text(job: Job, args: argparse.Namespace, provenance: Provenance) 
         ("run_tag", job.run_tag),
         ("gpu", job.gpu),
         ("model", job.model),
-        ("source_setting", "single_source"),
-        ("split", "val"),
+        ("source_setting", SOURCE_SETTING),
+        ("split", EVAL_SPLIT),
         ("method", "eam"),
         (
             "action_selection",
@@ -1061,7 +1109,7 @@ def validate_job_artifacts(
             "--method",
             "eam",
             "--source-setting",
-            "single_source",
+            SOURCE_SETTING,
             "--seed",
             str(SEED),
             "--git-commit",
@@ -1102,9 +1150,9 @@ def write_job_metrics(
         "model_job_id": job.model_job_id,
         "run_tag": job.run_tag,
         "model": job.model,
-        "source_setting": "single_source",
-        "eval_split": "val",
-        "result_role": "hyperparameter_search",
+        "source_setting": SOURCE_SETTING,
+        "eval_split": EVAL_SPLIT,
+        "result_role": RESULT_ROLE,
         "method": "eam",
         "seed": SEED,
         "episodes": episodes,
@@ -1338,9 +1386,9 @@ def write_batch_metrics(
             "status": status,
             "validation": validation,
             "model": job.model,
-            "source_setting": "single_source",
-            "eval_split": "val",
-            "result_role": "hyperparameter_search",
+            "source_setting": SOURCE_SETTING,
+            "eval_split": EVAL_SPLIT,
+            "result_role": RESULT_ROLE,
             "method": "eam",
             "seed": SEED,
             "episodes": args.episodes,
@@ -1423,8 +1471,8 @@ def summarize(
     summary = {
         "batch_id": args.batch_id,
         "git_commit": provenance.git_commit,
-        "result_role": "hyperparameter_search",
-        "protocol": "source_tent_aligned_single_source_val_seed0",
+        "result_role": RESULT_ROLE,
+        "protocol": PROTOCOL,
         "completed_at": utc_now(),
         "tracked_worktree_dirty": provenance.tracked_worktree_dirty,
         "smoke": args.smoke,
@@ -1573,7 +1621,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     LOG_BASE.mkdir(parents=True, exist_ok=True)
     global_lock = acquire_lock(
-        LOG_BASE / ".global_scheduler.lock", "joint EAM boundary scheduler"
+        LOG_BASE / ".global_scheduler.lock", GLOBAL_LOCK_DESCRIPTION
     )
     preflight_path = LOG_BASE / "{}.preflight.log".format(args.batch_id)
     try:

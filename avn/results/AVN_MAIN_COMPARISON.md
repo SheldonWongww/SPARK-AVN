@@ -1,11 +1,16 @@
 # AVN 主对比表结果登记册
 
-更新日期：2026-07-29
+更新日期：2026-08-03
 
 用途：集中登记未来论文 AVN 主对比表采用的冻结结果。表格以导航模型为一级
 分组，列按单声源和多声源展开。当前填入统一 Source 重评估结果、冻结配置的
-Tent 候选结果，以及用于冻结 FSTTA 配置的 SMT+Audio 单声源开发结果；`—`
+Tent 候选结果，以及已经确定的 FSTTA/EAM 主表结果；`—`
 表示该方法尚未完成最终配置复验或尚不具备可写入主表的结果。
+ENMuS FSTTA single-source 使用搜索 job 0 的已有运行，multi-source 使用同一
+超参数配置的迁移运行；两者均为当前最终选定数值。由于本地 run manifest
+与 checkpoint 训练 provenance 尚未闭环，继续标记为 `[P]`。
+SMT+Audio FSTTA multi-source 使用其 single-source 冻结配置的直接迁移结果；
+两个模型的 EAM single-source 均按各自边界网格的最佳配置登记为最终数值。
 
 ## 1. 指标与登记规则
 
@@ -59,9 +64,13 @@ Tent 候选结果，以及用于冻结 FSTTA 配置的 SMT+Audio 单声源开发
     <tr>
       <td>FSTTA [P]</td>
       <td>11.890811</td><td>4.7265</td><td>0.289784</td><td>56.55</td><td>30.3007</td><td>37.0208</td><td>155.0175</td><td>44.8928</td><td>2.60</td>
+      <td>5.380221</td><td>7.6480</td><td>0.556494</td><td>26.25</td><td>13.5170</td><td>25.6032</td><td>172.5765</td><td>19.2579</td><td>1.95</td>
+    </tr>
+    <tr>
+      <td>EAM [P]</td>
+      <td>11.834155</td><td>4.8325</td><td>0.295396</td><td>56.20</td><td>30.5805</td><td>37.4332</td><td>150.0830</td><td>45.2148</td><td>2.30</td>
       <td colspan="9">—</td>
     </tr>
-    <tr><td>EAM</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr><td>FeedTTA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr><td>ATENA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr>
@@ -74,14 +83,24 @@ Tent 候选结果，以及用于冻结 FSTTA 配置的 SMT+Audio 单声源开发
       <td>14.664061</td><td>3.2565</td><td>0.200093</td><td>67.35</td><td>36.6857</td><td>40.3085</td><td>166.1920</td><td>51.2352</td><td>2.50</td>
       <td>7.261280</td><td>7.0725</td><td>0.553091</td><td>35.55</td><td>17.1682</td><td>25.4856</td><td>159.0205</td><td>26.0775</td><td>1.10</td>
     </tr>
-    <tr><td>FSTTA</td><td colspan="9">—</td><td colspan="9">—</td></tr>
-    <tr><td>EAM</td><td colspan="9">—</td><td colspan="9">—</td></tr>
+    <tr>
+      <td>FSTTA [P]</td>
+      <td>15.041523</td><td>3.1220</td><td>0.196867</td><td>68.55</td><td>37.3752</td><td>41.1575</td><td>161.3960</td><td>52.3454</td><td>2.05</td>
+      <td>7.178199</td><td>7.1615</td><td>0.561001</td><td>35.85</td><td>17.5484</td><td>25.3055</td><td>159.4285</td><td>26.4713</td><td>1.25</td>
+    </tr>
+    <tr>
+      <td>EAM [P]</td>
+      <td>14.859267</td><td>3.2590</td><td>0.193446</td><td>68.15</td><td>36.9083</td><td>40.6694</td><td>162.9215</td><td>51.8355</td><td>2.20</td>
+      <td colspan="9">—</td>
+    </tr>
     <tr><td>FeedTTA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr><td>ATENA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
   </tbody>
 </table>
 
-`[P]`：当前为 provisional 候选值；尚不能作为正式论文结果。
+`[P]`：证据链尚未闭环，暂不具备正式论文结果资格。该标记不代表超参数
+尚未选定；当前已登记的 FSTTA 数值以及两个模型的 EAM single-source 数值均为
+最终选定结果。
 
 `†`：该方法消费二值 episode feedback，不属于严格无监督 TTA。
 
@@ -122,7 +141,7 @@ single-source 数值复用冻结配置在核心超参数网格中的既有运行
 含日志和参数文件。因此四项 Tent 结果暂标为 `[P]`，补齐 commit、checkpoint digest、
 数据版本、硬件及完整配置的 run manifest 后才能转为正式结果。
 
-## 5. 当前 FSTTA 候选与最终复验计划
+## 5. 当前 FSTTA 候选与复验进度
 
 当前冻结候选来自 SMT+Audio 单声源机制探索的 validated job 35：
 
@@ -136,18 +155,98 @@ single-source 数值复用冻结配置在核心超参数网格中的既有运行
 | 优化器 | FAST/SLOW AdamW，betas=(0.9, 0.99)，weight decay=0，max grad norm=1.0 |
 | 开发结果来源 | [`fstta-exploration job 35`](logs/fstta_exploration/fstta-exploration-all-v1-seed0/jobs/fsttaexp-fstta-exploration-all-v1-seed0-sb-j035-flr3em7-m16-slr1em4-n32-q0p1-gconcordant-sc1-us1-soaw-wr0/) |
 
-该 single-source 数值用于记录配置冻结依据，仍属于开发批次结果，故暂标 `[P]`。
-冻结后不再针对其他模型或声源重新选参；使用相同配置运行 SMT+Audio
-multi-source、ENMuS single-source 和 ENMuS multi-source。三项完成并通过 run
-manifest 校验后再补入本表；SMT+Audio single-source 也应在最终固定 commit 上
-独立复验后才能移除 `[P]`。
+该 single-source 数值用于记录 SMT+Audio 配置冻结依据，仍属于开发批次
+结果，故暂标 `[P]`。该配置冻结后只在 SMT+Audio 的其他声源设置上直接
+迁移，不再重新选参；SMT+Audio single-source 也应在最终固定 commit 上独立
+复验后才能移除 `[P]`。ENMuS 对该数值配置的迁移失败，因此单独使用
+ENMuS single-source 开发网格冻结模型级配置，再原样迁移到 ENMuS
+multi-source。
 
-## 6. 后续填表规则
+SMT+Audio multi-source 已使用上述 job 35 配置直接迁移完成：
+
+| 项目 | 当前记录 |
+|---|---|
+| Batch / job | `fstta-main-v1-seed0 / j00-smt_audio-multi_source` |
+| Git commit / worktree | `816f253e2bad892da44634a92563c2881cd4cf9e` / clean |
+| Seed / episodes | 0 / 2000 |
+| checkpoint SHA256 | `c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8` |
+| stream-order SHA256 | `cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525` |
+| stream-content SHA256 | `deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d` |
+| 完整性 | 2000 episodes，exitcode=0，`validation=ok` |
+| 结果 | SR/SPL/SoftSPL=`26.25/13.5170/25.6032` |
+| 本地证据 | [`j00 console.log`](logs/fstta_main/fstta-main-v1-seed0/jobs/j00-smt_audio-multi_source/console.log) |
+
+该 checkpoint 与 episode stream digest 均和 matched Source 一致。最终 console 汇总为
+`success=0.262500`（525/2000）；批次 `metrics.csv` 将该字段误记为 `0.26270`，
+因此本表以原始 console 为准。相对 Source，SR/SPL 提高 0.35/0.0974
+个百分点；提升较小，但这是冻结配置未重新调参的直接
+迁移结果，因此按用户确定的规则作为 SMT+Audio multi-source FSTTA 最终数值。
+本地仍缺逐运行 manifest 和 checkpoint 训练 provenance，故保留 `[P]`。
+
+ENMuS 使用其模型级 single-source 网格按本报告 SPL-first 规则选出的 job 0：
+
+| 项目 | 当前记录 |
+|---|---|
+| 参数范围 | 最后 4 个 LayerNorm affine 参数（8 个张量） |
+| FAST | `LR=1e-8`、`M=16`、`FAST_GRAD_MODE=concordant`、启用 LR scaler |
+| SLOW | `LR_SLOW=1e-5`、`N=32`、`Q=0.1`、persistent AdamW |
+| single-source 结果 | job 0 已有运行；SR/SPL=`68.55/37.3752` |
+| single-source 来源 | [`fstta_enmus_grid job 0`](logs/fstta_enmus_grid/fstta-enmus-grid-avn-val-rerun-v2-seed0/jobs/fsttaexp-fstta-enmus-grid-avn-val-rerun-v2-seed0-ei-j000-flr1em8-m16-slr1em5-n32-q0p1-gconcordant-sc1-us1-soaw-wr0/) |
+| multi-source batch | `fstta-enmus-multi-v1-seed0`，1/1 完成且 `validation=ok` |
+| Git commit | `f27e257cf9d5dc323919b1632fe51c1b369d9ee3`，clean worktree |
+| Seed / episodes | 0 / 2000 |
+| stream-order SHA256 | `cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525` |
+| 本地证据 | [`fstta_enmus_multi`](logs/fstta_enmus_multi/fstta-enmus-multi-v1-seed0/) |
+
+该配置就是 ENMuS single-source 网格的 job 0。其已有运行作为单声源
+FSTTA 最终结果；随后不根据多声源结果重新调参，直接将 job 0 配置迁移到
+multi-source。单声源 SR/SPL 相对 matched Source 提高 2.00/1.3272 个百分点；
+多声源提高 1.10/0.4366 个百分点。两组数值均已填入主表。当前下载
+内容只有 run manifest 的服务器路径指针，且 Source checkpoint provenance
+不完整，所以仍保留 `[P]`。
+
+## 6. 当前 EAM 模型级最终配置
+
+两个模型均采用 `eam-boundary-joint-v1-seed0` single-source 边界网格中各自
+SR/SPL 同时最高的配置。按当前研究决定，这两个已有运行直接作为 EAM
+single-source 最终数值，不再另选统一 LR：
+
+| 模型 | job | LR | UPDATE_INTERVAL | Reward | DTG | NDTG | SR | SPL | SoftSPL | NA | SNA | SWS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SMT+Audio | 5 | `1e-8` | 128 | 11.834155 | 4.8325 | 0.295396 | 56.20 | 30.5805 | 37.4332 | 150.0830 | 45.2148 | 2.30 |
+| ENMuS | 11 | `3e-9` | 128 | 14.859267 | 3.2590 | 0.193446 | 68.15 | 36.9083 | 40.6694 | 162.9215 | 51.8355 | 2.20 |
+
+共同固定项为 `scope=full_transformer_plus_head`、`CONFIDENCE_SCALE=0.4`、
+`MEMORY_SIZE=32`、`BATCH_SIZE=8`、`EPISODIC=False`、`STEPS=1`，优化器为
+Adam，`betas=(0.9, 0.999)`、零 weight decay、无梯度裁剪。两项运行均位于
+commit `f27e257cf9d5dc323919b1632fe51c1b369d9ee3` 的 clean worktree，使用同一
+canonical single-source val、seed 0、2000-episode stream：
+
+| 项目 | SMT+Audio | ENMuS |
+|---|---|---|
+| checkpoint SHA256 | `8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03` | `4f37a377cc7fcb888c545850c91883560a908ba5366072df787e4c8238ecefcd` |
+| stream-order SHA256 | `07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c` | 同左 |
+| stream-content SHA256 | `dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2` | 同左 |
+| 本地证据 | [`SMT job 5`](logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/smt_audio/jobs/eamboundary-eam-boundary-joint-v1-seed0-j005-smt_audio-lr1em8-u128/) | [`ENMuS job 11`](logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/enmus/jobs/eamboundary-eam-boundary-joint-v1-seed0-j011-enmus-lr3em9-u128/) |
+
+相对 matched Source，SMT+Audio 的 SR/SPL 提高 2.05/1.1576 个百分点，ENMuS
+提高 1.60/0.8603 个百分点。EAM multi-source 尚未运行，因此主表对应位置保留
+`—`。两个冻结配置的 multi-source 主表复验已由
+[`run_eam_main_multi_source.py`](../scripts/run_eam_main_multi_source.py) 定义，待服务器运行。
+两个 single-source 数值已经冻结，但因本地缺少可解析 run manifest 及完整
+checkpoint 训练 provenance，暂继续标为 `[P]`。
+
+## 7. 后续填表规则
 
 1. 每种 TTA 方法先冻结配置，再分别运行 SMT+Audio/ENMuS 的单声源和多声源。
 2. 只有与 Source 使用相同 checkpoint、episode 内容和顺序的结果才能横向比较。
 3. 写入结果时同时登记对应 run manifest；缺少 commit、配置、checkpoint digest、
    数据版本、seed 或硬件信息的结果保留为 provisional。
-4. 方法开发网格的最大值不能直接写入本表；必须使用冻结配置完成一次独立复验。
-5. `Main Comparison` 仅存最终候选；完整超参数网格、机制实验和消融结果保留在
+4. SMT+Audio FSTTA multi-source 明确采用 single-source job 35 冻结配置的
+   直接迁移运行，不根据多声源结果重新调参。
+5. ENMuS FSTTA 例外地明确采用 single-source 搜索 job 0 的已有运行作为最终
+   结果；必须保留“48 选 1”的选择来源说明，不把它写成独立复验。
+6. EAM single-source 分别采用 SMT+Audio job 5 和 ENMuS job 11；后续
+   multi-source 必须直接迁移对应模型的冻结配置，不在多声源上重新选参。
+7. `Main Comparison` 仅存最终候选；完整超参数网格、机制实验和消融结果保留在
    各方法的独立报告与实验数据表中。
