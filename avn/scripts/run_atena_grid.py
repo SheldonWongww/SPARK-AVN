@@ -380,6 +380,9 @@ def build_jobs(args: argparse.Namespace) -> List[Job]:
     # Released DUET-R2R values, contained unchanged in the formal grid.
     anchor = Point("8e-7", "1e-7", "0.75", "0.1", "0.1")
     selected_points = (anchor,) if args.smoke else points
+
+    # Put both matched controls first so their reference metrics are available
+    # near the beginning of a long batch.
     for model_index, model in enumerate(MODELS):
         source_tag = "atena-{}-{}-source-argmax".format(
             args.batch_id, "sa" if model == "smt_audio" else "em"
@@ -397,8 +400,13 @@ def build_jobs(args: argparse.Namespace) -> List[Job]:
             )
         )
         next_id += 1
+
+    for model_index, model in enumerate(MODELS):
         for model_job_id, point in enumerate(selected_points):
-            gpu_index = (model_job_id + model_index) % len(args.gpus)
+            # The +2 offset puts the two smoke anchors on GPUs 2/3 while the
+            # two Source controls use GPUs 0/1.  In a full grid it remains
+            # exactly balanced at 36 ATENA jobs per physical GPU/model.
+            gpu_index = (model_job_id + model_index + 2) % len(args.gpus)
             tag = "atena-{}-{}-j{:03d}-{}".format(
                 args.batch_id,
                 "sa" if model == "smt_audio" else "em",
