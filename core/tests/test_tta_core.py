@@ -6,6 +6,7 @@ from unittest import mock
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from navtta_core.tta.tta_core import (
     ATENAAdapter,
@@ -1173,25 +1174,33 @@ class TTACoreTest(unittest.TestCase):
         )
         self.assertEqual(adapter.param_scope, "all")
         adapter.episode_start()
-        features, logits = _forward(policy, _inputs())
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
         distribution = policy.action_distribution(features)
         action = adapter.select_action(distribution)
         torch.testing.assert_close(
             action, distribution.probs.argmax(dim=-1, keepdim=True)
         )
-        adapter.adapt(logits, action=action, features=features)
-        self.assertTrue(adapter.trajectory_mixture_entropies[0].requires_grad)
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+        self.assertIsInstance(adapter.trajectory_mixture_entropies[0], float)
         adapter.episode_end({"success": 1.0})
         self.assertEqual(adapter.update_count, 1)
         self.assertEqual(adapter.query_count, 1)
         self.assertIsInstance(adapter.self_prediction_head, nn.Sequential)
         self.assertIsNotNone(adapter.optimizer)
         self.assertEqual(adapter.trajectory_mixture_entropies, [])
+        self.assertFalse(adapter.diagnostics()["retains_episode_graph"])
+        self.assertEqual(
+            adapter.diagnostics()["gradient_reconstruction"],
+            "exact_step_replay_in_eval_mode",
+        )
 
     def test_atena_self_prediction_loss_updates_policy_representation(self):
         policy = _TinyPolicy()
         adapter = ATENAAdapter(
-            policy, lr_query=1e-2, mix_lambda=1.0,
+            policy, lr_query=1e-2, mix_lambda=0.75,
             query_threshold=0.0, self_loss_weight=1.0,
             weight_decay=0.0, max_grad_norm=0.0,
         )
@@ -1199,14 +1208,88 @@ class TTACoreTest(unittest.TestCase):
             param.detach().clone() for param in policy.net.parameters()
         ]
         adapter.episode_start()
-        features, logits = _forward(policy, _inputs())
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
         action = adapter.select_action(policy.action_distribution(features))
-        adapter.adapt(logits, action=action, features=features)
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
         adapter.episode_end({"success": 1.0})
         self.assertTrue(any(
             not torch.equal(old, new)
             for old, new in zip(before, policy.net.parameters())
         ))
+
+    def test_atena_rejects_behaviorally_inert_episodic_mode(self):
+        with self.assertRaisesRegex(ValueError, "EPISODIC=False"):
+            ATENAAdapter(_TinyPolicy(), episodic=True)
+
+    def test_atena_all_scope_excludes_value_only_critic(self):
+        policy = _ReplayPolicy()
+        adapter = ATENAAdapter(policy)
+        self.assertTrue(adapter.names)
+        self.assertFalse(any(name.startswith("critic.") for name in adapter.names))
+
+    def test_atena_step_replay_matches_joint_episode_gradient(self):
+        policy = _TinyPolicy()
+        learning_rate = 1e-3
+        adapter = ATENAAdapter(
+            policy,
+            lr_query=learning_rate,
+            lr_self=learning_rate,
+            mix_lambda=0.5,
+            query_threshold=0.0,
+            self_loss_weight=0.3,
+            optimizer_name="SGD",
+            momentum=0.0,
+            weight_decay=0.0,
+            max_grad_norm=0.0,
+        )
+        adapter.episode_start()
+        inputs = [_inputs(), _inputs()]
+        actions = []
+        for policy_inputs in inputs:
+            features, logits = _forward(policy, policy_inputs)
+            action = adapter.select_action(policy.action_distribution(features))
+            actions.append(action)
+            adapter.adapt(
+                logits,
+                action=action,
+                features=features,
+                policy_inputs=policy_inputs,
+            )
+
+        joint_features = []
+        joint_entropies = []
+        for policy_inputs, action in zip(inputs, actions):
+            features, logits = _forward(policy, policy_inputs)
+            joint_features.append(features)
+            joint_entropies.append(adapter._mixture_entropy(logits, action))
+        mean_feature = torch.cat(joint_features, dim=0).mean(0, keepdim=True)
+        prediction_logit = adapter.self_prediction_head(mean_feature).view(())
+        expected_loss = torch.stack(joint_entropies).mean() + 0.3 * (
+            F.binary_cross_entropy_with_logits(
+                prediction_logit, torch.ones_like(prediction_logit)
+            )
+        )
+        optimized = adapter.params + list(adapter.self_prediction_head.parameters())
+        expected_gradients = [
+            gradient.detach().clone()
+            for gradient in torch.autograd.grad(expected_loss, optimized)
+        ]
+        before = [parameter.detach().clone() for parameter in optimized]
+
+        adapter.episode_end({"success": 1.0})
+
+        for old, parameter, gradient in zip(
+            before, optimized, expected_gradients
+        ):
+            torch.testing.assert_close(
+                parameter.detach() - old,
+                -learning_rate * gradient,
+                rtol=1e-4,
+                atol=1e-7,
+            )
 
 
 if __name__ == "__main__":

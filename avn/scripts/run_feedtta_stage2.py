@@ -27,6 +27,25 @@ CONTROLS = (
     ("gradient_scaling_0p1", "0.05", "0.1"),
 )
 
+REVIEWED_STAGE1_WINNERS = {
+    "smt_audio": {
+        "job_id": 5,
+        "lr": "3e-8",
+        "gamma": "0.95",
+        "success": 0.578,
+        "spl": 0.30749764724343276,
+        "evidence": "validated",
+    },
+    "enmus": {
+        "job_id": 39,
+        "lr": "3e-7",
+        "gamma": "1.0",
+        "success": 0.6955,
+        "spl": 0.376631,
+        "evidence": "runner_complete_provisional_parameter_count_mismatch",
+    },
+}
+
 
 def batch_id(value):
     if len(value) > 64 or re.fullmatch(r"[A-Za-z0-9._-]+", value) is None:
@@ -108,6 +127,7 @@ def build_spec(args) -> ExperimentSpec:
         points_by_model=points_by_model,
         grid_metadata={
             "selected_stage1_intensity": selected,
+            "reviewed_stage1_winners": REVIEWED_STAGE1_WINNERS,
             "official_p": list(OFFICIAL_P),
             "official_alpha": list(OFFICIAL_ALPHA),
             "controls": [
@@ -124,6 +144,8 @@ def build_spec(args) -> ExperimentSpec:
             ),
         },
         prerequisite_batch_id=args.stage1_batch_id,
+        reviewed_stage1_winners=REVIEWED_STAGE1_WINNERS,
+        provisional_parameter_count_models=("enmus",),
     )
 
 
@@ -138,8 +160,8 @@ def parse_args():
             "Use each model's reviewed Stage-1 winner, for example:\n"
             "  python3 avn/scripts/run_feedtta_stage2.py "
             "--stage1-batch-id feedtta-stage1-v1-seed0 "
-            "--smt-audio-lr 1e-7 --smt-audio-gamma 0.99 "
-            "--enmus-lr 3e-8 --enmus-gamma 0.95 "
+            "--smt-audio-lr 3e-8 --smt-audio-gamma 0.95 "
+            "--enmus-lr 3e-7 --enmus-gamma 1.0 "
             "--gpus 0,1,2,3 --jobs-per-gpu 2 "
             "--batch-id feedtta-stage2-v1-seed0"
         ),
@@ -175,7 +197,22 @@ def parse_args():
         help="reviewed ENMuS Stage-1 discount factor",
     )
     add_common_arguments(parser, "feedtta-stage2-v1-seed0")
-    return finalize_common_args(parser, parser.parse_args())
+    parsed = parser.parse_args()
+    for model, lr_attr, gamma_attr in (
+        ("smt_audio", "smt_audio_lr", "smt_audio_gamma"),
+        ("enmus", "enmus_lr", "enmus_gamma"),
+    ):
+        expected = REVIEWED_STAGE1_WINNERS[model]
+        if (
+            getattr(parsed, lr_attr) != expected["lr"]
+            or getattr(parsed, gamma_attr) != expected["gamma"]
+        ):
+            parser.error(
+                "{} must use reviewed Stage-1 winner LR={} gamma={}".format(
+                    model, expected["lr"], expected["gamma"]
+                )
+            )
+    return finalize_common_args(parser, parsed)
 
 
 if __name__ == "__main__":

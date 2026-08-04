@@ -50,6 +50,9 @@ _C.EVAL = CN()
 # The split to evaluate on
 _C.EVAL.SPLIT = "val"
 _C.EVAL.USE_CKPT_CONFIG = True
+# The source policy historically samples actions.  ATENA executes argmax as in
+# the official code, so its matched Source-argmax control overrides this field.
+_C.EVAL.ACTION_SELECTION = "sample"
 # -----------------------------------------------------------------------------
 # REINFORCEMENT LEARNING (RL) ENVIRONMENT CONFIG
 # -----------------------------------------------------------------------------

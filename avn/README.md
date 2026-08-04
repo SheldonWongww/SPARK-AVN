@@ -205,20 +205,41 @@ mechanism controls per model (78 jobs):
 ```bash
 python3 avn/scripts/run_feedtta_stage2.py --dry-run \
   --stage1-batch-id feedtta-stage1-v1-seed0 \
-  --smt-audio-lr 1e-7 --smt-audio-gamma 0.99 \
-  --enmus-lr 3e-8 --enmus-gamma 0.95 \
+  --smt-audio-lr 3e-8 --smt-audio-gamma 0.95 \
+  --enmus-lr 3e-7 --enmus-gamma 1.0 \
   --gpus 0,1,2,3 --jobs-per-gpu 2 \
   --batch-id feedtta-stage2-v1-seed0
 ```
 
-The Stage-2 numbers above only illustrate CLI syntax; replace them with the
-reviewed Stage-1 choices. Both schedulers use one combined per-GPU quota,
-require a clean tracked worktree for full runs, revalidate artifacts on resume,
-and write separate logs and combined metrics under
+These are the reviewed Stage-1 choices: SMT+Audio job 5 and provisional ENMuS
+job 39. Stage 2 retains the known ENMuS parameter-count warning while preserving
+complete navigation metrics; other validation failures remain fatal. Both
+schedulers use one combined per-GPU quota, require a clean tracked worktree for
+full runs, revalidate artifacts on resume, and write separate logs and combined metrics under
 `avn/results/logs/feedtta_stage{1,2}/`. See
 [`experiments/FEEDTTA_EXPERIMENT_PLAN.md`](experiments/FEEDTTA_EXPERIMENT_PLAN.md)
 for the fixed protocol, paper ambiguities, selection rule, controls, and smoke
 commands.
+
+ATENA uses the official greedy-action protocol, so its batch first includes a
+matched Source-argmax control for each model. The complete single-source search
+contains 144 ATENA points/model plus those two controls (290 jobs total):
+
+```bash
+python3 avn/scripts/run_atena_grid.py --dry-run \
+  --gpus 0,1,2,3 --jobs-per-gpu 1 \
+  --batch-id atena-grid-v1-seed0
+```
+
+Before the full launch, run the released DUET-R2R anchor for 1, 5, and 20
+episodes using `--smoke --episodes N` and distinct batch ids. The server should
+choose `--jobs-per-gpu` only after the 20-episode run confirms safe GPU/CPU
+memory. ATENA stores detached trajectories on CPU and reconstructs the exact
+episode gradient one step at a time, avoiding the official implementation's
+episode-length GPU graph growth. Full logs and validated metrics are written to
+`avn/results/logs/atena_grid/<batch-id>/`. See
+[`experiments/ATENA_PRE_RUN_REVIEW.md`](experiments/ATENA_PRE_RUN_REVIEW.md)
+for the alignment audit and selection constraints.
 
 After freezing the complete FAST/SLOW candidate from exploration job 35, run
 the three remaining FSTTA main-table jobs concurrently:

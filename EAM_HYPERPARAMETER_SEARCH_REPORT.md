@@ -1,25 +1,29 @@
 # EAM 在 AVN 上的超参数搜索实验报告
 
-更新日期：2026-08-03
+更新日期：2026-08-04
 
-状态：探索性超参数开发报告。已完成 SMT+Audio single-source 的 24 组
-第一阶段强度网格，以及 SMT+Audio/ENMuS single-source 各 9 组的弱更新
-边界网格，共 42 次完整运行。两个批次均通过逐任务校验；但本地未同步
-逐运行 `manifest.json`，Source checkpoint 与数据资产 provenance 也不完整，
-因此当前结果是模型级开发候选，尚不能升级为论文正式结果。
+状态：已完成 42 次 single-source 超参数开发运行，并将两个模型各自
+冻结的配置直接迁移到 multi-source，新增 2 次完整主表复验。
+44/44 次导航运行均完成并通过各自 launcher 校验。EAM 四个场景
+结果已按当前研究决定冻结；但本地仍未同步逐运行 `manifest.json`，
+Source checkpoint 与数据资产 provenance 也不完整，因此主表中继续
+标记为 provisional (`[P]`)。
 
 ## 1. 结论摘要
 
-本报告联合解析以下两批实验：
+本报告联合解析以下三批实验：
 
 - `eam_intensity_grid/eam-intensity-grid-avn-val-rerun-v2-seed0`：24 组
   SMT+Audio 第一阶段强度网格；
 - `eam_boundary_grid/eam-boundary-joint-v1-seed0`：SMT+Audio 和 ENMuS 各
   9 组弱更新边界网格。
+- `eam_main/eam-main-multi-v1-seed0`：两个模型各 1 组
+  multi-source 冻结配置复验。
 
-1. **42 组运行全部完成。** 第一阶段 24/24、边界阶段 18/18 均为
+1. **44 组运行全部完成。** 第一阶段 24/24、边界阶段 18/18、
+   multi-source 复验 2/2 均为
    `runner_exitcode=0`、`exitcode=0`、`validation=ok`，每组都完成同一
-   canonical single-source val、seed-0、2000-episode stream。
+   场景下的 canonical val、seed-0、2000-episode stream。
 2. **SMT+Audio 最佳配置更新为 boundary job 5。** `LR=1e-8`、
    `UPDATE_INTERVAL=128` 达到 SR/SPL/SoftSPL=56.20/30.5805/37.4332，
    相对 Source 提高 2.05/1.1576/0.9227 个百分点，NA 降低 3.089。
@@ -39,7 +43,11 @@
 6. **最佳配置均超过当前 Tent 的 SR/SPL。** SMT+Audio job 5 相对
    Tent 提高 0.40 SR/0.7573 SPL；ENMuS job 11 提高 0.80 SR/0.2226 SPL。
    但这些均是同一开发 stream 上搜索后的最大值，不等于独立确认结果。
-7. **证据资格仍为 provisional。** 两批实验均只有一个 episode 顺序，
+7. **multi-source 迁移呈现模型依赖性。** SMT+Audio 相对 Source
+   提高 1.60 SR / 0.7086 SPL，并高于当前 Tent/FSTTA 的 SR/SPL；
+   ENMuS 只提高 0.65 SR / 0.0104 SPL，且低于 Tent/FSTTA。这两项
+   都是未在 multi-source 重新选参的直接迁移结果。
+8. **证据资格仍为 provisional。** 实验均只有一个 episode 顺序，
    本地缺失逐运行 manifest 和完整 checkpoint 训练来源。SMT+Audio 日志
    保留 40 个诊断窗口，ENMuS compact 日志则没有等价的 50-episode
    窗口，所以尚不能宣称统计显著或已排除末段退化。
@@ -321,7 +329,41 @@ ENMuS compact console 只保留最终聚合指标，没有等价的 50-episode �
 参数范围和 replay 计数，并未实现尾段坍塌判据。因此 `validation=ok` 不能被
 解释为 ENMuS 已通过末段稳定性验证。
 
-## 8. 当前冻结的模型级开发候选
+## 8. multi-source 冻结配置复验
+
+`eam-main-multi-v1-seed0` 在 commit
+`99f46dfa3010ca41d0a2898db1e88e1934ae5bb9` 的 clean worktree 上完成。
+批次 2/2 运行成功，2/2 通过 manifest、配置、参数范围、诊断和
+2000-episode 统计校验。其 canonical multi-source 指纹为：
+
+| 项目 | 值 |
+|---|---|
+| dataset index SHA256 | `45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d` |
+| stream-order SHA256 | `cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525` |
+| stream-content SHA256 | `deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d` |
+| SMT+Audio checkpoint SHA256 | `c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8` |
+| ENMuS checkpoint SHA256 | `3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464` |
+
+两个 job 都直接使用 single-source 搜索后冻结的配置，没有在
+multi-source 上重新选参。SR、SPL、SoftSPL、SNA、SWS 按百分制展示：
+
+| 模型 | LR | interval | Reward | DTG | NDTG | SR | SPL | SoftSPL | NA | SNA | SWS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SMT+Audio | `1e-8` | 128 | 5.716312 | 7.5095 | 0.538814 | 27.50 | 14.1282 | 25.3413 | 166.3175 | 20.2154 | 1.30 |
+| ENMuS | `3e-9` | 128 | 7.193380 | 7.1725 | 0.550503 | 35.40 | 17.1222 | 25.1913 | 156.8105 | 26.4333 | 0.90 |
+
+| 模型 | 相对 Source ΔSR/ΔSPL | 相对 Tent ΔSR/ΔSPL | 相对 FSTTA ΔSR/ΔSPL |
+|---|---:|---:|---:|
+| SMT+Audio | +1.60 / +0.7086 | +1.40 / +1.0643 | +1.25 / +0.6112 |
+| ENMuS | +0.65 / +0.0104 | -0.15 / -0.0460 | -0.45 / -0.4262 |
+
+SMT+Audio 在直接迁移后仍保持明确正收益，其 SR/SPL 也高于当前
+Tent 和 FSTTA；但 SoftSPL 比 FSTTA 低 0.2619 个百分点。ENMuS 的
+SR 小幅提高，SPL 只增加 0.0104 个百分点，并未超过 Tent/FSTTA。
+因此可信结论是：EAM 的弱更新设定能迁移到 multi-source，但收益大小
+明显依赖导航模型，不能由 SMT+Audio 的结果外推为统一大幅改善。
+
+## 9. 最终冻结的模型级配置与结果
 
 共同固定项如下：
 
@@ -332,20 +374,21 @@ ENMuS compact console 只保留最终聚合指标，没有等价的 50-episode �
 
 模型级差异只有当前搜索出的学习率：
 
-| 模型 | job | LR | UPDATE_INTERVAL | SR | SPL | 当前用途 |
-|---|---:|---:|---:|---:|---:|---|
-| SMT+Audio | 5 | `1e-8` | `128` | 56.20 | 30.5805 | single-source 开发候选 |
-| ENMuS | 11 | `3e-9` | `128` | 68.15 | 36.9083 | single-source 开发候选 |
+| 模型 | job | LR | UPDATE_INTERVAL | single SR/SPL | multi SR/SPL |
+|---|---:|---:|---:|---:|---:|
+| SMT+Audio | 5 | `1e-8` | `128` | 56.20 / 30.5805 | 27.50 / 14.1282 |
+| ENMuS | 11 | `3e-9` | `128` | 68.15 / 36.9083 | 35.40 / 17.1222 |
 
-这两个配置是后续确认运行和 multi-source 直接迁移的预冻结配置；目前仍不应填入
-正式论文主表。SMT+Audio 候选实际来自同一流上 32 个唯一 EAM 配置的累计选择
-（第一阶段 24 个加边界阶段 8 个新增点），ENMuS 为 9 选 1，均有选择偏差。
+上述四项数值已登记到 AVN 主对比表。SMT+Audio 配置来自同一开发流上
+32 个唯一 EAM 配置的累计选择（第一阶段 24 个加边界阶段 8 个新增点），
+ENMuS 为 9 选 1，因此 single-source 最大值存在选择偏差；multi-source
+未重新选参，是直接迁移确认。
 
-## 9. 证据边界
+## 10. 证据边界
 
 当前结果必须保留以下限制：
 
-- 42 个 `manifest.path` 均指向原服务器 `/data1/.../manifest.json`，当前工作区
+- 44 个 `manifest.path` 均指向原服务器 `/data1/.../manifest.json`，当前工作区
   可解析数为 0；因此无法本地复核硬件、完整有效配置和逐运行 manifest 内容。
 - `avn/checkpoints/manifests/imported_pretrained.yaml` 仍将 Source checkpoint
   标为 `provenance_incomplete`；训练命令、训练 seed 和 checkpoint 选择依据
@@ -363,21 +406,20 @@ ENMuS compact console 只保留最终聚合指标，没有等价的 50-episode �
   `planned`；实际第一阶段权威协议是 `batch.env`、`grid.csv` 与 fixed-scope v2
   launcher。该文档差异不改变已运行配置，但正式登记前应修正。
 
-## 10. 下一步建议
+## 11. 下一步建议
 
-1. **冻结候选，不继续在该开发流扩网格。** 使用 job 5 和 job 11 的模型级配置，
-   避免继续利用同一流做适应性选择。
-2. **做独立确认运行。** 在同一最终 commit 上隔离运行 Source 与两个 EAM
-   candidate，保存本地可解析的 manifest、逐 episode stats、最终 diagnostics、
-   硬件和环境信息；确认后再决定是否写入主表。
-3. **直接迁移到 multi-source。** 每个模型保持其 single-source 冻结配置，不在
-   multi-source 上重新调参，以检验跨声源设定泛化。
-4. **补齐 provenance。** 恢复 Source checkpoint 的训练来源和选择依据，补齐
+1. **保持当前冻结配置。** job 5 和 job 11 已完成 single/multi-source
+   登记，不再利用这两条流继续选参。
+2. **补做同 commit Source 确认时再升级证据资格。** 当前 multi-source
+   EAM 已在最终 commit 上复验，但 matched Source 来自旧 commit。若正式论文
+   要求同代码快照，应在同一 commit 重评 Source，并同步可解析的
+   manifest、逐 episode stats 和 diagnostics。
+3. **补齐 provenance。** 恢复 Source checkpoint 的训练来源和选择依据，补齐
    canonical val 数据及场景、声音、RIR 资产版本与摘要。
-5. **正式时延单独测量。** 使用单 GPU、无并发、固定预热和重复运行，不复用
+4. **正式时延单独测量。** 使用单 GPU、无并发、固定预热和重复运行，不复用
    本次共享资源的 wall-clock 时间。
 
-## 11. 证据清单
+## 12. 证据清单
 
 - 第一阶段启动脚本：`avn/scripts/run_eam_intensity_grid.sh`
 - 第一阶段旧实验定义：`avn/experiments/eam_intensity_grid.yaml`
@@ -392,6 +434,11 @@ ENMuS compact console 只保留最终聚合指标，没有等价的 50-episode �
 - 边界 18 组配置与结果：
   `avn/results/logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/grid.csv`、
   `avn/results/logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/metrics.csv`
+- multi-source 冻结配置启动器：`avn/scripts/run_eam_main_multi_source.py`
+- multi-source 批次：
+  `avn/results/logs/eam_main/eam-main-multi-v1-seed0/`
+- multi-source 最终结果：
+  `avn/results/logs/eam_main/eam-main-multi-v1-seed0/metrics.csv`
 - 逐运行日志：边界批次下 `<model>/jobs/<run_tag>/console.log`
 - Source 对照：`avn/results/logs/source_reval/source-reval-v1-seed0/metrics.csv`
 - Tent 对照：`avn/results/AVN_MAIN_COMPARISON.md`

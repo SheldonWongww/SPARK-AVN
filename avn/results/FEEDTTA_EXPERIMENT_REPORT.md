@@ -1,9 +1,10 @@
 # FeedTTA 在 AVN 上的实验进展
 
-更新日期：2026-08-02
+更新日期：2026-08-04
 
-当前状态：**方法实现与两阶段搜索脚本已完成，正式服务器实验尚未开始，暂无
-可写入主对比表的 FeedTTA 数值。**
+当前状态：**Stage 1 的 48 组导航运行已经完成；SMT+Audio 24 组 validated，
+ENMuS 24 组保留参数计数告警但指标可用于 provisional 选参。Stage 2 的 78 组
+配置已经按 Stage 1 结果冻结，尚未运行。**
 
 本文用于持续记录 FeedTTA 在 AVN 上的实现口径、实验进度、搜索结果和最终
 主表配置。详细搜索定义见
@@ -58,14 +59,15 @@ SGR 默认锚点为 `p=0.05, alpha=-0.2`，并使用独立的 `SGR_SEED=0`，不
 | FeedTTA 核心逻辑复核与修正 | 已完成 | 对齐动作采样、二值反馈、轨迹梯度和 episode-end update |
 | SMT+Audio / ENMuS 参数冻结范围 | 已完成 | 启动器会在运行时校验张量数和参数量 |
 | Stage 1 搜索脚本 | 已完成 | 48 组，两个模型联合调度 |
-| Stage 2 搜索脚本 | 已完成 | 78 组，含官方 SGR 网格和四个机制对照 |
+| Stage 2 搜索脚本 | 已更新 | 78 组，固定 Stage 1 winner，含官方 SGR 网格和四个机制对照 |
 | 运行 provenance 与结果校验 | 已完成 | 校验 commit、checkpoint/data/stream digest、配置和 diagnostics |
 | 调度器 dry-run | 已完成 | Stage 1 为 48 组，Stage 2 为 78 组，四卡分配通过 |
 | 静态与结构检查 | 已完成 | `py_compile`、`git diff --check`、`tools/verify_layout.py` 通过 |
 | GitHub 提交 | 已完成 | 开发锚点 commit：`f288da7` |
 | 服务器 PyTorch 单元测试 | 待完成 | Mac 本机缺少 PyTorch 环境 |
 | 2-episode 真实 smoke | 待完成 | 应在服务器最终运行 commit 上执行 |
-| Stage 1 / Stage 2 正式搜索 | 待完成 | 尚无 FeedTTA 搜索结果 |
+| Stage 1 正式搜索 | 已完成 | SMT+Audio job 5；ENMuS provisional job 39 |
+| Stage 2 正式搜索 | 待完成 | 两模型共 78 组 |
 | single/multi-source 最终复验 | 待完成 | 搜索结束并冻结配置后执行 |
 
 `f288da7` 只是当前开发锚点。由于后续还会合入 EAM 多声源实验相关改动，正式
@@ -141,8 +143,10 @@ smoke 不计入该数量。
    器工作区执行 `git pull`。
 3. 服务器拉取最终 commit，安装 `core`，运行 FeedTTA 单元测试和 2-episode smoke。
 4. 运行 Stage 1 的 48 组实验，检查完整性并分别冻结两个模型的 `LR/gamma`。
-5. 在**同一 commit、同一数据和同一 episode 流**上运行 Stage 2 的 78 组实验。
-   Stage 1 与 Stage 2 之间如果修改 FeedTTA 行为代码，则两阶段必须重新运行。
+5. 在相同 checkpoint、数据和 episode 流上运行 Stage 2 的 78 组实验。调度和
+   证据代码可以使用后续 commit；共享文件允许经过审计的 ATENA/Source-argmax
+   分支变化，但启动器会比较 FeedTTA adapter 与实际 trainer 路径的归一化 AST，
+   并严格比较专属配置和 runner。FeedTTA 行为变化时必须重跑 Stage 1。
 6. 冻结最终配置后，独立复验 SMT+Audio/ENMuS 的 single-source 和
    multi-source，复验结果才可登记到 AVN 主对比表。
 7. 整理 PSR、CSR、ASR、推理耗时、参数漂移和逐流稳定性，并更新本报告和飞书

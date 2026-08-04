@@ -8,10 +8,27 @@ seed: 0
 episodes: 2000
 
 stage1_selected_inputs:
-  smt_audio: [TTA.FEEDTTA.LR, TTA.FEEDTTA.GAMMA]
-  enmus: [TTA.FEEDTTA.LR, TTA.FEEDTTA.GAMMA]
+  smt_audio:
+    job_id: 5
+    TTA.FEEDTTA.LR: 3.0e-8
+    TTA.FEEDTTA.GAMMA: 0.95
+    evidence: validated
+  enmus:
+    job_id: 39
+    TTA.FEEDTTA.LR: 3.0e-7
+    TTA.FEEDTTA.GAMMA: 1.0
+    evidence: runner_complete_provisional_parameter_count_mismatch
   allowed_lr: [1.0e-8, 3.0e-8, 1.0e-7, 3.0e-7, 1.0e-6, 5.0e-6]
   allowed_gamma: [0.90, 0.95, 0.99, 1.0]
+
+stage1_evidence_policy:
+  smt_audio: require_24_validated_metrics
+  enmus: >-
+    require 24/24 runner_exitcode=0, complete nine-metric console summaries,
+    and the reviewed parameter-count mismatch as the only launcher failure
+  require_no_missing_jobs: true
+  require_same_checkpoint_dataset_and_stream_digests: true
+  require_feedtta_runtime_semantics_unchanged: true
 
 official_grid:
   TTA.FEEDTTA.P: [0.01, 0.05, 0.1, 0.2, 0.3]
@@ -61,8 +78,9 @@ selection:
 
 formal_constraints:
   require_stage1_review_before_launch: true
-  require_complete_stage1_batch_and_metrics_digest: true
+  require_complete_stage1_navigation_runs_and_evidence_digests: true
   require_cli_selection_matches_documented_stage1_winner: true
   require_clean_tracked_worktree: true
   require_canonical_stream_sha256: true
+  enmus_stage2_validation: provisional_parameter_count_mismatch
   search_result_is_not_main_table_result: true

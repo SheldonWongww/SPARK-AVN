@@ -241,6 +241,17 @@ def _tree_to_device(value, device):
     return _tree_map(value, lambda tensor: tensor.to(device, non_blocking=True))
 
 
+def _tree_tensor_bytes(value):
+    """Return the tensor payload size of a nested policy-input snapshot."""
+    if torch.is_tensor(value):
+        return int(value.numel() * value.element_size())
+    if isinstance(value, dict):
+        return sum(_tree_tensor_bytes(item) for item in value.values())
+    if isinstance(value, (tuple, list)):
+        return sum(_tree_tensor_bytes(item) for item in value)
+    return 0
+
+
 def _episode_success(episode_stats):
     if episode_stats is None or "success" not in episode_stats:
         raise ValueError(
@@ -1533,13 +1544,20 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
 
 
 class ATENAAdapter(_AdapterDiagnostics):
-    """Paper-aligned active episodic mixture-entropy optimization.
+    """Official-code-aligned active episodic mixture-entropy optimization.
 
-    ATENA keeps the episode graph and jointly optimizes the signed mean mixture
-    entropy and the online success-prediction loss at episode end.  This follows
-    the official DUET implementation; long AVN episodes therefore have a higher
-    memory cost than step-wise entropy adapters.
+    The official DUET/ETPNav implementations retain the full episode graph and
+    apply one update at episode end.  AVN episodes can contain hundreds of raw
+    RGB/depth/audio forwards, so retaining that graph is not practical.  This
+    adapter stores detached policy inputs on CPU and replays one action step at
+    a time after the binary episode outcome is known.  The accumulated gradient
+    is exactly the gradient of the official joint mean loss in eval mode, while
+    peak GPU activation memory is independent of episode length.
     """
+
+    # The online action pass only records detached inputs/features.  Gradients
+    # are reconstructed at episode end after the success/failure sign is known.
+    requires_source_grad = False
 
     def __init__(
         self,
@@ -1560,8 +1578,31 @@ class ATENAAdapter(_AdapterDiagnostics):
         weight_decay=0.01,
         max_grad_norm=0.0,
     ):
-        if not 0.0 <= float(mix_lambda) <= 1.0:
-            raise ValueError("ATENA mixture lambda must be in [0, 1]")
+        numeric_values = {
+            "LR_QUERY": float(lr_query),
+            "LR_SELF": float(lr_self),
+            "MIX_LAMBDA": float(mix_lambda),
+            "QUERY_THRESHOLD": float(query_threshold),
+            "SELF_LOSS_WEIGHT": float(self_loss_weight),
+            "MAX_GRAD_NORM": float(max_grad_norm),
+        }
+        if any(not math.isfinite(value) for value in numeric_values.values()):
+            raise ValueError("ATENA hyperparameters must be finite")
+        if bool(episodic):
+            raise ValueError(
+                "ATENA requires TTA.EPISODIC=False; resetting at the next "
+                "episode would discard every episode-end update"
+            )
+        if float(lr_query) <= 0.0 or float(lr_self) <= 0.0:
+            raise ValueError("ATENA learning rates must be positive")
+        if not 0.0 <= float(mix_lambda) < 1.0:
+            raise ValueError("ATENA mixture lambda must be in [0, 1)")
+        if float(query_threshold) < 0.0:
+            raise ValueError("ATENA query threshold must be nonnegative")
+        if float(self_loss_weight) < 0.0:
+            raise ValueError("ATENA self-loss weight must be nonnegative")
+        if float(max_grad_norm) < 0.0:
+            raise ValueError("ATENA max grad norm must be nonnegative")
         self.model = model
         self.base_lr = float(lr_query)
         self.lr_query = float(lr_query)
@@ -1569,18 +1610,20 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.mix_lambda = float(mix_lambda)
         self.query_threshold = float(query_threshold)
         self.self_loss_weight = float(self_loss_weight)
-        self.episodic = bool(episodic)
+        self.episodic = False
         self.max_grad_norm = float(max_grad_norm)
         self.param_scope = str(scope).lower()
 
         if self.param_scope == "all":
             # Match the official implementation's optimizer over the complete
-            # pretrained policy while preserving parameters that the baseline
-            # itself intentionally froze.
+            # action policy while preserving parameters that the baseline
+            # itself intentionally froze.  Habitat's actor_critic also contains
+            # a value-only critic; DUET's official vln_bert optimizer has no
+            # equivalent critic, and the navigation loss never uses it.
             self.model.eval()
             selected = [
                 (name, param) for name, param in self.model.named_parameters()
-                if param.requires_grad
+                if param.requires_grad and not name.startswith("critic.")
             ]
             if not selected:
                 raise ValueError("ATENA found no trainable policy parameters")
@@ -1607,14 +1650,31 @@ class ATENAAdapter(_AdapterDiagnostics):
 
         self.self_prediction_head = None
         self._head_state = None
-        self.trajectory_mixture_entropies = []
+        self.trajectory = []
         self.trajectory_features = []
+        self.trajectory_mixture_entropies = []
         self.trajectory_entropies = []
         self.action_dim = None
         self.episode_count = 0
         self.query_count = 0
         self.query_prediction_correct = 0
+        self.self_prediction_correct = 0
+        self.all_prediction_correct = 0
+        self.self_label_count = 0
         self.self_feedback_successes = 0
+        self.queried_feedback_successes = 0
+        self.actual_successes = 0
+        self.episode_entropy_sum = 0.0
+        self.query_entropy_sum = 0.0
+        self.self_entropy_sum = 0.0
+        self.self_loss_sum = 0.0
+        self.last_self_loss = 0.0
+        self.max_trajectory_steps = 0
+        self.max_trajectory_storage_bytes = 0
+        self.last_trajectory_storage_bytes = 0
+        self.max_replay_feature_error = 0.0
+        self.adaptation_time_seconds = 0.0
+        self.max_episode_adaptation_seconds = 0.0
         self._init_diagnostics()
 
     def _ensure_head(self, feature_dim, device, dtype):
@@ -1648,15 +1708,57 @@ class ATENAAdapter(_AdapterDiagnostics):
             **self._optimizer_args
         )
 
+    @property
+    def device(self):
+        return self.params[0].device
+
+    @staticmethod
+    def _forward_policy(model, policy_inputs):
+        features, _, _ = model.net(
+            policy_inputs["observations"],
+            policy_inputs["rnn_hidden_states"],
+            policy_inputs["prev_actions"],
+            policy_inputs["masks"],
+            policy_inputs.get("ext_memory"),
+            policy_inputs.get("ext_memory_masks"),
+        )
+        logits = model.action_distribution(features).logits
+        return features, logits
+
+    def _mixture_entropy(self, logits, action):
+        probs = logits.softmax(dim=-1)
+        one_hot = F.one_hot(
+            action.long().view(-1), num_classes=int(logits.shape[-1])
+        ).to(probs.dtype)
+        mixture = self.mix_lambda * one_hot + (1.0 - self.mix_lambda) * probs
+        return -(
+            mixture * mixture.clamp_min(1e-8).log()
+        ).sum(dim=-1).mean()
+
+    @staticmethod
+    def _install_accumulated_gradients(params, gradients, seen):
+        for param, gradient, was_seen in zip(params, gradients, seen):
+            param.grad = gradient if was_seen else None
+
     def select_action(self, distribution):
         # Eq. (1) defines the selected pseudo-expert action as policy argmax,
         # and the official evaluation executes that same greedy action.
         return distribution.probs.argmax(dim=-1, keepdim=True)
 
-    @torch.enable_grad()
-    def adapt(self, logits, action=None, features=None, **kwargs):
-        if action is None or features is None:
-            raise ValueError("ATENA requires executed actions and policy features")
+    @torch.no_grad()
+    def adapt(
+        self,
+        logits,
+        action=None,
+        features=None,
+        policy_inputs=None,
+        **kwargs
+    ):
+        if action is None or features is None or policy_inputs is None:
+            raise ValueError(
+                "ATENA requires executed actions, policy features, and "
+                "policy_inputs for exact episode-end gradient replay"
+            )
         self.action_dim = int(logits.shape[-1])
         self._ensure_head(features.shape[-1], features.device, features.dtype)
         pseudo_action = logits.detach().argmax(dim=-1)
@@ -1664,54 +1766,84 @@ class ATENAAdapter(_AdapterDiagnostics):
             raise ValueError(
                 "ATENA requires the executed action to equal the policy argmax"
             )
-        probs = logits.softmax(dim=-1)
-        one_hot = F.one_hot(
-            pseudo_action, num_classes=self.action_dim
-        ).to(probs.dtype)
-        mixture = self.mix_lambda * one_hot + (1.0 - self.mix_lambda) * probs
-        mixture_entropy = -(
-            mixture * mixture.clamp_min(1e-8).log()
-        ).sum(dim=-1).mean()
-
-        # Keep both tensors attached: ATENA performs one joint episode-level
-        # backward pass for L_mix + gamma * L_self.
-        self.trajectory_mixture_entropies.append(mixture_entropy)
+        mixture_entropy = self._mixture_entropy(logits, pseudo_action)
         original_entropy = softmax_entropy(logits).mean()
-        self.trajectory_entropies.append(float(original_entropy.detach().item()))
-        self.trajectory_features.append(features)
+        snapshot = _tree_to_cpu(policy_inputs)
+        self.trajectory.append({
+            "policy_inputs": snapshot,
+            "action": action.detach().cpu().clone(),
+        })
+        self.trajectory_features.append(features.detach().cpu().clone())
+        self.trajectory_mixture_entropies.append(float(mixture_entropy.item()))
+        self.trajectory_entropies.append(float(original_entropy.item()))
         self._record_loss(mixture_entropy)
-        return mixture_entropy.detach()
+        self.last_trajectory_storage_bytes += (
+            _tree_tensor_bytes(snapshot)
+            + _tree_tensor_bytes(self.trajectory_features[-1])
+            + _tree_tensor_bytes(self.trajectory[-1]["action"])
+        )
+        self.max_trajectory_storage_bytes = max(
+            self.max_trajectory_storage_bytes,
+            self.last_trajectory_storage_bytes,
+        )
+        return mixture_entropy
 
     def reset(self):
         self.model.load_state_dict(self._model_state, strict=True)
         if self.self_prediction_head is not None and self._head_state is not None:
             self.self_prediction_head.load_state_dict(self._head_state, strict=True)
         self.optimizer = None
+        self.trajectory = []
         self.trajectory_mixture_entropies = []
         self.trajectory_features = []
         self.trajectory_entropies = []
         self.episode_count = 0
         self.query_count = 0
         self.query_prediction_correct = 0
+        self.self_prediction_correct = 0
+        self.all_prediction_correct = 0
+        self.self_label_count = 0
         self.self_feedback_successes = 0
+        self.queried_feedback_successes = 0
+        self.actual_successes = 0
+        self.episode_entropy_sum = 0.0
+        self.query_entropy_sum = 0.0
+        self.self_entropy_sum = 0.0
+        self.self_loss_sum = 0.0
+        self.last_self_loss = 0.0
+        self.max_trajectory_steps = 0
+        self.max_trajectory_storage_bytes = 0
+        self.last_trajectory_storage_bytes = 0
+        self.max_replay_feature_error = 0.0
+        self.adaptation_time_seconds = 0.0
+        self.max_episode_adaptation_seconds = 0.0
         self._init_diagnostics()
 
     def episode_start(self):
-        if self.episodic:
-            self.reset()
+        self.trajectory = []
         self.trajectory_mixture_entropies = []
         self.trajectory_features = []
         self.trajectory_entropies = []
+        self.last_trajectory_storage_bytes = 0
 
+    @torch.enable_grad()
     def episode_end(self, episode_stats=None):
-        self.episode_count += 1
-        if not self.trajectory_features:
-            return
+        import time
 
-        mean_feature = torch.cat(self.trajectory_features, dim=0).mean(0, keepdim=True)
+        self.episode_count += 1
+        if not self.trajectory:
+            return
+        adaptation_started = time.perf_counter()
+
+        trajectory_steps = len(self.trajectory)
+        self.max_trajectory_steps = max(self.max_trajectory_steps, trajectory_steps)
+        mean_feature = torch.cat(
+            self.trajectory_features, dim=0
+        ).to(self.device).mean(0, keepdim=True).detach().requires_grad_(True)
         prediction_logit = self.self_prediction_head(mean_feature).view(())
         predicted_success = bool(torch.sigmoid(prediction_logit.detach()) > 0.5)
         average_entropy = sum(self.trajectory_entropies) / len(self.trajectory_entropies)
+        self.episode_entropy_sum += average_entropy
         query = average_entropy > self.query_threshold
         if query:
             # Access evaluator/human feedback only for actively queried
@@ -1720,30 +1852,105 @@ class ATENAAdapter(_AdapterDiagnostics):
             feedback_success = actual_success
             self.query_count += 1
             self.query_prediction_correct += int(predicted_success == actual_success)
+            self.queried_feedback_successes += int(actual_success)
+            self.query_entropy_sum += average_entropy
             policy_lr = self.lr_query
         else:
             feedback_success = predicted_success
+            self.self_label_count += 1
             self.self_feedback_successes += int(feedback_success)
+            self.self_entropy_sum += average_entropy
             policy_lr = self.lr_self
 
-        mixture_loss = torch.stack(
-            self.trajectory_mixture_entropies, dim=0
-        ).mean()
-        mixture_loss = mixture_loss if feedback_success else -mixture_loss
+        # The evaluator's held-out success metric is inspected only after the
+        # feedback source and optimization label are fixed.  It is used for
+        # offline accuracy reporting and never enters a non-query loss.
+        offline_actual_success = _episode_success(episode_stats)
+        self.actual_successes += int(offline_actual_success)
+        self.all_prediction_correct += int(
+            predicted_success == offline_actual_success
+        )
+        if not query:
+            self.self_prediction_correct += int(
+                predicted_success == offline_actual_success
+            )
+
         target = torch.tensor(
             float(feedback_success), device=prediction_logit.device
         )
         self_prediction_loss = F.binary_cross_entropy_with_logits(
             prediction_logit, target
         )
-        total_loss = mixture_loss + self.self_loss_weight * self_prediction_loss
+        self.last_self_loss = float(self_prediction_loss.detach().item())
+        self.self_loss_sum += self.last_self_loss
 
         self.optimizer = self._build_episode_optimizer(policy_lr)
         self.current_lr = policy_lr
         self.optimizer.zero_grad(set_to_none=True)
-        total_loss.backward()
+        head_parameters = list(self.self_prediction_head.parameters())
+        weighted_self_loss = self.self_loss_weight * self_prediction_loss
+        self_gradients = torch.autograd.grad(
+            weighted_self_loss,
+            [mean_feature] + head_parameters,
+            allow_unused=True,
+        )
+        feature_gradient = self_gradients[0]
+        if feature_gradient is None:
+            feature_gradient = torch.zeros_like(mean_feature)
+
+        accumulated = [torch.zeros_like(param) for param in self.params]
+        gradient_seen = [False for _ in self.params]
+        feedback_sign = 1.0 if feedback_success else -1.0
+        replay_scale = 1.0 / float(trajectory_steps)
+
+        for index, entry in enumerate(self.trajectory):
+            replay_inputs = _tree_to_device(entry["policy_inputs"], self.device)
+            replay_features, replay_logits = self._forward_policy(
+                self.model, replay_inputs
+            )
+            replay_action = entry["action"].to(self.device)
+            mixture_entropy = self._mixture_entropy(
+                replay_logits, replay_action
+            )
+            step_objective = (
+                feedback_sign * replay_scale * mixture_entropy
+                + replay_scale * (
+                    replay_features * feature_gradient.detach()
+                ).sum()
+            )
+            gradients = torch.autograd.grad(
+                step_objective,
+                self.params,
+                allow_unused=True,
+            )
+            for param_index, gradient in enumerate(gradients):
+                if gradient is not None:
+                    accumulated[param_index].add_(gradient.detach())
+                    gradient_seen[param_index] = True
+
+            # Verify deterministic replay once per episode.  A mismatch means
+            # dropout/state mutation would invalidate gradient equivalence.
+            if index == 0:
+                reference = self.trajectory_features[0].to(self.device)
+                replay_error = float(
+                    (replay_features.detach() - reference).abs().max().item()
+                )
+                self.max_replay_feature_error = max(
+                    self.max_replay_feature_error, replay_error
+                )
+                if replay_error > 1e-5:
+                    raise RuntimeError(
+                        "ATENA episode replay is not deterministic "
+                        "(feature max abs error {:.6g})".format(replay_error)
+                    )
+
+        self._install_accumulated_gradients(
+            self.params, accumulated, gradient_seen
+        )
+        for parameter, gradient in zip(head_parameters, self_gradients[1:]):
+            parameter.grad = None if gradient is None else gradient.detach()
         optimized_parameters = (
-            self.params + list(self.self_prediction_head.parameters())
+            self.params + head_parameters
         )
         grad_norm = torch.nn.utils.clip_grad_norm_(
             optimized_parameters,
@@ -1753,7 +1960,13 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.update_count += 1
+        adaptation_seconds = time.perf_counter() - adaptation_started
+        self.adaptation_time_seconds += adaptation_seconds
+        self.max_episode_adaptation_seconds = max(
+            self.max_episode_adaptation_seconds, adaptation_seconds
+        )
 
+        self.trajectory = []
         self.trajectory_mixture_entropies = []
         self.trajectory_features = []
         self.trajectory_entropies = []
@@ -1766,12 +1979,66 @@ class ATENAAdapter(_AdapterDiagnostics):
             "query_prediction_accuracy": (
                 self.query_prediction_correct / max(1, self.query_count)
             ),
+            "self_prediction_accuracy": (
+                self.self_prediction_correct / max(1, self.self_label_count)
+            ),
+            "all_prediction_accuracy_offline": (
+                self.all_prediction_correct / max(1, self.episode_count)
+            ),
+            "self_label_episodes": self.self_label_count,
             "self_feedback_successes": self.self_feedback_successes,
+            "queried_feedback_successes": self.queried_feedback_successes,
+            "actual_successful_episodes": self.actual_successes,
+            "mean_episode_entropy": (
+                self.episode_entropy_sum / max(1, self.episode_count)
+            ),
+            "mean_query_episode_entropy": (
+                self.query_entropy_sum / max(1, self.query_count)
+            ),
+            "mean_self_episode_entropy": (
+                self.self_entropy_sum / max(1, self.self_label_count)
+            ),
+            "mean_self_prediction_loss": (
+                self.self_loss_sum / max(1, self.update_count)
+            ),
+            "last_self_prediction_loss": self.last_self_loss,
             "mix_lambda": self.mix_lambda,
             "query_threshold": self.query_threshold,
+            "lr_query": self.lr_query,
+            "lr_self": self.lr_self,
+            "self_loss_weight": self.self_loss_weight,
             "param_scope": self.param_scope,
             "action_selection": "argmax",
-            "retains_episode_graph": True,
+            "feedback": "binary_episode_success_or_self_prediction",
+            "adapted_parameter_count": sum(
+                parameter.numel() for parameter in self.params
+            ),
+            "self_prediction_parameter_count": (
+                sum(
+                    parameter.numel()
+                    for parameter in self.self_prediction_head.parameters()
+                ) if self.self_prediction_head is not None else 0
+            ),
+            "optimizer": (
+                self.optimizer.__class__.__name__
+                if self.optimizer is not None else self._optimizer_args["name"]
+            ),
+            "retains_episode_graph": False,
+            "gradient_reconstruction": "exact_step_replay_in_eval_mode",
+            "max_trajectory_steps": self.max_trajectory_steps,
+            "last_trajectory_storage_bytes": self.last_trajectory_storage_bytes,
+            "max_trajectory_storage_bytes": self.max_trajectory_storage_bytes,
+            "max_replay_feature_abs_error": self.max_replay_feature_error,
+            "mean_episode_adaptation_seconds": (
+                self.adaptation_time_seconds / max(1, self.update_count)
+            ),
+            "max_episode_adaptation_seconds": (
+                self.max_episode_adaptation_seconds
+            ),
+            "cuda_peak_memory_allocated_bytes": (
+                int(torch.cuda.max_memory_allocated(self.device))
+                if self.device.type == "cuda" else 0
+            ),
         })
         return output
 

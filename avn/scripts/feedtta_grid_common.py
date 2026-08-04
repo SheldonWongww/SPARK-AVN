@@ -2,6 +2,7 @@
 """Shared, provenance-checked scheduler for the two AVN FeedTTA grids."""
 
 import argparse
+import ast
 import csv
 import hashlib
 import io
@@ -160,6 +161,32 @@ WEIGHT_DECAY = "0.0"
 OPTIMIZER_EPS = "1e-5"
 MAX_GRAD_NORM = "0.0"
 
+PROVISIONAL_PARAMETER_COUNT_VALIDATION = (
+    "provisional_parameter_count_mismatch"
+)
+PARAMETER_COUNT_MISMATCH_MESSAGE = "adapted parameter count mismatch for enmus"
+
+# Stage 1 and Stage 2 may use different launcher commits when the only changes
+# are orchestration/provenance handling.  These paths define the actual
+# FeedTTA runtime behavior that must remain byte-for-byte unchanged between the
+# two stages.
+FEEDTTA_STRICT_RUNTIME_PATHS = (
+    "avn/baselines/smt_audio/ss_baselines/savi/ppo/ppo_trainer.py",
+    "avn/baselines/smt_audio/ss_baselines/savi/config/default.py",
+    "avn/baselines/smt_audio/ss_baselines/savi/config/tta_avn/single_source/"
+    "smt_audio_tta_test.yaml",
+    "avn/baselines/enmus/sen_baselines/enmus/config/single_source/"
+    "enmus_tta_test.yaml",
+    "avn/scripts/eval_smt_audio.sh",
+    "avn/scripts/eval_enmus.sh",
+)
+
+FEEDTTA_SHARED_RUNTIME_PATHS = (
+    "core/navtta_core/tta/tta_core.py",
+    "avn/baselines/enmus/sen_baselines/enmus/ddppo/ddppo_enmus_trainer.py",
+    "avn/baselines/enmus/sen_baselines/enmus/config/default.py",
+)
+
 METRICS = (
     "reward",
     "distance_to_goal",
@@ -197,6 +224,8 @@ class ExperimentSpec:
     points_by_model: Mapping[str, Sequence[SearchPoint]]
     grid_metadata: Mapping[str, object]
     prerequisite_batch_id: str = ""
+    reviewed_stage1_winners: Optional[Mapping[str, Mapping[str, object]]] = None
+    provisional_parameter_count_models: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -226,6 +255,10 @@ class Provenance:
     common_launcher_sha256: str
     prerequisite_metrics_sha256: str
     prerequisite_summary_sha256: str
+    prerequisite_grid_sha256: str
+    prerequisite_provisional_evidence_sha256: str
+    prerequisite_git_commit: str
+    prerequisite_runtime_compatible: bool
 
 
 @dataclass
@@ -272,6 +305,230 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_evidence_files(paths: Sequence[Path]) -> str:
+    """Hash both evidence paths and contents in a stable order."""
+    digest = hashlib.sha256()
+    for path in sorted((item.resolve() for item in paths), key=str):
+        try:
+            relative = path.relative_to(REPO_ROOT.resolve()).as_posix()
+        except ValueError:
+            relative = str(path)
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256_file(path).encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def read_marker(path: Path, label: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise UserError("cannot read {}: {}".format(label, error)) from error
+
+
+def parse_console_aggregate_metrics(path: Path) -> Dict[str, float]:
+    """Read the final nine Habitat aggregate metrics from a console log."""
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise UserError("cannot read Stage-1 console metrics: {}".format(error)) from error
+    output: Dict[str, float] = {}
+    number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+    for metric in METRICS:
+        matches = re.findall(
+            r"Average episode {}:\s*({})".format(re.escape(metric), number),
+            content,
+        )
+        require(matches, "Stage-1 console is missing aggregate {}".format(metric))
+        value = float(matches[-1])
+        require(math.isfinite(value), "Stage-1 console has non-finite {}".format(metric))
+        output[metric] = value
+    return output
+
+
+def require_stage1_runtime_compatible(
+    stage1_commit: str, current_commit: str
+) -> bool:
+    """Allow ATENA/source-control edits while rejecting FeedTTA changes.
+
+    ATENA and FeedTTA share ``tta_core.py`` and the AVN evaluation trainers.
+    A whole-file hash would therefore reject an ATENA-only implementation
+    change even when FeedTTA's adapter and execution path are untouched.  The
+    strict files are still compared byte-for-byte; shared Python files are
+    compared as normalized ASTs with only the reviewed ATENA/source-argmax
+    additions removed.
+    """
+    if stage1_commit == current_commit:
+        return True
+    completed = subprocess.run(
+        (
+            "git",
+            "diff",
+            "--quiet",
+            stage1_commit,
+            current_commit,
+            "--",
+            *FEEDTTA_STRICT_RUNTIME_PATHS,
+        ),
+        cwd=str(REPO_ROOT),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if completed.returncode == 1:
+        raise UserError(
+            "FeedTTA runtime behavior changed after Stage 1; rerun Stage 1 before Stage 2"
+        )
+    if completed.returncode != 0:
+        raise UserError(
+            completed.stderr.strip() or "cannot compare Stage-1 runtime compatibility"
+        )
+
+    for path in FEEDTTA_SHARED_RUNTIME_PATHS:
+        stage1_source = run_capture(("git", "show", "{}:{}".format(stage1_commit, path)))
+        current_source = run_capture(("git", "show", "{}:{}".format(current_commit, path)))
+        if _feedtta_runtime_ast(path, stage1_source) != _feedtta_runtime_ast(
+            path, current_source
+        ):
+            raise UserError(
+                "FeedTTA shared runtime behavior changed after Stage 1 in {}; "
+                "rerun Stage 1 before Stage 2".format(path)
+            )
+    return True
+
+
+class _FeedTTASharedRuntimeNormalizer(ast.NodeTransformer):
+    """Remove only reviewed non-FeedTTA edits from shared runtime ASTs."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def visit_Module(self, node):
+        if self.path.endswith("tta_core.py"):
+            node.body = [
+                item
+                for item in node.body
+                if not (
+                    isinstance(item, ast.ClassDef) and item.name == "ATENAAdapter"
+                )
+                and not (
+                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and item.name == "_tree_tensor_bytes"
+                )
+            ]
+        return self.generic_visit(node)
+
+    def visit_Assign(self, node):
+        if self.path.endswith("config/default.py"):
+            targets = [ast.unparse(target) for target in node.targets]
+            if any(target.endswith(".EVAL.ACTION_SELECTION") for target in targets):
+                return None
+        if self.path.endswith("ddppo_enmus_trainer.py") and any(
+            isinstance(target, ast.Name) and target.id == "action_selection"
+            for target in node.targets
+        ):
+            return None
+        return self.generic_visit(node)
+
+    def visit_If(self, node):
+        if self.path.endswith("ddppo_enmus_trainer.py"):
+            if ast.unparse(node.test) == (
+                "action_selection not in ('sample', 'argmax')"
+            ):
+                return None
+        return self.generic_visit(node)
+
+    def visit_Expr(self, node):
+        if self.path.endswith("ddppo_enmus_trainer.py"):
+            try:
+                rendered = ast.unparse(node)
+            except Exception:
+                rendered = ""
+            if "[EVAL] action_selection=%s" in rendered:
+                return None
+        return self.generic_visit(node)
+
+    def visit_keyword(self, node):
+        node = self.generic_visit(node)
+        if (
+            self.path.endswith("ddppo_enmus_trainer.py")
+            and node.arg == "deterministic"
+            and any(
+                isinstance(item, ast.Name) and item.id == "action_selection"
+                for item in ast.walk(node.value)
+            )
+        ):
+            node.value = ast.Constant(value=False)
+        return node
+
+
+def _feedtta_runtime_ast(path: str, source: str) -> str:
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError as error:
+        raise UserError("cannot parse shared FeedTTA runtime {}: {}".format(path, error))
+    normalized = _FeedTTASharedRuntimeNormalizer(path).visit(tree)
+    ast.fix_missing_locations(normalized)
+    return ast.dump(normalized, annotate_fields=True, include_attributes=False)
+
+
+def load_provisional_enmus_stage1_rows(
+    prerequisite_dir: Path, grid_rows: Sequence[Mapping[str, str]]
+) -> Tuple[List[Dict[str, str]], str]:
+    """Recover runner-complete ENMuS rows rejected only by count validation."""
+    rows: List[Dict[str, str]] = []
+    evidence: List[Path] = []
+    enmus_rows = [
+        row
+        for row in grid_rows
+        if row.get("model") == "enmus" and row.get("stage") == "stage1"
+    ]
+    require(len(enmus_rows) == 24, "Stage-1 ENMuS grid row count mismatch")
+    for grid_row in enmus_rows:
+        run_tag = grid_row.get("run_tag", "")
+        require(bool(run_tag), "Stage-1 ENMuS grid row has no run_tag")
+        job_dir = prerequisite_dir / "enmus" / "jobs" / run_tag
+        marker_paths = {
+            "runner_exitcode": job_dir / "runner_exitcode",
+            "exitcode": job_dir / "exitcode",
+            "validation": job_dir / "validation",
+            "parameters": job_dir / "parameters.env",
+            "console": job_dir / "console.log",
+        }
+        require(
+            read_marker(marker_paths["runner_exitcode"], "Stage-1 runner exitcode") == "0",
+            "Stage-1 ENMuS runner did not finish successfully: {}".format(run_tag),
+        )
+        require(
+            read_marker(marker_paths["exitcode"], "Stage-1 composite exitcode") == "90",
+            "Stage-1 ENMuS failure was not the expected post-run validation code: {}".format(
+                run_tag
+            ),
+        )
+        require(
+            read_marker(marker_paths["validation"], "Stage-1 validation") == "failed",
+            "Stage-1 ENMuS validation marker is unexpected: {}".format(run_tag),
+        )
+        console_text = read_marker(marker_paths["console"], "Stage-1 console")
+        require(
+            PARAMETER_COUNT_MISMATCH_MESSAGE in console_text,
+            "Stage-1 ENMuS failure is not the reviewed parameter-count mismatch: {}".format(
+                run_tag
+            ),
+        )
+        metrics = parse_console_aggregate_metrics(marker_paths["console"])
+        row = dict(grid_row)
+        row.update({name: repr(value) for name, value in metrics.items()})
+        row["status"] = "0"
+        row["validation"] = PROVISIONAL_PARAMETER_COUNT_VALIDATION
+        row["relative_param_drift"] = ""
+        rows.append(row)
+        evidence.extend(marker_paths.values())
+    return rows, sha256_evidence_files(evidence)
 
 
 def run_capture(command: Sequence[str]) -> str:
@@ -659,25 +916,39 @@ def validate_preflight(
 
     prerequisite_metrics_sha256 = ""
     prerequisite_summary_sha256 = ""
+    prerequisite_grid_sha256 = ""
+    prerequisite_provisional_evidence_sha256 = ""
+    prerequisite_git_commit = ""
+    prerequisite_runtime_compatible = False
     if spec.prerequisite_batch_id:
         prerequisite_dir = (
             LOG_ROOT / "feedtta_stage1" / spec.prerequisite_batch_id
         )
         summary_path = prerequisite_dir / "SUMMARY.json"
         metrics_path = prerequisite_dir / "metrics.csv"
+        grid_path = prerequisite_dir / "grid.csv"
+        batch_path = prerequisite_dir / "batch.json"
         try:
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            stage1_batch = json.loads(batch_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise UserError(
-                "cannot read prerequisite Stage-1 SUMMARY.json: {}".format(error)
+                "cannot read prerequisite Stage-1 metadata: {}".format(error)
             ) from error
         require(isinstance(summary, dict), "invalid prerequisite Stage-1 summary")
+        require(isinstance(stage1_batch, dict), "invalid prerequisite Stage-1 batch")
         require(summary.get("stage") == "stage1", "prerequisite is not a Stage-1 batch")
         require(summary.get("smoke") is False, "Stage 2 cannot use a smoke prerequisite")
-        require(summary.get("complete") is True, "prerequisite Stage-1 batch is incomplete")
         require(summary.get("expected") == 48, "prerequisite Stage-1 job count mismatch")
-        require(summary.get("validated") == 48, "prerequisite Stage-1 validation count mismatch")
-        require(summary.get("git_commit") == commit, "Stage 1 and Stage 2 must use the same Git commit")
+        require(summary.get("missing") == 0, "prerequisite Stage-1 has missing jobs")
+        prerequisite_git_commit = str(summary.get("git_commit", ""))
+        require(
+            re.fullmatch(r"[0-9a-f]{40}", prerequisite_git_commit) is not None,
+            "prerequisite Stage-1 Git commit is invalid",
+        )
+        prerequisite_runtime_compatible = require_stage1_runtime_compatible(
+            prerequisite_git_commit, commit
+        )
         require(
             summary.get("dataset_index_sha256") == dataset_hash,
             "Stage-1 dataset digest differs from Stage 2",
@@ -690,24 +961,96 @@ def validate_preflight(
             summary.get("stream_content_sha256") == content_hash,
             "Stage-1 episode content differs from Stage 2",
         )
+        require(
+            stage1_batch.get("checkpoint_sha256") == checkpoint_hashes,
+            "Stage-1 checkpoint digests differ from Stage 2",
+        )
+        require(
+            stage1_batch.get("model_config_sha256") == model_config_hashes,
+            "Stage-1 model config digests differ from Stage 2",
+        )
         if not metrics_path.is_file():
             raise UserError("prerequisite Stage-1 metrics.csv is missing")
         try:
             with metrics_path.open("r", encoding="utf-8", newline="") as handle:
                 stage1_rows = list(csv.DictReader(handle))
+            with grid_path.open("r", encoding="utf-8", newline="") as handle:
+                stage1_grid_rows = list(csv.DictReader(handle))
         except OSError as error:
-            raise UserError("cannot read prerequisite Stage-1 metrics.csv") from error
-        require(len(stage1_rows) == 48, "prerequisite Stage-1 metrics row count mismatch")
-        require(
-            all(
-                row.get("stage") == "stage1"
-                and row.get("method") == "feedtta"
+            raise UserError("cannot read prerequisite Stage-1 CSV evidence") from error
+        require(len(stage1_grid_rows) == 48, "prerequisite Stage-1 grid row count mismatch")
+
+        reviewed = spec.reviewed_stage1_winners
+        if reviewed is None:
+            require(summary.get("complete") is True, "prerequisite Stage-1 batch is incomplete")
+            require(summary.get("validated") == 48, "prerequisite Stage-1 validation count mismatch")
+            require(len(stage1_rows) == 48, "prerequisite Stage-1 metrics row count mismatch")
+            require(
+                all(
+                    row.get("stage") == "stage1"
+                    and row.get("method") == "feedtta"
+                    and row.get("validation") == "ok"
+                    and row.get("status") == "0"
+                    for row in stage1_rows
+                ),
+                "prerequisite Stage-1 metrics contain nonvalidated rows",
+            )
+        else:
+            require(set(reviewed) == set(MODELS), "reviewed Stage-1 winners are incomplete")
+            per_model = summary.get("per_model")
+            require(isinstance(per_model, dict), "Stage-1 per-model summary is missing")
+            require(
+                per_model.get("smt_audio") == {
+                    "expected": 24,
+                    "successful": 24,
+                    "failed": 0,
+                    "missing": 0,
+                    "validated": 24,
+                    "metrics": 24,
+                },
+                "Stage-1 SMT+Audio evidence no longer matches the reviewed batch",
+            )
+            require(
+                per_model.get("enmus") == {
+                    "expected": 24,
+                    "successful": 0,
+                    "failed": 24,
+                    "missing": 0,
+                    "validated": 0,
+                    "metrics": 0,
+                },
+                "Stage-1 ENMuS evidence no longer matches the reviewed batch",
+            )
+            require(len(stage1_rows) == 48, "Stage-1 metric index row count mismatch")
+            validated_rows = [
+                row
+                for row in stage1_rows
+                if row.get("model") == "smt_audio"
                 and row.get("validation") == "ok"
                 and row.get("status") == "0"
-                for row in stage1_rows
-            ),
-            "prerequisite Stage-1 metrics contain nonvalidated rows",
-        )
+            ]
+            require(
+                len(validated_rows) == 24,
+                "validated Stage-1 metric row count mismatch",
+            )
+            require(
+                all(
+                    row.get("model") == "smt_audio"
+                    and row.get("stage") == "stage1"
+                    and row.get("method") == "feedtta"
+                    and row.get("validation") == "ok"
+                    and row.get("status") == "0"
+                    for row in validated_rows
+                ),
+                "validated Stage-1 metrics contain unexpected rows",
+            )
+            provisional_rows, prerequisite_provisional_evidence_sha256 = (
+                load_provisional_enmus_stage1_rows(
+                    prerequisite_dir, stage1_grid_rows
+                )
+            )
+            stage1_rows = validated_rows + provisional_rows
+
         for model in MODELS:
             selected_pairs = {
                 (point.lr, point.gamma) for point in spec.points_by_model[model]
@@ -724,20 +1067,53 @@ def validate_preflight(
                 try:
                     success = float(row["success"])
                     spl = float(row["spl"])
-                    drift = float(row["relative_param_drift"])
                 except (KeyError, TypeError, ValueError) as error:
                     raise UserError("Stage-1 selection metrics are incomplete") from error
                 require(
-                    all(math.isfinite(value) for value in (success, spl, drift)),
+                    all(math.isfinite(value) for value in (success, spl)),
                     "Stage-1 selection metrics are non-finite",
                 )
                 if success + 1e-12 >= SOURCE_SUCCESS[model]:
+                    drift_text = row.get("relative_param_drift", "")
+                    try:
+                        drift = float(drift_text)
+                    except (TypeError, ValueError):
+                        drift = math.inf
+                    require(
+                        math.isfinite(drift) or math.isinf(drift),
+                        "Stage-1 parameter drift is invalid",
+                    )
                     ranked.append((spl, success, -drift, row))
             require(
                 bool(ranked),
                 "no {} Stage-1 point satisfies SR >= Source; review the plan".format(model),
             )
             winner = max(ranked, key=lambda item: item[:3])[3]
+            if reviewed is not None:
+                expected = reviewed[model]
+                require(
+                    str(expected.get("lr")) == selected_lr
+                    and str(expected.get("gamma")) == selected_gamma,
+                    "CLI selection does not match the reviewed Stage-1 choice for {}".format(
+                        model
+                    ),
+                )
+                require(
+                    str(winner.get("job_id")) == str(expected.get("job_id")),
+                    "recomputed Stage-1 winner differs from the reviewed job for {}".format(
+                        model
+                    ),
+                )
+                for metric in ("success", "spl"):
+                    require(
+                        math.isclose(
+                            float(winner[metric]),
+                            float(expected[metric]),
+                            rel_tol=1e-9,
+                            abs_tol=1e-12,
+                        ),
+                        "reviewed Stage-1 {} differs for {}".format(metric, model),
+                    )
             require(
                 winner.get("lr") == selected_lr
                 and winner.get("gamma") == selected_gamma,
@@ -754,18 +1130,18 @@ def validate_preflight(
                 row
                 for row in stage1_rows
                 if row.get("model") == model
-                and row.get("validation") == "ok"
                 and row.get("lr") == selected_lr
                 and row.get("gamma") == selected_gamma
             ]
             require(
                 len(matches) == 1,
-                "selected {}/{} was not a unique validated Stage-1 point".format(
+                "selected {}/{} was not a unique reviewed Stage-1 point".format(
                     selected_lr, selected_gamma
                 ),
             )
         prerequisite_metrics_sha256 = sha256_file(metrics_path)
         prerequisite_summary_sha256 = sha256_file(summary_path)
+        prerequisite_grid_sha256 = sha256_file(grid_path)
 
     return Provenance(
         git_commit=commit,
@@ -782,6 +1158,12 @@ def validate_preflight(
         common_launcher_sha256=sha256_file(common_launcher),
         prerequisite_metrics_sha256=prerequisite_metrics_sha256,
         prerequisite_summary_sha256=prerequisite_summary_sha256,
+        prerequisite_grid_sha256=prerequisite_grid_sha256,
+        prerequisite_provisional_evidence_sha256=(
+            prerequisite_provisional_evidence_sha256
+        ),
+        prerequisite_git_commit=prerequisite_git_commit,
+        prerequisite_runtime_compatible=prerequisite_runtime_compatible,
     )
 
 
@@ -853,6 +1235,17 @@ def batch_spec(
         "prerequisite_stage1_batch_id": spec.prerequisite_batch_id,
         "prerequisite_stage1_metrics_sha256": provenance.prerequisite_metrics_sha256,
         "prerequisite_stage1_summary_sha256": provenance.prerequisite_summary_sha256,
+        "prerequisite_stage1_grid_sha256": provenance.prerequisite_grid_sha256,
+        "prerequisite_stage1_provisional_evidence_sha256": (
+            provenance.prerequisite_provisional_evidence_sha256
+        ),
+        "prerequisite_stage1_git_commit": provenance.prerequisite_git_commit,
+        "prerequisite_stage1_runtime_compatible": (
+            provenance.prerequisite_runtime_compatible
+        ),
+        "provisional_parameter_count_models": list(
+            spec.provisional_parameter_count_models
+        ),
     }
 
 
@@ -1137,7 +1530,10 @@ def _finite_diagnostic(diagnostics: Mapping[str, object], name: str) -> float:
 
 
 def validate_stats_and_diagnostics(
-    manifest_path: Path, job: Job, episodes: int
+    manifest_path: Path,
+    job: Job,
+    episodes: int,
+    allow_parameter_count_mismatch: bool = False,
 ) -> Tuple[Dict[str, float], Path, Mapping[str, object]]:
     run_dir = manifest_path.resolve().parent
     stats_path = run_dir / "raw" / "model" / "tb" / "val_stats_{}.json".format(SEED)
@@ -1170,13 +1566,21 @@ def validate_stats_and_diagnostics(
     require(diagnostics.get("optimizer") == OPTIMIZER, "FeedTTA optimizer mismatch")
     require(diagnostics.get("param_scope") == PARAM_SCOPE, "scope mode mismatch")
     require(diagnostics.get("trainable_prefixes") == list(PREFIXES), "prefix list mismatch")
-    require(
-        diagnostics.get("adapted_parameter_count") == EXPECTED_PARAMETERS[job.model],
-        "adapted parameter count mismatch for {}".format(job.model),
-    )
+    try:
+        adapted_parameter_count = int(diagnostics["adapted_parameter_count"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise UserError("adapted parameter count is missing or invalid") from error
+    require(adapted_parameter_count > 0, "adapted parameter count must be positive")
+    if not allow_parameter_count_mismatch:
+        require(
+            adapted_parameter_count == EXPECTED_PARAMETERS[job.model],
+            "adapted parameter count mismatch for {}".format(job.model),
+        )
     names = diagnostics.get("adapted_parameter_names")
     require(isinstance(names, list), "adapted parameter names are missing")
-    require(len(names) == EXPECTED_TENSORS[job.model], "adapted tensor count mismatch")
+    require(bool(names), "adapted parameter names are empty")
+    if not allow_parameter_count_mismatch:
+        require(len(names) == EXPECTED_TENSORS[job.model], "adapted tensor count mismatch")
     require(len(set(names)) == len(names), "duplicate adapted parameter names")
     require(
         all(
@@ -1197,7 +1601,10 @@ def validate_stats_and_diagnostics(
     require(diagnostics.get("normalize_gradient") is False, "trajectory normalization must be disabled")
     require(diagnostics.get("episodic") is False, "FeedTTA must be continual")
     require(diagnostics.get("trajectory_gradient_storage") == "online_discounted_accumulator", "gradient storage mismatch")
-    require(diagnostics.get("gradient_accumulator_elements") == EXPECTED_PARAMETERS[job.model], "gradient accumulator size mismatch")
+    require(
+        diagnostics.get("gradient_accumulator_elements") == adapted_parameter_count,
+        "gradient accumulator size differs from the actual adapted parameter count",
+    )
     require(diagnostics.get("current_trajectory_steps") == 0, "unfinished trajectory remains after evaluation")
 
     current_lr = _finite_diagnostic(diagnostics, "current_lr")
@@ -1213,7 +1620,7 @@ def validate_stats_and_diagnostics(
     if math.isclose(float(job.point.p), 0.0, abs_tol=1e-15):
         require(math.isclose(selected_fraction, 0.0, abs_tol=1e-15), "p=0 selected SGR dimensions")
     else:
-        sample_count = EXPECTED_PARAMETERS[job.model] * episodes
+        sample_count = adapted_parameter_count * episodes
         expected_p = float(job.point.p)
         standard_error = math.sqrt(
             expected_p * (1.0 - expected_p) / sample_count
@@ -1257,6 +1664,7 @@ def validate_stats_and_diagnostics(
 
 
 def validate_job_artifacts(
+    spec: ExperimentSpec,
     manifest_path: Path,
     job: Job,
     args: argparse.Namespace,
@@ -1309,7 +1717,14 @@ def validate_job_artifacts(
         raise UserError("invalid run manifest: {}".format(error)) from error
     require(isinstance(manifest, dict), "run manifest is not a dictionary")
     validate_manifest_details(manifest, job, args.episodes, provenance)
-    return validate_stats_and_diagnostics(manifest_path, job, args.episodes)
+    return validate_stats_and_diagnostics(
+        manifest_path,
+        job,
+        args.episodes,
+        allow_parameter_count_mismatch=(
+            job.model in spec.provisional_parameter_count_models
+        ),
+    )
 
 
 def write_job_metrics(
@@ -1321,6 +1736,7 @@ def write_job_metrics(
     episodes: int,
     metrics: Mapping[str, float],
     diagnostics: Mapping[str, object],
+    validation: str,
 ) -> None:
     diagnostics_summary = {
         key: diagnostics.get(key)
@@ -1334,8 +1750,15 @@ def write_job_metrics(
             "mean_action_nll",
             "mean_trajectory_steps",
             "mean_sgr_selected_fraction",
+            "adapted_parameter_count",
+            "gradient_accumulator_elements",
         )
     }
+    diagnostics_summary["adapted_tensor_count"] = len(
+        diagnostics.get("adapted_parameter_names", ())
+    )
+    diagnostics_summary["expected_parameter_count"] = EXPECTED_PARAMETERS[job.model]
+    diagnostics_summary["expected_tensor_count"] = EXPECTED_TENSORS[job.model]
     payload = {
         "job_id": job.job_id,
         "model_job_id": job.model_job_id,
@@ -1347,6 +1770,7 @@ def write_job_metrics(
         "result_role": "hyperparameter_search",
         "method": "feedtta",
         "feedback_supervision": "binary_episode_success_oracle",
+        "validation": validation,
         "seed": SEED,
         "episodes": episodes,
         "manifest": str(manifest_path),
@@ -1375,6 +1799,7 @@ def write_job_metrics(
         "split": "val",
         "result_role": "hyperparameter_search",
         "feedback_supervision": "binary_episode_success_oracle",
+        "validation": validation,
         "seed": SEED,
         "episodes": episodes,
         "run_tag": job.run_tag,
@@ -1384,6 +1809,24 @@ def write_job_metrics(
     }
     atomic_write(run_dir / "summary.json", json_text(compact_summary))
     atomic_write(run_dir / "diagnostics.json", json_text(dict(diagnostics)))
+
+
+def artifact_validation_label(
+    spec: ExperimentSpec, job: Job, diagnostics: Mapping[str, object]
+) -> str:
+    actual = diagnostics.get("adapted_parameter_count")
+    names = diagnostics.get("adapted_parameter_names")
+    actual_tensors = len(names) if isinstance(names, list) else -1
+    if (
+        actual == EXPECTED_PARAMETERS[job.model]
+        and actual_tensors == EXPECTED_TENSORS[job.model]
+    ):
+        return "ok"
+    require(
+        job.model in spec.provisional_parameter_count_models,
+        "adapted parameter count mismatch for {}".format(job.model),
+    )
+    return PROVISIONAL_PARAMETER_COUNT_VALIDATION
 
 
 def manifest_from_console(path: Path) -> Optional[Path]:
@@ -1425,12 +1868,18 @@ def reusable_job(
     except OSError:
         return False
     manifest_path = completed_manifest_path(job_dir)
-    if exitcode != "0" or validation != "ok" or manifest_path is None:
+    accepted_validation = {"ok"}
+    if job.model in spec.provisional_parameter_count_models:
+        accepted_validation.add(PROVISIONAL_PARAMETER_COUNT_VALIDATION)
+    if exitcode != "0" or validation not in accepted_validation or manifest_path is None:
         return False
     try:
         metrics, stats_path, diagnostics = validate_job_artifacts(
-            manifest_path, job, args, provenance
+            spec, manifest_path, job, args, provenance
         )
+        current_validation = artifact_validation_label(spec, job, diagnostics)
+        if current_validation != validation:
+            return False
         write_job_metrics(
             spec,
             manifest_path,
@@ -1440,6 +1889,7 @@ def reusable_job(
             args.episodes,
             metrics,
             diagnostics,
+            validation,
         )
     except UserError:
         return False
@@ -1504,8 +1954,9 @@ def finalize_worker(
     if status == 0 and manifest_path is not None:
         try:
             metrics, stats_path, diagnostics = validate_job_artifacts(
-                manifest_path, worker.job, args, provenance
+                spec, manifest_path, worker.job, args, provenance
             )
+            validation = artifact_validation_label(spec, worker.job, diagnostics)
             write_job_metrics(
                 spec,
                 manifest_path,
@@ -1515,15 +1966,29 @@ def finalize_worker(
                 args.episodes,
                 metrics,
                 diagnostics,
+                validation,
             )
         except UserError as error:
             with (worker.job_dir / "console.log").open("a", encoding="utf-8") as handle:
                 handle.write("\n[launcher validation]\n{}\n".format(error))
             composite = 90
         else:
-            validation = "ok"
             with (worker.job_dir / "console.log").open("a", encoding="utf-8") as handle:
-                handle.write("\n[launcher validation]\n{}\n".format(manifest_path))
+                if validation == "ok":
+                    detail = str(manifest_path)
+                else:
+                    detail = (
+                        "{}; actual/expected parameters={}/{}; "
+                        "actual/expected tensors={}/{}; "
+                        "metrics retained as provisional"
+                    ).format(
+                        validation,
+                        diagnostics.get("adapted_parameter_count"),
+                        EXPECTED_PARAMETERS[worker.job.model],
+                        len(diagnostics.get("adapted_parameter_names", ())),
+                        EXPECTED_TENSORS[worker.job.model],
+                    )
+                handle.write("\n[launcher validation]\n{}\n".format(detail))
     elif status == 0:
         composite = 90
         with (worker.job_dir / "console.log").open("a", encoding="utf-8") as handle:
@@ -1608,6 +2073,10 @@ def write_batch_metrics(
         "mean_action_nll",
         "mean_trajectory_steps",
         "mean_sgr_selected_fraction",
+        "adapted_parameter_count",
+        "adapted_tensor_count",
+        "expected_parameter_count",
+        "expected_tensor_count",
     ) + METRICS
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
@@ -1673,6 +2142,10 @@ def write_batch_metrics(
             "mean_action_nll",
             "mean_trajectory_steps",
             "mean_sgr_selected_fraction",
+            "adapted_parameter_count",
+            "adapted_tensor_count",
+            "expected_parameter_count",
+            "expected_tensor_count",
         ):
             row[name] = recorded_diagnostics.get(name, "")
         recorded_metrics = payload.get("metrics", {})
@@ -1695,9 +2168,24 @@ def summarize(
 ) -> Tuple[str, bool]:
     write_batch_metrics(spec, batch_dir, plan, args, provenance)
     per_model = {}
-    totals = {"successful": 0, "failed": 0, "missing": 0, "validated": 0, "metrics": 0}
+    totals = {
+        "successful": 0,
+        "failed": 0,
+        "missing": 0,
+        "validated": 0,
+        "provisional": 0,
+        "metrics": 0,
+    }
     for model in MODELS:
-        counts = {"expected": 0, "successful": 0, "failed": 0, "missing": 0, "validated": 0, "metrics": 0}
+        counts = {
+            "expected": 0,
+            "successful": 0,
+            "failed": 0,
+            "missing": 0,
+            "validated": 0,
+            "provisional": 0,
+            "metrics": 0,
+        }
         for job in (item for item in plan if item.model == model):
             counts["expected"] += 1
             job_dir = batch_dir / model / "jobs" / job.run_tag
@@ -1711,8 +2199,13 @@ def summarize(
             else:
                 counts["failed"] += 1
             try:
-                if (job_dir / "validation").read_text(encoding="utf-8").strip() == "ok":
+                validation = (job_dir / "validation").read_text(
+                    encoding="utf-8"
+                ).strip()
+                if validation == "ok":
                     counts["validated"] += 1
+                elif validation == PROVISIONAL_PARAMETER_COUNT_VALIDATION:
+                    counts["provisional"] += 1
             except OSError:
                 pass
             if (job_dir / "metrics.json").is_file():
@@ -1724,9 +2217,10 @@ def summarize(
         totals["successful"] == len(plan)
         and totals["failed"] == 0
         and totals["missing"] == 0
-        and totals["validated"] == len(plan)
+        and totals["validated"] + totals["provisional"] == len(plan)
         and totals["metrics"] == len(plan)
     )
+    formal_validation_complete = totals["validated"] == len(plan)
     summary = {
         "batch_id": args.batch_id,
         "experiment": spec.experiment,
@@ -1744,8 +2238,10 @@ def summarize(
         "failed": totals["failed"],
         "missing": totals["missing"],
         "validated": totals["validated"],
+        "provisional": totals["provisional"],
         "metrics": totals["metrics"],
         "complete": complete,
+        "formal_validation_complete": formal_validation_complete,
         "per_model": per_model,
         "dataset_index_sha256": provenance.dataset_index_sha256,
         "stream_order_sha256": provenance.stream_order_sha256,

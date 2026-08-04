@@ -283,14 +283,17 @@ class TTACoreTest(unittest.TestCase):
         )
         self.assertEqual(adapter.param_scope, "all")
         adapter.episode_start()
-        features, logits = _forward(policy, _inputs())
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
         distribution = policy.action_distribution(features)
         action = adapter.select_action(distribution)
         torch.testing.assert_close(
             action, distribution.probs.argmax(dim=-1, keepdim=True)
         )
-        adapter.adapt(logits, action=action, features=features)
-        self.assertTrue(adapter.trajectory_mixture_entropies[0].requires_grad)
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+        self.assertIsInstance(adapter.trajectory_mixture_entropies[0], float)
         adapter.episode_end({"success": 1.0})
         self.assertEqual(adapter.update_count, 1)
         self.assertEqual(adapter.query_count, 1)
@@ -301,7 +304,7 @@ class TTACoreTest(unittest.TestCase):
     def test_atena_self_prediction_loss_updates_policy_representation(self):
         policy = _TinyPolicy()
         adapter = ATENAAdapter(
-            policy, lr_query=1e-2, mix_lambda=1.0,
+            policy, lr_query=1e-2, mix_lambda=0.75,
             query_threshold=0.0, self_loss_weight=1.0,
             weight_decay=0.0, max_grad_norm=0.0,
         )
@@ -309,9 +312,12 @@ class TTACoreTest(unittest.TestCase):
             param.detach().clone() for param in policy.net.parameters()
         ]
         adapter.episode_start()
-        features, logits = _forward(policy, _inputs())
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
         action = adapter.select_action(policy.action_distribution(features))
-        adapter.adapt(logits, action=action, features=features)
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
         adapter.episode_end({"success": 1.0})
         self.assertTrue(any(
             not torch.equal(old, new)

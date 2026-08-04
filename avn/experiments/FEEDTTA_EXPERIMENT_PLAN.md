@@ -103,18 +103,24 @@ screen -d -r avn_feedtta_stage1
 配置中以 SPL 最高为主，SR 次高、参数漂移更小依次作为 tie-breaker。如果没有
 配置满足约束，则保留 Pareto frontier 并明确记录，不得静默改用单点最大 SR。
 当前约束使用相同 canonical 流上的 Source SR：SMT+Audio 为 `0.5415`，ENMuS
-为 `0.6655`。Stage-2 preflight 会从 Stage-1 `metrics.csv` 重算该规则并拒绝
-与 winner 不一致的命令行配置；如果没有配置满足约束，Stage 2 会停止，需先
-讨论并修订选择规则，而不会自动挑选一个结果。
+为 `0.6655`。Stage-2 preflight 会联合 Stage-1 `metrics.csv` 和 ENMuS 完整
+console 指标重算该规则，并拒绝与 winner 不一致的命令行配置；如果没有配置
+满足约束，Stage 2 会停止，需先讨论并修订选择规则，而不会自动挑选一个结果。
 
 ## 5. 第二阶段：官方 SGR 网格和机制对照
 
 第二阶段必须在第一阶段分析完成后启动。SMT+Audio 和 ENMuS 分别通过命令行
 显式传入各自选定的 `LR/gamma`，且只能使用第一阶段搜索过的取值。启动器还
-要求 `--stage1-batch-id`，并验证该 48-job batch 已完整结束、选择值确实存在于
-validated Stage-1 数据中，同时把 Stage-1 `metrics.csv` 和 `SUMMARY.json` 的
-SHA256 写入 Stage-2 batch provenance。两个阶段必须使用同一 Git commit、数据
-索引及 episode 内容/顺序；如果中间修改 FeedTTA 代码，应重新运行第一阶段。
+要求 `--stage1-batch-id`。当前冻结输入为 SMT+Audio job 5
+(`LR=3e-8, gamma=0.95`) 和 ENMuS job 39 (`LR=3e-7, gamma=1.0`)。
+启动器验证 24 条 SMT+Audio validated 记录；ENMuS 则要求 24/24 导航 runner
+完成、九项聚合指标完整，而且唯一 launcher 失败必须是已经审阅的参数计数告警。
+它同时记录 Stage-1 `metrics.csv`、`grid.csv`、`SUMMARY.json` 和 ENMuS provisional
+证据摘要。两个阶段必须使用相同 checkpoint、数据索引及 episode 内容/顺序；
+允许修改调度/证据代码，也允许共享文件中经过审计的 ATENA 与 Source-argmax
+分支改动；启动器会对共享 Python 文件做 FeedTTA 语义 AST 比较，并对专属配置
+和 runner 做逐文件比较。FeedTTA adapter、实际 TTA trainer 分支或配置发生变化
+时仍会强制重跑 Stage 1。
 
 论文官方网格：
 
@@ -132,24 +138,23 @@ alpha = [-0.01, -0.025, -0.05, -0.075, -0.1, -0.2, -0.3]
 | `gradient_scaling_0p05` | 0.05 | +0.05 | 正梯度缩放对照 |
 | `gradient_scaling_0p1` | 0.05 | +0.1 | 论文 R2R 字面设置 |
 
-每模型 39 组，两个模型共 78 组。下面数值只是命令格式示例，正式启动时必须
-替换为第一阶段经审阅选定的模型级配置：
+每模型 39 组，两个模型共 78 组。下面已经填入第一阶段经审阅冻结的模型级配置：
 
 两阶段合计 126 组完整实验；smoke 运行不计入该数量。
 
 ```bash
 python3 avn/scripts/run_feedtta_stage2.py --dry-run \
   --stage1-batch-id feedtta-stage1-v1-seed0 \
-  --smt-audio-lr 1e-7 --smt-audio-gamma 0.99 \
-  --enmus-lr 3e-8 --enmus-gamma 0.95 \
+  --smt-audio-lr 3e-8 --smt-audio-gamma 0.95 \
+  --enmus-lr 3e-7 --enmus-gamma 1.0 \
   --gpus 0,1,2,3 --jobs-per-gpu 2 \
   --batch-id feedtta-stage2-v1-seed0
 
 screen -dmS avn_feedtta_stage2 \
   python3 avn/scripts/run_feedtta_stage2.py \
     --stage1-batch-id feedtta-stage1-v1-seed0 \
-    --smt-audio-lr 1e-7 --smt-audio-gamma 0.99 \
-    --enmus-lr 3e-8 --enmus-gamma 0.95 \
+    --smt-audio-lr 3e-8 --smt-audio-gamma 0.95 \
+    --enmus-lr 3e-7 --enmus-gamma 1.0 \
     --gpus 0,1,2,3 --jobs-per-gpu 2 \
     --batch-id feedtta-stage2-v1-seed0
 
@@ -158,7 +163,9 @@ screen -d -r avn_feedtta_stage2
 
 第二阶段沿用第一阶段选择规则。最终冻结配置后，需要在最终 commit 上独立
 复验 SMT+Audio/ENMuS 的 single-source 与 multi-source；搜索网格最大值不能
-直接复制到主对比表。
+直接复制到主对比表。ENMuS 的参数计数不一致继续标记为
+`provisional_parameter_count_mismatch`，但不再丢弃已完成的导航指标；任何其他
+验证失败仍会阻断该 job。
 
 ## 6. Smoke、恢复和输出
 

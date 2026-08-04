@@ -651,6 +651,14 @@ class DDPPOTrainer(PPOTrainer):
         else:
             config = self.config.clone()        
         ppo_cfg = config.RL.PPO
+        action_selection = str(
+            getattr(config.EVAL, "ACTION_SELECTION", "sample")
+        ).lower()
+        if action_selection not in ("sample", "argmax"):
+            raise ValueError(
+                "EVAL.ACTION_SELECTION must be sample or argmax; got {}"
+                .format(action_selection)
+            )
         
         config.defrost()
         # The original code used the misspelled key ``SPlIT`` and silently
@@ -676,6 +684,7 @@ class DDPPOTrainer(PPOTrainer):
             config.freeze()
 
         logger.info(f"env config: {config}")
+        logging.info("[EVAL] action_selection=%s", action_selection)
         self.envs = construct_envs(config, get_env_class(config.ENV_NAME))
         
         if self.config.DISPLAY_RESOLUTION != model_resolution:
@@ -833,7 +842,7 @@ class DDPPOTrainer(PPOTrainer):
                         not_done_masks,
                         em_memory if ppo_cfg.use_external_memory else None,
                         em_masks if ppo_cfg.use_external_memory else None,
-                        deterministic=False
+                        deterministic=(action_selection == "argmax")
                     )
                     prev_actions.copy_(actions)
             else:

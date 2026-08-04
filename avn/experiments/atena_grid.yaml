@@ -1,0 +1,76 @@
+experiment: atena_avn_full_cartesian_v1
+result_role: hyperparameter_search
+method: atena
+models: [smt_audio, enmus]
+source_setting: single_source
+split: val
+seed: 0
+episodes: 2000
+
+matched_control:
+  method: source
+  action_selection: argmax
+  jobs_per_model: 1
+  rationale: >-
+    Official ATENA executes the policy argmax. The existing AVN Source row uses
+    sampled actions, so Source-argmax is required to isolate adaptation gains
+    from the action-selection protocol.
+
+cartesian_grid:
+  learning_rate_pairs:
+    # [TTA.ATENA.LR_QUERY, TTA.ATENA.LR_SELF]
+    - [3.0e-8, 1.0e-8]
+    - [1.0e-7, 1.0e-8]
+    - [3.0e-7, 3.0e-8]
+    - [5.0e-7, 1.0e-8]  # released ETPNav anchor
+    - [8.0e-7, 1.0e-7]  # released DUET-R2R anchor
+    - [5.0e-6, 1.0e-7]  # released DUET-REVERIE anchor
+  TTA.ATENA.MIX_LAMBDA: [0.25, 0.5, 0.75]
+  TTA.ATENA.QUERY_THRESHOLD: [0.1, 0.5, 0.75, 1.0]
+  TTA.ATENA.SELF_LOSS_WEIGHT: [0.1, 0.25]
+
+fixed:
+  TTA.EPISODIC: false
+  TTA.ATENA.PREFLIGHT_APPROVED: true
+  TTA.ATENA.PARAM_SCOPE: all
+  TTA.ATENA.OPTIMIZER: AdamW
+  TTA.ATENA.BETA1: 0.9
+  TTA.ATENA.BETA2: 0.999
+  TTA.ATENA.WEIGHT_DECAY: 0.01
+  TTA.ATENA.MAX_GRAD_NORM: 0.0
+  NUM_PROCESSES: 1
+  EVAL.USE_CKPT_CONFIG: false
+  EVAL.ACTION_SELECTION: argmax
+  action_selection: policy_argmax
+  pseudo_expert: one_hot_of_executed_argmax
+  feedback: binary_episode_success_or_self_prediction
+  update_timing: once_at_episode_end
+  gradient_reconstruction: exact_step_replay_in_eval_mode
+
+job_count:
+  atena_per_model: 144
+  source_argmax_per_model: 1
+  total: 290
+
+selection:
+  model_specific: true
+  candidates: full_atena_only
+  primary: spl
+  constraints:
+    - sr_not_below_matched_source_argmax
+    - query_rate_between_0.05_and_0.95
+    - finite_metrics_and_diagnostics
+    - deterministic_replay_error_at_most_1e-5
+  tie_breakers: [sr, lower_query_rate, lower_relative_parameter_drift]
+  note: >-
+    A point with query rate near 100% is MEO with almost full oracle feedback;
+    a point near 0% relies on an initially untrained self-prediction head.
+    Neither should be called the complete SAL setting in the main table.
+
+formal_constraints:
+  require_clean_tracked_worktree: true
+  require_same_git_commit_for_all_jobs: true
+  require_canonical_stream_sha256: true
+  require_checkpoint_sha256: true
+  preserve_binary_feedback_method_label: true
+  search_result_is_not_main_table_result: true

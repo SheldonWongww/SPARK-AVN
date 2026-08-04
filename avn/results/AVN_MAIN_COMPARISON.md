@@ -1,6 +1,6 @@
 # AVN 主对比表结果登记册
 
-更新日期：2026-08-03
+更新日期：2026-08-04
 
 用途：集中登记未来论文 AVN 主对比表采用的冻结结果。表格以导航模型为一级
 分组，列按单声源和多声源展开。当前填入统一 Source 重评估结果、冻结配置的
@@ -10,7 +10,8 @@ ENMuS FSTTA single-source 使用搜索 job 0 的已有运行，multi-source 使�
 超参数配置的迁移运行；两者均为当前最终选定数值。由于本地 run manifest
 与 checkpoint 训练 provenance 尚未闭环，继续标记为 `[P]`。
 SMT+Audio FSTTA multi-source 使用其 single-source 冻结配置的直接迁移结果；
-两个模型的 EAM single-source 均按各自边界网格的最佳配置登记为最终数值。
+EAM 在两个模型上也均将 single-source 搜索后冻结的配置直接迁移到
+multi-source，四项结果均已登记。
 
 ## 1. 指标与登记规则
 
@@ -69,7 +70,7 @@ SMT+Audio FSTTA multi-source 使用其 single-source 冻结配置的直接迁移
     <tr>
       <td>EAM [P]</td>
       <td>11.834155</td><td>4.8325</td><td>0.295396</td><td>56.20</td><td>30.5805</td><td>37.4332</td><td>150.0830</td><td>45.2148</td><td>2.30</td>
-      <td colspan="9">—</td>
+      <td>5.716312</td><td>7.5095</td><td>0.538814</td><td>27.50</td><td>14.1282</td><td>25.3413</td><td>166.3175</td><td>20.2154</td><td>1.30</td>
     </tr>
     <tr><td>FeedTTA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr><td>ATENA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
@@ -91,7 +92,7 @@ SMT+Audio FSTTA multi-source 使用其 single-source 冻结配置的直接迁移
     <tr>
       <td>EAM [P]</td>
       <td>14.859267</td><td>3.2590</td><td>0.193446</td><td>68.15</td><td>36.9083</td><td>40.6694</td><td>162.9215</td><td>51.8355</td><td>2.20</td>
-      <td colspan="9">—</td>
+      <td>7.193380</td><td>7.1725</td><td>0.550503</td><td>35.40</td><td>17.1222</td><td>25.1913</td><td>156.8105</td><td>26.4333</td><td>0.90</td>
     </tr>
     <tr><td>FeedTTA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
     <tr><td>ATENA†</td><td colspan="9">—</td><td colspan="9">—</td></tr>
@@ -99,8 +100,7 @@ SMT+Audio FSTTA multi-source 使用其 single-source 冻结配置的直接迁移
 </table>
 
 `[P]`：证据链尚未闭环，暂不具备正式论文结果资格。该标记不代表超参数
-尚未选定；当前已登记的 FSTTA 数值以及两个模型的 EAM single-source 数值均为
-最终选定结果。
+尚未选定；当前已登记的 FSTTA 和 EAM 数值均为最终选定结果。
 
 `†`：该方法消费二值 episode feedback，不属于严格无监督 TTA。
 
@@ -229,12 +229,35 @@ canonical single-source val、seed 0、2000-episode stream：
 | stream-content SHA256 | `dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2` | 同左 |
 | 本地证据 | [`SMT job 5`](logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/smt_audio/jobs/eamboundary-eam-boundary-joint-v1-seed0-j005-smt_audio-lr1em8-u128/) | [`ENMuS job 11`](logs/eam_boundary_grid/eam-boundary-joint-v1-seed0/enmus/jobs/eamboundary-eam-boundary-joint-v1-seed0-j011-enmus-lr3em9-u128/) |
 
-相对 matched Source，SMT+Audio 的 SR/SPL 提高 2.05/1.1576 个百分点，ENMuS
-提高 1.60/0.8603 个百分点。EAM multi-source 尚未运行，因此主表对应位置保留
-`—`。两个冻结配置的 multi-source 主表复验已由
-[`run_eam_main_multi_source.py`](../scripts/run_eam_main_multi_source.py) 定义，待服务器运行。
-两个 single-source 数值已经冻结，但因本地缺少可解析 run manifest 及完整
-checkpoint 训练 provenance，暂继续标为 `[P]`。
+相对 matched Source，SMT+Audio 的 single-source SR/SPL 提高
+2.05/1.1576 个百分点，ENMuS 提高 1.60/0.8603 个百分点。
+
+`eam-main-multi-v1-seed0` 已在 commit
+`99f46dfa3010ca41d0a2898db1e88e1934ae5bb9` 的 clean worktree 上完成，
+2/2 jobs 均为 `exitcode=0` 且 `validation=ok`。两个模型使用各自
+single-source 冻结配置，没有在 multi-source 上重新选参：
+
+| 模型 | LR | UPDATE_INTERVAL | Reward | DTG | NDTG | SR | SPL | SoftSPL | NA | SNA | SWS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SMT+Audio | `1e-8` | 128 | 5.716312 | 7.5095 | 0.538814 | 27.50 | 14.1282 | 25.3413 | 166.3175 | 20.2154 | 1.30 |
+| ENMuS | `3e-9` | 128 | 7.193380 | 7.1725 | 0.550503 | 35.40 | 17.1222 | 25.1913 | 156.8105 | 26.4333 | 0.90 |
+
+multi-source 相对 matched Source，SMT+Audio 的 SR/SPL 提高
+1.60/0.7086 个百分点，ENMuS 提高 0.65/0.0104 个百分点。后者
+SPL 几乎持平，且低于 Tent/FSTTA，说明 EAM 的跨声源迁移增益具有
+模型依赖性。批次使用 multi-source checkpoint SHA256
+`c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8` /
+`3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464`，
+dataset index SHA256 为
+`45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d`，
+stream order/content SHA256 分别为
+`cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525` /
+`deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d`，
+均与 matched Source 一致。
+
+四个 EAM 数值已经冻结，但因本地缺少可解析 run manifest 及完整
+checkpoint 训练 provenance，暂继续标为 `[P]`。multi-source 证据位于
+[`eam_main`](logs/eam_main/eam-main-multi-v1-seed0/)。
 
 ## 7. 后续填表规则
 
