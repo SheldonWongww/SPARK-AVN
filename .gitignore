@@ -33,6 +33,12 @@ venv/
 /objectnav/data/
 /objectnav/checkpoints/
 
+# MP3D connectivity metadata bundled by continuous VLN upstreams is data.
+/vln/baselines/bevbert/precompute_features/connectivity/*
+!/vln/baselines/bevbert/precompute_features/connectivity/README.md
+/vln/baselines/etpnav/precompute_img_features/connectivity/*
+!/vln/baselines/etpnav/precompute_img_features/connectivity/README.md
+
 # Task checkpoints
 /avn/checkpoints/source/*
 !/avn/checkpoints/source/.gitkeep

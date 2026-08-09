@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "source_root": "references/repos/navigation/vln",
+  "repositories": [
+    {
+      "name": "VLN-DUET",
+      "active_path": "vln/baselines/duet",
+      "url": "https://github.com/cshizhe/VLN-DUET.git",
+      "commit": "93e8b233164bc079a6db48b8a0a78d123ec8de41",
+      "license": "not-declared-in-upstream-repository",
+      "permission_basis": "direct-author-permission-reported-by-researcher",
+      "planned_setting": "discrete R2R and REVERIE",
+      "asset_url": "https://www.dropbox.com/scl/fo/4iaw2ii2z2iupu0yn4tqh/AJutXWSGTtjBFYXnxr-4YQw?rlkey=88khaszmvhybxleyv0a9bulyn&e=1&dl=0",
+      "asset_sha256": null
+    },
+    {
+      "name": "VLN-HAMT",
+      "active_path": "vln/baselines/hamt",
+      "url": "https://github.com/cshizhe/VLN-HAMT.git",
+      "commit": "c8b9ee12125f9fe36c51d2ab928fde38f7d846bd",
+      "license": "MIT",
+      "permission_basis": "upstream-license",
+      "planned_setting": "discrete R2R and REVERIE",
+      "asset_url": "https://www.dropbox.com/scl/fo/nsitfiyh5taz4xg4nxj7b/AOqFG0t3ZrReqJ_m3qP5Z8k?rlkey=e0wd5c9a1mhbvfd96lb7d30xx&e=1&dl=0",
+      "asset_sha256": null
+    },
+    {
+      "name": "VLN-GOAT",
+      "active_path": "vln/baselines/goat",
+      "url": "https://github.com/CrystalSixone/VLN-GOAT.git",
+      "commit": "c083bf458e6d2041fbdf91c2a8036f458faa95b4",
+      "license": "Apache-2.0",
+      "permission_basis": "upstream-license",
+      "planned_setting": "discrete R2R and REVERIE",
+      "asset_url": "https://huggingface.co/crystal61/VLN-GOAT",
+      "asset_sha256": null
+    },
+    {
+      "name": "ETPNav",
+      "active_path": "vln/baselines/etpnav",
+      "url": "https://github.com/MarSaKi/ETPNav.git",
+      "commit": "160e65fe5d23ad83d024d57d710e47be6892fc68",
+      "license": "MIT",
+      "permission_basis": "upstream-license",
+      "planned_setting": "continuous R2R-CE",
+      "asset_url": "https://modelscope.cn/models/admagic/ETPNav/files",
+      "asset_sha256": null
+    },
+    {
+      "name": "VLN-BEVBert",
+      "active_path": "vln/baselines/bevbert",
+      "url": "https://github.com/MarSaKi/VLN-BEVBert.git",
+      "commit": "ee40002e9eb75ca6d587e8746990e91b0463f5ca",
+      "license": "not-declared-in-upstream-repository",
+      "permission_basis": "direct-author-permission-reported-by-researcher",
+      "planned_setting": "continuous R2R-CE",
+      "asset_url": "https://drive.google.com/file/d/1jYg_dMlCDZoOtrkmmq40k-_-m6xerdUI/view",
+      "asset_sha256": null
+    },
+    {
+      "name": "StreamVLN",
+      "active_path": "vln/baselines/streamvln",
+      "url": "https://github.com/InternRobotics/StreamVLN.git",
+      "commit": "e48f6ff7e9201d93aae003e8f64b04c00cec13bc",
+      "license": "not-declared-in-upstream-repository",
+      "permission_basis": "direct-author-permission-reported-by-researcher",
+      "planned_setting": "continuous VLN; benchmark compatibility requires validation",
+      "asset_url": "https://huggingface.co/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+      "asset_sha256": null
+    }
+  ]
+}
