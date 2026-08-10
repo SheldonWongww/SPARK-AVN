@@ -13,6 +13,7 @@ from navtta_core.tta.tta_core import (
     EAMAdapter,
     FEEDTTAAdapter,
     FSTTAAdapter,
+    TentAdapter,
     _concordant_grad_and_trace,
     build_adapter,
     configure_tta_model,
@@ -171,6 +172,19 @@ class TTACoreTest(unittest.TestCase):
                 ]
                 self.assertEqual(names, expected_names)
                 self.assertEqual(trainable_names, expected_names)
+
+    def test_tent_nonpositive_clip_limit_disables_clipping(self):
+        policy = _TinyPolicy()
+        adapter = TentAdapter(
+            policy, lr=1e-2, scope="last_ln", max_grad_norm=0.0
+        )
+        before = [parameter.detach().clone() for parameter in adapter.params]
+        _, logits = _forward(policy, _inputs())
+        adapter.adapt(logits)
+        self.assertTrue(any(
+            not torch.equal(old, parameter)
+            for old, parameter in zip(before, adapter.params)
+        ))
 
     def test_fstta_concordant_gradient_is_finite_and_length_calibrated(self):
         grads = [torch.randn(32) for _ in range(4)]
@@ -622,6 +636,54 @@ class TTACoreTest(unittest.TestCase):
         )
         adapter.adapt(source_logits, action=torch.tensor([[0]]))
 
+    def test_eam_accepts_task_specific_forward_policy(self):
+        policy = _TinyPolicy()
+        calls = []
+
+        def forward_policy(model, inputs):
+            calls.append(model)
+            return _forward(model, inputs)
+
+        adapter = EAMAdapter(
+            policy,
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+            forward_policy=forward_policy,
+        )
+        inputs = _inputs()
+        adapter.before_inference(policy_inputs=inputs)
+        with torch.no_grad():
+            _, source_logits = _forward(policy, inputs)
+        adapter.prepare_action(source_logits, policy_inputs=inputs)
+        adapter.adapt(source_logits, action=torch.tensor([[0]]))
+        self.assertTrue(calls)
+
+    def test_eam_replay_supports_variable_action_dimensions(self):
+        policy = _TinyPolicy(actions=4)
+
+        def forward_policy(model, inputs):
+            features, logits = _forward(model, inputs)
+            return features, logits[:, :int(inputs["action_count"])]
+
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            memory_size=4,
+            confidence_scale=1.0,
+            trainable_prefixes=("net.norms", "action_distribution"),
+            forward_policy=forward_policy,
+        )
+        for action_count in (3, 4):
+            inputs = _inputs()
+            inputs["action_count"] = action_count
+            adapter.before_inference(policy_inputs=inputs)
+            with torch.no_grad():
+                _, logits = forward_policy(policy, inputs)
+            prepared = adapter.prepare_action(logits, policy_inputs=inputs)
+            self.assertEqual(prepared.shape[-1], action_count)
+            adapter.adapt(logits, action=torch.tensor([[0]]))
+        self.assertEqual(adapter.replayed_step_count, 3)
+
     def test_eam_rejects_high_entropy_source_sample(self):
         policy = _TinyPolicy()
         adapter = EAMAdapter(
@@ -861,7 +923,7 @@ class TTACoreTest(unittest.TestCase):
 
         sample.assert_called_once()
         cached_source = adapter._cached_current["source_batch"]
-        self.assertEqual(cached_source.shape[0], 2)
+        self.assertEqual(len(cached_source), 2)
         torch.testing.assert_close(cached_source[0], cached_source[1])
         self.assertEqual(adapter.current_replay_duplicates, 1)
         adapter.adapt(current_logits, action=torch.tensor([[1]]))
@@ -1197,6 +1259,33 @@ class TTACoreTest(unittest.TestCase):
             "exact_step_replay_in_eval_mode",
         )
 
+    def test_atena_accepts_lambda_one_and_task_forward_policy(self):
+        policy = _TinyPolicy()
+        calls = []
+
+        def forward_policy(model, inputs):
+            calls.append(model)
+            return _forward(model, inputs)
+
+        adapter = ATENAAdapter(
+            policy,
+            lr_query=1e-2,
+            mix_lambda=1.0,
+            query_threshold=0.0,
+            weight_decay=0.0,
+            max_grad_norm=0.0,
+            forward_policy=forward_policy,
+        )
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        action = adapter.select_action(policy.action_distribution(features))
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+        adapter.episode_end({"success": 1.0})
+        self.assertTrue(calls)
+
     def test_atena_self_prediction_loss_updates_policy_representation(self):
         policy = _TinyPolicy()
         adapter = ATENAAdapter(
@@ -1219,6 +1308,31 @@ class TTACoreTest(unittest.TestCase):
             not torch.equal(old, new)
             for old, new in zip(before, policy.net.parameters())
         ))
+
+    def test_atena_nonquery_episode_does_not_read_feedback(self):
+        policy = _TinyPolicy()
+        adapter = ATENAAdapter(
+            policy,
+            lr_query=1e-2,
+            lr_self=1e-3,
+            # Categorical entropy cannot reach this threshold, so the episode
+            # must remain self-labelled and require no success oracle.
+            query_threshold=100.0,
+            weight_decay=0.0,
+            max_grad_norm=0.0,
+        )
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        action = adapter.select_action(policy.action_distribution(features))
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+        adapter.episode_end(None)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["queries"], 0)
+        self.assertEqual(diagnostics["feedback_observed_episodes"], 0)
+        self.assertEqual(diagnostics["self_label_episodes"], 1)
 
     def test_atena_rejects_behaviorally_inert_episodic_mode(self):
         with self.assertRaisesRegex(ValueError, "EPISODIC=False"):

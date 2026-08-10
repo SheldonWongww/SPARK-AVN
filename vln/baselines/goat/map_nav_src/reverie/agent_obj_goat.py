@@ -538,6 +538,7 @@ class GMapObjectNavAgent(Seq2SeqAgent):
         else:
             obs = self.env._get_obs()
         self._update_scanvp_cands(obs)
+        self.tta_episode_start()
 
         batch_size = len(obs)
 
@@ -601,7 +602,9 @@ class GMapObjectNavAgent(Seq2SeqAgent):
 
         # Language input: txt_ids, txt_masks
         language_inputs = self._language_variable(obs,instr_zdict)
-        txt_embeds = self.vln_bert('language', language_inputs)
+        txt_embeds = self.tta_detach_state(
+            self.vln_bert('language', language_inputs)
+        )
     
         # Initialization the tracking state
         ended = np.array([False] * batch_size)
@@ -623,7 +626,9 @@ class GMapObjectNavAgent(Seq2SeqAgent):
             # graph representation
             pano_inputs = self._panorama_feature_variable_do(obs, img_zdict, noise=noise)
                 
-            pano_embeds, pano_masks, pano_fused_embeds = self.vln_bert('panorama', pano_inputs)
+            pano_embeds, pano_masks, pano_fused_embeds = self.tta_detach_state(
+                self.vln_bert('panorama', pano_inputs)
+            )
             if not self.args.adaptive_pano_fusion:
                 avg_pano_embeds = torch.sum(pano_embeds * pano_masks.unsqueeze(2), 1) / \
                                   torch.sum(pano_masks, 1, keepdim=True) 
@@ -658,9 +663,13 @@ class GMapObjectNavAgent(Seq2SeqAgent):
             nav_inputs['front_txt_feats'] = front_txt_feats
             nav_inputs['front_vp_feats'] = front_vp_feats
             nav_inputs['front_gmap_feats'] = front_gmap_feats
-            
+            tta_policy_inputs = self.tta_policy_inputs(
+                nav_inputs, family='graph', fusion=self.args.fusion
+            )
+            self.tta_before_inference(tta_policy_inputs)
+
             nav_outs = self.vln_bert('navigation', nav_inputs)
-            last_embeds = nav_outs['cls_embeds']
+            last_embeds = self.tta_detach_state(nav_outs['cls_embeds'])
 
             if self.args.fusion == 'local':
                 nav_logits = nav_outs['local_logits']
@@ -672,6 +681,9 @@ class GMapObjectNavAgent(Seq2SeqAgent):
                 nav_logits = nav_outs['fused_logits']
                 nav_vpids = nav_inputs['gmap_vpids']
 
+            nav_logits = self.tta_prepare_action(
+                nav_logits, tta_policy_inputs
+            )
             nav_probs = torch.softmax(nav_logits, 1)
             obj_logits = nav_outs['obj_logits']
             
@@ -707,7 +719,10 @@ class GMapObjectNavAgent(Seq2SeqAgent):
                 og_loss += self.criterion(obj_logits, obj_targets)
                                                    
             # Determinate the next navigation viewpoint
-            if self.feedback == 'teacher':
+            tta_action = self.tta_select_action(nav_logits)
+            if tta_action is not None:
+                a_t = tta_action
+            elif self.feedback == 'teacher':
                 a_t = nav_targets                 # teacher forcing
             elif self.feedback == 'argmax':
                 _, a_t = nav_logits.max(1)        # student forcing - argmax
@@ -731,6 +746,13 @@ class GMapObjectNavAgent(Seq2SeqAgent):
             else:
                 print(self.feedback)
                 sys.exit('Invalid feedback option')
+
+            self.tta_adapt_step(
+                nav_logits,
+                action=a_t,
+                features=self.tta_graph_features(nav_outs),
+                policy_inputs=tta_policy_inputs,
+            )
 
             # Determine stop actions
             if self.feedback == 'teacher' or self.feedback == 'sample': # in training
@@ -796,6 +818,7 @@ class GMapObjectNavAgent(Seq2SeqAgent):
                         new_paths.append([each_sub_node])
                 traj[i]['path'] = new_paths
 
+        self.tta_episode_end(observations=obs)
         return traj
     
     def get_per_traj_feats(self, idx):

@@ -33,6 +33,7 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
         else:
             self.vln_bert.eval()
             self.critic.eval()
+        self.activate_discrete_tta(feedback)
 
         if run_exact_agent_epoch(
             self,
@@ -182,6 +183,7 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
             obs = self.env.reset()
         else:
             obs = self.env._get_obs()
+        self.tta_episode_start()
 
         batch_size = len(obs)
 
@@ -194,7 +196,7 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
             'txt_ids': txt_ids,
             'txt_masks': txt_masks,
         }
-        txt_embeds = self.vln_bert(**language_inputs)
+        txt_embeds = self.tta_detach_state(self.vln_bert(**language_inputs))
         
         # Record starting point
         traj = [{
@@ -224,7 +226,9 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
         # for backtrack
         visited = [set() for _ in range(batch_size)]
 
-        hist_embeds = [self.vln_bert('history').expand(batch_size, -1)]  # global embedding
+        hist_embeds = [self.tta_detach_state(
+            self.vln_bert('history').expand(batch_size, -1)
+        )]  # global embedding
         hist_lens = [1 for _ in range(batch_size)]
 
         for t in range(self.args.max_action_len):
@@ -253,10 +257,17 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
                 'obj_poses': obj_poses,
                 'obj_angles': obj_angles,
                 'obj_masks': obj_masks,
-                'return_states': True if self.feedback == 'sample' else False,
+                'return_states': (
+                    self.feedback == 'sample'
+                    or getattr(self, 'tta_controller', None) is not None
+                ),
             }
             ob_img_max_len = ob_img_feats.size(1)
 
+            tta_policy_inputs = self.tta_policy_inputs(
+                visual_inputs, family='hamt_reverie'
+            )
+            self.tta_before_inference(tta_policy_inputs)
             t_outputs = self.vln_bert(**visual_inputs)
             act_logits = t_outputs['act_logits']
             obj_logits = t_outputs['obj_logits']
@@ -278,6 +289,11 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
                 bt_masks = bt_masks.cuda()
                 act_logits.masked_fill_(bt_masks, -float('inf'))
 
+            # Keep replay and online adaptation on the same masked action set.
+            act_logits = self.tta_prepare_action(
+                act_logits, tta_policy_inputs
+            )
+
             if train_ml is not None:
                 # Supervised training
                 target, ref_target = self._teacher_action(obs, ended, ob_img_max_len)
@@ -285,7 +301,10 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
                 ref_loss += self.criterion(obj_logits, ref_target)
             
             # Determine next model inputs
-            if self.feedback == 'teacher':
+            tta_action = self.tta_select_action(act_logits)
+            if tta_action is not None:
+                a_t = tta_action
+            elif self.feedback == 'teacher':
                 a_t = target                 # teacher forcing
             elif self.feedback == 'argmax':
                 _, a_t = act_logits.max(1)        # student forcing - argmax
@@ -302,6 +321,13 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
             else:
                 print(self.feedback)
                 sys.exit('Invalid feedback option')
+
+            self.tta_adapt_step(
+                act_logits,
+                action=a_t,
+                features=t_outputs.get('states'),
+                policy_inputs=tta_policy_inputs,
+            )
 
             # Prepare environment action
             cpu_a_t = a_t.cpu().numpy()
@@ -332,7 +358,9 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
                 'hist_pano_ang_feats': hist_pano_ang_feats,
                 'ob_step': t,
             }
-            t_hist_embeds = self.vln_bert(**t_hist_inputs)
+            t_hist_embeds = self.tta_detach_state(
+                self.vln_bert(**t_hist_inputs)
+            )
             hist_embeds.append(t_hist_embeds)
 
             for i, i_ended in enumerate(ended):
@@ -465,4 +493,5 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
         else:
             self.losses.append(self.loss.item() / self.args.max_action_len)  # This argument is useless.
 
+        self.tta_episode_end(observations=obs)
         return traj

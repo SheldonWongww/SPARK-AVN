@@ -1,6 +1,7 @@
 import os
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -13,6 +14,11 @@ from navtta_core.experiment import (
     normalize_strict_checkpoint_state_dict,
     run_exact_agent_epoch,
 )
+
+_VLN_ROOT = Path(__file__).resolve().parents[4]
+if str(_VLN_ROOT) not in sys.path:
+    sys.path.insert(0, str(_VLN_ROOT))
+from navtta_vln.discrete_tta import DiscreteTTAAgentMixin
 
 
 # Official GOAT final checkpoints retain CFP-feature extraction heads and
@@ -110,7 +116,7 @@ class BaseAgent(object):
                 if looped:
                     break
 
-class Seq2SeqAgent(BaseAgent):
+class Seq2SeqAgent(DiscreteTTAAgentMixin, BaseAgent):
     env_actions = {
       'left': (0, -1, 0), # left
       'right': (0, 1, 0), # right
@@ -182,7 +188,8 @@ class Seq2SeqAgent(BaseAgent):
         else:
             self.vln_bert.eval()
             self.critic.eval()
-            
+        self.activate_discrete_tta(feedback)
+
         super().test(iters=iters, z_dicts=z_dicts, z_front_dict=z_front_dict)
     
     def zero_grad(self):

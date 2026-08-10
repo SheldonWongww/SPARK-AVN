@@ -34,6 +34,10 @@ from vlnce_baselines.common.aux_losses import AuxLosses
 from vlnce_baselines.common.base_il_trainer import BaseVLNCETrainer
 from vlnce_baselines.common.env_utils import construct_envs, construct_envs_for_rl, is_slurm_batch_job
 from vlnce_baselines.common.utils import extract_instruction_tokens
+from vlnce_baselines.common.navtta import (
+    ContinuousVLNTTA,
+    validate_continuous_tta_run,
+)
 from vlnce_baselines.models.graph_utils import GraphMap, MAX_DIST
 from vlnce_baselines.utils import reduce_loss
 
@@ -89,6 +93,38 @@ class RLTrainer(BaseVLNCETrainer):
     def __init__(self, config=None):
         super().__init__(config)
         self.max_len = int(config.IL.max_traj_len) #  * 0.97 transfered gt path got 0.96 spl
+        self.tta_controller = None
+        self.tta_adapter = None
+
+    def _setup_continuous_tta(self, mode):
+        method = validate_continuous_tta_run(self.config, mode, self.envs)
+        if method in ("none", ""):
+            self.tta_controller = None
+            self.tta_adapter = None
+            return
+        split = (
+            self.config.EVAL.SPLIT
+            if mode == "eval" else self.config.INFERENCE.SPLIT
+        )
+        diagnostics_path = self.config.TTA.DIAGNOSTICS_FILE or os.path.join(
+            self.config.RESULTS_DIR,
+            "tta_diagnostics_{}.json".format(split),
+        )
+        self.tta_controller = ContinuousVLNTTA(
+            decision_model=self.policy.net.vln_bert,
+            tta_cfg=self.config.TTA,
+            variant="bevbert",
+            diagnostics_path=diagnostics_path,
+            stream_name=split,
+        )
+        self.tta_adapter = self.tta_controller.adapter
+        logger.info(
+            "[TTA] BEVBert method=%s action_unit=high_level_waypoint "
+            "selection=%s diagnostics=%s",
+            method,
+            self.tta_controller.action_selection,
+            diagnostics_path,
+        )
 
     def _make_dirs(self):
         if self.config.local_rank == 0:
@@ -795,6 +831,7 @@ class RLTrainer(BaseVLNCETrainer):
         )
         self.policy.eval()
         self.waypoint_predictor.eval()
+        self._setup_continuous_tta("eval")
 
         if self.config.EVAL.EPISODE_COUNT == -1:
             eps_to_eval = sum(self.envs.number_of_episodes)
@@ -955,6 +992,7 @@ class RLTrainer(BaseVLNCETrainer):
         )
         self.policy.eval()
         self.waypoint_predictor.eval()
+        self._setup_continuous_tta("infer")
 
         if self.config.INFERENCE.EPISODE_COUNT == -1:
             eps_to_infer = sum(self.envs.number_of_episodes)
@@ -1042,6 +1080,9 @@ class RLTrainer(BaseVLNCETrainer):
                     ep_id = curr_eps[i].episode_id
                     k = curr_eps[i].instruction.instruction_id
                     self.inst_ids[ep_id] = int(k)
+
+        if self.tta_controller is not None:
+            self.tta_controller.begin_episode()
 
         # encode instructions
         all_txt_ids = batch['instruction']
@@ -1131,8 +1172,14 @@ class RLTrainer(BaseVLNCETrainer):
             no_vp_left = nav_inputs.pop('no_vp_left')
 
             # feed into the model
-            nav_outs = self.policy.net(**nav_inputs)
-            nav_logits = nav_outs['fused_logits']
+            if self.tta_controller is None:
+                nav_outs = self.policy.net(**nav_inputs)
+                nav_logits = nav_outs['fused_logits']
+                tta_action = None
+            else:
+                nav_outs, nav_logits, tta_action = self.tta_controller.step(
+                    nav_inputs
+                )
             nav_probs = F.softmax(nav_logits, 1)
             for i, gmap in enumerate(self.gmaps):
                 gmap.node_stop_scores[cur_vp[i]] = nav_probs[i, 0].data.item()
@@ -1148,7 +1195,9 @@ class RLTrainer(BaseVLNCETrainer):
                 loss += F.cross_entropy(nav_logits, teacher_actions, reduction='sum', ignore_index=-100)
 
             # determine action
-            if feedback == 'sample':
+            if tta_action is not None:
+                a_t = tta_action
+            elif feedback == 'sample':
                 c = torch.distributions.Categorical(nav_probs)
                 a_t = c.sample().detach()
                 a_t = torch.where(torch.rand_like(a_t, dtype=torch.float)<=sample_ratio, teacher_actions, a_t)
@@ -1260,6 +1309,8 @@ class RLTrainer(BaseVLNCETrainer):
                     metric['sdtw'] = metric['ndtw'] * metric['success']
                     metric['ghost_cnt'] = self.gmaps[i].ghost_cnt
                     self.stat_eps[ep_id] = metric
+                    if self.tta_controller is not None:
+                        self.tta_controller.end_episode(metric)
                     self.pbar.update()
 
             # record path
@@ -1286,6 +1337,8 @@ class RLTrainer(BaseVLNCETrainer):
                             })
                     self.path_eps[ep_id] = self.path_eps[ep_id][:500]
                     self.path_eps[ep_id][-1]['stop'] = True
+                    if self.tta_controller is not None:
+                        self.tta_controller.end_episode()
                     self.pbar.update()
 
             # pause env

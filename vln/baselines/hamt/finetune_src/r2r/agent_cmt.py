@@ -6,6 +6,7 @@ import random
 import math
 import time
 from collections import defaultdict
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -24,8 +25,13 @@ from .eval_utils import cal_dtw
 
 from .agent_base import BaseAgent
 
+_VLN_ROOT = Path(__file__).resolve().parents[4]
+if str(_VLN_ROOT) not in sys.path:
+    sys.path.insert(0, str(_VLN_ROOT))
+from navtta_vln.discrete_tta import DiscreteTTAAgentMixin
 
-class Seq2SeqCMTAgent(BaseAgent):
+
+class Seq2SeqCMTAgent(DiscreteTTAAgentMixin, BaseAgent):
     ''' An agent based on an LSTM seq2seq model with attention. '''
 
     # For now, the agent can't pick which forward move to make - just the one in the middle
@@ -261,6 +267,7 @@ class Seq2SeqCMTAgent(BaseAgent):
             obs = self.env.reset()
         else:
             obs = self.env._get_obs(t=0)
+        self.tta_episode_start()
 
         batch_size = len(obs)
 
@@ -273,7 +280,7 @@ class Seq2SeqCMTAgent(BaseAgent):
             'txt_ids': txt_ids,
             'txt_masks': txt_masks,
         }
-        txt_embeds = self.vln_bert(**language_inputs)
+        txt_embeds = self.tta_detach_state(self.vln_bert(**language_inputs))
 
         # Record starting point
         traj = [{
@@ -303,7 +310,9 @@ class Seq2SeqCMTAgent(BaseAgent):
         # for backtrack
         visited = [set() for _ in range(batch_size)]
 
-        hist_embeds = [self.vln_bert('history').expand(batch_size, -1)]  # global embedding
+        hist_embeds = [self.tta_detach_state(
+            self.vln_bert('history').expand(batch_size, -1)
+        )]  # global embedding
         hist_lens = [1 for _ in range(batch_size)]
 
         for t in range(self.args.max_action_len):
@@ -325,9 +334,16 @@ class Seq2SeqCMTAgent(BaseAgent):
                 'ob_ang_feats': ob_ang_feats,
                 'ob_nav_types': ob_nav_types,
                 'ob_masks': ob_masks,
-                'return_states': True if self.feedback == 'sample' else False
+                'return_states': (
+                    self.feedback == 'sample'
+                    or getattr(self, 'tta_controller', None) is not None
+                )
             }
-                            
+            tta_policy_inputs = self.tta_policy_inputs(
+                visual_inputs, family='hamt_r2r'
+            )
+            self.tta_before_inference(tta_policy_inputs)
+
             t_outputs = self.vln_bert(**visual_inputs)
             logit = t_outputs[0]
             if self.feedback == 'sample':
@@ -350,8 +366,15 @@ class Seq2SeqCMTAgent(BaseAgent):
                 bt_masks = bt_masks.cuda()
                 logit.masked_fill_(bt_masks, -float('inf'))
 
+            # TTA must observe the exact executable action space, including
+            # HAMT's runner-level no-backtrack mask.
+            logit = self.tta_prepare_action(logit, tta_policy_inputs)
+
             # Determine next model inputs
-            if self.feedback == 'teacher':
+            tta_action = self.tta_select_action(logit)
+            if tta_action is not None:
+                a_t = tta_action
+            elif self.feedback == 'teacher':
                 a_t = target                 # teacher forcing
             elif self.feedback == 'argmax':
                 _, a_t = logit.max(1)        # student forcing - argmax
@@ -368,6 +391,17 @@ class Seq2SeqCMTAgent(BaseAgent):
             else:
                 print(self.feedback)
                 sys.exit('Invalid feedback option')
+
+            self.tta_adapt_step(
+                logit,
+                action=a_t,
+                features=(
+                    t_outputs[1]
+                    if getattr(self, 'tta_controller', None) is not None
+                    else None
+                ),
+                policy_inputs=tta_policy_inputs,
+            )
 
             # Prepare environment action
             cpu_a_t = a_t.cpu().numpy()
@@ -394,7 +428,9 @@ class Seq2SeqCMTAgent(BaseAgent):
                     'hist_pano_ang_feats': hist_pano_ang_feats,
                     'ob_step': t,
                 }
-                t_hist_embeds = self.vln_bert(**t_hist_inputs)
+                t_hist_embeds = self.tta_detach_state(
+                    self.vln_bert(**t_hist_inputs)
+                )
                 hist_embeds.append(t_hist_embeds)
 
                 for i, i_ended in enumerate(ended):
@@ -527,6 +563,7 @@ class Seq2SeqCMTAgent(BaseAgent):
         else:
             self.losses.append(self.loss.item() / self.args.max_action_len)  # This argument is useless.
 
+        self.tta_episode_end(observations=obs)
         return traj
 
     def test(self, use_dropout=False, feedback='argmax', allow_cheat=False, iters=None):
@@ -538,6 +575,7 @@ class Seq2SeqCMTAgent(BaseAgent):
         else:
             self.vln_bert.eval()
             self.critic.eval()
+        self.activate_discrete_tta(feedback)
         super().test(iters=iters)
 
     def zero_grad(self):

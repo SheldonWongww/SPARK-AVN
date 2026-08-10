@@ -253,6 +253,11 @@ def _tree_tensor_bytes(value):
 
 
 def _episode_success(episode_stats):
+    if callable(episode_stats):
+        # Active-feedback methods may defer oracle access until after deciding
+        # whether an episode is queried. The provider must return the same
+        # minimal stats mapping accepted by the eager path.
+        episode_stats = episode_stats()
     if episode_stats is None or "success" not in episode_stats:
         raise ValueError(
             "This TTA method requires episode_stats['success']; do not use "
@@ -425,7 +430,8 @@ class TentAdapter(_AdapterDiagnostics):
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.params, self.max_grad_norm
+                self.params,
+                self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
             )
             self.last_grad_norm = float(grad_norm.item())
             self.optimizer.step()
@@ -679,7 +685,8 @@ class FSTTAAdapter(_AdapterDiagnostics):
             self.optimizer.zero_grad(set_to_none=True)
             _copy_flat_to_grads(fast_grad, self.params)
             grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.params, self.max_grad_norm
+                self.params,
+                self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
             )
             self.last_grad_norm = float(grad_norm.item())
             self.optimizer.step()
@@ -893,6 +900,7 @@ class EAMAdapter(_AdapterDiagnostics):
         weight_decay=0.0,
         max_grad_norm=0.0,
         episodic=False,
+        forward_policy=None,
     ):
         if bool(episodic):
             raise ValueError(
@@ -906,6 +914,7 @@ class EAMAdapter(_AdapterDiagnostics):
                 "explicitly; got {!r}".format(self.param_scope)
             )
         self.trainable_prefixes = tuple(str(item) for item in trainable_prefixes)
+        self.forward_policy_callback = forward_policy
         self.memory_size = int(memory_size)
         self.batch_size = int(batch_size)
         self.update_interval = int(update_interval)
@@ -972,7 +981,7 @@ class EAMAdapter(_AdapterDiagnostics):
         return self.params[0].device
 
     @staticmethod
-    def _forward_policy(model, policy_inputs):
+    def _default_forward_policy(model, policy_inputs):
         features, _, _ = model.net(
             policy_inputs["observations"],
             policy_inputs["rnn_hidden_states"],
@@ -981,7 +990,24 @@ class EAMAdapter(_AdapterDiagnostics):
             policy_inputs.get("ext_memory"),
             policy_inputs.get("ext_memory_masks"),
         )
-        return model.action_distribution(features).logits
+        return features, model.action_distribution(features).logits
+
+    def _forward_policy(self, model, policy_inputs):
+        callback = self.forward_policy_callback
+        output = (
+            self._default_forward_policy(model, policy_inputs)
+            if callback is None
+            else callback(model, policy_inputs)
+        )
+        if isinstance(output, tuple) and len(output) == 2:
+            _, logits = output
+        else:
+            logits = output
+        if not torch.is_tensor(logits) or logits.ndim < 2:
+            raise ValueError(
+                "EAM forward_policy must return logits or (features, logits)"
+            )
+        return logits
 
     def _forward_aux(self, policy_inputs):
         return self._forward_policy(self.aux_model, policy_inputs)
@@ -1076,12 +1102,21 @@ class EAMAdapter(_AdapterDiagnostics):
         # The explicit current x is the last element of B = B_h union x.
         source_batch.append(source_current)
         aux_batch.append(aux_current)
-        source_batch = torch.cat(source_batch, dim=0)
-        aux_batch = torch.cat(aux_batch, dim=0)
-        combined_batch, use_aux = self._combine(source_batch, aux_batch)
-        current_rows = source_current.shape[0]
-        combined_current = combined_batch[-current_rows:]
-        current_use_aux = use_aux[-current_rows:]
+
+        # Candidate navigation sets are variable-length in VLN.  Keep B as a
+        # logical list and evaluate every row with its own action dimension;
+        # concatenating is only valid for fixed-action policies such as AVN.
+        combined_batch, use_aux_batch = [], []
+        for source_decision, auxiliary_decision in zip(
+            source_batch, aux_batch
+        ):
+            combined_decision, use_aux = self._combine(
+                source_decision, auxiliary_decision
+            )
+            combined_batch.append(combined_decision)
+            use_aux_batch.append(use_aux)
+        combined_current = combined_batch[-1]
+        current_use_aux = use_aux_batch[-1]
 
         self.aux_used_steps += int(current_use_aux.sum().item())
         threshold = self._threshold(source_current.shape[-1])
@@ -1100,7 +1135,7 @@ class EAMAdapter(_AdapterDiagnostics):
             "source_batch": source_batch,
             "aux_batch": aux_batch,
             "combined_batch": combined_batch,
-            "use_aux": use_aux,
+            "use_aux": use_aux_batch,
         }
         self._record_loss(softmax_entropy(combined_current).mean())
         return combined_current
@@ -1140,18 +1175,32 @@ class EAMAdapter(_AdapterDiagnostics):
         if can_update:
             source_batch = cached["source_batch"]
             aux_batch = cached["aux_batch"]
-            combined = cached["combined_batch"]
-            use_aux = cached["use_aux"]
-            threshold = self._threshold(source_batch.shape[-1])
-            reliable = softmax_entropy(source_batch) < threshold
+            combined_batch = cached["combined_batch"]
+            use_aux_batch = cached["use_aux"]
             self.update_attempt_count += 1
-            self.replayed_step_count += int(source_batch.shape[0])
-            self.replay_aux_used_steps += int(use_aux.sum().item())
-            if bool(reliable.any()):
-                pseudo = combined.detach().argmax(dim=-1)
-                loss = F.cross_entropy(
-                    aux_batch[reliable], pseudo[reliable]
-                )
+            self.replayed_step_count += sum(
+                int(decision.shape[0]) for decision in source_batch
+            )
+            self.replay_aux_used_steps += sum(
+                int(use_aux.sum().item()) for use_aux in use_aux_batch
+            )
+            reliable_losses = []
+            reliable_count = 0
+            for source_decision, auxiliary_decision, combined_decision in zip(
+                source_batch, aux_batch, combined_batch
+            ):
+                threshold = self._threshold(source_decision.shape[-1])
+                reliable = softmax_entropy(source_decision) < threshold
+                if not bool(reliable.any()):
+                    continue
+                pseudo = combined_decision.detach().argmax(dim=-1)
+                reliable_losses.append(F.cross_entropy(
+                    auxiliary_decision[reliable], pseudo[reliable],
+                    reduction="sum",
+                ))
+                reliable_count += int(reliable.sum().item())
+            if reliable_count:
+                loss = torch.stack(reliable_losses).sum() / float(reliable_count)
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -1163,7 +1212,7 @@ class EAMAdapter(_AdapterDiagnostics):
                 self.optimizer.zero_grad(set_to_none=True)
                 loss_value = float(loss.detach().item())
                 self.update_count += 1
-                self.accepted_samples += int(reliable.sum().item())
+                self.accepted_samples += reliable_count
                 self.train_loss_sum += loss_value
                 self.last_train_loss = loss_value
             else:
@@ -1577,6 +1626,7 @@ class ATENAAdapter(_AdapterDiagnostics):
         beta2=0.999,
         weight_decay=0.01,
         max_grad_norm=0.0,
+        forward_policy=None,
     ):
         numeric_values = {
             "LR_QUERY": float(lr_query),
@@ -1595,8 +1645,8 @@ class ATENAAdapter(_AdapterDiagnostics):
             )
         if float(lr_query) <= 0.0 or float(lr_self) <= 0.0:
             raise ValueError("ATENA learning rates must be positive")
-        if not 0.0 <= float(mix_lambda) < 1.0:
-            raise ValueError("ATENA mixture lambda must be in [0, 1)")
+        if not 0.0 <= float(mix_lambda) <= 1.0:
+            raise ValueError("ATENA mixture lambda must be in [0, 1]")
         if float(query_threshold) < 0.0:
             raise ValueError("ATENA query threshold must be nonnegative")
         if float(self_loss_weight) < 0.0:
@@ -1613,6 +1663,7 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.episodic = False
         self.max_grad_norm = float(max_grad_norm)
         self.param_scope = str(scope).lower()
+        self.forward_policy_callback = forward_policy
 
         if self.param_scope == "all":
             # Match the official implementation's optimizer over the complete
@@ -1658,12 +1709,10 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.episode_count = 0
         self.query_count = 0
         self.query_prediction_correct = 0
-        self.self_prediction_correct = 0
-        self.all_prediction_correct = 0
         self.self_label_count = 0
         self.self_feedback_successes = 0
         self.queried_feedback_successes = 0
-        self.actual_successes = 0
+        self.feedback_observed_count = 0
         self.episode_entropy_sum = 0.0
         self.query_entropy_sum = 0.0
         self.self_entropy_sum = 0.0
@@ -1713,7 +1762,7 @@ class ATENAAdapter(_AdapterDiagnostics):
         return self.params[0].device
 
     @staticmethod
-    def _forward_policy(model, policy_inputs):
+    def _default_forward_policy(model, policy_inputs):
         features, _, _ = model.net(
             policy_inputs["observations"],
             policy_inputs["rnn_hidden_states"],
@@ -1723,6 +1772,29 @@ class ATENAAdapter(_AdapterDiagnostics):
             policy_inputs.get("ext_memory_masks"),
         )
         logits = model.action_distribution(features).logits
+        return features, logits
+
+    def _forward_policy(self, model, policy_inputs):
+        callback = self.forward_policy_callback
+        output = (
+            self._default_forward_policy(model, policy_inputs)
+            if callback is None
+            else callback(model, policy_inputs)
+        )
+        if not isinstance(output, tuple) or len(output) != 2:
+            raise ValueError(
+                "ATENA forward_policy must return (features, logits)"
+            )
+        features, logits = output
+        if (
+            not torch.is_tensor(features)
+            or not torch.is_tensor(logits)
+            or features.ndim < 2
+            or logits.ndim < 2
+        ):
+            raise ValueError(
+                "ATENA forward_policy returned invalid features or logits"
+            )
         return features, logits
 
     def _mixture_entropy(self, logits, action):
@@ -1800,12 +1872,10 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.episode_count = 0
         self.query_count = 0
         self.query_prediction_correct = 0
-        self.self_prediction_correct = 0
-        self.all_prediction_correct = 0
         self.self_label_count = 0
         self.self_feedback_successes = 0
         self.queried_feedback_successes = 0
-        self.actual_successes = 0
+        self.feedback_observed_count = 0
         self.episode_entropy_sum = 0.0
         self.query_entropy_sum = 0.0
         self.self_entropy_sum = 0.0
@@ -1851,6 +1921,7 @@ class ATENAAdapter(_AdapterDiagnostics):
             actual_success = _episode_success(episode_stats)
             feedback_success = actual_success
             self.query_count += 1
+            self.feedback_observed_count += 1
             self.query_prediction_correct += int(predicted_success == actual_success)
             self.queried_feedback_successes += int(actual_success)
             self.query_entropy_sum += average_entropy
@@ -1861,19 +1932,6 @@ class ATENAAdapter(_AdapterDiagnostics):
             self.self_feedback_successes += int(feedback_success)
             self.self_entropy_sum += average_entropy
             policy_lr = self.lr_self
-
-        # The evaluator's held-out success metric is inspected only after the
-        # feedback source and optimization label are fixed.  It is used for
-        # offline accuracy reporting and never enters a non-query loss.
-        offline_actual_success = _episode_success(episode_stats)
-        self.actual_successes += int(offline_actual_success)
-        self.all_prediction_correct += int(
-            predicted_success == offline_actual_success
-        )
-        if not query:
-            self.self_prediction_correct += int(
-                predicted_success == offline_actual_success
-            )
 
         target = torch.tensor(
             float(feedback_success), device=prediction_logit.device
@@ -1979,16 +2037,13 @@ class ATENAAdapter(_AdapterDiagnostics):
             "query_prediction_accuracy": (
                 self.query_prediction_correct / max(1, self.query_count)
             ),
-            "self_prediction_accuracy": (
-                self.self_prediction_correct / max(1, self.self_label_count)
-            ),
-            "all_prediction_accuracy_offline": (
-                self.all_prediction_correct / max(1, self.episode_count)
-            ),
             "self_label_episodes": self.self_label_count,
             "self_feedback_successes": self.self_feedback_successes,
             "queried_feedback_successes": self.queried_feedback_successes,
-            "actual_successful_episodes": self.actual_successes,
+            "feedback_observed_episodes": self.feedback_observed_count,
+            "feedback_observation_rate": (
+                self.feedback_observed_count / max(1, self.episode_count)
+            ),
             "mean_episode_entropy": (
                 self.episode_entropy_sum / max(1, self.episode_count)
             ),
@@ -2043,8 +2098,14 @@ class ATENAAdapter(_AdapterDiagnostics):
         return output
 
 
-def build_adapter(model, tta_cfg):
-    """Build a sequential AVN test-time adapter from a config node."""
+def build_adapter(model, tta_cfg, forward_policy=None):
+    """Build a sequential test-time adapter from a config node.
+
+    ``forward_policy`` is an optional task adapter used by replay-based
+    methods.  It must return ``(features, logits)`` from a detached policy
+    input snapshot.  Omitting it preserves the Habitat actor-critic path used
+    by AVN.
+    """
     method = str(getattr(tta_cfg, "METHOD", "none")).lower()
     if method in ("none", "", "source"):
         return None
@@ -2147,6 +2208,7 @@ def build_adapter(model, tta_cfg):
             weight_decay=float(evalue("WEIGHT_DECAY", 0.0)),
             max_grad_norm=float(evalue("MAX_GRAD_NORM", 0.0)),
             episodic=common["episodic"],
+            forward_policy=forward_policy,
         )
     if method == "feedtta":
         feed_cfg = getattr(tta_cfg, "FEEDTTA", None)
@@ -2201,5 +2263,6 @@ def build_adapter(model, tta_cfg):
             beta2=float(avalue("BETA2", 0.999)),
             weight_decay=float(avalue("WEIGHT_DECAY", 0.01)),
             max_grad_norm=float(avalue("MAX_GRAD_NORM", 0.0)),
+            forward_policy=forward_policy,
         )
     raise ValueError("Unknown TTA method: {}".format(method))

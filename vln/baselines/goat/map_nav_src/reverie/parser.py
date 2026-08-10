@@ -1,5 +1,13 @@
 import argparse
 import os
+from pathlib import Path
+import sys
+
+
+_VLN_ROOT = Path(__file__).resolve().parents[4]
+if str(_VLN_ROOT) not in sys.path:
+    sys.path.insert(0, str(_VLN_ROOT))
+from navtta_vln.discrete_tta import add_discrete_tta_args
 
 
 def parse_args():
@@ -180,6 +188,7 @@ def parse_args():
     parser.add_argument("--use_lr_sch",action='store_true',default=False)
     parser.add_argument("--lr_sch",type=str,default='polynomial') # constant\constant_with_warmup\linear\polynomial\cosine\cosine_with_restarts
     
+    add_discrete_tta_args(parser)
     args, _ = parser.parse_known_args()
 
     args = postprocess_args(args)

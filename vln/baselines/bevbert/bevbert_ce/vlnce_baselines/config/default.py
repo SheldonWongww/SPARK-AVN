@@ -7,6 +7,7 @@ from habitat.config.default import Config as CN
 from habitat_extensions.config.default import (
     get_extended_config as get_task_config,
 )
+from vlnce_baselines.common.navtta import make_continuous_tta_config
 
 # -----------------------------------------------------------------------------
 # EXPERIMENT CONFIG
@@ -53,6 +54,22 @@ _C.INFERENCE.INFERENCE_NONLEARNING = False
 _C.INFERENCE.NONLEARNING = CN()
 _C.INFERENCE.NONLEARNING.AGENT = "RandomAgent"
 _C.INFERENCE.FORMAT = "rxr"  # either 'rxr' or 'r2r'
+
+# -----------------------------------------------------------------------------
+# HIGH-LEVEL NAVIGATION TEST-TIME ADAPTATION
+# -----------------------------------------------------------------------------
+# BEVBert adapts its graph/BEV fusion decision stack, never waypoint sensing or
+# Habitat's low-level controller.
+_C.TTA = make_continuous_tta_config(
+    CN,
+    (
+        "global_encoder",
+        "local_encoder",
+        "sap_fuse_linear",
+        "global_sap_head",
+        "local_sap_head",
+    ),
+)
 # -----------------------------------------------------------------------------
 # IMITATION LEARNING CONFIG
 # -----------------------------------------------------------------------------

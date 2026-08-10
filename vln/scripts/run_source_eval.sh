@@ -12,7 +12,9 @@ usage() {
     cat <<'EOF'
 Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--ce-data-version VERSION]
-                                      [--smoke-episodes N] [--dry-run]
+                                      [--smoke-episodes N]
+                                      [--tta-config FILE]
+                                      [--episode-limit N] [--dry-run]
 
 SETTING:
   duet-r2r duet-reverie hamt-r2r hamt-reverie goat-r2r goat-reverie
@@ -28,6 +30,10 @@ StreamVLN start states) or v1.2-native (paper/upstream reproduction).
 
 --smoke-episodes N is a non-formal GPU lifecycle check.  It is restricted to
 val_seen, uses the canonical prefix, and writes under vln/results/smoke/.
+
+--tta-config FILE enables a provenance-recorded TTA/control job described by
+one JSON file.  --episode-limit N is a non-formal development prefix used by
+the hyperparameter scheduler; complete finalist jobs omit it.
 EOF
 }
 
@@ -49,6 +55,8 @@ RUN_TAG_SET=0
 CE_DATA_VERSION="${NAVTTA_CE_DATA_VERSION:-v1.3-unified}"
 CE_DATA_VERSION_SET=0
 SMOKE_EPISODES=""
+TTA_CONFIG=""
+EPISODE_LIMIT=""
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         --dry-run)
@@ -77,6 +85,19 @@ while [[ "$#" -gt 0 ]]; do
             SMOKE_EPISODES="$2"
             shift 2
             ;;
+        --tta-config)
+            [[ "$#" -ge 2 ]] || die "--tta-config requires a value"
+            [[ -z "${TTA_CONFIG}" ]] || die "TTA config specified more than once"
+            TTA_CONFIG="$2"
+            shift 2
+            ;;
+        --episode-limit)
+            [[ "$#" -ge 2 ]] || die "--episode-limit requires a value"
+            [[ -z "${EPISODE_LIMIT}" ]] || die "episode limit specified more than once"
+            [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--episode-limit must be a positive integer"
+            EPISODE_LIMIT="$2"
+            shift 2
+            ;;
         ''|*[!0-9]*)
             die "unknown option or invalid GPU index: $1"
             ;;
@@ -91,6 +112,8 @@ done
 if [[ -z "${RUN_TAG}" ]]; then
     if [[ -n "${SMOKE_EPISODES}" ]]; then
         RUN_TAG="gpu-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+    elif [[ -n "${TTA_CONFIG}" ]]; then
+        RUN_TAG="tta-$(date -u +%Y%m%dT%H%M%SZ)"
     else
         RUN_TAG="source-$(date -u +%Y%m%dT%H%M%SZ)"
     fi
@@ -118,12 +141,36 @@ esac
 if [[ -n "${SMOKE_EPISODES}" && "${SPLIT}" != "val_seen" ]]; then
     die "--smoke-episodes is restricted to split val_seen"
 fi
+if [[ -n "${SMOKE_EPISODES}" && -n "${EPISODE_LIMIT}" ]]; then
+    die "--smoke-episodes and --episode-limit are mutually exclusive"
+fi
+if [[ -n "${EPISODE_LIMIT}" && -z "${TTA_CONFIG}" ]]; then
+    die "--episode-limit is reserved for TTA/control development jobs"
+fi
+if [[ -n "${EPISODE_LIMIT}" && "${SPLIT}" != "val_seen" ]]; then
+    die "prefix hyperparameter jobs are restricted to val_seen"
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 case "${REPO_ROOT}" in
     /root/autodl-tmp/*) ;;
     *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
 esac
+
+TTA_METHOD=source
+TTA_TRANSLATOR="${REPO_ROOT}/vln/scripts/tta_config_cli.py"
+if [[ -n "${TTA_CONFIG}" ]]; then
+    [[ "${TTA_CONFIG}" = /* ]] || TTA_CONFIG="${REPO_ROOT}/${TTA_CONFIG}"
+    [[ -f "${TTA_CONFIG}" ]] || die "missing TTA config: ${TTA_CONFIG}"
+    [[ -f "${TTA_TRANSLATOR}" ]] || die "missing TTA config translator"
+    if ! TTA_METHOD="$(
+        python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+            --config "${TTA_CONFIG}" --diagnostics /tmp/navtta-unused.json \
+            --print-method
+    )"; then
+        die "invalid TTA config: ${TTA_CONFIG}"
+    fi
+fi
 
 SOURCE_TAG_LOCK_FD=""
 SOURCE_TAG_LOCK_ROOT="/root/autodl-tmp/tmp/navtta-source-tag-locks"
@@ -157,7 +204,7 @@ claim_or_verify_source_tag_lock() {
     fi
 }
 
-if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" ]]; then
+if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && -z "${EPISODE_LIMIT}" ]]; then
     claim_or_verify_source_tag_lock
 fi
 
@@ -184,6 +231,8 @@ DATA_ROOT="${REPO_ROOT}/vln/data"
 CHECKPOINT_ROOT="${REPO_ROOT}/vln/checkpoints"
 if [[ -n "${SMOKE_EPISODES}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/smoke/${RUN_TAG}/${SETTING}/${SPLIT}"
+elif [[ -n "${TTA_CONFIG}" ]]; then
+    RESULT_ROOT="${REPO_ROOT}/vln/results/tuning/${RUN_TAG}/${SETTING}/${SPLIT}"
 else
     RESULT_ROOT="${REPO_ROOT}/vln/results/source/${RUN_TAG}/${SETTING}/${SPLIT}"
 fi
@@ -223,9 +272,14 @@ unset PYTHONPATH
 unset NAVTTA_SMOKE_EPISODES
 if [[ -n "${SMOKE_EPISODES}" ]]; then
     export NAVTTA_SMOKE_EPISODES="${SMOKE_EPISODES}"
+elif [[ -n "${EPISODE_LIMIT}" ]]; then
+    export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"
 fi
 
-FORMAL_EXECUTION_PATHS=(core tools vln/baselines vln/scripts vln/manifests)
+FORMAL_EXECUTION_PATHS=(
+    core tools vln/baselines vln/navtta_vln vln/scripts
+    vln/experiments vln/manifests
+)
 
 check_formal_git_state() {
     local expected_commit="$1"
@@ -270,7 +324,7 @@ check_formal_git_state() {
 }
 
 FORMAL_RUN=0
-if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" ]]; then
+if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && -z "${EPISODE_LIMIT}" ]]; then
     FORMAL_RUN=1
     if ! RUN_GIT_COMMIT="$(
         git -C "${REPO_ROOT}" rev-parse --verify HEAD 2>&1
@@ -376,7 +430,7 @@ finalize_formal_manifest() {
             "${PYTHON}" "${REPO_ROOT}/tools/validate_run_manifest.py" \
                 --manifest "${RUN_MANIFEST_PATH}" --task vln \
                 --benchmark "${RUN_BENCHMARK}" --run-tag "${RUN_TAG}" \
-                --model "${RUN_MODEL}" --method source \
+                --model "${RUN_MODEL}" --method "${TTA_METHOD}" \
                 --source-setting "${RUN_SOURCE_SETTING}" --seed 0 \
                 --git-commit "${RUN_GIT_COMMIT}" \
                 --checkpoint-sha256 "${RUN_PRIMARY_SHA256}" \
@@ -432,7 +486,7 @@ PY
     [[ -f "${RUN_PRIMARY_CHECKPOINT}" ]] || \
         die "missing primary checkpoint: ${RUN_PRIMARY_CHECKPOINT}"
     RUN_PRIMARY_SHA256="$(sha256sum "${RUN_PRIMARY_CHECKPOINT}" | awk '{print $1}')"
-    RUN_SOURCE_SETTING="${SETTING}:${SPLIT}:${RUN_DATA_VERSION}"
+    RUN_SOURCE_SETTING="${SETTING}:${SPLIT}:${RUN_DATA_VERSION}:${TTA_METHOD}"
     local run_id="${RUN_TAG}-${SETTING}-${SPLIT}-${RUN_DATA_VERSION}"
     local run_dir="${REPO_ROOT}/vln/results/runs/${run_id}"
     mkdir -p "${REPO_ROOT}/vln/results/runs"
@@ -452,7 +506,7 @@ PY
     "${PYTHON}" "${REPO_ROOT}/tools/create_run_manifest.py" \
         --output "${RUN_MANIFEST_PATH}" --run-id "${run_id}" \
         --task vln --benchmark "${RUN_BENCHMARK}" --model "${RUN_MODEL}" \
-        --method source --run-tag "${RUN_TAG}" \
+        --method "${TTA_METHOD}" --run-tag "${RUN_TAG}" \
         --source-setting "${RUN_SOURCE_SETTING}" --seed 0 \
         --config "${RUN_CONFIG_REF}" --checkpoint "${RUN_PRIMARY_CHECKPOINT}" \
         "${auxiliary_args[@]}" --dataset "${dataset_path}" \
@@ -469,13 +523,25 @@ PY
 run_in() {
     local workdir="$1"
     shift
+    local -a evaluated_command=("$@")
+    local -a tta_args=()
+    if [[ -n "${TTA_CONFIG}" ]]; then
+        mapfile -d '' -t tta_args < <(
+            python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+                --config "${TTA_CONFIG}" \
+                --diagnostics "${RESULT_ROOT}/tta_diagnostics.json" --nul
+        )
+        [[ "${#tta_args[@]}" -gt 0 ]] || die "TTA config produced no model arguments"
+        evaluated_command+=("${tta_args[@]}")
+        RUN_CONFIG_REF="${TTA_CONFIG}"
+    fi
     validate_run_identity_paths
     printf 'workdir: %s\ncommand:' "${workdir}"
-    printf ' %q' "$@"
+    printf ' %q' "${evaluated_command[@]}"
     printf '\n'
     if [[ "${DRY_RUN}" -eq 0 ]]; then
-        prepare_formal_manifest "$@"
-        (cd "${workdir}" && "$@")
+        prepare_formal_manifest "${evaluated_command[@]}"
+        (cd "${workdir}" && "${evaluated_command[@]}")
     fi
 }
 
@@ -765,6 +831,12 @@ case "${SETTING}" in
             WORKDIR="${REPO_ROOT}/vln/baselines/bevbert/bevbert_ce"
             CHECKPOINT="${CHECKPOINT_ROOT}/bevbert/ckpt.iter9600.pth"
         fi
+        CE_EPISODE_COUNT=-1
+        if [[ -n "${SMOKE_EPISODES}" ]]; then
+            CE_EPISODE_COUNT="${SMOKE_EPISODES}"
+        elif [[ -n "${EPISODE_LIMIT}" ]]; then
+            CE_EPISODE_COUNT="${EPISODE_LIMIT}"
+        fi
         COMMON=(
             SIMULATOR_GPU_IDS '[0]' TORCH_GPU_ID 0 TORCH_GPU_IDS '[0]'
             GPU_NUMBERS 1 NUM_ENVIRONMENTS 1
@@ -783,7 +855,7 @@ case "${SETTING}" in
                 --exp-config run_r2r/iter_train.yaml "${COMMON[@]}"
                 INFERENCE.SPLIT test INFERENCE.CKPT_PATH "${CHECKPOINT}"
                 INFERENCE.PREDICTIONS_FILE "${RESULT_ROOT}/predictions.json"
-                INFERENCE.EPISODE_COUNT -1
+                INFERENCE.EPISODE_COUNT "${CE_EPISODE_COUNT}"
                 INFERENCE.EPISODE_ORDER_MANIFEST "${CE_MANIFEST}"
             )
         else
@@ -791,7 +863,7 @@ case "${SETTING}" in
                 "${PYTHON}" run.py --exp_name "source_${SPLIT}" --run-type eval
                 --exp-config run_r2r/iter_train.yaml "${COMMON[@]}"
                 EVAL.SPLIT "${SPLIT}" EVAL.CKPT_PATH_DIR "${CHECKPOINT}"
-                EVAL.EPISODE_COUNT -1 EVAL.EPISODE_ORDER_MANIFEST "${CE_MANIFEST}"
+                EVAL.EPISODE_COUNT "${CE_EPISODE_COUNT}" EVAL.EPISODE_ORDER_MANIFEST "${CE_MANIFEST}"
             )
         fi
         if [[ "${SETTING}" == "etpnav-r2r-ce" ]]; then
