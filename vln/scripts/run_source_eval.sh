@@ -831,12 +831,11 @@ case "${SETTING}" in
             WORKDIR="${REPO_ROOT}/vln/baselines/bevbert/bevbert_ce"
             CHECKPOINT="${CHECKPOINT_ROOT}/bevbert/ckpt.iter9600.pth"
         fi
+        # Canonical CE loaders require EPISODE_COUNT to be -1 (or the full
+        # manifest count). Development prefixes are applied by
+        # NAVTTA_SMOKE_EPISODES after the manifest is validated, so passing the
+        # prefix here would be rejected before environment construction.
         CE_EPISODE_COUNT=-1
-        if [[ -n "${SMOKE_EPISODES}" ]]; then
-            CE_EPISODE_COUNT="${SMOKE_EPISODES}"
-        elif [[ -n "${EPISODE_LIMIT}" ]]; then
-            CE_EPISODE_COUNT="${EPISODE_LIMIT}"
-        fi
         COMMON=(
             SIMULATOR_GPU_IDS '[0]' TORCH_GPU_ID 0 TORCH_GPU_IDS '[0]'
             GPU_NUMBERS 1 NUM_ENVIRONMENTS 1

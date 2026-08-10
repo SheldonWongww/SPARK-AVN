@@ -158,6 +158,14 @@ class SourceRunnerGuardTest(unittest.TestCase):
                 self.assertIn("collect_infer_traj", called_attributes)
                 self.assertNotIn("collect_val_traj", called_attributes)
 
+    def test_ce_prefix_keeps_manifest_episode_count_canonical(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn("CE_EPISODE_COUNT=-1", source)
+        self.assertNotIn('CE_EPISODE_COUNT="${EPISODE_LIMIT}"', source)
+        self.assertNotIn('CE_EPISODE_COUNT="${SMOKE_EPISODES}"', source)
+        self.assertIn('export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"', source)
+
 
 if __name__ == "__main__":
     unittest.main()
