@@ -202,6 +202,8 @@ else
 fi
 STREAM_MANIFEST="${REPO_ROOT}/vln/manifests/episode_order/r2r_vlnce_v1_3"
 CLIP_CACHE="/root/autodl-tmp/cache/clip"
+DISCRETE_SUBMISSION_CANONICALIZER="${REPO_ROOT}/vln/scripts/canonicalize_discrete_submission.py"
+DISCRETE_SCANVP_CANDIDATES="${DATA_ROOT}/goat/R2R/annotations/scanvp_candview_relangles.json"
 
 export HOME="/root/autodl-tmp"
 export XDG_CACHE_HOME="/root/autodl-tmp/.cache"
@@ -513,6 +515,22 @@ validate_discrete_output() {
     fi
 }
 
+canonicalize_discrete_output() {
+    local task="$1"
+    local submission="$2"
+    local dataset="$3"
+    if [[ "${SPLIT}" == "test" && "${DRY_RUN}" -eq 0 ]]; then
+        [[ -f "${DISCRETE_SUBMISSION_CANONICALIZER}" ]] || \
+            die "missing discrete submission canonicalizer"
+        [[ -f "${DISCRETE_SCANVP_CANDIDATES}" ]] || \
+            die "missing discrete viewpoint candidate map"
+        "${PYTHON}" "${DISCRETE_SUBMISSION_CANONICALIZER}" \
+            --task "${task}" --submission "${submission}" \
+            --output "${submission}" --dataset "${dataset}" \
+            --scanvp-candidates "${DISCRETE_SCANVP_CANDIDATES}"
+    fi
+}
+
 case "${SETTING}" in
     duet-r2r)
         select_env duet
@@ -536,8 +554,12 @@ case "${SETTING}" in
         set_run_identity duet "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
             "${CHECKPOINT_ROOT}/duet/R2R/best_val_unseen" \
             "vln/scripts/run_source_eval.sh#duet-r2r" \
-            "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5"
+            "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
+            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
         run_in "${REPO_ROOT}/vln/baselines/duet/map_nav_src" "${COMMAND[@]}"
+        canonicalize_discrete_output r2r \
+            "${RESULT_ROOT}/preds/submit_test.json" \
+            "${DATA_ROOT}/duet/R2R/annotations/R2R_test_enc.json"
         validate_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \
             "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
@@ -570,8 +592,12 @@ case "${SETTING}" in
             "vln/scripts/run_source_eval.sh#duet-reverie" \
             "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
             "object_features=${DATA_ROOT}/duet/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5" \
-            "object_boxes=${DATA_ROOT}/duet/REVERIE/annotations/BBoxes.json"
+            "object_boxes=${DATA_ROOT}/duet/REVERIE/annotations/BBoxes.json" \
+            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
         run_in "${REPO_ROOT}/vln/baselines/duet/map_nav_src" "${COMMAND[@]}"
+        canonicalize_discrete_output reverie \
+            "${RESULT_ROOT}/preds/submit_test_dynamic.json" \
+            "${DATA_ROOT}/duet/REVERIE/annotations/REVERIE_test_enc.json"
         validate_discrete_output reverie \
             "${RESULT_ROOT}/preds/submit_test_dynamic.json" \
             "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt" \
@@ -694,7 +720,8 @@ case "${SETTING}" in
             "vln/scripts/run_source_eval.sh#${SETTING}" \
             "pano_features=${DATA_ROOT}/goat/R2R/features/CLIP-ViT-B-16-views.hdf5" \
             "backdoor=${BACKDOOR#../datasets/}" \
-            "frontdoor=${FRONTDOOR#../datasets/}"
+            "frontdoor=${FRONTDOOR#../datasets/}" \
+            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
         RUN_AUX_CHECKPOINTS[1]="backdoor=${DATA_ROOT}/goat/${RUN_AUX_CHECKPOINTS[1]#backdoor=}"
         RUN_AUX_CHECKPOINTS[2]="frontdoor=${DATA_ROOT}/goat/${RUN_AUX_CHECKPOINTS[2]#frontdoor=}"
         if [[ "${SETTING}" == "goat-reverie" ]]; then
@@ -705,11 +732,17 @@ case "${SETTING}" in
         fi
         run_in "${REPO_ROOT}/vln/baselines/goat/map_nav_src" "${COMMAND[@]}"
         if [[ "${SETTING}" == "goat-r2r" ]]; then
+            canonicalize_discrete_output r2r \
+                "${RESULT_ROOT}/test/${NAME}/preds/submit_test.json" \
+                "${DATA_ROOT}/goat/R2R/annotations/R2R_test_roberta_enc.json"
             validate_discrete_output r2r \
                 "${RESULT_ROOT}/test/${NAME}/preds/submit_test.json" \
                 "${MANIFEST}" r2r_discrete_goat \
                 "${DATA_ROOT}/goat/R2R/annotations/R2R_test_roberta_enc.json"
         else
+            canonicalize_discrete_output reverie \
+                "${RESULT_ROOT}/test/${NAME}/preds/submit_test_dynamic.json" \
+                "${DATA_ROOT}/goat/REVERIE/annotations/REVERIE_test_roberta_enc.json"
             validate_discrete_output reverie \
                 "${RESULT_ROOT}/test/${NAME}/preds/submit_test_dynamic.json" \
                 "${MANIFEST}" reverie_discrete_goat \

@@ -104,6 +104,12 @@ runtime host.  Supported settings are printed by invoking the script without
 arguments.  Validation splits produce local metrics.  `test` only produces
 leaderboard trajectory files; no local test metric is valid.  The R2R-CE files
 are checked by `vln/scripts/validate_r2r_ce_submission.py` before handoff.
+DUET and GOAT keep graph-path segments internally; their test artifacts are
+atomically normalized after inference to the official R2R/REVERIE
+`[viewpoint_id, heading_radians, elevation_radians]` schema before the strict
+validator runs.  This export-only conversion does not alter policy actions or
+validation metrics.  R2R-CE validation permits repeated positions for in-place
+turns and enforces the official 0.25m maximum forward displacement.
 
 All nine settings passed a two-episode canonical-prefix `val_seen` GPU
 lifecycle smoke on 2026-08-10.  Successful outputs use these isolated tags:
