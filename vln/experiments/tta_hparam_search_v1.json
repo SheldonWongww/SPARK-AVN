@@ -33,7 +33,12 @@
     "tta_step_unit": "high_level_navigation_decision",
     "source_and_zero_update_controls": true,
     "paper_anchor_always_promoted": true,
+    "screening_source_stage": "controls_256_episode_canonical_prefix",
+    "finalist_promotion_source": "last_screening_stage",
     "full_val_seen_finalists_per_setting": 5,
+    "full_val_seen_matched_source_controls": true,
+    "final_source_stage": "final_controls_full_canonical_val_seen",
+    "freeze_winner_before_order_robustness": true,
     "final_order_protocol": "freeze_on_full_canonical_order_then_evaluate_exactly_order_seeds_0_1_2",
     "order_seed_controls_episode_permutation_and_method_rng": true,
     "no_val_unseen_or_test_during_search": true
@@ -137,7 +142,7 @@
         "fixed": {"p": 0.05, "alpha": -0.2}
       },
       "stage2_sgr": {
-        "promote": 1,
+        "promote": 2,
         "grid": {
           "p": [0.01, 0.05, 0.1, 0.2, 0.3],
           "alpha": [-0.01, -0.025, -0.05, -0.075, -0.1, -0.2, -0.3]

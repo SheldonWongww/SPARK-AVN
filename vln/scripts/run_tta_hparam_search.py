@@ -47,6 +47,7 @@ INTERMEDIATE_STAGES = {
     "feedtta": ("stage2",),
     "atena": ("stage2", "stage3"),
 }
+STRICT_FULL_STAGES = {"final_controls", "final", "orders"}
 
 
 class UserError(RuntimeError):
@@ -97,6 +98,11 @@ def load_spec(path=SPEC_PATH):
         raise UserError("unsupported search specification schema")
     if spec.get("final_order_seeds") != [0, 1, 2]:
         raise UserError("the search specification must use order seeds [0, 1, 2]")
+    protocol = spec.get("protocol", {})
+    if not protocol.get("full_val_seen_matched_source_controls"):
+        raise UserError("the search requires full-val matched Source controls")
+    if not protocol.get("freeze_winner_before_order_robustness"):
+        raise UserError("the canonical full-val winner must be frozen before orders")
     return spec
 
 
@@ -293,7 +299,7 @@ def expand_stage(method, stage, setting, promoted, spec):
 
 def workflow_stages(method, include_orders=False):
     stages = ("smoke", "controls", "stage1") + INTERMEDIATE_STAGES[method] + (
-        "final",
+        "final_controls", "final",
     )
     return stages + (("orders",) if include_orders else ())
 
@@ -343,9 +349,23 @@ def stage_episode_count(stage, spec):
         return int(spec["smoke_episodes"])
     if stage in ("controls", "stage1", "stage2", "stage3"):
         return int(spec["screening_episodes"])
-    if stage in ("final", "orders"):
+    if stage in ("final_controls", "final", "orders"):
         return -1
     raise UserError("unknown stage {}".format(stage))
+
+
+def resolve_stage_episodes(stage, override, spec):
+    expected = stage_episode_count(stage, spec)
+    if override is None:
+        return expected
+    value = int(override)
+    if value != expected:
+        raise UserError(
+            "{} requires protocol episode count {}; got {}".format(
+                stage, expected, value
+            )
+        )
+    return value
 
 
 def _adapter_diagnostics(document):
@@ -538,6 +558,263 @@ def point_tag(point):
     return hashlib.sha256(_canonical(point).encode("utf-8")).hexdigest()[:10]
 
 
+def _source_candidates(method, settings, spec):
+    candidates = {}
+    for setting in settings:
+        parameters = {
+            "action_selection": "sample" if method == "feedtta" else "argmax",
+            "action_seed": int(spec["primary_order_seed"]),
+        }
+        candidates[setting] = [
+            _candidate(parameters, config_method="source")
+        ]
+    return candidates
+
+
+def _validate_stage_manifest(stage_dir, batch_id, method, settings, spec,
+                             expected_stage):
+    manifest_path = Path(stage_dir) / "stage_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError(
+            "invalid prerequisite stage manifest {}: {}".format(
+                manifest_path, error
+            )
+        )
+    expected_settings = list(settings)
+    checks = (
+        ("schema", "navtta.vln_tta_search_stage.v1"),
+        ("batch_id", batch_id),
+        ("git_commit", git("rev-parse", "HEAD")),
+        ("spec_sha256", sha256(SPEC_PATH)),
+        ("method", method),
+        ("stage", expected_stage),
+        ("episodes", stage_episode_count(expected_stage, spec)),
+        ("settings", expected_settings),
+    )
+    for key, expected in checks:
+        if manifest.get(key) != expected:
+            raise UserError(
+                "stage manifest {} mismatch for {}: expected {!r}, got {!r}".format(
+                    manifest_path, key, expected, manifest.get(key)
+                )
+            )
+    return manifest
+
+
+def _validate_jobs(jobs, batch_id, method, settings, stage, spec,
+                   expected_job_count=None):
+    expected_episodes = stage_episode_count(stage, spec)
+    expected_settings = set(settings)
+    if expected_job_count is not None and len(jobs) != int(expected_job_count):
+        raise UserError(
+            "stage job count mismatch: manifest={}, plan={}".format(
+                expected_job_count, len(jobs)
+            )
+        )
+    ordinals = [int(job.get("ordinal", -1)) for job in jobs]
+    if ordinals != list(range(len(jobs))):
+        raise UserError("stage job ordinals are not contiguous")
+    actual_settings = {job.get("setting") for job in jobs}
+    if actual_settings != expected_settings:
+        raise UserError(
+            "stage job setting set mismatch: expected {}, got {}".format(
+                sorted(expected_settings), sorted(actual_settings)
+            )
+        )
+    for job in jobs:
+        checks = (
+            ("batch_id", batch_id),
+            ("search_method", method),
+            ("stage", stage),
+            ("episodes", expected_episodes),
+        )
+        for key, expected in checks:
+            if job.get(key) != expected:
+                raise UserError(
+                    "job {} mismatch for {}: expected {!r}, got {!r}".format(
+                        job.get("run_tag", job.get("ordinal")), key,
+                        expected, job.get(key),
+                    )
+                )
+        if job.get("setting") not in expected_settings:
+            raise UserError("job plan contains an unrequested setting")
+        command = list(job.get("command", []))
+        limit_values = [
+            command[index + 1]
+            for index, value in enumerate(command[:-1])
+            if value == "--episode-limit"
+        ]
+        expected_limits = [] if expected_episodes < 0 else [str(expected_episodes)]
+        if limit_values != expected_limits:
+            raise UserError(
+                "job {} episode-limit command disagrees with protocol".format(
+                    job.get("run_tag", job.get("ordinal"))
+                )
+            )
+
+
+def _validate_persisted_stage(stage_dir, batch_id, method, settings, spec,
+                              expected_stage):
+    manifest = _validate_stage_manifest(
+        stage_dir, batch_id, method, settings, spec, expected_stage
+    )
+    jobs = load_jobs(stage_dir)
+    job_count = manifest.get("job_count")
+    if not isinstance(job_count, int) or job_count < 1:
+        raise UserError("stage manifest has invalid job_count")
+    _validate_jobs(
+        jobs, batch_id, method, settings, expected_stage, spec,
+        expected_job_count=job_count,
+    )
+    return manifest, jobs
+
+
+def _last_screening_stage(method):
+    return INTERMEDIATE_STAGES[method][-1] if INTERMEDIATE_STAGES[method] else "stage1"
+
+
+def _validate_stage_prerequisites(batch_root, batch_id, method, stage, settings,
+                                  spec):
+    batch_root = Path(batch_root)
+    required = []
+    if stage == "stage1":
+        required = ["controls"]
+    elif stage == "stage2":
+        required = ["controls", "stage1"]
+    elif stage == "stage3":
+        required = ["controls", "stage2"]
+    elif stage == "final_controls":
+        required = ["controls", _last_screening_stage(method)]
+    elif stage == "final":
+        required = [
+            "controls", _last_screening_stage(method), "final_controls",
+        ]
+    elif stage == "orders":
+        required = ["final_controls", "final"]
+    for prerequisite in required:
+        _validate_persisted_stage(
+            batch_root / "stages" / prerequisite,
+            batch_id,
+            method,
+            settings,
+            spec,
+            prerequisite,
+        )
+    if stage == "final_controls":
+        load_stage_results(
+            batch_root / "stages" / _last_screening_stage(method),
+            spec,
+            allow_partial=True,
+        )
+        load_stage_results(batch_root / "stages" / "controls", spec)
+    elif stage == "final":
+        # This stage is a strict execution barrier.  Candidate promotion below
+        # still reads the last screening stage, never final_controls.
+        load_stage_results(batch_root / "stages" / "final_controls", spec)
+    elif stage == "orders":
+        _load_frozen_selection(batch_root, method, settings, spec)
+
+
+def _validate_exact_setting_keys(document, settings, label):
+    requested = list(settings)
+    if len(set(requested)) != len(requested):
+        raise UserError("duplicate requested settings are not allowed")
+    values = document.get("settings")
+    if not isinstance(values, dict):
+        raise UserError("{} has no settings mapping".format(label))
+    actual = set(values)
+    expected = set(requested)
+    if len(values) != len(requested) or actual != expected:
+        raise UserError(
+            "{} setting set mismatch: expected {}, got {}".format(
+                label, sorted(expected), sorted(actual)
+            )
+        )
+
+
+def _write_immutable_documents(documents):
+    pending = []
+    for path, expected in documents:
+        path = Path(path)
+        if not path.is_file():
+            pending.append((path, expected))
+            continue
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise UserError("invalid immutable output {}: {}".format(path, error))
+        if _canonical(existing) != _canonical(expected):
+            raise UserError(
+                "immutable output differs from recomputed result: {}".format(path)
+            )
+    # Validate every existing document before creating any missing peer.  This
+    # keeps FINAL_SELECTION and FROZEN_HPARAMETERS atomic as a logical pair.
+    for path, expected in pending:
+        atomic_json(path, expected)
+
+
+def _load_frozen_selection(batch_root, method, settings, spec):
+    batch_root = Path(batch_root)
+    selection_path = batch_root / "FINAL_SELECTION.json"
+    frozen_path = batch_root / "FROZEN_HPARAMETERS.json"
+    try:
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        frozen = json.loads(frozen_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError(
+            "orders require completed canonical final selection: {}".format(error)
+        )
+    if selection.get("schema") != "navtta.vln_tta_final_selection.v1":
+        raise UserError("unsupported final-selection schema")
+    if frozen.get("schema") != "navtta.vln_tta_frozen_hparams.v1":
+        raise UserError("unsupported frozen-hyperparameter schema")
+    if selection.get("method") != method or frozen.get("method") != method:
+        raise UserError("frozen method does not match order evaluation")
+    current_commit = git("rev-parse", "HEAD")
+    current_spec = sha256(SPEC_PATH)
+    for label, document in (("FINAL_SELECTION", selection),
+                            ("FROZEN_HPARAMETERS", frozen)):
+        checks = (
+            ("git_commit", current_commit),
+            ("spec_sha256", current_spec),
+            ("split", spec["split"]),
+        )
+        for key, expected in checks:
+            if document.get(key) != expected:
+                raise UserError(
+                    "{} mismatch for {}: expected {!r}, got {!r}".format(
+                        label, key, expected, document.get(key)
+                    )
+                )
+        _validate_exact_setting_keys(document, settings, label)
+    output = {}
+    for setting in settings:
+        try:
+            selected = selection["settings"][setting]
+            parameters = frozen["settings"][setting]
+        except KeyError:
+            raise UserError("missing frozen selection for {}".format(setting))
+        if _canonical(selected.get("frozen_parameters")) != _canonical(parameters):
+            raise UserError("final selection and frozen parameters disagree for {}".format(
+                setting
+            ))
+        output[setting] = {
+            "winner_run_tag": selected["winner_run_tag"],
+            "parameters": parameters,
+        }
+    return output
+
+
+def _order_parameters(method, frozen, order_seed):
+    parameters = dict(frozen)
+    if method == "feedtta":
+        parameters["action_seed"] = int(order_seed)
+        parameters["sgr_seed"] = int(order_seed)
+    return parameters
+
+
 def _stage_candidates(method, stage, settings, spec, batch_root):
     promotion_records = []
     if stage == "smoke":
@@ -545,17 +822,8 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
             setting: [_candidate(anchor_for(method, setting, spec))]
             for setting in settings
         }, promotion_records
-    if stage == "controls":
-        candidates = {}
-        for setting in settings:
-            parameters = {
-                "action_selection": "sample" if method == "feedtta" else "argmax",
-                "action_seed": int(spec["primary_order_seed"]),
-            }
-            candidates[setting] = [
-                _candidate(parameters, config_method="source")
-            ]
-        return candidates, promotion_records
+    if stage in ("controls", "final_controls"):
+        return _source_candidates(method, settings, spec), promotion_records
     if stage == "stage1":
         return {
             setting: _ensure_anchor([
@@ -563,6 +831,21 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
             ], method, setting, spec)
             for setting in settings
         }, promotion_records
+
+    if stage == "orders":
+        frozen = _load_frozen_selection(batch_root, method, settings, spec)
+        candidates = {}
+        for setting in settings:
+            winner = frozen[setting]
+            candidates[setting] = [
+                _candidate(
+                    _order_parameters(method, winner["parameters"], order_seed),
+                    (winner["winner_run_tag"],),
+                    order_seed=order_seed,
+                )
+                for order_seed in spec["final_order_seeds"]
+            ]
+        return candidates, promotion_records
 
     previous = previous_search_stage(method, stage)
     prior = load_stage_results(
@@ -579,7 +862,7 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
         selected, record = rank_and_promote(
             prior_by_setting[setting], source_by_setting.get(setting), method,
             setting, promotion_limit(method, stage, spec), spec,
-            force_anchor=(stage != "orders"),
+            force_anchor=True,
         )
         promotion_records.append(record)
         selected_by_setting[setting] = selected
@@ -597,21 +880,6 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
                 for item in selected_by_setting[setting]
             ] for setting in settings
         }, promotion_records
-    if stage == "orders":
-        candidates = {}
-        for setting in settings:
-            winner = selected_by_setting[setting][0]
-            items = []
-            for order_seed in spec["final_order_seeds"]:
-                parameters = dict(winner["parameters"])
-                if method == "feedtta":
-                    parameters["action_seed"] = int(order_seed)
-                    parameters["sgr_seed"] = int(order_seed)
-                items.append(_candidate(
-                    parameters, (winner["run_tag"],), order_seed=order_seed
-                ))
-            candidates[setting] = items
-        return candidates, promotion_records
     raise UserError("unknown stage {}".format(stage))
 
 
@@ -638,8 +906,9 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
             }
         else:
             raise UserError("candidates are required for stage {}".format(stage))
-    episodes = getattr(args, "episodes", None)
-    episodes = stage_episode_count(stage, spec) if episodes is None else int(episodes)
+    episodes = resolve_stage_episodes(
+        stage, getattr(args, "episodes", None), spec
+    )
     gpu = str(getattr(args, "gpu", 0))
 
     jobs = []
@@ -680,6 +949,7 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
             if order_seed is not None:
                 command += ["--order-seed", str(order_seed)]
             job = {
+                "batch_id": args.batch_id,
                 "ordinal": ordinal,
                 "base_run_tag": base_run_tag,
                 "run_tag": base_run_tag,
@@ -894,13 +1164,28 @@ def load_stage_results(stage_dir, spec, allow_partial=False):
     return results
 
 
-def screening_promotion_preview(batch_root, stage, method, settings, results,
-                                spec):
+def screening_promotion_preview(batch_root, batch_id, stage, method, settings,
+                                results, spec):
+    _validate_persisted_stage(
+        Path(batch_root) / "stages" / "controls",
+        batch_id,
+        method, settings, spec, "controls",
+    )
+    _validate_persisted_stage(
+        Path(batch_root) / "stages" / stage,
+        batch_id,
+        method, settings, spec, stage,
+    )
     stages = workflow_stages(method)
     try:
         next_stage = stages[stages.index(stage) + 1]
     except (ValueError, IndexError):
         raise UserError("{} is not a screening stage for {}".format(stage, method))
+    # The full-val matched Source stage is an execution barrier, not a search
+    # promotion.  Finalists still come directly from the last 256-episode
+    # screening stage and are ranked against the screening Source control.
+    if next_stage == "final_controls":
+        next_stage = "final"
     controls = load_stage_results(
         Path(batch_root) / "stages" / "controls", spec
     )
@@ -1255,7 +1540,7 @@ def run_batch(args, stage_dir, jobs, spec):
         raise UserError("stage completed with failed, invalid, or pending jobs")
     if screening_stage:
         screening_promotion_preview(
-            Path(stage_dir).parent.parent, stage, args.method,
+            Path(stage_dir).parent.parent, args.batch_id, stage, args.method,
             args.settings or spec["settings"], results, spec,
         )
     elif terminal_failure or errors:
@@ -1293,24 +1578,32 @@ def _stage_manifest(args, stage, jobs, spec):
 def ensure_stage_plan(args, spec, batch_root, stage):
     stage_dir = Path(batch_root) / "stages" / stage
     manifest_path = stage_dir / "stage_manifest.json"
+    settings = list(args.settings or spec["settings"])
+    resolve_stage_episodes(stage, getattr(args, "episodes", None), spec)
     if manifest_path.is_file():
         if not args.resume:
             raise UserError("stage exists; use --resume: {}".format(stage_dir))
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("spec_sha256") != sha256(SPEC_PATH):
-            raise UserError("refusing to resume after search specification changed")
-        if manifest.get("git_commit") != git("rev-parse", "HEAD"):
-            raise UserError("refusing to resume a stage under a different Git commit")
-        if manifest.get("method") != args.method or manifest.get("stage") != stage:
-            raise UserError("persisted stage identity mismatch")
-        return stage_dir, load_jobs(stage_dir)
+        _, jobs = _validate_persisted_stage(
+            stage_dir, args.batch_id, args.method, settings, spec, stage
+        )
+        _validate_stage_prerequisites(
+            batch_root, args.batch_id, args.method, stage, settings, spec
+        )
+        return stage_dir, jobs
     if stage_dir.exists() and any(stage_dir.iterdir()):
         raise UserError("stage directory is nonempty without a manifest")
+    _validate_stage_prerequisites(
+        batch_root, args.batch_id, args.method, stage, settings, spec
+    )
     stage_dir.mkdir(parents=True, exist_ok=True)
     candidates, promotion = _stage_candidates(
-        args.method, stage, args.settings or spec["settings"], spec, batch_root
+        args.method, stage, settings, spec, batch_root
     )
     jobs = build_jobs(args, spec, stage_dir, stage, candidates)
+    _validate_jobs(
+        jobs, args.batch_id, args.method, settings, stage, spec,
+        expected_job_count=len(jobs),
+    )
     write_plan(stage_dir, jobs)
     if promotion:
         atomic_json(stage_dir / "promotion.json", {
@@ -1323,11 +1616,100 @@ def ensure_stage_plan(args, spec, batch_root, stage):
     return stage_dir, jobs
 
 
-def summarize_orders(batch_root, method, settings, spec):
+def summarize_final(batch_root, batch_id, method, settings, spec):
+    batch_root = Path(batch_root)
+    _validate_persisted_stage(
+        batch_root / "stages" / "final_controls",
+        batch_id,
+        method, settings, spec, "final_controls",
+    )
+    _validate_persisted_stage(
+        batch_root / "stages" / "final",
+        batch_id,
+        method, settings, spec, "final",
+    )
+    finalists = load_stage_results(batch_root / "stages" / "final", spec)
+    controls = load_stage_results(
+        batch_root / "stages" / "final_controls", spec
+    )
+    expected_finalists = int(
+        spec["protocol"]["full_val_seen_finalists_per_setting"]
+    )
+    output = {
+        "schema": "navtta.vln_tta_final_selection.v1",
+        "method": method,
+        "split": spec["split"],
+        "finalist_stage": "final",
+        "matched_source_stage": "final_controls",
+        "git_commit": git("rev-parse", "HEAD"),
+        "spec_sha256": sha256(SPEC_PATH),
+        "settings": {},
+    }
+    for setting in settings:
+        setting_finalists = [
+            item for item in finalists if item["setting"] == setting
+        ]
+        setting_controls = [
+            item for item in controls if item["setting"] == setting
+        ]
+        if len(setting_finalists) != expected_finalists:
+            raise UserError(
+                "{} has {} full-val finalists; expected {}".format(
+                    setting, len(setting_finalists), expected_finalists
+                )
+            )
+        if len(setting_controls) != 1:
+            raise UserError(
+                "{} has {} full-val Source controls; expected 1".format(
+                    setting, len(setting_controls)
+                )
+            )
+        selected, record = rank_and_promote(
+            setting_finalists, setting_controls[0], method, setting, 1, spec,
+            force_anchor=False,
+        )
+        winner = selected[0]
+        output["settings"][setting] = {
+            "winner_run_tag": winner["run_tag"],
+            "source_run_tag": setting_controls[0]["run_tag"],
+            "frozen_parameters": winner["parameters"],
+            "winner_metrics": winner["metrics"],
+            "source_metrics": setting_controls[0]["metrics"],
+            "selection": record,
+        }
+    frozen_output = {
+        "schema": "navtta.vln_tta_frozen_hparams.v1",
+        "method": method,
+        "split": spec["split"],
+        "generated_from": "FINAL_SELECTION.json",
+        "git_commit": output["git_commit"],
+        "spec_sha256": output["spec_sha256"],
+        "settings": {
+            setting: output["settings"][setting]["frozen_parameters"]
+            for setting in settings
+        },
+    }
+    _write_immutable_documents((
+        (batch_root / "FINAL_SELECTION.json", output),
+        (batch_root / "FROZEN_HPARAMETERS.json", frozen_output),
+    ))
+    return output
+
+
+def summarize_orders(batch_root, batch_id, method, settings, spec):
+    _validate_persisted_stage(
+        Path(batch_root) / "stages" / "orders",
+        batch_id,
+        method, settings, spec, "orders",
+    )
+    frozen = _load_frozen_selection(batch_root, method, settings, spec)
     results = load_stage_results(Path(batch_root) / "stages" / "orders", spec)
     output = {
         "schema": "navtta.vln_tta_order_robustness.v1",
         "method": method,
+        "split": spec["split"],
+        "git_commit": git("rev-parse", "HEAD"),
+        "spec_sha256": sha256(SPEC_PATH),
         "required_order_seeds": spec["final_order_seeds"],
         "settings": {},
     }
@@ -1339,11 +1721,21 @@ def summarize_orders(batch_root, method, settings, spec):
             raise UserError("{} does not have exactly order seeds {}".format(
                 setting, spec["final_order_seeds"]
             ))
+        for item in values:
+            expected = _order_parameters(
+                method, frozen[setting]["parameters"], item["order_seed"]
+            )
+            if _canonical(item["parameters"]) != _canonical(expected):
+                raise UserError(
+                    "order run changed frozen parameters for {} seed {}".format(
+                        setting, item["order_seed"]
+                    )
+                )
         metrics = sorted(set.intersection(*(
             set(item["metrics"]) for item in values
         )))
         output["settings"][setting] = {
-            "frozen_parameters": values[0]["parameters"],
+            "frozen_parameters": frozen[setting]["parameters"],
             "runs": [{
                 "run_tag": item["run_tag"], "order_seed": item["order_seed"],
                 "metrics": item["metrics"],
@@ -1357,15 +1749,9 @@ def summarize_orders(batch_root, method, settings, spec):
                 } for metric in metrics
             },
         }
-    atomic_json(Path(batch_root) / "ORDER_ROBUSTNESS.json", output)
-    atomic_json(Path(batch_root) / "FROZEN_HPARAMETERS.json", {
-        "schema": "navtta.vln_tta_frozen_hparams.v1",
-        "method": method,
-        "settings": {
-            setting: output["settings"][setting]["frozen_parameters"]
-            for setting in settings
-        },
-    })
+    _write_immutable_documents((
+        (Path(batch_root) / "ORDER_ROBUSTNESS.json", output),
+    ))
     return output
 
 
@@ -1404,8 +1790,14 @@ def execute_method(args, spec):
                 )
             continue
         run_batch(args, stage_dir, jobs, spec)
+        if stage == "final":
+            summarize_final(
+                batch_root, args.batch_id, args.method, settings, spec
+            )
     if stages[-1] == "orders" and not args.dry_run:
-        summarize_orders(batch_root, args.method, settings, spec)
+        summarize_orders(
+            batch_root, args.batch_id, args.method, settings, spec
+        )
 
 
 def campaign_status(method, batch_id, watch=False):
@@ -1448,8 +1840,8 @@ def parse_args(argv=None):
     parser.add_argument("--settings", nargs="+")
     parser.add_argument(
         "--stage", choices=(
-            "smoke", "controls", "stage1", "stage2", "stage3", "final",
-            "orders", "all",
+            "smoke", "controls", "stage1", "stage2", "stage3",
+            "final_controls", "final", "orders", "all",
         ), default="all",
     )
     parser.add_argument("--episodes", type=int)
@@ -1493,6 +1885,13 @@ def parse_args(argv=None):
         parser.error("invalid batch id")
     if args.episodes is not None and (args.episodes == 0 or args.episodes < -1):
         parser.error("episodes must be -1 or positive")
+    if (args.stage in STRICT_FULL_STAGES and args.episodes is not None
+            and args.episodes != -1):
+        parser.error(
+            "{} is a strict full-val stage and requires --episodes -1".format(
+                args.stage
+            )
+        )
     if min(args.max_workers, args.max_per_model, args.max_discrete_workers,
            args.max_continuous_workers) < 1:
         parser.error("worker limits must be positive")

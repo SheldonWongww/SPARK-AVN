@@ -112,8 +112,8 @@ FSTTA 发布代码的 REVERIE 锚点为 `lr_fast=6e-4`、`lr_slow=1e-3`、`M=3`�
 
 1. 每个“模型 × 方法 × benchmark”先运行 2-episode lifecycle smoke，再运行固定 `val_seen` prefix 的数值稳定性检查。
 2. 论文默认配置始终保留为主候选；最多增加两个学习率邻点（`0.5×`、`2×`）。只有论文明确存在第二个关键参数时，再增加不超过三个值。
-3. 在 `val_seen` 上完成候选筛选后冻结配置；`val_unseen` 和 test 不再调参。这样 val-unseen 仍可作为 matched generalization 结果，而 test 完全避免泄漏。
-4. 选中配置在完整 canonical stream 上运行。主表使用 seed 0 固定顺序；计算允许时，对最终配置增加 3 个 order seed 的 robustness 附表。FSTTA 的 5-shuffle、ATENA 的 3-seed 论文协议单独标注，不与 canonical 主表合并。
+3. 256-episode canonical prefix 只用于分阶段筛选，并始终与相同前缀的 matched Source 比较。最后五个候选和独立的 `final_controls` Source 均在完整 `val_seen` canonical stream 上运行；winner 必须按这一全量 matched Source 约束选择并立即冻结。
+4. `FROZEN_HPARAMETERS.json` 在固定顺序的完整 `val_seen` 决赛结束后生成，不依赖多顺序实验。主表使用 seed 0 固定顺序；计算允许时，后续 order seeds `0/1/2` 只能消费已经冻结的配置并形成 robustness 附表，不能重新定义 winner。FSTTA 的 5-shuffle、ATENA 的 3-seed 论文协议单独标注，不与 canonical 主表合并。
 5. StreamVLN 只运行论文默认点和至多一个保守学习率邻点；prefix 建议不超过 64 episodes。除非默认点发生发散，不进行二维以上搜索。
 6. 每个 split 从 Source checkpoint 重新开始，保存参数更新范围、可训练参数数、优化器状态策略、每 episode 更新次数、查询反馈比例、峰值显存和墙钟时间。
 7. 无监督表与二值反馈表分开排名；若需要一张总表，ATENA/FeedTTA 必须带 `†` 并在表头说明监督预算。
