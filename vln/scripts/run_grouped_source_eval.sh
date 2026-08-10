@@ -15,6 +15,7 @@ Options:
   --run-tag TAG               Shared formal run tag (default: grouped-source-UTC)
   --split SPLIT               val_seen, val_unseen, test, or all (default: all)
   --ce-data-version VERSION   v1.3-unified or v1.2-native (default: v1.3-unified)
+  --only-group INDEX          Run only resource group 1, 2, or 3
   --skip-preflight            Skip lightweight asset and offline import checks
   --dry-run                   Print/validate child commands without evaluation
   -h, --help                  Show this help
@@ -41,6 +42,7 @@ SPLIT=all
 CE_DATA_VERSION=v1.3-unified
 SKIP_PREFLIGHT=0
 DRY_RUN=0
+ONLY_GROUP=""
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -62,6 +64,11 @@ while [[ "$#" -gt 0 ]]; do
         --ce-data-version)
             require_option_value "$@"
             CE_DATA_VERSION="$2"
+            shift 2
+            ;;
+        --only-group)
+            require_option_value "$@"
+            ONLY_GROUP="$2"
             shift 2
             ;;
         --skip-preflight)
@@ -90,6 +97,10 @@ esac
 case "${CE_DATA_VERSION}" in
     v1.3-unified|v1.2-native) ;;
     *) die "invalid CE data version: ${CE_DATA_VERSION}" ;;
+esac
+case "${ONLY_GROUP}" in
+    ''|1|2|3) ;;
+    *) die "invalid resource group: ${ONLY_GROUP}" ;;
 esac
 if [[ -z "${RUN_TAG}" ]]; then
     RUN_TAG="grouped-source-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -179,6 +190,7 @@ printf '  run tag:          %s\n' "${RUN_TAG}"
 printf '  split:            %s\n' "${SPLIT}"
 printf '  GPU:              %s\n' "${GPU}"
 printf '  CE data version:  %s\n' "${CE_DATA_VERSION}"
+printf '  resource groups:  %s\n' "${ONLY_GROUP:-1,2,3}"
 printf '  launcher logs:    %s\n' "${LOG_ROOT}"
 
 if [[ "${SKIP_PREFLIGHT}" -eq 0 ]]; then
@@ -410,34 +422,40 @@ wait_group() {
     printf '[group passed] %s\n' "${label}"
 }
 
-printf '\n[group 1/3] DUET, HAMT, GOAT\n'
-(run_worker duet-r2r duet-reverie) &
-duet_pid=$!
-ACTIVE_WORKER_PIDS+=("${duet_pid}")
-(run_worker hamt-r2r hamt-reverie) &
-hamt_pid=$!
-ACTIVE_WORKER_PIDS+=("${hamt_pid}")
-(run_worker goat-r2r goat-reverie) &
-goat_pid=$!
-ACTIVE_WORKER_PIDS+=("${goat_pid}")
-wait_group "group 1 (DUET/HAMT/GOAT)" \
-    "${duet_pid}" "${hamt_pid}" "${goat_pid}"
+if [[ -z "${ONLY_GROUP}" || "${ONLY_GROUP}" == 1 ]]; then
+    printf '\n[group 1/3] DUET, HAMT, GOAT\n'
+    (run_worker duet-r2r duet-reverie) &
+    duet_pid=$!
+    ACTIVE_WORKER_PIDS+=("${duet_pid}")
+    (run_worker hamt-r2r hamt-reverie) &
+    hamt_pid=$!
+    ACTIVE_WORKER_PIDS+=("${hamt_pid}")
+    (run_worker goat-r2r goat-reverie) &
+    goat_pid=$!
+    ACTIVE_WORKER_PIDS+=("${goat_pid}")
+    wait_group "group 1 (DUET/HAMT/GOAT)" \
+        "${duet_pid}" "${hamt_pid}" "${goat_pid}"
+fi
 
-printf '\n[group 2/3] ETPNav, BEVBert\n'
-(run_worker etpnav-r2r-ce) &
-etpnav_pid=$!
-ACTIVE_WORKER_PIDS+=("${etpnav_pid}")
-(run_worker bevbert-r2r-ce) &
-bevbert_pid=$!
-ACTIVE_WORKER_PIDS+=("${bevbert_pid}")
-wait_group "group 2 (ETPNav/BEVBert)" \
-    "${etpnav_pid}" "${bevbert_pid}"
+if [[ -z "${ONLY_GROUP}" || "${ONLY_GROUP}" == 2 ]]; then
+    printf '\n[group 2/3] ETPNav, BEVBert\n'
+    (run_worker etpnav-r2r-ce) &
+    etpnav_pid=$!
+    ACTIVE_WORKER_PIDS+=("${etpnav_pid}")
+    (run_worker bevbert-r2r-ce) &
+    bevbert_pid=$!
+    ACTIVE_WORKER_PIDS+=("${bevbert_pid}")
+    wait_group "group 2 (ETPNav/BEVBert)" \
+        "${etpnav_pid}" "${bevbert_pid}"
+fi
 
-printf '\n[group 3/3] StreamVLN\n'
-run_setting streamvln-r2r-ce
-printf '[group passed] group 3 (StreamVLN)\n'
+if [[ -z "${ONLY_GROUP}" || "${ONLY_GROUP}" == 3 ]]; then
+    printf '\n[group 3/3] StreamVLN\n'
+    run_setting streamvln-r2r-ce
+    printf '[group passed] group 3 (StreamVLN)\n'
+fi
 
-printf '\nAll grouped Source evaluations passed.\n'
+printf '\nSelected grouped Source evaluations passed.\n'
 printf 'Run tag: %s\n' "${RUN_TAG}"
 printf 'Results: %s\n' "${REPO_ROOT}/vln/results/source/${RUN_TAG}"
 printf 'Launcher logs: %s\n' "${LOG_ROOT}"

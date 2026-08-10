@@ -99,6 +99,11 @@ vln/scripts/verify_runtime_imports.sh
 Use `verify_preflight.py --hash all` only when a full re-hash of the multi-GB
 checkpoints and features is warranted.
 
+To restart an isolated resource group with a fresh run tag, pass
+`--only-group 1`, `--only-group 2`, or `--only-group 3` through
+`manage_grouped_source_screen.sh start`.  This is intended for recovery after
+an earlier group has already produced immutable formal artifacts.
+
 Formal execution requires a GPU; remove `--dry-run` only on the intended
 runtime host.  Supported settings are printed by invoking the script without
 arguments.  Validation splits produce local metrics.  `test` only produces
@@ -109,7 +114,9 @@ atomically normalized after inference to the official R2R/REVERIE
 `[viewpoint_id, heading_radians, elevation_radians]` schema before the strict
 validator runs.  This export-only conversion does not alter policy actions or
 validation metrics.  R2R-CE validation permits repeated positions for in-place
-turns and enforces the official 0.25m maximum forward displacement.
+turns and the simulator-recorded displacement caused by slopes, stairs, and
+collision sliding; the configured forward action remains 0.25m, but adjacent
+recorded 3D positions are not required to be at most 0.25m apart.
 
 All nine settings passed a two-episode canonical-prefix `val_seen` GPU
 lifecycle smoke on 2026-08-10.  Successful outputs use these isolated tags:

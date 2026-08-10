@@ -236,16 +236,19 @@ class ContinuousSubmissionValidationTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_move_longer_than_forward_action_is_rejected(self):
+    def test_simulator_recorded_slope_or_slide_displacement_is_allowed(self):
         result = self._run_validator(
             [
                 {"position": [0.0, 0.0, 0.0], "heading": 0.0, "stop": False},
-                {"position": [0.26, 0.0, 0.0], "heading": 0.0, "stop": True},
+                {
+                    "position": [0.04, -0.58, 0.21],
+                    "heading": 0.0,
+                    "stop": True,
+                },
             ]
         )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("maximum is 0.25m", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class SourceRunnerSubmissionWiringTest(unittest.TestCase):

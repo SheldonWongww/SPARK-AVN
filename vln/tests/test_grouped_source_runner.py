@@ -23,7 +23,13 @@ class GroupedSourceRunnerTest(unittest.TestCase):
         self.assertIn("StreamVLN", completed.stdout)
 
     def test_options_do_not_consume_the_next_option_as_a_value(self):
-        for option in ("--gpu", "--run-tag", "--split", "--ce-data-version"):
+        for option in (
+            "--gpu",
+            "--run-tag",
+            "--split",
+            "--ce-data-version",
+            "--only-group",
+        ):
             with self.subTest(option=option):
                 completed = subprocess.run(
                     ["bash", str(RUNNER), option, "--dry-run"],
@@ -34,6 +40,26 @@ class GroupedSourceRunnerTest(unittest.TestCase):
                 )
                 self.assertNotEqual(completed.returncode, 0)
                 self.assertIn("requires a value", completed.stderr)
+
+    def test_only_group_is_validated_and_documented(self):
+        help_result = subprocess.run(
+            ["bash", str(RUNNER), "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        self.assertIn("--only-group INDEX", help_result.stdout)
+
+        invalid = subprocess.run(
+            ["bash", str(RUNNER), "--only-group", "4", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn("invalid resource group", invalid.stderr)
 
     def test_all_settings_are_scheduled_in_requested_workers(self):
         source = RUNNER.read_text(encoding="utf-8")

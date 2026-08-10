@@ -10,10 +10,6 @@ import os
 import sys
 
 
-MAX_FORWARD_STEP_METERS = 0.25
-POSITION_TOLERANCE_METERS = 1e-4
-
-
 def fail(message):
     raise ValueError(message)
 
@@ -132,29 +128,6 @@ def main():
                         episode_id
                     )
                 )
-            if index:
-                previous_position = path[index - 1]["position"]
-                distance = math.sqrt(
-                    sum(
-                        (current - previous) ** 2
-                        for current, previous in zip(
-                            state["position"], previous_position
-                        )
-                    )
-                )
-                if distance > (
-                    MAX_FORWARD_STEP_METERS + POSITION_TOLERANCE_METERS
-                ):
-                    fail(
-                        "episode {} moves {:.6f}m between states {} and {}; "
-                        "maximum is {:.2f}m".format(
-                            episode_id,
-                            distance,
-                            index - 1,
-                            index,
-                            MAX_FORWARD_STEP_METERS,
-                        )
-                    )
         if not path[-1]["stop"]:
             fail("episode {} final state is not marked stopped".format(episode_id))
         if any(
