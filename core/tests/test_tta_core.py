@@ -15,6 +15,7 @@ from navtta_core.tta.tta_core import (
     FSTTAAdapter,
     TentAdapter,
     _concordant_grad_and_trace,
+    _small_row_svd,
     build_adapter,
     configure_tta_model,
 )
@@ -141,6 +142,24 @@ def _optimizer_step_value(state):
 
 
 class TTACoreTest(unittest.TestCase):
+    def test_fstta_small_row_svd_uses_float32_cpu_lapack(self):
+        matrix = torch.randn(4, 12, dtype=torch.float64)
+        singular_values, vh = _small_row_svd(matrix)
+
+        self.assertEqual(singular_values.device, matrix.device)
+        self.assertEqual(vh.device, matrix.device)
+        self.assertEqual(singular_values.dtype, matrix.dtype)
+        self.assertEqual(vh.dtype, matrix.dtype)
+        reconstructed_gram = vh.t() @ torch.diag(
+            singular_values.square()
+        ) @ vh
+        torch.testing.assert_close(
+            reconstructed_gram,
+            matrix.t() @ matrix,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+
     def setUp(self):
         random.seed(7)
         torch.manual_seed(7)

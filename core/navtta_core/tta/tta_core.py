@@ -276,6 +276,23 @@ def _set_flat_grad(flat, params, max_grad_norm):
     return float(grad_norm.item())
 
 
+def _small_row_svd(matrix):
+    """Compute the FSTTA low-rank SVD on CPU and return it to ``matrix``.
+
+    FSTTA decomposes an ``M x D`` matrix with a very small ``M``.  CUDA 11.1
+    builds used by the pinned VLN-CE environment can fail while creating a
+    cuSOLVER handle even for this tiny decomposition.  Moving the detached
+    matrix to CPU is cheap for the selected LayerNorm parameters, avoids that
+    runtime-specific failure, and gives every baseline the same LAPACK path.
+    """
+    work = matrix.detach().to(device="cpu", dtype=torch.float32)
+    _, singular_values, vh = torch.linalg.svd(work, full_matrices=False)
+    return (
+        singular_values.to(device=matrix.device, dtype=matrix.dtype),
+        vh.to(device=matrix.device, dtype=matrix.dtype),
+    )
+
+
 def _concordant_grad_and_trace(grad_list, eigen_eps=1e-6):
     """Low-rank GDA with the length calibration from FSTTA Eq. (5)."""
     gradients = torch.stack(grad_list, dim=0)
@@ -285,7 +302,7 @@ def _concordant_grad_and_trace(grad_list, eigen_eps=1e-6):
 
     centered = gradients - mean_grad.unsqueeze(0)
     # centered is M x D and M is small, so this avoids a D x D covariance.
-    _, singular_values, vh = torch.linalg.svd(centered, full_matrices=False)
+    singular_values, vh = _small_row_svd(centered)
     eigenvalues = singular_values.square() / float(len(grad_list) - 1)
     sigma = eigenvalues.sum()
     if eigenvalues.numel() == 0:
@@ -715,7 +732,7 @@ class FSTTAAdapter(_AdapterDiagnostics):
         states = [anchor.clone()] + self.slow_trajectory
         matrix = torch.stack(states, dim=0)
         centered = matrix - matrix.mean(dim=0, keepdim=True)
-        _, singular_values, vh = torch.linalg.svd(centered, full_matrices=False)
+        singular_values, vh = _small_row_svd(centered)
         eigenvalues = singular_values.square() / float(max(1, self.N))
         if eigenvalues.numel() == 0 or eigenvalues.norm() <= 1e-12:
             logging.warning("[FSTTA] slow update skipped: degenerate trajectory")
