@@ -66,6 +66,29 @@ also reject any tag already present in source results or run manifests.
 Grouped and standalone formal launchers share an atomic per-tag lock, so they
 cannot write the same result tag concurrently.
 
+For long evaluations, run the grouped scheduler inside one detached GNU screen
+session.  The lifecycle manager keeps the resource-group barriers inside the
+existing scheduler and provides persistent control logs, validated PID status,
+safe termination, and screen reconnection:
+
+```bash
+TAG="grouped-source-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/manage_grouped_source_screen.sh start "$TAG" --gpu 0
+vln/scripts/manage_grouped_source_screen.sh status "$TAG"
+vln/scripts/manage_grouped_source_screen.sh logs "$TAG" --follow
+vln/scripts/manage_grouped_source_screen.sh attach "$TAG"
+# Detach again with Ctrl-a d.
+vln/scripts/manage_grouped_source_screen.sh stop "$TAG"
+```
+
+Use `attach "$TAG" --multi` to join without detaching another screen client.
+Stopping sends `TERM` to the validated grouped-runner PID and lets its existing
+process-group cleanup finish; do not terminate the screen session directly.
+Control logs live under `vln/results/logs/grouped_source_screen/TAG/`, while
+per-setting logs retain their paths printed by the grouped runner.  Screen
+reconnection is not result resumption: a failed or interrupted formal attempt
+still requires a new run tag.
+
 Before a run, repeat the lightweight asset and CPU/offline checks:
 
 ```bash
