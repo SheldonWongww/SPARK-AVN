@@ -44,6 +44,10 @@ from .utils import (
 from vlnce_baselines.common.utils import dis_to_con, gather_list_and_concat
 from habitat_extensions.measures import NDTW, StepsTaken
 from fastdtw import fastdtw
+from navtta_core.experiment import (
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
@@ -226,12 +230,25 @@ class RLTrainer(BaseVLNCETrainer):
             if 'module' in list(ckpt_dict['state_dict'].keys())[0] and self.config.GPU_NUMBERS == 1:
                 self.policy.net = torch.nn.DataParallel(self.policy.net.to(self.device),
                     device_ids=[self.device], output_device=self.device)
-                self.policy.load_state_dict(ckpt_dict["state_dict"], strict=False)
+                incompatible = self.policy.load_state_dict(
+                    ckpt_dict["state_dict"], strict=False
+                )
                 self.policy.net = self.policy.net.module
                 self.waypoint_predictor = torch.nn.DataParallel(self.waypoint_predictor.to(self.device),
                     device_ids=[self.device], output_device=self.device)
             else:
-                self.policy.load_state_dict(ckpt_dict["state_dict"], strict=False)
+                incompatible = self.policy.load_state_dict(
+                    ckpt_dict["state_dict"], strict=False
+                )
+            logger.info(
+                "Checkpoint incompatible keys: missing=%s unexpected=%s",
+                incompatible.missing_keys,
+                incompatible.unexpected_keys,
+            )
+            if incompatible.missing_keys or incompatible.unexpected_keys:
+                raise RuntimeError(
+                    "ETPNav checkpoint/model key mismatch; refusing evaluation"
+                )
             if config.IL.is_requeue:
                 self.optimizer.load_state_dict(ckpt_dict["optim_state"])
             logger.info(f"Loaded weights from checkpoint: {ckpt_path}, iteration: {start_iter}")
@@ -569,7 +586,7 @@ class RLTrainer(BaseVLNCETrainer):
             episodes_allowed=self.traj[::5] if self.config.EVAL.fast_eval else self.traj,
             auto_reset_done=False, # unseen: 11006 
         )
-        dataset_length = sum(self.envs.number_of_episodes)
+        dataset_length = self._assert_navtta_episode_count(self.envs)
         print('local rank:', self.local_rank, '|', 'dataset length:', dataset_length)
 
         obs_transforms = get_active_obs_transforms(self.config)
@@ -594,6 +611,7 @@ class RLTrainer(BaseVLNCETrainer):
 
         while len(self.stat_eps) < eps_to_eval:
             self.rollout('eval')
+        self._assert_navtta_completed_order(self.stat_eps, "evaluation")
         self.envs.close()
 
         if self.world_size > 1:
@@ -644,6 +662,26 @@ class RLTrainer(BaseVLNCETrainer):
     def inference(self):
         checkpoint_path = self.config.INFERENCE.CKPT_PATH
         logger.info(f"checkpoint_path: {checkpoint_path}")
+        episode_order = None
+        if self.config.INFERENCE.EPISODE_ORDER_MANIFEST:
+            if self.config.GPU_NUMBERS != 1 or self.config.NUM_ENVIRONMENTS != 1:
+                raise ValueError(
+                    "Canonical online inference requires GPU_NUMBERS=1 and NUM_ENVIRONMENTS=1"
+                )
+            manifest_path = resolve_episode_order_manifest_path(
+                self.config.INFERENCE.EPISODE_ORDER_MANIFEST,
+                self.config.INFERENCE.SPLIT,
+            )
+            episode_order = load_episode_order_manifest(
+                manifest_path, expected_split=self.config.INFERENCE.SPLIT
+            )
+            if self.config.INFERENCE.EPISODE_COUNT not in (
+                -1,
+                episode_order["episode_count"],
+            ):
+                raise ValueError(
+                    "INFERENCE.EPISODE_COUNT must be -1 or match the episode-order manifest"
+                )
         self.config.defrost()
         self.config.IL.ckpt_to_load = checkpoint_path
         self.config.TASK_CONFIG.DATASET.SPLIT = self.config.INFERENCE.SPLIT
@@ -651,6 +689,9 @@ class RLTrainer(BaseVLNCETrainer):
         self.config.TASK_CONFIG.DATASET.LANGUAGES = self.config.INFERENCE.LANGUAGES
         self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE = False
         self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = -1
+        if episode_order is not None:
+            self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.GROUP_BY_SCENE = False
+            self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.CYCLE = False
         self.config.TASK_CONFIG.TASK.MEASUREMENTS = ['POSITION_INFER']
         self.config.TASK_CONFIG.TASK.SENSORS = [s for s in self.config.TASK_CONFIG.TASK.SENSORS if "INSTRUCTION" in s]
         self.config.SIMULATOR_GPU_IDS = [self.config.SIMULATOR_GPU_IDS[self.config.local_rank]]
@@ -689,6 +730,16 @@ class RLTrainer(BaseVLNCETrainer):
             self.config.TORCH_GPU_ID = self.config.TORCH_GPU_IDS[self.local_rank]
             self.config.freeze()
         self.traj = self.collect_infer_traj()
+        if episode_order is not None:
+            expected_ids = [
+                record["episode_id"] for record in episode_order["episodes"]
+            ]
+            if set(map(str, self.traj)) != set(expected_ids):
+                raise ValueError(
+                    "Inference episode IDs do not match the episode-order manifest"
+                )
+            self.traj = expected_ids
+            self._navtta_episode_order = episode_order
 
         self.envs = construct_envs(
             self.config, 
@@ -696,6 +747,7 @@ class RLTrainer(BaseVLNCETrainer):
             episodes_allowed=self.traj,
             auto_reset_done=False,
         )
+        self._assert_navtta_episode_count(self.envs)
 
         obs_transforms = get_active_obs_transforms(self.config)
         observation_space = apply_obs_transforms_obs_space(
@@ -720,6 +772,7 @@ class RLTrainer(BaseVLNCETrainer):
 
         while len(self.path_eps) < eps_to_infer:
             self.rollout('infer')
+        self._assert_navtta_completed_order(self.path_eps, "inference")
         self.envs.close()
 
         if self.world_size > 1:
@@ -777,6 +830,7 @@ class RLTrainer(BaseVLNCETrainer):
                                                   max_length=instr_max_len, pad_id=instr_pad_id)
         batch = batch_obs(observations, self.device)
         batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+        self._assert_navtta_episode_order(mode, self.envs.current_episodes())
         
         if mode == 'eval':
             env_to_pause = [i for i, ep in enumerate(self.envs.current_episodes()) 

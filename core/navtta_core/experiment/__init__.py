@@ -1,5 +1,45 @@
 """Task-agnostic experiment stream utilities."""
 
+from .checkpoint_keys import (
+    normalize_strict_checkpoint_state_dict,
+    validate_strict_checkpoint_loading_info,
+)
+from .episode_order import (
+    CANONICAL_SPLIT_ORDER,
+    build_episode_order_manifest,
+    canonical_episode_records,
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    iter_exact_batches,
+    load_episode_order_manifest,
+    prefix_episode_order_manifest,
+    reorder_episodes,
+    resolve_episode_order_manifest_path,
+    run_exact_agent_epoch,
+    select_allowed_episodes_in_order,
+    sha256_file,
+    validate_episode_order_manifest,
+    verify_manifest_dataset,
+)
 from .episode_stream import build_tta_episode_stream
 
-__all__ = ["build_tta_episode_stream"]
+__all__ = [
+    "CANONICAL_SPLIT_ORDER",
+    "build_episode_order_manifest",
+    "build_tta_episode_stream",
+    "canonical_episode_records",
+    "canonicalize_eval_splits",
+    "configure_exact_episode_env",
+    "iter_exact_batches",
+    "load_episode_order_manifest",
+    "normalize_strict_checkpoint_state_dict",
+    "prefix_episode_order_manifest",
+    "reorder_episodes",
+    "resolve_episode_order_manifest_path",
+    "run_exact_agent_epoch",
+    "select_allowed_episodes_in_order",
+    "sha256_file",
+    "validate_episode_order_manifest",
+    "verify_manifest_dataset",
+    "validate_strict_checkpoint_loading_info",
+]

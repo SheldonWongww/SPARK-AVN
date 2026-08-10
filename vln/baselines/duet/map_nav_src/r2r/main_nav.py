@@ -19,6 +19,12 @@ from r2r.parser import parse_args
 
 from models.vlnbert_init import get_tokenizer
 from r2r.agent import GMapNavAgent
+from navtta_core.experiment import (
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 
 def build_dataset(args, rank=0, is_test=False):
@@ -27,44 +33,69 @@ def build_dataset(args, rank=0, is_test=False):
     feat_db = ImageFeaturesDB(args.img_ft_file, args.image_feat_size)
 
     dataset_class = R2RNavBatch
+    train_env = None
+    aug_env = None
 
     # because we don't use distributed sampler here
     # in order to make different processes deal with different training examples
     # we need to shuffle the data with different seed in each processes
-    if args.aug is not None:
-        aug_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, [args.aug], 
+    if not is_test:
+        if args.aug is not None:
+            aug_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, [args.aug],
+                tokenizer=args.tokenizer, max_instr_len=args.max_instr_len,
+                is_test=is_test
+            )
+            aug_env = dataset_class(
+                feat_db, aug_instr_data, args.connectivity_dir,
+                batch_size=args.batch_size, angle_feat_size=args.angle_feat_size,
+                seed=args.seed+rank, sel_data_idxs=None, name='aug',
+            )
+
+        train_instr_data = construct_instrs(
+            args.anno_dir, args.dataset, ['train'],
             tokenizer=args.tokenizer, max_instr_len=args.max_instr_len,
             is_test=is_test
         )
-        aug_env = dataset_class(
-            feat_db, aug_instr_data, args.connectivity_dir, 
-            batch_size=args.batch_size, angle_feat_size=args.angle_feat_size, 
-            seed=args.seed+rank, sel_data_idxs=None, name='aug', 
+        train_env = dataset_class(
+            feat_db, train_instr_data, args.connectivity_dir,
+            batch_size=args.batch_size,
+            angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
+            sel_data_idxs=None, name='train',
         )
+
+    if is_test:
+        if args.eval_splits is None:
+            val_env_names = ['val_seen', 'val_unseen']
+            if args.submit and args.dataset != 'r4r':
+                val_env_names.append('test')
+        else:
+            val_env_names = list(args.eval_splits)
+
+        disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
+        if disallowed_splits:
+            raise ValueError(
+                'Training splits are not allowed in evaluation-only mode: '
+                + ', '.join(sorted(disallowed_splits))
+            )
     else:
-        aug_env = None
+        # val_env_names = ['val_train_seen']
+        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        if args.dataset == 'r4r' and (not args.test):
+            val_env_names[-1] == 'val_unseen_sampled'
 
-    train_instr_data = construct_instrs(
-        args.anno_dir, args.dataset, ['train'], 
-        tokenizer=args.tokenizer, max_instr_len=args.max_instr_len,
-        is_test=is_test
-    )
-    train_env = dataset_class(
-        feat_db, train_instr_data, args.connectivity_dir,
-        batch_size=args.batch_size, 
-        angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-        sel_data_idxs=None, name='train', 
-    )
-
-    # val_env_names = ['val_train_seen']
-    val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
-    if args.dataset == 'r4r' and (not args.test):
-        val_env_names[-1] == 'val_unseen_sampled'
-    
-    if args.submit and args.dataset != 'r4r':
-        val_env_names.append('test')
+        if args.submit and args.dataset != 'r4r':
+            val_env_names.append('test')
         
+    if args.episode_order_manifest is not None:
+        if args.dataset != 'r2r':
+            raise ValueError('episode_order_manifest currently supports r2r only')
+        if not is_test or args.world_size != 1 or args.batch_size != 1:
+            raise ValueError(
+                'episode_order_manifest requires --test, world_size=1, and batch_size=1'
+            )
+        val_env_names = canonicalize_eval_splits(val_env_names)
+
     val_envs = {}
     for split in val_env_names:
         val_instr_data = construct_instrs(
@@ -77,6 +108,14 @@ def build_dataset(args, rank=0, is_test=False):
             angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
             sel_data_idxs=None if args.world_size < 2 else (rank, args.world_size), name=split,
         )   # evaluation using all objects
+        if args.episode_order_manifest is not None:
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            manifest = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
+            configure_exact_episode_env(val_env, manifest)
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env

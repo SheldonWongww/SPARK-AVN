@@ -1,12 +1,32 @@
 # VLN status
 
-Current phase: upstream and asset preparation; no formal evaluation yet.
+Current phase: pre-evaluation preparation; no new formal evaluation result has
+been claimed.
 
-- Discrete candidates: DUET, HAMT, and GOAT on R2R/REVERIE.
-- Continuous candidates: ETPNav and BEVBert on R2R-CE.
-- StreamVLN is downloaded for compatibility assessment before inclusion.
+- Discrete settings: DUET, HAMT, and GOAT on R2R and REVERIE.
+- Continuous settings: ETPNav, BEVBert, and StreamVLN use R2R-CE v1.3 episode
+  starts for formal comparisons.  ETPNav/BEVBert consume a reproducibly
+  derived BERT-indexed v1.3 file; their native v1.2 data remains available for
+  separately labelled upstream reproduction.
 - Six official source repositories are pinned in
   `manifests/upstream_repositories.json` and exported into `baselines/` as
   active, Git-tracked snapshots.
-- No dataset/checkpoint digest or local result is currently registered as
-  formal.
+- Canonical manifests fix `val_seen -> val_unseen -> test`, then normalized
+  scene ID and natural episode ID.  Stateful online runs use one rank, one
+  environment, batch size one, exact episode counts, and a fresh process per
+  split.
+- Public test goals remain hidden.  Test runs emit submission trajectories and
+  are never scored locally.
+- Published paper metrics are retained under `results/legacy/`; they are not
+  formal NavTTA reruns.
+- CPU/offline dependency, asset, and entry-point checks are recorded in the
+  task manifests.  All nine model/task settings also passed a two-episode
+  `val_seen` GPU lifecycle smoke.  Successful outputs use tags
+  `gpu-smoke-20260810T023726Z`, `gpu-smoke-20260810T023726Z-fix1` for
+  HAMT-R2R, and `gpu-smoke-20260810T023726Z-goatfix2` for GOAT R2R/REVERIE.
+  Smoke metrics are lifecycle-only diagnostics, not formal results.
+- ETPNav and BEVBert also passed a one-episode, no-ground-truth `test`
+  submission-path lifecycle check under
+  `gpu-test-inference-20260810T035454Z`; both generated trajectories passed the
+  R2R-CE submission validator.  These partial outputs are not leaderboard
+  submissions or formal results.

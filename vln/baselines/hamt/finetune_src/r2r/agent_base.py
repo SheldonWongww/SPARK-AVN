@@ -1,3 +1,6 @@
+from navtta_core.experiment import run_exact_agent_epoch
+
+
 class BaseAgent(object):
     ''' Base class for an R2R agent to generate and save trajectories. '''
 
@@ -23,6 +26,8 @@ class BaseAgent(object):
         return globals()[name+"Agent"]
 
     def test(self, iters=None, **kwargs):
+        if run_exact_agent_epoch(self, lambda: self.rollout(**kwargs)):
+            return
         self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
         self.losses = []
         self.results = {}
@@ -45,5 +50,4 @@ class BaseAgent(object):
                         self.results[traj['instr_id']] = traj
                 if looped:
                     break
-
 

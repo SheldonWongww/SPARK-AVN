@@ -20,6 +20,12 @@ from reverie.agent_obj import GMapObjectNavAgent
 from reverie.data_utils import ObjectFeatureDB, construct_instrs, load_obj2vps
 from reverie.env import ReverieObjectNavBatch
 from reverie.parser import parse_args
+from navtta_core.experiment import (
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 
 def build_dataset(args, rank=0):
@@ -30,47 +36,70 @@ def build_dataset(args, rank=0):
     obj2vps = load_obj2vps(os.path.join(args.anno_dir, 'BBoxes.json'))
 
     dataset_class = ReverieObjectNavBatch
+    train_env = None
+    aug_env = None
 
     # because we don't use distributed sampler here
     # in order to make different processes deal with different training examples
     # we need to shuffle the data with different seed in each processes
-    if args.aug is not None:
-        aug_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, [args.aug], 
-            tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
-        )
-        aug_env = dataset_class(
-            feat_db, obj_db, aug_instr_data, args.connectivity_dir, obj2vps, 
-            batch_size=args.batch_size, max_objects=args.max_objects,
-            angle_feat_size=args.angle_feat_size, 
-            seed=args.seed+rank, sel_data_idxs=None, name='aug', 
-            multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,
-        )
+    if not args.test:
+        if args.aug is not None:
+            aug_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, [args.aug],
+                tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
+            )
+            aug_env = dataset_class(
+                feat_db, obj_db, aug_instr_data, args.connectivity_dir, obj2vps,
+                batch_size=args.batch_size, max_objects=args.max_objects,
+                angle_feat_size=args.angle_feat_size,
+                seed=args.seed+rank, sel_data_idxs=None, name='aug',
+                multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,
+            )
+
+        if args.aug_only:
+            train_env, aug_env = aug_env, None
+            args.aug = None
+        else:
+            train_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, ['train'],
+                tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
+            )
+            train_env = dataset_class(
+                feat_db, obj_db, train_instr_data, args.connectivity_dir, obj2vps,
+                batch_size=args.batch_size, max_objects=args.max_objects,
+                angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
+                sel_data_idxs=None, name='train',
+                multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,
+            )
+
+    if args.test:
+        if args.eval_splits is None:
+            val_env_names = ['val_seen', 'val_unseen']
+            if args.submit:
+                val_env_names.append('test')
+        else:
+            val_env_names = list(args.eval_splits)
+
+        disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
+        if disallowed_splits:
+            raise ValueError(
+                'Training splits are not allowed in evaluation-only mode: '
+                + ', '.join(sorted(disallowed_splits))
+            )
     else:
-        aug_env = None
+        # val_env_names = ['val_train_seen']
+        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
 
-    if args.aug_only:
-        train_env, aug_env = aug_env, None
-        args.aug = None
-    else:
-        train_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, ['train'], 
-            tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
-        )
-        train_env = dataset_class(
-            feat_db, obj_db, train_instr_data, args.connectivity_dir, obj2vps,
-            batch_size=args.batch_size, max_objects=args.max_objects,
-            angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-            sel_data_idxs=None, name='train', 
-            multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,
-        )
-
-    # val_env_names = ['val_train_seen']
-    val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
-
-    if args.submit:
-        val_env_names.append('test')
+        if args.submit:
+            val_env_names.append('test')
         
+    if args.episode_order_manifest is not None:
+        if not args.test or args.world_size != 1 or args.batch_size != 1:
+            raise ValueError(
+                'episode_order_manifest requires --test, world_size=1, and batch_size=1'
+            )
+        val_env_names = canonicalize_eval_splits(val_env_names)
+
     val_envs = {}
     for split in val_env_names:
         val_instr_data = construct_instrs(
@@ -83,6 +112,14 @@ def build_dataset(args, rank=0):
             sel_data_idxs=None if args.world_size < 2 else (rank, args.world_size), name=split,
             max_objects=None, multi_endpoints=False, multi_startpoints=False,
         )   # evaluation using all objects
+        if args.episode_order_manifest is not None:
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            manifest = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
+            configure_exact_episode_env(val_env, manifest)
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env
@@ -262,6 +299,12 @@ def valid(args, train_env, val_envs, rank=-1):
                 write_to_record_file(loss_str+'\n', record_file)
 
             if args.submit:
+                for prediction in preds:
+                    value = prediction.pop('pred_objid', None)
+                    prediction['predObjId'] = (
+                        None if value is None or str(value) == 'None'
+                        else int(value)
+                    )
                 json.dump(
                     preds, open(output_file, 'w'),
                     sort_keys=True, indent=4, separators=(',', ': ')

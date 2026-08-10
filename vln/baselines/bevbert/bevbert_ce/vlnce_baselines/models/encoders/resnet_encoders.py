@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -255,7 +257,11 @@ class CLIPEncoder(nn.Module):
         self, device,
     ):
         super().__init__()
-        self.model, _ = clip.load("ViT-B/32", device=device)
+        self.model, _ = clip.load(
+            "ViT-B/32",
+            device=device,
+            download_root=os.environ.get("NAVTTA_CLIP_CACHE"),
+        )
         for param in self.model.parameters():
             param.requires_grad_(False)
         self.model.eval()
@@ -291,7 +297,11 @@ class CLIPEncoderB16(nn.Module):
         self, device,
     ):
         super().__init__()
-        self.model, _ = clip.load("ViT-B/16", device=device)
+        self.model, _ = clip.load(
+            "ViT-B/16",
+            device=device,
+            download_root=os.environ.get("NAVTTA_CLIP_CACHE"),
+        )
         for param in self.model.parameters():
             param.requires_grad_(False)
         self.model.eval()

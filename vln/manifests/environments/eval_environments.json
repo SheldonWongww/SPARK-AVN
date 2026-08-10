@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-10T05:00:00+08:00",
+  "host_root": "/root/autodl-tmp",
+  "environments": {
+    "streamvln": {
+      "prefix": "/root/autodl-tmp/conda/envs/streamvln",
+      "python": "3.9.7",
+      "torch": "2.1.2+cu121",
+      "torchvision": "0.16.2+cu121",
+      "numpy": "1.26.1",
+      "transformers": "4.45.1",
+            "habitat_lab": "0.2.4",
+            "habitat_baselines": "0.2.4",
+            "habitat_lab_source_path": "/root/autodl-tmp/dependencies/vln/habitat-lab",
+            "habitat_lab_source_commit": "1639e1ae732ba1e84199a1a04b79c7243c3f8586",
+            "habitat_sim": "0.2.4",
+            "flash_attn": "2.6.3",
+            "navtta_core": "0.1.0",
+            "navtta_core_editable_path": "/root/autodl-tmp/code/NavTTA/core",
+            "depth_camera_filtering": "0.1",
+            "depth_camera_filtering_commit": "39d6e2f391c8b2198a67ad96f94bf6da0acd48a0",
+            "decord": "0.6.0",
+            "av": "13.1.0",
+            "notes": [
+                "decord imports and decodes on x86_64, although pip check reports its legacy wheel tag as unsupported on this platform."
+            ],
+            "verify_packages": {
+                "torch": "2.1.2+cu121",
+                "torchvision": "0.16.2+cu121",
+                "numpy": "1.26.1",
+                "transformers": "4.45.1",
+                "habitat-lab": "0.2.4",
+                "habitat-baselines": "0.2.4",
+                "habitat-sim": "0.2.4",
+                "flash-attn": "2.6.3",
+                "navtta-core": "0.1.0",
+                "depth-camera-filtering": "0.1",
+                "decord": "0.6.0",
+                "av": "13.1.0"
+            }
+    },
+    "duet": {
+      "prefix": "/root/autodl-tmp/conda/envs/duet",
+      "python": "3.8.20",
+      "torch": "2.1.2+cu121",
+      "torchvision": "0.16.2+cu121",
+      "numpy": "1.20.3",
+      "transformers": "4.30.0",
+      "h5py": "2.10.0",
+            "protobuf": "3.20.3",
+            "line_profiler": "4.1.3",
+            "tensorboardX": "2.4.1",
+            "navtta_core": "0.1.0",
+            "navtta_core_editable_path": "/root/autodl-tmp/code/NavTTA/core",
+            "verify_packages": {
+                "torch": "2.1.2+cu121",
+                "torchvision": "0.16.2+cu121",
+                "numpy": "1.20.3",
+                "transformers": "4.30.0",
+                "h5py": "2.10.0",
+                "protobuf": "3.20.3",
+                "line_profiler": "4.1.3",
+                "tensorboardX": "2.4.1",
+                "navtta-core": "0.1.0"
+            }
+    },
+    "hamt": {
+      "prefix": "/root/autodl-tmp/conda/envs/hamt",
+      "python": "3.8.20",
+      "torch": "2.1.2+cu121",
+      "torchvision": "0.16.2+cu121",
+      "numpy": "1.21.4",
+      "transformers": "4.12.3",
+      "h5py": "3.1.0",
+            "protobuf": "3.20.3",
+            "line_profiler": "3.5.1",
+            "tensorboardX": "2.4",
+            "navtta_core": "0.1.0",
+            "navtta_core_editable_path": "/root/autodl-tmp/code/NavTTA/core",
+            "verify_packages": {
+                "torch": "2.1.2+cu121",
+                "torchvision": "0.16.2+cu121",
+                "numpy": "1.21.4",
+                "transformers": "4.12.3",
+                "h5py": "3.1.0",
+                "protobuf": "3.20.3",
+                "line-profiler": "3.5.1",
+                "tensorboardX": "2.4",
+                "navtta-core": "0.1.0"
+            }
+    },
+    "goat": {
+      "prefix": "/root/autodl-tmp/conda/envs/goat",
+      "python": "3.8.20",
+      "torch": "2.1.2+cu121",
+      "torchvision": "0.16.2+cu121",
+      "numpy": "1.22.3",
+      "transformers": "4.34.1",
+      "h5py": "3.6.0",
+      "protobuf": "3.20.3",
+      "spacy": "3.3.0",
+      "pydantic": "1.8.2",
+      "typing_extensions": "4.5.0",
+      "en_core_web_sm": "3.3.0",
+      "scikit_learn": "1.1.2",
+      "scikit_learn_intelex": "2023.1.1",
+      "daal4py": "2023.1.1",
+      "daal": "2023.1.1",
+            "tbb": "2021.13.1",
+            "nltk": "3.7",
+            "line_profiler": "3.5.1",
+            "tensorboardX": "2.6.2.2",
+            "navtta_core": "0.1.0",
+            "navtta_core_editable_path": "/root/autodl-tmp/code/NavTTA/core",
+            "required_env": {
+                "NLTK_DATA": "/root/autodl-tmp/cache/nltk_data"
+            },
+            "compatibility_note": "Upstream README names en_core_web_sm 2.3.0; the installed 3.3.0 model matches spaCy 3.3.0 and passes both evaluation entry imports.",
+            "verify_packages": {
+                "torch": "2.1.2+cu121",
+                "torchvision": "0.16.2+cu121",
+                "numpy": "1.22.3",
+                "transformers": "4.34.1",
+                "h5py": "3.6.0",
+                "protobuf": "3.20.3",
+                "spacy": "3.3.0",
+                "en-core-web-sm": "3.3.0",
+                "pydantic": "1.8.2",
+                "typing_extensions": "4.5.0",
+                "scikit-learn": "1.1.2",
+                "scikit-learn-intelex": "2023.1.1",
+                "daal4py": "2023.1.1",
+                "nltk": "3.7",
+                "line-profiler": "3.5.1",
+                "tensorboardX": "2.6.2.2",
+                "navtta-core": "0.1.0"
+            }
+    },
+    "vlnce017": {
+      "prefix": "/root/autodl-tmp/conda/envs/vlnce017",
+      "consumers": ["etpnav", "bevbert_ce"],
+      "python": "3.6.12",
+      "torch": "1.9.1+cu111",
+      "torchvision": "0.10.1+cu111",
+      "numpy": "1.19.5",
+      "transformers": "4.12.5",
+      "h5py": "3.1.0",
+      "protobuf": "3.19.1",
+            "habitat_sim": "0.1.7",
+            "habitat_lab_source_path": "/root/autodl-tmp/dependencies/vln/habitat-lab-v0.1.7",
+            "habitat_baselines_source_path": "/root/autodl-tmp/dependencies/vln/habitat-lab-v0.1.7/habitat_baselines",
+            "gym": "0.21.0",
+            "msgpack_numpy": "0.4.7.1",
+            "fastdtw": "0.3.4",
+            "pytorch_transformers": "1.2.0",
+            "openai_clip_package": "1.0",
+            "tensorboardX": "2.4.1",
+            "torch_scatter": "2.0.9",
+            "navtta_core": "0.1.0",
+            "navtta_core_editable_path": "/root/autodl-tmp/code/NavTTA/core",
+            "required_env": {
+        "HOME": "/root/autodl-tmp",
+        "NAVTTA_CLIP_CACHE": "/root/autodl-tmp/cache/clip",
+        "MAGNUM_LOG": "quiet",
+        "HABITAT_SIM_LOG": "quiet"
+            },
+            "habitat_lab_source_commit": "d6ed1c0a0e786f16f261de2beafe347f4186d0d8",
+            "verify_packages": {
+                "torch": "1.9.1+cu111",
+                "torchvision": "0.10.1+cu111",
+                "numpy": "1.19.5",
+                "transformers": "4.12.5",
+                "h5py": "3.1.0",
+                "protobuf": "3.19.1",
+                "habitat-sim": "0.1.7",
+                "torch-scatter": "2.0.9",
+                "navtta-core": "0.1.0",
+                "gym": "0.21.0",
+                "msgpack-numpy": "0.4.7.1",
+                "fastdtw": "0.3.4",
+                "pytorch-transformers": "1.2.0",
+                "clip": "1.0",
+                "tensorboardX": "2.4.1"
+            }
+    }
+  },
+  "native_dependencies": {
+    "matterport3d_simulator": {
+      "source": "https://github.com/peteanderson80/Matterport3DSimulator.git",
+      "commit": "589d091b111333f9e9f9d6cfd021b2eb68435925",
+      "runtime_path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator",
+      "git_metadata_backup": "/root/autodl-tmp/dependencies/vln/simulator_git_metadata/Matterport3DSimulator.git"
+    },
+        "matterport3d_simulator_pybind11": {
+      "source": "https://gitee.com/mirrors/pybind11.git",
+      "commit": "86e2ad4f77442c3350f9a2476650da6bee253c52",
+      "runtime_path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/pybind11",
+            "git_metadata_backup": "/root/autodl-tmp/dependencies/vln/simulator_git_metadata/pybind11.git"
+        },
+        "matterport3d_simulator_build": {
+            "python_module": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+            "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5",
+            "compiler": "g++ 11.4.0",
+            "cmake": "3.22.1",
+            "opencv_abi": "system OpenCV 4.5d",
+            "libstdcxx": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+            "source_compatibility_patch": "CV_LOAD_IMAGE_ANYDEPTH was replaced by cv::IMREAD_ANYDEPTH for OpenCV 4."
+        },
+    "habitat_lab_v0_1_7_source": {
+      "commit": "d6ed1c0a0e786f16f261de2beafe347f4186d0d8",
+      "archive_sha256": "84ebb29cb80e23a7e681e15229296a225a6abc712cd5c273a4e4ff5ac384744b"
+    },
+    "habitat_sim_v0_1_7_archive": {
+      "sha256": "fb0fff461e55a9c41a4cb6db016e768f5cfa476a5b3690a8c6e90aa85e23149d"
+    },
+    "goat_en_core_web_sm_3_3_0": {
+      "source": "https://github.com/explosion/spacy-models/releases/tag/en_core_web_sm-3.3.0",
+      "path": "/root/autodl-tmp/cache/goat/en_core_web_sm-3.3.0.tar.gz",
+      "size": 12800188,
+      "sha256": "348aa7a0afc04ef52b2f63a9de29a9bcc4463260f023b2814ff506214d9476ae"
+    }
+  },
+  "offline_tokenizer_checks": {
+    "duet_hamt_bert_base_uncased": "passed",
+    "goat_local_roberta": "passed",
+    "streamvln_qwen2": "passed"
+  }
+}

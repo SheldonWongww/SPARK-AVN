@@ -71,15 +71,28 @@ def run_exp(exp_name: str, exp_config: str,
     config.RESULTS_DIR += exp_name
     config.VIDEO_DIR += exp_name
     # config.TASK_CONFIG.TASK.RXR_INSTRUCTION_SENSOR.max_text_len = config.IL.max_text_len
-    config.LOG_FILE = exp_name + '_' + config.LOG_FILE
+    if os.path.isabs(config.LOG_FILE):
+        log_file = config.LOG_FILE
+    else:
+        log_file = os.path.join(
+            "data", "logs", "running_log", exp_name + "_" + config.LOG_FILE
+        )
+    config.LOG_FILE = log_file
 
     if 'CMA' in config.MODEL.policy_name and 'r2r' in config.BASE_TASK_CONFIG_PATH:
         config.TASK_CONFIG.DATASET.DATA_PATH = 'data/datasets/R2R_VLNCE_v1-2_preprocessed/{split}/{split}.json.gz'
 
     config.local_rank = local_rank
     config.freeze()
-    os.system("mkdir -p data/logs/running_log")
-    logger.add_filehandler('data/logs/running_log/'+config.LOG_FILE)
+    for output_directory in (
+        config.TENSORBOARD_DIR,
+        config.CHECKPOINT_FOLDER,
+        config.RESULTS_DIR,
+        config.VIDEO_DIR,
+    ):
+        os.makedirs(output_directory, exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+    logger.add_filehandler(log_file)
 
     random.seed(config.TASK_CONFIG.SEED)
     np.random.seed(config.TASK_CONFIG.SEED)

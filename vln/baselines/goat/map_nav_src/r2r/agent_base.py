@@ -17,6 +17,25 @@ from transformers import get_scheduler
 from utils.distributed import is_default_gpu
 from utils.logger import print_progress
 from utils.data import PickSpecificWords
+from navtta_core.experiment import (
+    normalize_strict_checkpoint_state_dict,
+    run_exact_agent_epoch,
+)
+
+
+# Official GOAT final checkpoints retain CFP-feature extraction heads and
+# attention blocks from an older training graph.  The `valid` inference graph
+# does not instantiate them; all runtime policy keys must still match exactly.
+GOAT_INFERENCE_UNUSED_CHECKPOINT_PREFIXES = (
+    "vln_bert.global_encoder.tim_self_encoder.",
+    "vln_bert.local_encoder.tim_self_encoder.",
+    "vln_bert.tim_global_",
+    "vln_bert.tim_local_",
+    "vln_bert.tim_txt_",
+    "vln_bert.img_embeddings.img_obj_attn.",
+    "vln_bert.img_embeddings.img_self_attn.",
+    "vln_bert.lang_encoder.txt_self_attn.",
+)
 
 class BaseAgent(object):
     ''' Base class for an REVERIE agent to generate and save trajectories. '''
@@ -42,6 +61,13 @@ class BaseAgent(object):
         return globals()[name+"Agent"]
 
     def test(self, iters=None, z_dicts={}, z_front_dict={}, **kwargs):
+        if run_exact_agent_epoch(
+            self,
+            lambda: self.rollout(
+                test=True, z_dicts=z_dicts, z_front_dict=z_front_dict, **kwargs
+            ),
+        ):
+            return
         self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
         self.losses = []
         self.results = {}
@@ -228,28 +254,41 @@ class Seq2SeqAgent(BaseAgent):
             model_keys = set(state.keys())
             load_keys = set(states[name]['state_dict'].keys())
             state_dict = states[name]['state_dict']
-            if model_keys != load_keys:
-                print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
-                if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
-                    state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-                if list(model_keys)[0].startswith('module.') and (not list(load_keys)[0].startswith('module.')):
-                    state_dict = {'module.'+k: v for k, v in state_dict.items()}
-                same_state_dict = {}
-                extra_keys = []
-                for k, v in state_dict.items():
-                    if k in model_keys:
-                        same_state_dict[k] = v
-                    else:
-                        extra_keys.append(k)
-                state_dict = same_state_dict
-                print('Extra keys in state_dict: %s' % (', '.join(extra_keys)))
-            state.update(state_dict)
-            model.load_state_dict(state)
+            if getattr(self.args, 'strict_checkpoint_keys', False):
+                checkpoint_key_count = len(state_dict)
+                state_dict = normalize_strict_checkpoint_state_dict(
+                    state,
+                    state_dict,
+                    name,
+                    allowed_unexpected_prefixes=(
+                        GOAT_INFERENCE_UNUSED_CHECKPOINT_PREFIXES
+                    ),
+                )
+                model.load_state_dict(state_dict, strict=True)
+                print('Strict checkpoint keys passed for %s: %d policy, %d allowlisted auxiliary' % (
+                    name, len(state_dict), checkpoint_key_count - len(state_dict)
+                ))
+            else:
+                if model_keys != load_keys:
+                    print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
+                    if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
+                        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+                    if list(model_keys)[0].startswith('module.') and (not list(load_keys)[0].startswith('module.')):
+                        state_dict = {'module.'+k: v for k, v in state_dict.items()}
+                    same_state_dict = {}
+                    extra_keys = []
+                    for k, v in state_dict.items():
+                        if k in model_keys:
+                            same_state_dict[k] = v
+                        else:
+                            extra_keys.append(k)
+                    state_dict = same_state_dict
+                    print('Extra keys in state_dict: %s' % (', '.join(extra_keys)))
+                state.update(state_dict)
+                model.load_state_dict(state)
             if self.args.resume_optimizer and 'optimizer' in states[name].keys():
                 optimizer.load_state_dict(states[name]['optimizer'])
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer)]
         for param in all_tuple:
             recover_state(*param)
         return states['vln_bert']['epoch'] - 1
-
-

@@ -1,0 +1,982 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-10T05:30:00+08:00",
+  "scope": "VLN val_seen, val_unseen, and test preflight; train episodes are intentionally excluded",
+  "path_base": "/root/autodl-tmp/code/NavTTA",
+  "sources": {
+    "mp3d_habitat": {
+      "url": "https://kaldir.vc.in.tum.de/matterport/v1/tasks/mp3d_habitat.zip",
+      "revision": null
+    },
+    "r2r_vlnce_v1_3": {
+      "url": "https://drive.google.com/file/d/1T9SjqZWyR2PCLSXYkFckfDeIs6Un0Rjm/view",
+      "revision": null
+    },
+    "duet_assets": {
+      "url": "https://www.dropbox.com/scl/fo/4iaw2ii2z2iupu0yn4tqh/AJutXWSGTtjBFYXnxr-4YQw?rlkey=88khaszmvhybxleyv0a9bulyn&e=1&dl=0",
+      "revision": null
+    },
+    "hamt_assets": {
+      "url": "https://www.dropbox.com/scl/fo/nsitfiyh5taz4xg4nxj7b/AOqFG0t3ZrReqJ_m3qP5Z8k?rlkey=e0wd5c9a1mhbvfd96lb7d30xx&e=1&dl=0",
+      "revision": null
+    },
+    "bert_base_uncased_tokenizer": {
+      "url": "https://huggingface.co/bert-base-uncased",
+      "revision": "86b5e0934494bd15c9632b12f734a8a67f723594"
+    },
+    "goat_assets": {
+      "url": "https://huggingface.co/crystal61/VLN-GOAT",
+      "revision": "7f63623d928ce8b014ee1837683d4a937fc330e4"
+    },
+    "etpnav_assets": {
+      "url": "https://modelscope.cn/models/admagic/ETPNav/files",
+      "revision": null
+    },
+    "r2r_ce_v1_3_unified_bertidx": {
+      "derived_by": "vln/scripts/build_r2r_ce_v1_3_bertidx.py",
+      "episode_fields_source": "r2r_vlnce_v1_3",
+      "bert_token_source": "etpnav_assets",
+      "note": "Evaluation splits only. Every v1.3 episode field is retained; only instruction_vocab and instruction_tokens are replaced with the pinned v1.2 BERT encoding."
+    },
+    "bevbert_ce_checkpoint": {
+      "url": "https://drive.google.com/file/d/1-2u1NWmwpX09Rg7uT5mABo-CBTsLthGm/view",
+      "revision": null
+    },
+    "streamvln_checkpoint": {
+      "url": "https://huggingface.co/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+      "revision": "f1f76c66083c362ddfcd2610167f9c4e4a46c027"
+    },
+    "streamvln_tokenizer": {
+      "url": "https://huggingface.co/Qwen/Qwen2-7B-Instruct",
+      "revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c"
+    },
+    "siglip_so400m": {
+      "url": "https://huggingface.co/google/siglip-so400m-patch14-384",
+      "revision": "9fdffc58afc957d1a03a25b10dba0329ab15c2a3"
+    },
+    "openai_clip": {
+      "url": "https://github.com/openai/CLIP",
+      "revision": "dcba3cb2e2827b402d2701e7e1c7d9fed8a20ef1"
+    },
+    "nltk_data": {
+      "url": "https://github.com/nltk/nltk_data/tree/gh-pages/packages/corpora",
+      "revision": null
+    }
+  },
+  "assets": [
+    {
+      "id": "mp3d_habitat_archive",
+      "required_for": ["etpnav", "bevbert_ce", "streamvln"],
+      "path": "vln/data/.downloads/mp3d_habitat.zip",
+      "size": 16085306031,
+      "sha256": "470948ee78ff4d6dc4c4870395d1e790a0f15c72065d1f62cdd229b2bcbe0d36",
+      "source": "mp3d_habitat",
+      "note": "Verified source archive. Runtime extraction contains exactly the 82-scene union used by val_seen, val_unseen, and test; no training-only scenes were extracted."
+    },
+    {
+      "id": "r2r_vlnce_v1_3_archive",
+      "required_for": ["streamvln"],
+      "path": "vln/data/.downloads/R2R_VLNCE_v1-3.zip",
+      "size": 2608469,
+      "sha256": "e2a81331524a6ca9a987d014a1affcb3b7174240cfae3647532bbaf68ef18404",
+      "source": "r2r_vlnce_v1_3"
+    },
+    {
+      "id": "r2r_vlnce_v1_3_val_seen",
+      "required_for": ["streamvln"],
+      "path": "vln/data/datasets/r2r/val_seen/val_seen.json.gz",
+      "size": 172881,
+      "sha256": "7fc94841ebbd2eac0d398e020a2f638426948beaf4a561f6ee310dd67cddce55",
+      "source": "r2r_vlnce_v1_3",
+      "episodes": 778,
+      "scenes": 53
+    },
+    {
+      "id": "r2r_vlnce_v1_3_val_unseen",
+      "required_for": ["streamvln"],
+      "path": "vln/data/datasets/r2r/val_unseen/val_unseen.json.gz",
+      "size": 325775,
+      "sha256": "d173d8028537f30ab652dc5d24ead737e2b6010b6a4599f974351685710d18e8",
+      "source": "r2r_vlnce_v1_3",
+      "episodes": 1839,
+      "scenes": 11
+    },
+    {
+      "id": "r2r_vlnce_v1_3_test",
+      "required_for": ["streamvln"],
+      "path": "vln/data/datasets/r2r/test/test.json.gz",
+      "size": 335501,
+      "sha256": "69ed5962fac658d34be5739c1f8f15805cf5ce9bfa28f64a338da338244578b7",
+      "source": "r2r_vlnce_v1_3",
+      "episodes": 3408,
+      "scenes": 18,
+      "note": "Submission-only split; goals are intentionally absent."
+    },
+    {
+      "id": "duet_r2r_val_seen_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/R2R/annotations/R2R_val_seen_enc.json",
+      "size": 769468,
+      "sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+      "source": "duet_assets"
+    },
+    {
+      "id": "duet_r2r_val_unseen_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/R2R/annotations/R2R_val_unseen_enc.json",
+      "size": 1749355,
+      "sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+      "source": "duet_assets"
+    },
+    {
+      "id": "duet_r2r_test_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/R2R/annotations/R2R_test_enc.json",
+      "size": 2812078,
+      "sha256": "fe6e0e1aa1d927197a9c874d41cb582594f25f34c159785bb053cb893149b29c",
+      "source": "duet_assets"
+    },
+    {
+      "id": "duet_reverie_val_seen_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/REVERIE/annotations/REVERIE_val_seen_enc.json",
+      "size": 743527,
+      "sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c",
+      "source": "duet_assets"
+    },
+    {
+      "id": "duet_reverie_val_unseen_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/REVERIE/annotations/REVERIE_val_unseen_enc.json",
+      "size": 1888617,
+      "sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3",
+      "source": "duet_assets"
+    },
+    {
+      "id": "duet_reverie_test_annotations",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/REVERIE/annotations/REVERIE_test_enc.json",
+      "size": 1699626,
+      "sha256": "1fe65add3a7f084a3029965c3b7d1c4ce95e543c851450809b0e385efbc4820d",
+      "source": "duet_assets"
+    },
+    {
+      "id": "bert_base_uncased_config",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594/config.json",
+      "size": 570,
+      "sha256": "7160e1553ad2ca51d8c1cb066be533db31826e12d173824c1bb0cb1a4f187d20",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "bert_base_uncased_tokenizer_json",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594/tokenizer.json",
+      "size": 466062,
+      "sha256": "ce64fce797c24f68df90b40a3f74f579b336a493db14bd583fd520ea0d8c9a98",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "bert_base_uncased_tokenizer_config",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594/tokenizer_config.json",
+      "size": 48,
+      "sha256": "a025160ef0431f1a392f6f050c1310f4c5d9fb6f275932dbccba73c4d214bf10",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "bert_base_uncased_vocab",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594/vocab.txt",
+      "size": 231508,
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "bert_base_uncased_main_ref",
+      "required_for": ["duet"],
+      "path": "vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/refs/main",
+      "size": 40,
+      "sha256": "2cddf5a9b63cbf6d5c80c1f9c5ceee322cd0a5d614774e6daf7e37e99ad94d94",
+      "source": "bert_base_uncased_tokenizer",
+      "note": "Pins repo-id offline resolution to snapshot 86b5e0934494bd15c9632b12f734a8a67f723594."
+    },
+    {
+      "id": "hamt_legacy_bert_config_cache",
+      "required_for": ["hamt"],
+      "path": "/root/autodl-tmp/cache/transformers/hamt/a6d25067bef6804cd60cdbbe13bfc3cbb23fdbd7cefe7e0ca96aabf1a304a728.25d403e134b334f0ea5348b12a9fc15e8aee664e5f86c6ab1c7b34c074372163",
+      "size": 570,
+      "sha256": "7160e1553ad2ca51d8c1cb066be533db31826e12d173824c1bb0cb1a4f187d20",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "hamt_legacy_bert_tokenizer_cache",
+      "required_for": ["hamt"],
+      "path": "/root/autodl-tmp/cache/transformers/hamt/b75d9a89e11d191e925718f2256b4946d7c99a96812d358ed46c989753a6d93e.f70c6614bfb4f4cbeb717b90d95b50f905c86e5f5271817ed8bf95563599d435",
+      "size": 466062,
+      "sha256": "ce64fce797c24f68df90b40a3f74f579b336a493db14bd583fd520ea0d8c9a98",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "hamt_legacy_bert_tokenizer_config_cache",
+      "required_for": ["hamt"],
+      "path": "/root/autodl-tmp/cache/transformers/hamt/c09b9af9ab2386adeea7248b928295cac47ba4bdc57bd7d2101871585ea3c9b6.76ea01b4b85ac16e2cec55c398cba7a943d89ab21dfdd973f6630a152e4b9aed",
+      "size": 48,
+      "sha256": "a025160ef0431f1a392f6f050c1310f4c5d9fb6f275932dbccba73c4d214bf10",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "hamt_legacy_bert_vocab_cache",
+      "required_for": ["hamt"],
+      "path": "/root/autodl-tmp/cache/transformers/hamt/d613d4b114fae1975cb79b04988c218b01affe26a77df6b008da898956f7ea90.0033bc3ca5202a8d69e43ae56d52023c31fb39062654530b60501ac5f963d084",
+      "size": 231508,
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+      "source": "bert_base_uncased_tokenizer"
+    },
+    {
+      "id": "duet_r2r_pano_features",
+      "required_for": ["duet", "hamt"],
+      "path": "vln/data/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5",
+      "size": 3141482913,
+      "sha256": "ae0ff208349e6a12096fe47c7b045e42b93e9c047da50d19dd17e04ec8d31bbc",
+      "source": "duet_assets",
+      "structure": "10567 datasets, each float64[36,1768]"
+    },
+    {
+      "id": "duet_reverie_object_features",
+      "required_for": ["duet"],
+      "path": "vln/data/duet/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5",
+      "size": 259365852,
+      "sha256": "9d9f591f64d98a3547035575803fa0e78e779a57a06dd34467e480373c26b615",
+      "source": "duet_assets",
+      "structure": "7003 object-view datasets"
+    },
+    {
+      "id": "duet_r2r_checkpoint",
+      "required_for": ["duet"],
+      "path": "vln/checkpoints/duet/R2R/best_val_unseen",
+      "size": 2167911792,
+      "sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+      "source": "duet_assets",
+      "checkpoint_keys": ["vln_bert", "critic"]
+    },
+    {
+      "id": "duet_reverie_checkpoint",
+      "required_for": ["duet"],
+      "path": "vln/checkpoints/duet/REVERIE/best_val_unseen",
+      "size": 2175032658,
+      "sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "source": "duet_assets",
+      "checkpoint_keys": ["vln_bert", "critic"]
+    },
+    {
+      "id": "reverie_bboxes",
+      "required_for": ["duet", "hamt", "goat"],
+      "path": "vln/data/duet/REVERIE/annotations/BBoxes.json",
+      "size": 7757728,
+      "sha256": "21d227018de2e11eb0a7b3188d760a56a988e8152213d15979ba6ba7a0e58296",
+      "source": "duet_assets"
+    },
+    {
+      "id": "hamt_r2r_e2e_features",
+      "required_for": ["hamt"],
+      "path": "vln/data/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 1391358984,
+      "sha256": "3d429e9c7cd9c6eab6115951addfb21f98e65782bdb688906ef8ceebf546c34f",
+      "source": "hamt_assets",
+      "structure": "10567 datasets, each float64[36,768]"
+    },
+    {
+      "id": "hamt_reverie_object_features",
+      "required_for": ["hamt"],
+      "path": "vln/data/hamt/REVERIE/features/obj_pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 261552309,
+      "sha256": "5a7252dbcacdfc5d4db4cd289ca27d2e21f604086260f133041db3ae60a2bec7",
+      "source": "hamt_assets",
+      "structure": "7009 object-view datasets"
+    },
+    {
+      "id": "hamt_r2r_fixed_feature_checkpoint",
+      "required_for": ["hamt"],
+      "path": "vln/checkpoints/hamt/R2R/best_val_unseen",
+      "size": 1225431306,
+      "sha256": "1c842715e4bd9bf082c73f1d4a5b67501732aa4d82a432e0fa7b0e915ee01f10",
+      "source": "hamt_assets",
+      "note": "This is the upstream vitbase-finetune fixed-feature checkpoint (epoch 1), not the paper's final e2e checkpoint. Do not associate paper e2e metrics with this binary."
+    },
+    {
+      "id": "hamt_reverie_checkpoint",
+      "required_for": ["hamt"],
+      "path": "vln/checkpoints/hamt/REVERIE/best_val_unseen",
+      "size": 1837415641,
+      "sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "source": "hamt_assets"
+    },
+    {
+      "id": "goat_r2r_val_seen_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/annotations/R2R_val_seen_roberta_enc.json",
+      "size": 571431,
+      "sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_val_unseen_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/annotations/R2R_val_unseen_roberta_enc.json",
+      "size": 1299114,
+      "sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_test_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/annotations/R2R_test_roberta_enc.json",
+      "size": 2027693,
+      "sha256": "4f2ac33e2df68d4a88b03310bd8b1c9a35041b2d7bc871cebf3779b55e7f1428",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_val_seen_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/annotations/REVERIE_val_seen_roberta_enc.json",
+      "size": 869359,
+      "sha256": "8945f8042359e8be228c6e704c04260a503ab6d6f464093cfb5bab8fa207e8e0",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_val_unseen_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/annotations/REVERIE_val_unseen_roberta_enc.json",
+      "size": 2220056,
+      "sha256": "b85b8733014199f71094e7403341d3f816f500a85df36b4ec5036450deb4b7fe",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_test_annotations",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/annotations/REVERIE_test_roberta_enc.json",
+      "size": 2193113,
+      "sha256": "287c9e765d2310f07fe891d52d5b7ab2478fc6e3396864390a15f83bb1c41e6a",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_category_mapping",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/annotations/category_mapping.tsv",
+      "size": 157373,
+      "sha256": "2425968dff3307478803bc0387ae39c4e7e57a46f02fd2f848340f1d2fc45d38",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_candidate_relative_angles",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/annotations/scanvp_candview_relangles.json",
+      "size": 5124730,
+      "sha256": "cead28ce0d9b248766c5295338e0809eeedfec499b1eafd39e15e63609394d14",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_bboxes",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/annotations/BBoxes.json",
+      "size": 7757728,
+      "sha256": "21d227018de2e11eb0a7b3188d760a56a988e8152213d15979ba6ba7a0e58296",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_speaker_vocab",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/features/r2r_speaker_train_vocab.txt",
+      "size": 6639,
+      "sha256": "5f0268e775fe0e01b6bd1fe183e124c6a41f7600a874d33370ab5c69bfa5af1f",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_speaker_vocab",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/features/reverie_speaker_train_vocab.txt",
+      "size": 10064,
+      "sha256": "dd9c8cd7796474e285982e304866ef93cdf7925023ddeebd9886136a7139894e",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_roberta_config",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/pretrained/roberta/config.json",
+      "size": 481,
+      "sha256": "ef0185e2aae6e06c5f105a285006952c340e20c7dbf43c86ec82601b13fc45e9",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_roberta_merges",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/pretrained/roberta/merges.txt",
+      "size": 456318,
+      "sha256": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_roberta_tokenizer",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/pretrained/roberta/tokenizer.json",
+      "size": 1355863,
+      "sha256": "847bbeab6174d66a88898f729d52fa8d355fafe1bea101cf960dd404581df70e",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_roberta_tokenizer_config",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/pretrained/roberta/tokenizer_config.json",
+      "size": 25,
+      "sha256": "994f46754c5bf4014f1aa92d34b1374319c3a6b3f702105cd5b742beaecd18ce",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_roberta_vocab",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/pretrained/roberta/vocab.json",
+      "size": 898823,
+      "sha256": "9e7f63c2d15d666b52e21d250d2e513b87c9b713cfa6987a82ed89e5e6e50655",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_nltk_wordnet",
+      "required_for": ["goat"],
+      "path": "/root/autodl-tmp/cache/nltk_data/corpora/wordnet.zip",
+      "size": 10775600,
+      "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59",
+      "source": "nltk_data",
+      "download_url": "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/wordnet.zip"
+    },
+    {
+      "id": "goat_nltk_omw_1_4",
+      "required_for": ["goat"],
+      "path": "/root/autodl-tmp/cache/nltk_data/corpora/omw-1.4.zip",
+      "size": 26634772,
+      "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d",
+      "source": "nltk_data",
+      "download_url": "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/omw-1.4.zip"
+    },
+    {
+      "id": "goat_r2r_clip_features",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/features/CLIP-ViT-B-16-views.hdf5",
+      "size": 3129297165,
+      "sha256": "378d756bcec1aa6f9acbfe48ba3f017d75ee136fd90b12f89b312b3fb82164fb",
+      "source": "goat_assets",
+      "structure": "10567 datasets, each float64[36,1768]; GOAT consumes the first 768 columns"
+    },
+    {
+      "id": "goat_reverie_object_features",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5",
+      "size": 259365852,
+      "sha256": "9d9f591f64d98a3547035575803fa0e78e779a57a06dd34467e480373c26b615",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_checkpoint",
+      "required_for": ["goat"],
+      "path": "vln/checkpoints/goat/R2R/best_val_unseen.pt",
+      "size": 877551955,
+      "sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_checkpoint",
+      "required_for": ["goat"],
+      "path": "vln/checkpoints/goat/REVERIE/best_val_unseen.pt",
+      "size": 870603677,
+      "sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_image_z_dict",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/features/image_z_dict_clip_50.tsv",
+      "size": 206386,
+      "sha256": "c49dfd28194947cc41795931902b49c6744dba1c2ce2497586373ec7781091e8",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_instruction_z_dict",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/features/r2r_z_instr_dict.tsv",
+      "size": 306009,
+      "sha256": "d117a25919f758e2cda3a318589fd9e0b9045de90f53e0df430e0d027e5999ba",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_instruction_z_dict",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/features/reverie_z_instr_dict.tsv",
+      "size": 161286,
+      "sha256": "15cd2916d7f05f9d927394870502a7b88d40b7393113ae1af630a3e1970f00c4",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_cfp_features",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/features/r2r_cfp_features.tsv",
+      "size": 172635400,
+      "sha256": "d77181223b9393c827693fe40c8a3d8a4df38d9c46c58b80734415591557ed32",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_cfp_features",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/features/reverie_cfp_features.tsv",
+      "size": 128698920,
+      "sha256": "86a3dde2af5b19e9df14fc7ab9b5135b44b4ee5fd1cf20694792c6c5d4f8e54e",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_updated_backdoor",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv",
+      "size": 306009,
+      "sha256": "728044c41ca15806a0e1724d6bf4c33c8220c74869d759a81142948c207d9e33",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_r2r_updated_frontdoor",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv",
+      "size": 295056,
+      "sha256": "0985cee98a0ccb4724fbb17a22f42201dffb6587ed0238b9a63bf9b9ee86142e",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_updated_backdoor",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/navigator/goat_reverie/logs/backdoor/backdoor_update_features.tsv",
+      "size": 165416,
+      "sha256": "e79b45a15df26e7785b03c16f4506f99d66f8f767a1bd4c3b07d2b0131cdc02a",
+      "source": "goat_assets"
+    },
+    {
+      "id": "goat_reverie_updated_frontdoor",
+      "required_for": ["goat"],
+      "path": "vln/data/goat/REVERIE/navigator/goat_reverie/logs/frontdoor/frontdoor_update_features.tsv",
+      "size": 295056,
+      "sha256": "ac645c2a177ba9e060ed6b2b75842dc2b2cef36da94fdf2b51f0e4938c09aab1",
+      "source": "goat_assets"
+    },
+    {
+      "id": "r2r_ce_v1_3_unified_val_seen_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/val_seen/val_seen_bertidx.json.gz",
+      "size": 742311,
+      "sha256": "4cb1d97271017982103458fc9156e73ae4771e9b811b15ce9a7f959ad38c43ce",
+      "source": "r2r_ce_v1_3_unified_bertidx",
+      "episodes": 778
+    },
+    {
+      "id": "r2r_ce_v1_3_unified_val_unseen_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/val_unseen/val_unseen_bertidx.json.gz",
+      "size": 900453,
+      "sha256": "128dde1534a235148252c098f5e2abc6a8e8b262c9322e074b52997ec3fb224d",
+      "source": "r2r_ce_v1_3_unified_bertidx",
+      "episodes": 1839
+    },
+    {
+      "id": "r2r_ce_v1_3_unified_test_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/test/test_bertidx.json.gz",
+      "size": 919462,
+      "sha256": "ac62fd712e4706b9daf11001b3122f52181ea764c4d23c5f822e9683888c5447",
+      "source": "r2r_ce_v1_3_unified_bertidx",
+      "episodes": 3408,
+      "note": "Submission-only split; there is intentionally no test GT file."
+    },
+    {
+      "id": "etpnav_val_seen_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed_BERTidx/val_seen/val_seen_bertidx.json.gz",
+      "size": 758273,
+      "sha256": "83b231674ae3a18cb02b3d65847377e978f45cc35682f807c03becc38b09410c",
+      "source": "etpnav_assets",
+      "episodes": 778,
+      "note": "Retained for v1.2-native upstream reproduction; not the default cross-model protocol."
+    },
+    {
+      "id": "etpnav_val_unseen_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed_BERTidx/val_unseen/val_unseen_bertidx.json.gz",
+      "size": 928029,
+      "sha256": "7db0a39bef374cf5ce986473f8b35c9721f962c6c1a9af069257aa710df16365",
+      "source": "etpnav_assets",
+      "episodes": 1839,
+      "note": "Retained for v1.2-native upstream reproduction; not the default cross-model protocol."
+    },
+    {
+      "id": "etpnav_test_bertidx",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed_BERTidx/test/test_bertidx.json.gz",
+      "size": 960711,
+      "sha256": "6b74845fcaa16044bb63ff436f67d8b1cdd1b883b821641f925c960bbb0301ff",
+      "source": "etpnav_assets",
+      "episodes": 3408,
+      "note": "Retained for v1.2-native upstream reproduction. Submission-only split; there is intentionally no test GT file."
+    },
+    {
+      "id": "etpnav_val_seen_gt",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed/val_seen/val_seen_gt.json.gz",
+      "size": 482513,
+      "sha256": "2c1df3c1f857b5f974192ea60da5d7dc71ccdd61cdfbdcd004258d5c57b2d0d0",
+      "source": "etpnav_assets"
+    },
+    {
+      "id": "etpnav_val_unseen_gt",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed/val_unseen/val_unseen_gt.json.gz",
+      "size": 1618489,
+      "sha256": "1b9497dc1aa6ab68073976f9678ac42a154b393edd9d0b0450d0ac90841f684c",
+      "source": "etpnav_assets"
+    },
+    {
+      "id": "etpnav_checkpoint",
+      "required_for": ["etpnav"],
+      "path": "vln/checkpoints/etpnav/ckpt.iter12000.pth",
+      "size": 2071802352,
+      "sha256": "4e70d2a1b4a6cfb32158901b7300cbc2be657641f16c9a17f35ca8570470d8b3",
+      "source": "etpnav_assets",
+      "checkpoint_keys": ["state_dict", "config", "optim_state", "iteration"]
+    },
+    {
+      "id": "etpnav_pretrained_vlnbert",
+      "required_for": ["etpnav"],
+      "path": "vln/checkpoints/etpnav/model_step_82500.pt",
+      "size": 772962767,
+      "sha256": "be8709272e22fe0ffa98c8b2b0275dc5a0e3072f12e566c3994751733cf9f657",
+      "source": "etpnav_assets",
+      "note": "Downloaded for completeness, but source evaluation sets MODEL.pretrained_path=None and does not read this pretraining checkpoint."
+    },
+    {
+      "id": "etpnav_waypoint_predictor",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/wp_pred/check_cwp_bestdist_hfov90",
+      "size": 201954133,
+      "sha256": "09d0f42cbd801e05b0fa0212b901d409f033f4d0bce2fce1fa8a1331b502159f",
+      "source": "etpnav_assets"
+    },
+    {
+      "id": "ce_ddppo_depth_encoder",
+      "required_for": ["etpnav", "bevbert_ce"],
+      "path": "vln/data/etpnav/ddppo-models/gibson-2plus-resnet50.pth",
+      "size": 49853716,
+      "sha256": "a6a600277efacf5fd98e293267221185d843eb3012aeff62fabfeee24c2bcdad",
+      "source": "etpnav_assets"
+    },
+    {
+      "id": "bevbert_ce_checkpoint",
+      "required_for": ["bevbert_ce"],
+      "path": "vln/checkpoints/bevbert/ckpt.iter9600.pth",
+      "size": 2551084857,
+      "sha256": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8",
+      "source": "bevbert_ce_checkpoint",
+      "checkpoint_keys": ["state_dict", "config", "optim_state", "iteration"]
+    },
+    {
+      "id": "openai_clip_vit_b32",
+      "required_for": ["etpnav"],
+      "path": "/root/autodl-tmp/cache/clip/ViT-B-32.pt",
+      "size": 353976522,
+      "sha256": "40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af",
+      "source": "openai_clip",
+      "download_url": "https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt"
+    },
+    {
+      "id": "openai_clip_vit_b16",
+      "required_for": ["bevbert_ce"],
+      "path": "/root/autodl-tmp/cache/clip/ViT-B-16.pt",
+      "size": 350837078,
+      "sha256": "5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f",
+      "source": "openai_clip",
+      "download_url": "https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt"
+    },
+    {
+      "id": "streamvln_shard_1",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/model-00001-of-00004.safetensors",
+      "size": 4877660776,
+      "sha256": "6a1a4fc8ba9ab5e8832d2d23dc6d21d18bf1f84daf03b904409721f93927a87a",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_shard_2",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/model-00002-of-00004.safetensors",
+      "size": 4932751008,
+      "sha256": "d7b781ef3772d39537f81fb87a31b5db04118fbf9edcd78dbe60ad2d67d77f49",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_shard_3",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/model-00003-of-00004.safetensors",
+      "size": 4994571904,
+      "sha256": "9a79a47a31c62fc2beab869cebf2e7bf956dbf630c14ef6017148fa7e41fe628",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_shard_4",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/model-00004-of-00004.safetensors",
+      "size": 1255812224,
+      "sha256": "5e9eb8f127c0ec37b175c266b0cbae3106a591ec3d93698aee500f7735f041fe",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_index",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/model.safetensors.index.json",
+      "size": 80769,
+      "sha256": "d1f86714849892ee46d17fd82a90b9f2690e0083d2b2339ccd827673d4c5c2e3",
+      "source": "streamvln_checkpoint",
+      "structure": "764 indexed tensors; every tensor was matched to its shard header; aggregate tensor bytes 16060690496"
+    },
+    {
+      "id": "streamvln_config",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/config.json",
+      "size": 4416,
+      "sha256": "58b839efed10e0bca3fb17d411400dceca8c1c27d48b202ed9c48a976414647a",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_generation_config",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/generation_config.json",
+      "size": 243,
+      "sha256": "24216e06e770ea4f6ce9f88ab782043391d886c0cf8fae9e775bcf0148febb6e",
+      "source": "streamvln_checkpoint"
+    },
+    {
+      "id": "streamvln_tokenizer",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/tokenizer.json",
+      "size": 7028015,
+      "sha256": "f7c9b2dba4a296b1aa76c16a34b8225c0c118978400d4bb66bff0902d702f5b8",
+      "source": "streamvln_tokenizer"
+    },
+    {
+      "id": "streamvln_tokenizer_config",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/tokenizer_config.json",
+      "size": 1288,
+      "sha256": "be21acaf90e7f449b7282fdef7b06516a0102476e86cbc2108e18ac071f9cc9c",
+      "source": "streamvln_tokenizer"
+    },
+    {
+      "id": "streamvln_vocab",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/vocab.json",
+      "size": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "source": "streamvln_tokenizer"
+    },
+    {
+      "id": "streamvln_merges",
+      "required_for": ["streamvln"],
+      "path": "vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/merges.txt",
+      "size": 1671839,
+      "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+      "source": "streamvln_tokenizer"
+    },
+    {
+      "id": "streamvln_siglip_weights",
+      "required_for": ["streamvln"],
+      "path": "/root/autodl-tmp/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/model.safetensors",
+      "size": 3511950624,
+      "sha256": "ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a",
+      "source": "siglip_so400m",
+      "note": "The complete nine-file snapshot is present. StreamVLN must receive the pinned snapshot path explicitly when offline."
+    },
+    {
+      "id": "streamvln_siglip_config",
+      "required_for": ["streamvln"],
+      "path": "/root/autodl-tmp/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/config.json",
+      "size": 576,
+      "sha256": "adc04928d8fd19a61822584fe0cf2e813e5ebac17f3e49fb1ea096860ae6457b",
+      "source": "siglip_so400m"
+    },
+    {
+      "id": "streamvln_siglip_preprocessor",
+      "required_for": ["streamvln"],
+      "path": "/root/autodl-tmp/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/preprocessor_config.json",
+      "size": 368,
+      "sha256": "f59da2f87c3cd079bd4f8f3037e81b277c60c498e279a8020331f67a5a3157e8",
+      "source": "siglip_so400m"
+    }
+  ],
+  "runtime_links": [
+    {
+      "path": "vln/baselines/duet/datasets",
+      "target": "../../data/duet"
+    },
+    {
+      "path": "vln/data/duet/R2R/connectivity",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/connectivity"
+    },
+    {
+      "path": "vln/data/duet/R2R/trained_models/best_val_unseen",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/duet/R2R/best_val_unseen"
+    },
+    {
+      "path": "vln/data/duet/REVERIE/trained_models/best_val_unseen",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/duet/REVERIE/best_val_unseen"
+    },
+    {
+      "path": "vln/baselines/hamt/datasets",
+      "target": "../../data/hamt"
+    },
+    {
+      "path": "vln/data/hamt/R2R/connectivity",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/connectivity"
+    },
+    {
+      "path": "vln/data/hamt/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5"
+    },
+    {
+      "path": "vln/data/hamt/R2R/trained_models/vitbase-finetune/ckpts/best_val_unseen",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/R2R/best_val_unseen"
+    },
+    {
+      "path": "vln/data/hamt/REVERIE/trained_models/best_val_unseen",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/REVERIE/best_val_unseen"
+    },
+    {
+      "path": "vln/data/hamt/R2R/annotations/R2R_val_seen_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/annotations/R2R_val_seen_enc.json"
+    },
+    {
+      "path": "vln/data/hamt/R2R/annotations/R2R_val_unseen_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/annotations/R2R_val_unseen_enc.json"
+    },
+    {
+      "path": "vln/data/hamt/R2R/annotations/R2R_test_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/annotations/R2R_test_enc.json"
+    },
+    {
+      "path": "vln/data/hamt/REVERIE/annotations/BBoxes.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/BBoxes.json"
+    },
+    {
+      "path": "vln/data/hamt/REVERIE/annotations/REVERIE_val_seen_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/REVERIE_val_seen_enc.json"
+    },
+    {
+      "path": "vln/data/hamt/REVERIE/annotations/REVERIE_val_unseen_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/REVERIE_val_unseen_enc.json"
+    },
+    {
+      "path": "vln/data/hamt/REVERIE/annotations/REVERIE_test_enc.json",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/REVERIE_test_enc.json"
+    },
+    {
+      "path": "vln/baselines/goat/datasets",
+      "target": "../../data/goat"
+    },
+    {
+      "path": "vln/data/goat/R2R/navigator/goat_r2r/ckpts/best_val_unseen.pt",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/goat/R2R/best_val_unseen.pt"
+    },
+    {
+      "path": "vln/data/goat/REVERIE/navigator/goat_reverie/ckpts/best_val_unseen.pt",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/goat/REVERIE/best_val_unseen.pt"
+    },
+    {
+      "path": "vln/baselines/etpnav/data",
+      "target": "../../data/etpnav"
+    },
+    {
+      "path": "vln/baselines/etpnav/pretrained",
+      "target": "../../data/etpnav/pretrained"
+    },
+    {
+      "path": "vln/data/etpnav/scene_datasets",
+      "target": "../scene_datasets"
+    },
+    {
+      "path": "vln/data/etpnav/logs/checkpoints/release_r2r/ckpt.iter12000.pth",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/etpnav/ckpt.iter12000.pth"
+    },
+    {
+      "path": "vln/data/etpnav/pretrained/ETP/mlm.sap_r2r/ckpts/model_step_82500.pt",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/etpnav/model_step_82500.pt"
+    },
+    {
+      "path": "vln/baselines/bevbert/bevbert_ce/data",
+      "target": "../../../data/bevbert_ce"
+    },
+    {
+      "path": "vln/baselines/bevbert/bevbert_ce/ckpt/ckpt.iter9600.pth",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/bevbert/ckpt.iter9600.pth"
+    },
+    {
+      "path": "vln/data/bevbert_ce/datasets",
+      "target": "../etpnav/datasets"
+    },
+    {
+      "path": "vln/data/bevbert_ce/ddppo-models",
+      "target": "../etpnav/ddppo-models"
+    },
+    {
+      "path": "vln/data/bevbert_ce/scene_datasets",
+      "target": "../scene_datasets"
+    },
+    {
+      "path": "vln/data/bevbert_ce/wp_pred",
+      "target": "../etpnav/wp_pred"
+    },
+    {
+      "path": "vln/baselines/streamvln/data",
+      "target": "../../data"
+    },
+    {
+      "path": "/root/autodl-tmp/runtime_homes/vlnce017/.cache/clip/ViT-B-32.pt",
+      "target": "/root/autodl-tmp/cache/clip/ViT-B-32.pt"
+    },
+    {
+      "path": "/root/autodl-tmp/runtime_homes/vlnce017/.cache/clip/ViT-B-16.pt",
+      "target": "/root/autodl-tmp/cache/clip/ViT-B-16.pt"
+    }
+  ],
+  "derived_checks": {
+    "ce_scene_set": {
+      "path": "vln/data/scene_datasets/mp3d",
+      "scene_count": 82,
+      "glb_count": 82,
+      "navmesh_count": 82,
+      "tree_digest_sha256": "33abb460b7d6618708fc785da53f349c2882f4a493db9d1fe99e12e8dc067882",
+      "exact_union_of": ["val_seen", "val_unseen", "test"],
+      "extra_scenes": 0,
+      "missing_scenes": 0
+    },
+    "discrete_connectivity": {
+      "path": "vln/data/simulators/Matterport3DSimulator/connectivity",
+      "scan_count": 90,
+      "file_count": 92,
+      "tree_digest_sha256": "679e88430bfb9da68e6a7582b01dbbee1ea41803630ac152637536afc43a57e3",
+      "digest_recipe": "sort NUL-delimited relative file names, sha256sum each file, then sha256sum the resulting lines"
+    },
+    "goat_connectivity_mirror": {
+      "path": "vln/data/goat/R2R/connectivity",
+      "scan_count": 90,
+      "file_count": 92,
+      "tree_digest_sha256": "679e88430bfb9da68e6a7582b01dbbee1ea41803630ac152637536afc43a57e3",
+      "matches_discrete_connectivity": true
+    },
+    "discrete_path_feature_coverage": {
+      "evaluated_instruction_episodes": 18779,
+      "unique_path_viewpoints": 3217,
+      "missing_connectivity_scans": 0,
+      "missing_pano_features": 0
+    }
+  }
+}

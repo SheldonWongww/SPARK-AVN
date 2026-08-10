@@ -47,6 +47,11 @@ from vlnce_baselines.common.utils import *
 
 from habitat_extensions.measures import NDTW
 from fastdtw import fastdtw
+from navtta_core.experiment import (
+    load_episode_order_manifest,
+    prefix_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 from ..utils import get_camera_orientations12
 from ..utils import (
@@ -73,6 +78,52 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.obs_transforms = []
         self.start_epoch = 0
         self.step_id = 0
+
+    def _assert_navtta_episode_order(self, mode, current_episodes):
+        manifest = getattr(self, "_navtta_episode_order", None)
+        if manifest is None or mode not in ("eval", "infer"):
+            return
+        if len(current_episodes) != 1:
+            raise RuntimeError(
+                "Canonical online evaluation requires exactly one active environment"
+            )
+        completed = len(self.stat_eps) if mode == "eval" else len(self.path_eps)
+        if completed >= manifest["episode_count"]:
+            raise RuntimeError("Episode iterator advanced beyond the canonical manifest")
+        expected = manifest["episodes"][completed]
+        episode = current_episodes[0]
+        actual = {
+            "episode_id": str(episode.episode_id),
+            "scene_id": os.path.splitext(os.path.basename(episode.scene_id))[0],
+        }
+        if actual != expected:
+            raise RuntimeError(
+                "Canonical episode {} mismatch: expected {}, got {}".format(
+                    completed, expected, actual
+                )
+            )
+
+    def _assert_navtta_episode_count(self, envs):
+        manifest = getattr(self, "_navtta_episode_order", None)
+        actual = sum(envs.number_of_episodes)
+        if manifest is not None and actual != manifest["episode_count"]:
+            raise RuntimeError(
+                "Canonical environment contains {} episodes; expected {}".format(
+                    actual, manifest["episode_count"]
+                )
+            )
+        return actual
+
+    def _assert_navtta_completed_order(self, records, mode):
+        manifest = getattr(self, "_navtta_episode_order", None)
+        if manifest is None:
+            return
+        actual = [str(episode_id) for episode_id in records]
+        expected = [record["episode_id"] for record in manifest["episodes"]]
+        if actual != expected:
+            raise RuntimeError(
+                "Canonical {} output is incomplete or out of order".format(mode)
+            )
 
     def _initialize_policy(
         self,
@@ -317,7 +368,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             episodes_allowed=self.traj  # split by rank
         )
 
-        dataset_length = sum(envs.number_of_episodes)
+        dataset_length = self._assert_navtta_episode_count(envs)
         print('local rank:', self.local_rank, '|', 'dataset length:', dataset_length)
 
         obs_transforms = get_active_obs_transforms(config)
@@ -639,6 +690,7 @@ class BaseVLNCETrainer(BaseILTrainer):
             if 'VLNBERT' in self.config.MODEL.policy_name:
                 h_t = rnn_states
 
+        self._assert_navtta_completed_order(stats_episodes, "evaluation")
         envs.close()
         if config.use_pbar:
             pbar.close()
@@ -799,6 +851,31 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.world_size = world_size
         self.local_rank = self.config.local_rank
 
+        episode_order = None
+        if self.config.EVAL.EPISODE_ORDER_MANIFEST:
+            if world_size != 1 or self.config.NUM_ENVIRONMENTS != 1:
+                raise ValueError(
+                    "Canonical online evaluation requires GPU_NUMBERS=1 and NUM_ENVIRONMENTS=1"
+                )
+            if getattr(self.config.EVAL, "fast_eval", False):
+                raise ValueError(
+                    "Canonical online evaluation is incompatible with EVAL.fast_eval"
+                )
+            manifest_path = resolve_episode_order_manifest_path(
+                self.config.EVAL.EPISODE_ORDER_MANIFEST,
+                self.config.EVAL.SPLIT,
+            )
+            episode_order = load_episode_order_manifest(
+                manifest_path, expected_split=self.config.EVAL.SPLIT
+            )
+            if self.config.EVAL.EPISODE_COUNT not in (
+                -1,
+                episode_order["episode_count"],
+            ):
+                raise ValueError(
+                    "EVAL.EPISODE_COUNT must be -1 or match the episode-order manifest"
+                )
+
         self.config.defrost()
         self.config.TASK_CONFIG.DATASET.ROLES = ["guide"]
         self.config.TASK_CONFIG.TASK.MEASUREMENTS = ['POSITION', 'STEPS_TAKEN', 'COLLISIONS']
@@ -812,6 +889,12 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.config.TASK_CONFIG.TASK.NDTW.SPLIT = self.config.EVAL.SPLIT
         self.config.TASK_CONFIG.TASK.SDTW.SPLIT = self.config.EVAL.SPLIT
         self.config.use_pbar = not is_slurm_batch_job()
+        if episode_order is not None:
+            iterator_options = self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS
+            iterator_options.SHUFFLE = False
+            iterator_options.GROUP_BY_SCENE = False
+            iterator_options.CYCLE = False
+            iterator_options.MAX_SCENE_REPEAT_STEPS = -1
         
         # if choosing image
         resize_config = self.config.RL.POLICY.OBS_TRANSFORMS.RESIZER_PER_SENSOR.SIZES
@@ -851,6 +934,24 @@ class BaseVLNCETrainer(BaseILTrainer):
             self.config.TORCH_GPU_ID = self.config.TORCH_GPU_IDS[self.local_rank]
             self.config.freeze()
         self.traj = self.collect_val_traj()
+        if episode_order is not None:
+            expected_ids = [
+                record["episode_id"] for record in episode_order["episodes"]
+            ]
+            if set(map(str, self.traj)) != set(expected_ids):
+                raise ValueError(
+                    "Ground-truth episode IDs do not match the episode-order manifest"
+                )
+            smoke_count = os.environ.get("NAVTTA_SMOKE_EPISODES")
+            if smoke_count:
+                episode_order = prefix_episode_order_manifest(
+                    episode_order, int(smoke_count)
+                )
+                expected_ids = [
+                    record["episode_id"] for record in episode_order["episodes"]
+                ]
+            self.traj = expected_ids
+            self._navtta_episode_order = episode_order
         
         with TensorboardWriter(
             self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
@@ -899,6 +1000,33 @@ class BaseVLNCETrainer(BaseILTrainer):
         checkpoint_path = self.config.INFERENCE.CKPT_PATH
         logger.info(f"checkpoint_path: {checkpoint_path}")
 
+        episode_order = None
+        if self.config.INFERENCE.EPISODE_ORDER_MANIFEST:
+            if (
+                self.config.GPU_NUMBERS != 1
+                or self.config.NUM_ENVIRONMENTS != 1
+                or self.config.IL.batch_size != 1
+            ):
+                raise ValueError(
+                    "Canonical online inference requires GPU_NUMBERS=1, "
+                    "NUM_ENVIRONMENTS=1, and IL.batch_size=1"
+                )
+            manifest_path = resolve_episode_order_manifest_path(
+                self.config.INFERENCE.EPISODE_ORDER_MANIFEST,
+                self.config.INFERENCE.SPLIT,
+            )
+            episode_order = load_episode_order_manifest(
+                manifest_path, expected_split=self.config.INFERENCE.SPLIT
+            )
+            if self.config.INFERENCE.EPISODE_COUNT not in (
+                -1,
+                episode_order["episode_count"],
+            ):
+                raise ValueError(
+                    "INFERENCE.EPISODE_COUNT must be -1 or match the "
+                    "episode-order manifest"
+                )
+
         self.config.defrost()
         self.config.TASK_CONFIG.DATASET.SPLIT = self.config.INFERENCE.SPLIT
         self.config.TASK_CONFIG.DATASET.ROLES = ["guide"]
@@ -907,6 +1035,10 @@ class BaseVLNCETrainer(BaseILTrainer):
         self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
             -1
         )
+        if episode_order is not None:
+            iterator_options = self.config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS
+            iterator_options.GROUP_BY_SCENE = False
+            iterator_options.CYCLE = False
         self.config.IL.ckpt_to_load = self.config.INFERENCE.CKPT_PATH
         self.config.TASK_CONFIG.TASK.MEASUREMENTS = []
         self.config.TASK_CONFIG.TASK.SENSORS = [
@@ -957,15 +1089,43 @@ class BaseVLNCETrainer(BaseILTrainer):
         config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_STEPS = (
             -1
         )
+        if episode_order is not None:
+            if (
+                config.GPU_NUMBERS != 1
+                or config.NUM_ENVIRONMENTS != 1
+                or config.IL.batch_size != 1
+            ):
+                raise ValueError(
+                    "Checkpoint configuration is incompatible with canonical "
+                    "single-environment inference"
+                )
+            iterator_options = config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS
+            iterator_options.GROUP_BY_SCENE = False
+            iterator_options.CYCLE = False
         config.IL.ckpt_to_load = checkpoint_path
         config.freeze()
 
-        eps = self.collect_val_traj()
+        eps = self.collect_infer_traj()
+        episodes_allowed = eps[:10] if sys.gettrace() else None
+        if episode_order is not None:
+            expected_ids = [
+                record["episode_id"] for record in episode_order["episodes"]
+            ]
+            if (
+                len(eps) != len(expected_ids)
+                or set(map(str, eps)) != set(expected_ids)
+            ):
+                raise ValueError(
+                    "Inference episode IDs do not match the episode-order manifest"
+                )
+            episodes_allowed = expected_ids
+            self._navtta_episode_order = episode_order
         envs = construct_envs(
             config, get_env_class(config.ENV_NAME),
             auto_reset_done=False,
-            episodes_allowed=eps[:10] if sys.gettrace() else None # for debug, ep subset
+            episodes_allowed=episodes_allowed,
         )
+        self._assert_navtta_episode_count(envs)
 
         obs_transforms = get_active_obs_transforms(config)
         observation_space = apply_obs_transforms_obs_space(
@@ -1166,6 +1326,7 @@ class BaseVLNCETrainer(BaseILTrainer):
                 if 'VLNBERT' in self.config.MODEL.policy_name:
                     h_t = rnn_states
 
+        self._assert_navtta_completed_order(episode_predictions, "inference")
         envs.close()
 
         if config.INFERENCE.FORMAT == "r2r":

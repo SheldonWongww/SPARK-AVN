@@ -15,6 +15,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.distributed import is_default_gpu
 from utils.logger import print_progress
+from navtta_core.experiment import (
+    normalize_strict_checkpoint_state_dict,
+    run_exact_agent_epoch,
+)
 
 
 class BaseAgent(object):
@@ -41,6 +45,8 @@ class BaseAgent(object):
         return globals()[name+"Agent"]
 
     def test(self, iters=None, **kwargs):
+        if run_exact_agent_epoch(self, lambda: self.rollout(**kwargs)):
+            return
         self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
         self.losses = []
         self.results = {}
@@ -65,6 +71,8 @@ class BaseAgent(object):
                     break
 
     def test_viz(self, iters=None, **kwargs):
+        if run_exact_agent_epoch(self, lambda: self.rollout_viz(**kwargs)):
+            return
         self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
         self.losses = []
         self.results = {}
@@ -235,23 +243,32 @@ class Seq2SeqAgent(BaseAgent):
             model_keys = set(state.keys())
             load_keys = set(states[name]['state_dict'].keys())
             state_dict = states[name]['state_dict']
-            if model_keys != load_keys:
-                print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
-                if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
-                    state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-                if list(model_keys)[0].startswith('module.') and (not list(load_keys)[0].startswith('module.')):
-                    state_dict = {'module.'+k: v for k, v in state_dict.items()}
-                same_state_dict = {}
-                extra_keys = []
-                for k, v in state_dict.items():
-                    if k in model_keys:
-                        same_state_dict[k] = v
-                    else:
-                        extra_keys.append(k)
-                state_dict = same_state_dict
-                print('Extra keys in state_dict: %s' % (', '.join(extra_keys)))
-            state.update(state_dict)
-            model.load_state_dict(state)
+            if getattr(self.args, 'strict_checkpoint_keys', False):
+                state_dict = normalize_strict_checkpoint_state_dict(
+                    state, state_dict, name
+                )
+                model.load_state_dict(state_dict, strict=True)
+                print('Strict checkpoint keys passed for %s: %d' % (
+                    name, len(state_dict)
+                ))
+            else:
+                if model_keys != load_keys:
+                    print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
+                    if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
+                        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+                    if list(model_keys)[0].startswith('module.') and (not list(load_keys)[0].startswith('module.')):
+                        state_dict = {'module.'+k: v for k, v in state_dict.items()}
+                    same_state_dict = {}
+                    extra_keys = []
+                    for k, v in state_dict.items():
+                        if k in model_keys:
+                            same_state_dict[k] = v
+                        else:
+                            extra_keys.append(k)
+                    state_dict = same_state_dict
+                    print('Extra keys in state_dict: %s' % (', '.join(extra_keys)))
+                state.update(state_dict)
+                model.load_state_dict(state)
             if self.args.resume_optimizer:
                 optimizer.load_state_dict(states[name]['optimizer'])
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),
@@ -259,5 +276,3 @@ class Seq2SeqAgent(BaseAgent):
         for param in all_tuple:
             recover_state(*param)
         return states['vln_bert']['epoch'] - 1
-
-

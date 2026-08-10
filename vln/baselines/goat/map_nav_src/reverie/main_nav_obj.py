@@ -28,6 +28,12 @@ from reverie.env import ReverieObjectNavBatch
 from reverie.parser import parse_args
 
 from r2r.data_utils import LoadZdict
+from navtta_core.experiment import (
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 from reverie.transpeaker_reverie import Speaker
 from reverie.spice_scorer import BleuScorer
@@ -191,53 +197,76 @@ def build_dataset(args, rank=0):
     obj_db = ObjectFeatureDB(args.obj_ft_file, args.obj_feat_size, cat_file=args.cat_file)
     obj2vps = load_obj2vps(os.path.join(args.anno_dir, 'BBoxes.json'))
 
-    # Use env_edit?
-    if args.env_aug == 'env_edit':
-        print('use env_edit features!!')
-        envedit_feat_db = ImageFeaturesDB(args.envedit_ft_file, args.image_feat_size)
-        train_feat_db = [feat_db,envedit_feat_db]
-    else:
-        train_feat_db = feat_db
-
     dataset_class = ReverieObjectNavBatch
+    train_env = None
+    aug_env = None
+    train_instr_data = None
 
-    # Load augmented dataset
-    if args.aug is not None:
-        aug_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, [args.aug], 
+    if not args.test:
+        # Use env_edit?
+        if args.env_aug == 'env_edit':
+            print('use env_edit features!!')
+            envedit_feat_db = ImageFeaturesDB(args.envedit_ft_file, args.image_feat_size)
+            train_feat_db = [feat_db,envedit_feat_db]
+        else:
+            train_feat_db = feat_db
+
+        # Load augmented dataset
+        if args.aug is not None:
+            aug_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, [args.aug],
+                tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
+            )
+            aug_env = dataset_class(
+                train_feat_db, obj_db, aug_instr_data, args.connectivity_dir, obj2vps,
+                batch_size=args.batch_size, max_objects=args.max_objects,
+                angle_feat_size=args.angle_feat_size,
+                seed=args.seed+rank, sel_data_idxs=None, name='aug',
+                multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,tok=tok,args=args,
+                scanvp_cands_file=args.scanvp_cands_file
+            )
+
+        # Load the training set
+        train_instr_data = construct_instrs(
+            args.anno_dir, args.dataset, ['train'],
             tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
         )
-        aug_env = dataset_class(
-            train_feat_db, obj_db, aug_instr_data, args.connectivity_dir, obj2vps, 
+        train_env = dataset_class(
+            train_feat_db, obj_db, train_instr_data, args.connectivity_dir, obj2vps,
             batch_size=args.batch_size, max_objects=args.max_objects,
-            angle_feat_size=args.angle_feat_size, 
-            seed=args.seed+rank, sel_data_idxs=None, name='aug', 
+            angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
+            sel_data_idxs=None, name='train',
             multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,tok=tok,args=args,
             scanvp_cands_file=args.scanvp_cands_file
         )
+
+    if args.test:
+        if args.eval_splits is None:
+            val_env_names = ['val_seen', 'val_unseen']
+            if args.submit:
+                val_env_names.append('test')
+        else:
+            val_env_names = list(args.eval_splits)
+
+        disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
+        if disallowed_splits:
+            raise ValueError(
+                'Training splits are not allowed in evaluation-only mode: '
+                + ', '.join(sorted(disallowed_splits))
+            )
     else:
-        aug_env = None
-        aug_instr_data = None
+        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
 
-    # Load the training set
-    train_instr_data = construct_instrs(
-        args.anno_dir, args.dataset, ['train'], 
-        tokenizer=args.tokenizer, max_instr_len=args.max_instr_len
-    )
-    train_env = dataset_class(
-        train_feat_db, obj_db, train_instr_data, args.connectivity_dir, obj2vps,
-        batch_size=args.batch_size, max_objects=args.max_objects,
-        angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-        sel_data_idxs=None, name='train', 
-        multi_endpoints=args.multi_endpoints, multi_startpoints=args.multi_startpoints,tok=tok,args=args,
-        scanvp_cands_file=args.scanvp_cands_file
-    )
-
-    val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
-
-    if args.submit:
-        val_env_names.append('test')
+        if args.submit:
+            val_env_names.append('test')
         
+    if args.episode_order_manifest is not None:
+        if not args.test or args.world_size != 1 or args.batch_size != 1:
+            raise ValueError(
+                'episode_order_manifest requires --test, world_size=1, and batch_size=1'
+            )
+        val_env_names = canonicalize_eval_splits(val_env_names)
+
     val_envs = {}
     for split in val_env_names:
         val_instr_data = construct_instrs(
@@ -251,6 +280,14 @@ def build_dataset(args, rank=0):
             max_objects=None, multi_endpoints=False, multi_startpoints=False,tok=tok,args=args,
             scanvp_cands_file=args.scanvp_cands_file
         )   # evaluation using all objects
+        if args.episode_order_manifest is not None:
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            manifest = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
+            configure_exact_episode_env(val_env, manifest)
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env, bert_tok, speaker_tok, z_dicts, train_instr_data, front_feat_loader
@@ -659,6 +696,12 @@ def valid(args, train_env, val_envs, rank=-1, z_dicts={}, front_feat_loader=None
                 write_to_record_file(loss_str+'\n', record_file)
 
             if args.submit:
+                for prediction in preds:
+                    value = prediction.pop('pred_objid', None)
+                    prediction['predObjId'] = (
+                        None if value is None or str(value) == 'None'
+                        else int(value)
+                    )
                 json.dump(
                     preds, open(output_file, 'w'),
                     sort_keys=True, indent=4, separators=(',', ': ')

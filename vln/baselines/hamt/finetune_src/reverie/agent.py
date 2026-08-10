@@ -16,6 +16,7 @@ from utils.misc import length2mask
 
 from r2r.agent_cmt import Seq2SeqCMTAgent
 from reverie.model_navref import NavRefModel, Critic
+from navtta_core.experiment import run_exact_agent_epoch
 
 
 class NavRefCMTAgent(Seq2SeqCMTAgent):
@@ -32,6 +33,15 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
         else:
             self.vln_bert.eval()
             self.critic.eval()
+
+        if run_exact_agent_epoch(
+            self,
+            self.rollout,
+            result_transform=lambda trajectory: (
+                trajectory['path'], trajectory['predObjId']
+            ),
+        ):
+            return
 
         self.env.reset_epoch(shuffle=(iters is not None))   # If iters is not none, shuffle the env batch
         self.losses = []

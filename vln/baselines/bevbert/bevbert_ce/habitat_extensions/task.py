@@ -13,6 +13,7 @@ from habitat.datasets.utils import VocabDict
 from habitat.tasks.nav.nav import NavigationGoal
 from habitat.tasks.vln.vln import InstructionData, VLNEpisode
 import random
+from navtta_core.experiment import select_allowed_episodes_in_order
 
 random.seed(0)
 
@@ -95,13 +96,9 @@ class VLNCEDatasetV1(Dataset):
             ]
 
         if config.EPISODES_ALLOWED is not None:
-            ep_ids_before = {ep.episode_id for ep in self.episodes}
-            ep_ids_to_purge = ep_ids_before - set([ int(id) for id in config.EPISODES_ALLOWED])
-            self.episodes = [
-                episode
-                for episode in self.episodes
-                if episode.episode_id not in ep_ids_to_purge
-            ]
+            self.episodes = select_allowed_episodes_in_order(
+                self.episodes, config.EPISODES_ALLOWED
+            )
 
     def from_json(
         self, json_str: str, scenes_dir: Optional[str] = None

@@ -7,6 +7,7 @@ Thumbs.db
 
 # Python caches and local environments
 **/__pycache__/
+*.egg-info/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
@@ -30,6 +31,8 @@ venv/
 # Future task assets stay local when those task lines are activated.
 /vln/data/
 /vln/checkpoints/
+/vln/results/source/
+/vln/results/smoke/
 /objectnav/data/
 /objectnav/checkpoints/
 
@@ -45,6 +48,7 @@ venv/
 
 # Runtime data accidentally created inside vendored baselines
 /avn/baselines/*/data/
+/vln/baselines/*/data
 
 # Large/raw experiment artifacts; summaries and manifests stay trackable
 **/results/**/raw/

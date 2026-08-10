@@ -39,7 +39,7 @@ def get_vlnbert_models(args, config=None):
     if args.dataset == 'rxr' or args.tokenizer == 'xlm':
         vis_config.type_vocab_size = 2
     
-    vis_config.max_action_steps = 100
+    vis_config.max_action_steps = args.max_action_steps
     vis_config.image_feat_size = args.image_feat_size
     vis_config.angle_feat_size = args.angle_feat_size
     vis_config.num_l_layers = args.num_l_layers
@@ -59,9 +59,6 @@ def get_vlnbert_models(args, config=None):
 
     vis_config.no_lang_ca = args.no_lang_ca
     vis_config.act_pred_token = args.act_pred_token
-    vis_config.max_action_steps = 50 
-    vis_config.max_action_steps = 100
-    
     visual_model = model_class.from_pretrained(
         pretrained_model_name_or_path=None, 
         config=vis_config, 

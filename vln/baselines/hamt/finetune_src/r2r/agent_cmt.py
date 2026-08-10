@@ -18,6 +18,7 @@ from utils.misc import length2mask
 from utils.logger import print_progress
 
 from models.model_HAMT import VLNBertCMT, Critic
+from navtta_core.experiment import normalize_strict_checkpoint_state_dict
 
 from .eval_utils import cal_dtw
 
@@ -630,12 +631,21 @@ class Seq2SeqCMTAgent(BaseAgent):
             model_keys = set(state.keys())
             load_keys = set(states[name]['state_dict'].keys())
             state_dict = states[name]['state_dict']
-            if model_keys != load_keys:
-                print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
-                if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
-                    state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-            state.update(state_dict)
-            model.load_state_dict(state)
+            if getattr(self.args, 'strict_checkpoint_keys', False):
+                state_dict = normalize_strict_checkpoint_state_dict(
+                    state, state_dict, name
+                )
+                model.load_state_dict(state_dict, strict=True)
+                print('Strict checkpoint keys passed for %s: %d' % (
+                    name, len(state_dict)
+                ))
+            else:
+                if model_keys != load_keys:
+                    print("NOTICE: DIFFERENT KEYS IN THE LISTEREN")
+                    if not list(model_keys)[0].startswith('module.') and list(load_keys)[0].startswith('module.'):
+                        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+                state.update(state_dict)
+                model.load_state_dict(state)
             if self.args.resume_optimizer:
                 optimizer.load_state_dict(states[name]['optimizer'])
         all_tuple = [("vln_bert", self.vln_bert, self.vln_bert_optimizer),

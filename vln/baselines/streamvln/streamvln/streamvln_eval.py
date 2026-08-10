@@ -23,6 +23,7 @@ from transformers.image_utils import to_numpy_array
 
 import habitat
 from habitat import logger, Env
+from habitat_extensions import dataset as _navtta_dataset  # noqa: F401
 from habitat_extensions import measures
 from habitat.config.default import get_agent_config
 from habitat_baselines.config.default import get_config as get_habitat_config
@@ -33,11 +34,20 @@ from habitat.config.default_structured_configs import (
 )
 from habitat.utils.visualizations import maps
 from habitat.utils.visualizations.utils import images_to_video, observations_to_image
+from habitat.tasks.utils import cartesian_to_polar
+from habitat.utils.geometry_utils import quaternion_rotate_vector
 
 from model.stream_video_vln import StreamVLNForCausalLM
 from utils.utils import dict_to_cuda
 from utils.dist import *
 from utils.utils import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
+from navtta_core.experiment import (
+    load_episode_order_manifest,
+    prefix_episode_order_manifest,
+    reorder_episodes,
+    resolve_episode_order_manifest_path,
+    validate_strict_checkpoint_loading_info,
+)
 
 class VLNEvaluator:
     def __init__(
@@ -60,32 +70,58 @@ class VLNEvaluator:
         self.epoch = epoch
         self.config_path = config_path
         self.config = get_habitat_config(config_path)
+        self.is_submission = split == "test"
+        if self.is_submission and env_num != 1:
+            raise ValueError("StreamVLN test submission requires world_size=1")
+        if self.is_submission and args.save_video:
+            raise ValueError("StreamVLN test submission does not support --save_video")
+        self.episode_order = None
+        if args.episode_order_manifest:
+            if env_num != 1:
+                raise ValueError(
+                    "Canonical online evaluation requires world_size=1"
+                )
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            self.episode_order = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
         self.agent_config = get_agent_config(self.config.habitat.simulator)
         self.sim_sensors_config = self.config.habitat.simulator.agents.main_agent.sim_sensors
 
         with habitat.config.read_write(self.config):
             # self.config.habitat.task.measurements.success.success_distance=3.0
+            self.config.habitat.seed = args.seed + get_rank()
             self.config.habitat.dataset.split = self.split
-            self.config.habitat.task.measurements.update(
-                {
-                    "top_down_map": TopDownMapMeasurementConfig(
-                        map_padding=3,
-                        map_resolution=1024,
-                        draw_source=True,
-                        draw_border=True,
-                        draw_shortest_path=True,
-                        draw_view_points=True,
-                        draw_goal_positions=True,
-                        draw_goal_aabbs=True,
-                        fog_of_war=FogOfWarConfig(
-                            draw=True,
-                            visibility_dist=5.0,
-                            fov=90,
+            if self.is_submission:
+                # Public test annotations have no goals.  The registered
+                # loader adds structural placeholders, while all goal-based
+                # measures remain disabled so no local test metric can be
+                # mistaken for a benchmark result.
+                self.config.habitat.dataset.type = "R2RVLN-NavTTA-v1"
+                self.config.habitat.task.measurements = {}
+            else:
+                self.config.habitat.task.measurements.update(
+                    {
+                        "top_down_map": TopDownMapMeasurementConfig(
+                            map_padding=3,
+                            map_resolution=1024,
+                            draw_source=True,
+                            draw_border=True,
+                            draw_shortest_path=True,
+                            draw_view_points=True,
+                            draw_goal_positions=True,
+                            draw_goal_aabbs=True,
+                            fog_of_war=FogOfWarConfig(
+                                draw=True,
+                                visibility_dist=5.0,
+                                fov=90,
+                            ),
                         ),
-                    ),
-                    "collisions": CollisionsMeasurementConfig(),
-                }
-            )
+                        "collisions": CollisionsMeasurementConfig(),
+                    }
+                )
 
         print(f"config = {type(self.config)}")
         print(OmegaConf.to_yaml(self.config))
@@ -118,6 +154,9 @@ class VLNEvaluator:
                                 'ahead of you is ',
                                 'in your sight is '
                             ]
+        # Keep prompt wording independent of unrelated users of Python's
+        # process-global RNG.  Canonical runs use one evaluator per split.
+        self.prompt_rng = random.Random(args.seed + get_rank())
         self.num_frames = args.num_frames
         self.num_future_steps = args.num_future_steps
         self.num_history = args.num_history
@@ -189,18 +228,63 @@ class VLNEvaluator:
         # env.episodes = env.episodes[0:1]
         return env
 
+    @staticmethod
+    def submission_state(env, stop=False):
+        """Return one R2R-CE leaderboard trajectory state."""
+        state = env.sim.get_agent_state()
+        heading_vector = quaternion_rotate_vector(
+            state.rotation.inverse(), np.array([0, 0, -1])
+        )
+        heading = cartesian_to_polar(
+            -heading_vector[2], heading_vector[0]
+        )[1]
+        return {
+            "position": state.position.tolist(),
+            "heading": float(heading),
+            "stop": bool(stop),
+        }
+
     def eval_action(self, idx) -> None:
+        os.makedirs(self.output_path, exist_ok=True)
         env = self.config_env()
+        episodes_for_eval = list(env.episodes)
+        if self.episode_order is not None:
+            episodes_for_eval = reorder_episodes(
+                episodes_for_eval, self.episode_order
+            )
+            if self.args.smoke_episodes is not None:
+                self.episode_order = prefix_episode_order_manifest(
+                    self.episode_order, self.args.smoke_episodes
+                )
+                episodes_for_eval = episodes_for_eval[
+                    : self.episode_order["episode_count"]
+                ]
+        elif self.args.smoke_episodes is not None:
+            raise ValueError("--smoke-episodes requires --episode_order_manifest")
         scene_episode_dict = {}
-        for episode in env.episodes:
+        for episode in episodes_for_eval:
             if episode.scene_id not in scene_episode_dict:
                 scene_episode_dict[episode.scene_id] = []
             scene_episode_dict[episode.scene_id].append(episode)
 
         intrinsic_matrix = self.get_intrinsic_matrix(self.config.habitat.simulator.agents.main_agent.sim_sensors.rgb_sensor)
         sucs, spls, oss, ones = [], [], [], []
+        submission_paths = OrderedDict()
         done_res = []
-        if os.path.exists(os.path.join(self.output_path, f'result.json')):
+        result_path = os.path.join(self.output_path, f'result.json')
+        submission_path = self.args.submission_file or os.path.join(
+            self.output_path, "predictions.json"
+        )
+        active_output = submission_path if self.is_submission else result_path
+        if (
+            self.episode_order is not None
+            and os.path.exists(active_output)
+            and os.path.getsize(active_output) > 0
+        ):
+            raise RuntimeError(
+                "Online TTA cannot skip completed episodes without restoring adapter state; use an empty output directory"
+            )
+        if not self.is_submission and os.path.exists(result_path):
             with open(os.path.join(self.output_path, f'result.json'),'r') as f:
                 for line in f.readlines():
                     res = json.loads(line)
@@ -210,13 +294,37 @@ class VLNEvaluator:
                         spls.append(res['spl'])
                         oss.append(res['os'])
                         ones.append(res['ne'])
-        for scene in sorted(scene_episode_dict.keys()):
+        manifest_cursor = 0
+        # A manifest already defines the exact cross-scene order.  Sorting the
+        # keys here would undo that order (for example, val_seen starts with
+        # 1LXtFkjw3qL rather than the lexically first 17DRP5sb8fy).
+        scene_order = (
+            list(scene_episode_dict)
+            if self.episode_order is not None
+            else sorted(scene_episode_dict)
+        )
+        for scene in scene_order:
             episodes = scene_episode_dict[scene]
             scene_id = scene.split('/')[-2]
             print(f"scene_id = {scene_id}")
             # episode_id = 0
             process_bar = tqdm.tqdm(range(len(episodes[idx::self.env_num])), desc=f"scene {scene_id}")
             for episode in episodes[idx::self.env_num]:
+                if self.episode_order is not None:
+                    expected = self.episode_order["episodes"][manifest_cursor]
+                    actual = {
+                        "episode_id": str(episode.episode_id),
+                        "scene_id": os.path.splitext(
+                            os.path.basename(episode.scene_id)
+                        )[0],
+                    }
+                    if actual != expected:
+                        raise RuntimeError(
+                            "Canonical episode {} mismatch: expected {}, got {}".format(
+                                manifest_cursor, expected, actual
+                            )
+                        )
+                    manifest_cursor += 1
                 episode_instruction = episode.instruction.instruction_text if 'objectnav' not in self.config_path else episode.object_category
                 print("episode start",episode_instruction)
                 episode_id = episode.episode_id
@@ -225,6 +333,25 @@ class VLNEvaluator:
                 self.model.reset_for_env(idx)
                 env.current_episode = episode
                 observations = env.reset()
+                if self.episode_order is not None:
+                    reset_episode = env.current_episode
+                    reset_actual = {
+                        "episode_id": str(reset_episode.episode_id),
+                        "scene_id": os.path.splitext(
+                            os.path.basename(reset_episode.scene_id)
+                        )[0],
+                    }
+                    if reset_actual != expected:
+                        raise RuntimeError(
+                            "Habitat reset changed canonical episode {}: "
+                            "expected {}, got {}".format(
+                                manifest_cursor - 1, expected, reset_actual
+                            )
+                        )
+                    episode = reset_episode
+                episode_path = None
+                if self.is_submission:
+                    episode_path = [self.submission_state(env)]
                 os.makedirs(os.path.join(self.output_path, f'check_sim_{self.epoch}'), exist_ok=True)
                 Image.fromarray(observations['rgb']).save(os.path.join(self.output_path, f'check_sim_{self.epoch}', f'rgb_{idx}.jpg'))
                 
@@ -282,10 +409,11 @@ class VLNEvaluator:
                     pose_list.append(torch.from_numpy(tf_camera_to_episodic) @ self.get_axis_align_matrix())
                     intrinsic_list.append(intrinsic)
                     
-                    info = env.get_metrics()
-                    if info['top_down_map'] is not None:
-                        frame = observations_to_image({'rgb':observations['rgb']}, info)
-                        vis_frames.append(frame)
+                    if not self.is_submission:
+                        info = env.get_metrics()
+                        if info['top_down_map'] is not None:
+                            frame = observations_to_image({'rgb':observations['rgb']}, info)
+                            vis_frames.append(frame)
                     # import ipdb; ipdb.set_trace()
                     if len(action_seq) == 0:
                         if output_ids is None:
@@ -342,6 +470,13 @@ class VLNEvaluator:
                     action = action_seq.pop(0)
                     
                     observations = env.step(action)
+                    if episode_path is not None:
+                        state = self.submission_state(env)
+                        # Match the official R2R-CE writer: rotations,
+                        # collisions, and STOP do not create duplicate path
+                        # states.  Only a changed position is retained.
+                        if state["position"] != episode_path[-1]["position"]:
+                            episode_path.append(state)
                     step_id += 1
                     if step_id % self.num_frames == 0:
                         self.model.reset_for_env(idx)
@@ -357,6 +492,11 @@ class VLNEvaluator:
                         vis_frames, os.path.join(self.output_path, f'vis_{self.epoch}'), f'{scene_id}_{episode_id}', fps=6, quality=9
                     )
                 vis_frames.clear()
+                if self.is_submission:
+                    episode_path = episode_path[:500]
+                    episode_path[-1]["stop"] = True
+                    submission_paths[str(episode_id)] = episode_path
+                    continue
                 sucs.append(metrics['success'])
                 spls.append(metrics['spl'])
                 oss.append(metrics['oracle_success'])
@@ -376,7 +516,20 @@ class VLNEvaluator:
                 with open(os.path.join(self.output_path, f'result.json'), 'a') as f:
                     f.write(json.dumps(result) + "\n")
 
+        if (
+            self.episode_order is not None
+            and manifest_cursor != self.episode_order["episode_count"]
+        ):
+            raise RuntimeError("Canonical episode stream ended early")
         env.close()
+        if self.is_submission:
+            temporary = submission_path + ".tmp"
+            os.makedirs(os.path.dirname(os.path.abspath(submission_path)), exist_ok=True)
+            with open(temporary, "w", encoding="utf-8") as stream:
+                json.dump(submission_paths, stream, indent=2)
+                stream.write("\n")
+            os.replace(temporary, submission_path)
+            return submission_paths
         return torch.tensor(sucs).to(self.device), torch.tensor(spls).to(self.device), torch.tensor(oss).to(self.device), torch.tensor(ones).to(self.device), torch.tensor(len(sucs)).to(self.device)     
 
     def parse_actions(self, output):
@@ -421,7 +574,7 @@ class VLNEvaluator:
         conversations = []
         input_ids = []
         for i, source in enumerate(sources):
-            prompt = random.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
+            prompt = self.prompt_rng.choice(self.conjunctions) + DEFAULT_IMAGE_TOKEN
             if len(source[0]["value"]) != 0:
                 source[0]["value"] += f" {prompt}."
             else: 
@@ -489,15 +642,53 @@ def pad_tensors(tensors, lens=None, max_len=None, pad=0):
 def eval():
     global local_rank
     parser = argparse.ArgumentParser()
-    parser.add_argument("--local_rank", default=0, type=int, help="node rank")
+    parser.add_argument(
+        "--local-rank",
+        "--local_rank",
+        dest="local_rank",
+        default=0,
+        type=int,
+        help="local process rank injected by torchrun",
+    )
     parser.add_argument("--model_path", type=str, default="")
+    parser.add_argument(
+        "--vision_tower_path",
+        type=str,
+        default=None,
+        help="offline SigLIP snapshot; overrides vision-tower IDs in model config",
+    )
     parser.add_argument("--habitat_config_path", type=str, default='config/vln_r2r.yaml')
     parser.add_argument("--eval_split", type=str, default='val_unseen')
+    parser.add_argument(
+        "--episode_order_manifest",
+        type=str,
+        default=None,
+        help="manifest directory or path template containing {split}; requires world_size=1",
+    )
     parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln')
+    parser.add_argument(
+        "--submission_file",
+        type=str,
+        default=None,
+        help="R2R-CE test trajectory JSON; defaults to OUTPUT_PATH/predictions.json",
+    )
     parser.add_argument("--num_future_steps", type=int, default=4)
     parser.add_argument("--num_frames", type=int, default=32)
     parser.add_argument("--save_video", action="store_true", default=False)
     parser.add_argument("--num_history", type=int, default=8)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--smoke-episodes",
+        type=int,
+        default=None,
+        help="non-formal lifecycle smoke prefix; requires an order manifest",
+    )
+    parser.add_argument(
+        "--strict_checkpoint_keys",
+        action="store_true",
+        default=False,
+        help="fail if final model checkpoint loading reports incompatible keys",
+    )
     parser.add_argument("--model_max_length", type=int, default=4096,
                         help= "Maximum sequence length. Sequences will be right padded (and possibly truncated).")
     
@@ -516,18 +707,47 @@ def eval():
     init_distributed_mode(args)
     local_rank = args.local_rank
 
+    process_seed = args.seed + get_rank()
+    random.seed(process_seed)
+    np.random.seed(process_seed)
+    torch.manual_seed(process_seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(process_seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_path,
                                                         model_max_length=args.model_max_length,
                                                         padding_side="right")
     
     config = transformers.AutoConfig.from_pretrained(args.model_path)
-    model = StreamVLNForCausalLM.from_pretrained(
+    if args.vision_tower_path:
+        vision_tower_path = os.path.abspath(args.vision_tower_path)
+        if not os.path.isdir(vision_tower_path):
+            raise FileNotFoundError(
+                "vision tower snapshot does not exist: {}".format(
+                    vision_tower_path
+                )
+            )
+        config.mm_vision_tower = vision_tower_path
+        config.vision_tower = vision_tower_path
+    loaded_model = StreamVLNForCausalLM.from_pretrained(
                 args.model_path,
                 attn_implementation="flash_attention_2",
                 torch_dtype=torch.bfloat16,
                 config=config,
                 low_cpu_mem_usage=False,
+                output_loading_info=args.strict_checkpoint_keys,
                 )
+    if args.strict_checkpoint_keys:
+        model, loading_info = loaded_model
+        validate_strict_checkpoint_loading_info(loading_info, "streamvln")
+        print(
+            "Strict checkpoint keys passed for StreamVLN: "
+            "missing=0 unexpected=0 mismatched=0 errors=0"
+        )
+    else:
+        model = loaded_model
     model.model.num_history = args.num_history
     model.requires_grad_(False)
     model.to(local_rank)
@@ -550,7 +770,22 @@ def evaluate(model, tokenizer, args):
         epoch=0,
         args=args
     )
-    sucs, spls, oss, ones, ep_num = evaluator.eval_action(get_rank()) 
+    evaluation_output = evaluator.eval_action(get_rank())
+    if args.eval_split == "test":
+        if get_rank() == 0:
+            submission_path = args.submission_file or os.path.join(
+                args.output_path, "predictions.json"
+            )
+            print(
+                {
+                    "submission_file": submission_path,
+                    "episodes": len(evaluation_output),
+                    "local_metrics": "disabled",
+                }
+            )
+        return
+
+    sucs, spls, oss, ones, ep_num = evaluation_output
     ep_num_all = [torch.zeros_like(ep_num) for _ in range(world_size)]
     dist.all_gather(ep_num_all, ep_num)
     sucs_all = [torch.zeros(ep_num_all[i], dtype=sucs.dtype).to(sucs.device) for i in range(world_size)]

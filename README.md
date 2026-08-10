@@ -2,15 +2,15 @@
 
 NavTTA is a research workspace for test-time adaptation (TTA) in three embodied-navigation tasks:
 
-- `avn/`: audio-visual navigation (the active task line)
-- `vln/`: vision-language navigation (isolated until its experiment phase starts)
+- `avn/`: audio-visual navigation (active experiments)
+- `vln/`: vision-language navigation (active pre-evaluation preparation)
 - `objectnav/`: object navigation (isolated until benchmark selection is complete)
 
-Only AVN is active. Its code, data, checkpoints, experiment definitions, and
-results live directly under `avn/`. VLN and ObjectNav remain as lightweight
-task records until their experiment phases begin. Task-agnostic TTA and run
-utilities live in `core/`; untouched upstream repositories live under
-`references/repos/`.
+AVN is the active experiment line.  VLN was explicitly activated for isolated
+environment, asset, and evaluation-protocol preparation; it does not share
+task-specific dependencies with AVN.  ObjectNav remains a lightweight task
+record until benchmark selection.  Task-agnostic TTA and run utilities live in
+`core/`; untouched upstream repositories live under `references/repos/`.
 
 ## Repository policy
 
@@ -22,8 +22,9 @@ utilities live in `core/`; untouched upstream repositories live under
 
 Current top-level structure:
 
-- `avn/`: active AVN work
-- `vln/`, `objectnav/`: isolated task records
+- `avn/`: active AVN experiments
+- `vln/`: isolated VLN preparation and future experiments
+- `objectnav/`: isolated task record
 - `core/`: shared TTA implementation and tests
 - `references/`: pinned upstream source repositories
 - `docs/`: research progress and literature notes

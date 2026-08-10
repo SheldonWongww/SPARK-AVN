@@ -38,6 +38,12 @@ def parse_args():
     # Load the model from
     parser.add_argument("--resume_file", default=None, help='path of the trained model')
     parser.add_argument("--resume_optimizer", action="store_true", default=False)
+    parser.add_argument(
+        "--strict_checkpoint_keys",
+        action="store_true",
+        default=False,
+        help="require exact final-checkpoint keys after whole module. prefix normalization",
+    )
 
     # Augmented Paths from
     parser.add_argument("--multi_endpoints", default=False, action="store_true")
@@ -70,6 +76,14 @@ def parse_args():
 
     # Submision configuration
     parser.add_argument("--submit", action='store_true', default=False)
+    parser.add_argument(
+        '--eval_splits', nargs='+', default=None,
+        help='splits to build in --test mode; explicit values override --submit defaults'
+    )
+    parser.add_argument(
+        '--episode_order_manifest', default=None,
+        help='manifest directory or path template containing {split}; requires --test, world_size=1, batch_size=1'
+    )
     parser.add_argument('--no_cand_backtrack', action='store_true', default=False)
     parser.add_argument('--detailed_output', action='store_true', default=False)
 
@@ -138,4 +152,3 @@ def postprocess_args(args):
     os.makedirs(args.pred_dir, exist_ok=True)
 
     return args
-

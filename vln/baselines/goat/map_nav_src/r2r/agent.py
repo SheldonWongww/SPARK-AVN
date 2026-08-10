@@ -368,7 +368,7 @@ class GMapNavAgent(Seq2SeqAgent):
                 heading = (viewidx % 12) * math.radians(30)
                 elevation = (viewidx // 12 - 1) * math.radians(30)
             else:
-                state = self.env.env.sims.getState()[i]
+                state = self.env.env.sims[i].getState()[0]
                 action = state.location.viewpointId
                 heading = state.heading
                 elevation = state.elevation
@@ -377,7 +377,12 @@ class GMapNavAgent(Seq2SeqAgent):
             headings.append(heading)
             elevations.append(elevation)
         
-        self.env.env.sims.newEpisode(scans, actions, headings, elevations)
+        for i, (scan, action, heading, elevation) in enumerate(
+            zip(scans, actions, headings, elevations)
+        ):
+            self.env.env.sims[i].newEpisode(
+                [scan], [action], [heading], [elevation]
+            )
 
     def _update_scanvp_cands(self, obs):
         for ob in obs:

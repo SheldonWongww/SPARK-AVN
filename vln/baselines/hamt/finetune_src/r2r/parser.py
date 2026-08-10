@@ -32,12 +32,22 @@ def parse_args():
     # Data preparation
     parser.add_argument('--max_instr_len', type=int, default=80)
     parser.add_argument('--max_action_len', type=int, default=15)
+    parser.add_argument(
+        '--max_action_steps', type=int, default=100,
+        help='history position-embedding length; must match the final checkpoint',
+    )
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--ignoreid', type=int, default=-100, help='ignoreid for action')
     
     # Load the model from
     parser.add_argument("--resume_file", default=None, help='path of the trained model')
     parser.add_argument("--resume_optimizer", action="store_true", default=False)
+    parser.add_argument(
+        "--strict_checkpoint_keys",
+        action="store_true",
+        default=False,
+        help="require exact final-checkpoint keys after whole module. prefix normalization",
+    )
 
     # Augmented Paths from
     parser.add_argument("--aug", default=None)
@@ -68,6 +78,14 @@ def parse_args():
 
     # Submision configuration
     parser.add_argument("--submit", action='store_true', default=False)
+    parser.add_argument(
+        '--eval_splits', nargs='+', default=None,
+        help='splits to build in --test mode; explicit values override --submit defaults'
+    )
+    parser.add_argument(
+        '--episode_order_manifest', default=None,
+        help='manifest directory or path template containing {split}; requires --test, world_size=1, batch_size=1'
+    )
     parser.add_argument('--no_cand_backtrack', action='store_true', default=False)
 
     # Training Configurations
@@ -140,4 +158,3 @@ def postprocess_args(args):
         del args.langs
 
     return args
-

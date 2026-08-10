@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "kind": "upstream_published_reference_metrics",
+  "curated_at": "2026-08-10",
+  "formal_result": false,
+  "policy": {
+    "purpose": "Source-baseline context only; these values were not produced by this workspace.",
+    "missing_values": "Omitted, never inferred.",
+    "rate_unit": "percentage_points",
+    "distance_unit": "meters",
+    "episode_order": "Not reported upstream; aggregate source-model values are not evidence for any order-sensitive TTA protocol.",
+    "formal_use": "Forbidden unless independently reproduced and registered with a complete run manifest."
+  },
+  "records": [
+    {
+      "id": "duet-r2r-discrete-paper-v1",
+      "baseline": "DUET",
+      "benchmark": {
+        "name": "R2R",
+        "protocol": "discrete_matterport3d_graph",
+        "dataset_variant": "original discrete R2R benchmark"
+      },
+      "model_variant": "DUET full model",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "upstream_runtime_path": "datasets/R2R/trained_models/best_val_unseen",
+        "mapping_status": "official_inference_script_mapping",
+        "url": "https://github.com/cshizhe/VLN-DUET/blob/93e8b233164bc079a6db48b8a0a78d123ec8de41/map_nav_src/scripts/run_r2r.sh#L63-L67"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2202.11742v1",
+        "source_url": "https://arxiv.org/src/2202.11742v1",
+        "table_label": "tab:r2r_sota_cmpr",
+        "table_caption": "Comparison with the state of the art on R2R dataset.",
+        "row": "DUET (Ours)"
+      },
+      "metrics": {
+        "val_unseen": {"TL": 13.94, "NE": 3.31, "SR": 72, "SPL": 60},
+        "test_unseen": {"TL": 14.73, "NE": 3.65, "SR": 69, "SPL": 59}
+      },
+      "qualification": [
+        "The cited table does not report a DUET val_seen row."
+      ]
+    },
+    {
+      "id": "duet-reverie-discrete-paper-v1",
+      "baseline": "DUET",
+      "benchmark": {
+        "name": "REVERIE",
+        "protocol": "discrete_matterport3d_graph_object_grounding",
+        "dataset_variant": "original discrete REVERIE benchmark"
+      },
+      "model_variant": "DUET full model with object grounding",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "upstream_runtime_path": "datasets/REVERIE/trained_models/best_val_unseen",
+        "mapping_status": "official_inference_script_mapping",
+        "url": "https://github.com/cshizhe/VLN-DUET/blob/93e8b233164bc079a6db48b8a0a78d123ec8de41/map_nav_src/scripts/run_reverie.sh#L67-L71"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2202.11742v1",
+        "source_url": "https://arxiv.org/src/2202.11742v1",
+        "table_label": "tab:reverie_sota_cmpr",
+        "table_caption": "Comparison with the state-of-the-art methods on REVERIE dataset.",
+        "row": "DUET (Ours)"
+      },
+      "metrics": {
+        "val_seen": {"TL": 13.86, "OSR": 73.86, "SR": 71.75, "SPL": 63.94, "RGS": 57.41, "RGSPL": 51.14},
+        "val_unseen": {"TL": 22.11, "OSR": 51.07, "SR": 46.98, "SPL": 33.73, "RGS": 32.15, "RGSPL": 23.03},
+        "test_unseen": {"TL": 21.30, "OSR": 56.91, "SR": 52.51, "SPL": 36.06, "RGS": 31.88, "RGSPL": 22.06}
+      },
+      "qualification": []
+    },
+    {
+      "id": "hamt-r2r-discrete-e2e-paper-v2",
+      "baseline": "HAMT",
+      "benchmark": {
+        "name": "R2R",
+        "protocol": "discrete_matterport3d_graph",
+        "dataset_variant": "original discrete R2R benchmark"
+      },
+      "model_variant": "HAMT final end-to-end ViT variant",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "expected_upstream_runtime_path": "datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen",
+        "mapping_status": "requires_local_asset_identity_confirmation",
+        "url": "https://github.com/cshizhe/VLN-HAMT/blob/c8b9ee12125f9fe36c51d2ab928fde38f7d846bd/finetune_src/scripts/run_r2r.sh#L54-L62"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2110.13309v2",
+        "source_url": "https://arxiv.org/src/2110.13309v2",
+        "table_label": "tab:r2r_sota_cmpr",
+        "table_caption": "Comparison with state-of-the-art methods on R2R dataset.",
+        "row": "HAMT (Ours)"
+      },
+      "metrics": {
+        "val_seen": {"TL": 11.15, "NE": 2.51, "SR": 76, "SPL": 72},
+        "val_unseen": {"TL": 11.46, "NE": 3.62, "SR": 66, "SPL": 61},
+        "test_unseen": {"TL": 12.27, "NE": 3.93, "SR": 65, "SPL": 60}
+      },
+      "qualification": [
+        "The checked-in upstream script activates fixed `vitbase` features by default; its e2e feature and checkpoint lines are comments.",
+        "Do not associate these final e2e paper values with a local `best_val_unseen` file until its original archive member is proven to be `vitbase-finetune-e2e`."
+      ]
+    },
+    {
+      "id": "hamt-reverie-discrete-e2e-paper-v2",
+      "baseline": "HAMT",
+      "benchmark": {
+        "name": "REVERIE",
+        "protocol": "discrete_matterport3d_graph_object_grounding",
+        "dataset_variant": "original discrete REVERIE benchmark"
+      },
+      "model_variant": "HAMT with R2R-finetuned end-to-end ViT features",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "upstream_runtime_path": "datasets/REVERIE/trained_models/best_val_unseen",
+        "mapping_status": "official_inference_script_mapping",
+        "url": "https://github.com/cshizhe/VLN-HAMT/blob/c8b9ee12125f9fe36c51d2ab928fde38f7d846bd/finetune_src/scripts/run_reverie.sh#L2-L53"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2110.13309v2",
+        "source_url": "https://arxiv.org/src/2110.13309v2",
+        "table_label": "tab:supp_reverie_cmpr",
+        "table_caption": "Navigation and object grounding performances on REVERIE val unseen and test splits.",
+        "row": "HAMT"
+      },
+      "metrics": {
+        "val_unseen": {"TL": 14.08, "SR": 32.95, "OSR": 36.84, "SPL": 30.20, "RGS": 18.92, "RGSPL": 17.28},
+        "test_unseen": {"TL": 13.62, "SR": 30.40, "OSR": 33.41, "SPL": 26.67, "RGS": 14.88, "RGSPL": 13.08}
+      },
+      "qualification": [
+        "The cited supplementary table does not report a HAMT val_seen row."
+      ]
+    },
+    {
+      "id": "goat-r2r-discrete-paper-v1",
+      "baseline": "GOAT",
+      "benchmark": {
+        "name": "R2R",
+        "protocol": "discrete_matterport3d_graph",
+        "dataset_variant": "original discrete R2R benchmark with the paper's synthetic augmentation"
+      },
+      "model_variant": "GOAT full model with BACL, FACL, CFP, CLIP-B/16, METER initialization, and EnvEdit augmentation",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "upstream_runtime_path": "datasets/R2R/navigator/goat_r2r/ckpts/best_val_unseen.pt",
+        "required_sidecars": ["backdoor_update_features.tsv", "frontdoor_update_features.tsv"],
+        "mapping_status": "official_validation_script_mapping",
+        "url": "https://github.com/CrystalSixone/VLN-GOAT/blob/c083bf458e6d2041fbdf91c2a8036f458faa95b4/map_nav_src/scripts/run_r2r_goat_valid.sh#L10-L14"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2404.10241v1",
+        "html_table_url": "https://arxiv.org/html/2404.10241v1#S4.T1",
+        "source_url": "https://arxiv.org/src/2404.10241v1",
+        "table_label": "tab:r2r",
+        "table_caption": "Comparison with other state-of-the-art methods on the R2R dataset.",
+        "row": "GOAT (Ours)"
+      },
+      "metrics": {
+        "val_seen": {"SR": 83.74, "SPL": 79.48, "NE": 1.79, "OSR": 88.64},
+        "val_unseen": {"SR": 77.82, "SPL": 68.13, "NE": 2.40, "OSR": 84.72},
+        "test_unseen": {"SR": 74.57, "SPL": 64.94, "NE": 3.04, "OSR": 80.35}
+      },
+      "qualification": [
+        "The checkpoint alone is insufficient; the cited full model also requires the matching back-door and front-door dictionaries."
+      ]
+    },
+    {
+      "id": "goat-reverie-discrete-paper-v1",
+      "baseline": "GOAT",
+      "benchmark": {
+        "name": "REVERIE",
+        "protocol": "discrete_matterport3d_graph_object_grounding",
+        "dataset_variant": "original discrete REVERIE benchmark with the paper's synthetic augmentation"
+      },
+      "model_variant": "GOAT full model with object grounding, BACL, FACL, CFP, CLIP-B/16, METER initialization, and EnvEdit augmentation",
+      "checkpoint_reference": {
+        "selection": "best_val_unseen",
+        "upstream_runtime_path": "datasets/REVERIE/navigator/goat_reverie/ckpts/best_val_unseen.pt",
+        "required_sidecars": ["backdoor_update_features.tsv", "frontdoor_update_features.tsv"],
+        "mapping_status": "official_validation_script_mapping",
+        "url": "https://github.com/CrystalSixone/VLN-GOAT/blob/c083bf458e6d2041fbdf91c2a8036f458faa95b4/map_nav_src/scripts/run_reverie_goat_valid.sh#L12-L16"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2404.10241v1",
+        "html_table_url": "https://arxiv.org/html/2404.10241v1#S5.T2",
+        "source_url": "https://arxiv.org/src/2404.10241v1",
+        "table_label": "tab:reverie",
+        "table_caption": "Comparison with other state-of-the-art methods on the REVERIE dataset.",
+        "row": "GOAT (Ours)"
+      },
+      "metrics": {
+        "val_seen": {"SR": 78.64, "SPL": 71.40, "RGS": 63.74, "RGSPL": 57.85},
+        "val_unseen": {"SR": 53.37, "SPL": 36.70, "RGS": 38.43, "RGSPL": 26.09},
+        "test_unseen": {"SR": 57.72, "SPL": 40.53, "RGS": 38.32, "RGSPL": 26.70}
+      },
+      "qualification": [
+        "The checkpoint alone is insufficient; the cited full model also requires the matching back-door and front-door dictionaries."
+      ]
+    },
+    {
+      "id": "etpnav-r2r-ce-paper-v2",
+      "baseline": "ETPNav",
+      "benchmark": {
+        "name": "R2R-CE",
+        "protocol": "continuous_habitat_low_level_actions",
+        "dataset_variant": "R2R_VLNCE_v1-2_preprocessed_BERTidx as named by the released evaluation config"
+      },
+      "model_variant": "ETPNav with depth-only waypoint predictor, heuristic control, and sliding enabled",
+      "checkpoint_reference": {
+        "selection": "best validation-unseen checkpoint released at iteration 12000",
+        "upstream_runtime_path": "data/logs/checkpoints/release_r2r/ckpt.iter12000.pth",
+        "mapping_status": "official_evaluation_script_mapping",
+        "url": "https://github.com/MarSaKi/ETPNav/blob/160e65fe5d23ad83d024d57d710e47be6892fc68/run_r2r/main.bash#L24-L34"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2304.03047v2",
+        "source_url": "https://arxiv.org/src/2304.03047v2",
+        "table_label": "tab:sota_r2r",
+        "table_caption": "Comparison with state-of-the-art methods on R2R-CE dataset.",
+        "row": "ETPNav (ours)"
+      },
+      "metrics": {
+        "val_seen": {"TL": 11.78, "NE": 3.95, "OSR": 72, "SR": 66, "SPL": 59},
+        "val_unseen": {"TL": 11.99, "NE": 4.71, "OSR": 65, "SR": 57, "SPL": 49},
+        "test_unseen": {"TL": 12.87, "NE": 5.12, "OSR": 63, "SR": 55, "SPL": 48}
+      },
+      "qualification": []
+    },
+    {
+      "id": "bevbert-r2r-ce-paper-v2",
+      "baseline": "BEVBert",
+      "benchmark": {
+        "name": "R2R-CE",
+        "protocol": "continuous_habitat_low_level_actions",
+        "dataset_variant": "R2R_VLNCE_v1-2_preprocessed_BERTidx as named by the released CE evaluation config"
+      },
+      "model_variant": "BEVBert CE hybrid topo-metric map with heuristic control and sliding enabled",
+      "checkpoint_reference": {
+        "selection": "released CE checkpoint at iteration 9600",
+        "upstream_runtime_path": "ckpt/ckpt.iter9600.pth",
+        "mapping_status": "official_evaluation_script_mapping",
+        "url": "https://github.com/MarSaKi/VLN-BEVBert/blob/ee40002e9eb75ca6d587e8746990e91b0463f5ca/bevbert_ce/run_r2r/main.bash#L24-L34"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2212.04385v2",
+        "source_url": "https://arxiv.org/src/2212.04385v2",
+        "table_label": "tab:r2r_ce",
+        "table_caption": "Comparison with SoTA methods on R2R-CE dataset.",
+        "row": "BEVBert (Ours)"
+      },
+      "metrics": {
+        "val_unseen": {"NE": 4.57, "OSR": 67, "SR": 59, "SPL": 50},
+        "test_unseen": {"NE": 4.70, "OSR": 67, "SR": 59, "SPL": 50}
+      },
+      "qualification": [
+        "The cited R2R-CE comparison table does not report a val_seen row."
+      ]
+    },
+    {
+      "id": "streamvln-r2r-ce-v1-3-updated-checkpoint",
+      "baseline": "StreamVLN",
+      "benchmark": {
+        "name": "R2R-CE",
+        "protocol": "continuous_habitat_low_level_actions_streaming_rgb",
+        "dataset_variant": "R2R_VLNCE_v1-3"
+      },
+      "model_variant": "StreamVLN dagger and extra-VLN-data variant without voxel pruning",
+      "checkpoint_reference": {
+        "repository": "mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "revision": "f1f76c66083c362ddfcd2610167f9c4e4a46c027",
+        "mapping_status": "official_readme_and_model_zoo_mapping",
+        "url": "https://huggingface.co/mengwei0427/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3/tree/f1f76c66083c362ddfcd2610167f9c4e4a46c027"
+      },
+      "citation": {
+        "paper_url": "https://arxiv.org/abs/2507.05240v2",
+        "html_table_url": "https://arxiv.org/html/2507.05240v2#S3.T1",
+        "source_url": "https://arxiv.org/src/2507.05240v2",
+        "table_label": "tab:comp-vlnce",
+        "table_caption": "Comparison with state-of-the-art methods on VLN-CE R2R and RxR Val-Unseen split.",
+        "row": "StreamVLN dagger",
+        "official_readme_url": "https://github.com/InternRobotics/StreamVLN/blob/e48f6ff7e9201d93aae003e8f64b04c00cec13bc/README.md#L38-L40"
+      },
+      "metrics": {
+        "val_unseen": {"NE": 4.90, "OS": 63.6, "SR": 56.4, "SPL": 50.2}
+      },
+      "qualification": [
+        "The dagger marker denotes use of additional VLN data beyond the R2R-CE and RxR-CE benchmarks.",
+        "The paper prose still contains stale R2R values 56.9 SR and 51.9 SPL; the v2 table and updated official README both report 56.4 SR and 50.2 SPL for this v1-3 checkpoint.",
+        "No val_seen or test result is reported for this checkpoint."
+      ]
+    }
+  ]
+}

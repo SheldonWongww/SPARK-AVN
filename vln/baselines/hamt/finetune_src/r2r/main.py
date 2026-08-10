@@ -20,10 +20,17 @@ from r2r.agent_r2rback import Seq2SeqBackAgent
 from r2r.data_utils import ImageFeaturesDB, construct_instrs
 from r2r.env import R2RBatch, R2RBackBatch
 from r2r.parser import parse_args
+from navtta_core.experiment import (
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 
 
 def build_dataset(args, rank=0, is_test=False):
+    is_test = is_test or args.test
     tok = get_tokenizer(args)
 
     feat_db = ImageFeaturesDB(args.img_ft_file, args.image_feat_size)
@@ -33,41 +40,71 @@ def build_dataset(args, rank=0, is_test=False):
     else:
         dataset_class = R2RBatch
 
+    train_env = None
+    aug_env = None
+
     # because we don't use distributed sampler here
     # in order to make different processes deal with different training examples
     # we need to shuffle the data with different seed in each processes
-    train_instr_data = construct_instrs(
-        args.anno_dir, args.dataset, ['train'], tokenizer=tok, max_instr_len=args.max_instr_len
-    )
-    train_env = dataset_class(
-        feat_db, train_instr_data, args.connectivity_dir, batch_size=args.batch_size, 
-        angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-        sel_data_idxs=None, name='train'
-    )
-    if args.aug is not None:
-        aug_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, [args.aug], tokenizer=tok, max_instr_len=args.max_instr_len
+    if not is_test:
+        train_instr_data = construct_instrs(
+            args.anno_dir, args.dataset, ['train'], tokenizer=tok, max_instr_len=args.max_instr_len
         )
-        aug_env = dataset_class(
-            feat_db, aug_instr_data, args.connectivity_dir, batch_size=args.batch_size, 
+        train_env = dataset_class(
+            feat_db, train_instr_data, args.connectivity_dir, batch_size=args.batch_size,
             angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-            sel_data_idxs=None, name='aug'
+            sel_data_idxs=None, name='train'
         )
+
+        if args.aug is not None:
+            aug_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, [args.aug], tokenizer=tok, max_instr_len=args.max_instr_len
+            )
+            aug_env = dataset_class(
+                feat_db, aug_instr_data, args.connectivity_dir, batch_size=args.batch_size,
+                angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
+                sel_data_idxs=None, name='aug'
+            )
+
+    if is_test:
+        if args.eval_splits is None:
+            val_env_names = ['val_seen', 'val_unseen']
+            if args.submit:
+                if args.dataset == 'r2r':
+                    val_env_names.append('test')
+                elif args.dataset == 'rxr':
+                    val_env_names.extend(['test_challenge_public', 'test_standard_public'])
+        else:
+            val_env_names = list(args.eval_splits)
+
+        disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
+        if disallowed_splits:
+            raise ValueError(
+                'Training splits are not allowed in evaluation-only mode: '
+                + ', '.join(sorted(disallowed_splits))
+            )
     else:
-        aug_env = None
+        val_env_names = ['val_train_seen', 'val_seen']
+        if args.dataset != 'r4r':
+            val_env_names.append('val_unseen')
+        else:   # val_unseen of r4r is too large to evaluate in training
+            val_env_names.append('val_unseen_sampled')
 
-    val_env_names = ['val_train_seen', 'val_seen']
-    if args.test or args.dataset != 'r4r':
-        val_env_names.append('val_unseen')
-    else:   # val_unseen of r4r is too large to evaluate in training
-        val_env_names.append('val_unseen_sampled')
-
-    if args.submit:
-        if args.dataset == 'r2r':
-            val_env_names.append('test')
-        elif args.dataset == 'rxr':
-            val_env_names.extend(['test_challenge_public', 'test_standard_public'])
+        if args.submit:
+            if args.dataset == 'r2r':
+                val_env_names.append('test')
+            elif args.dataset == 'rxr':
+                val_env_names.extend(['test_challenge_public', 'test_standard_public'])
     
+    if args.episode_order_manifest is not None:
+        if args.dataset != 'r2r':
+            raise ValueError('episode_order_manifest currently supports r2r only')
+        if not is_test or args.world_size != 1 or args.batch_size != 1:
+            raise ValueError(
+                'episode_order_manifest requires --test, world_size=1, and batch_size=1'
+            )
+        val_env_names = canonicalize_eval_splits(val_env_names)
+
     val_envs = {}
     for split in val_env_names:
         val_instr_data = construct_instrs(
@@ -78,6 +115,14 @@ def build_dataset(args, rank=0, is_test=False):
             angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
             sel_data_idxs=None if args.world_size < 2 else (rank, args.world_size), name=split
         )
+        if args.episode_order_manifest is not None:
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            manifest = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
+            configure_exact_episode_env(val_env, manifest)
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env
@@ -279,7 +324,7 @@ def main():
         rank = 0
 
     set_random_seed(args.seed + rank)
-    train_env, val_envs, aug_env = build_dataset(args, rank=rank)
+    train_env, val_envs, aug_env = build_dataset(args, rank=rank, is_test=args.test)
 
     if not args.test:
         train(args, train_env, val_envs, aug_env=aug_env, rank=rank)

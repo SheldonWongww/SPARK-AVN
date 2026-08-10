@@ -26,6 +26,12 @@ from r2r.parser import parse_args
 
 from r2r.agent import GMapNavAgent
 from data_utils import LoadZdict
+from navtta_core.experiment import (
+    canonicalize_eval_splits,
+    configure_exact_episode_env,
+    load_episode_order_manifest,
+    resolve_episode_order_manifest_path,
+)
 
 
 def build_dataset(args, rank=0):
@@ -65,60 +71,86 @@ def build_dataset(args, rank=0):
     # Load features
     feat_db = ImageFeaturesDB(args.img_ft_file, args.image_feat_size)
     
-    # Use augmented features
-    if args.use_aug_env:
-        train_feat_db = [feat_db]
-        if args.env_edit:
-            envedit_feat_db = ImageFeaturesDB(args.aug_img_ft_file_envedit, args.image_feat_size)
-            train_feat_db.append(envedit_feat_db)    
-        if len(train_feat_db) == 1:
-            train_feat_db = feat_db
-    else:
-        train_feat_db = feat_db
-
     dataset_class = R2RNavBatch
-
     instr_tok = bert_tok
-    if args.aug is not None: # trajectory & instruction aug
-        aug_feat_db = train_feat_db
-        aug_instr_data = construct_instrs(
-            args.anno_dir, args.dataset, [args.aug], 
+    train_env = None
+    aug_env = None
+    train_instr_data = None
+
+    if not args.test:
+        # Use augmented features
+        if args.use_aug_env:
+            train_feat_db = [feat_db]
+            if args.env_edit:
+                envedit_feat_db = ImageFeaturesDB(args.aug_img_ft_file_envedit, args.image_feat_size)
+                train_feat_db.append(envedit_feat_db)
+            if len(train_feat_db) == 1:
+                train_feat_db = feat_db
+        else:
+            train_feat_db = feat_db
+
+        if args.aug is not None: # trajectory & instruction aug
+            aug_feat_db = train_feat_db
+            aug_instr_data = construct_instrs(
+                args.anno_dir, args.dataset, [args.aug],
+                tokenizer=args.tokenizer, max_instr_len=args.max_instr_len, for_debug=args.for_debug,
+                tok=instr_tok,
+                is_rxr=(args.dataset=='rxr')
+            )
+            aug_env = dataset_class(
+                aug_feat_db, aug_instr_data, args.connectivity_dir,
+                batch_size=args.batch_size, angle_feat_size=args.angle_feat_size,
+                seed=args.seed+rank, sel_data_idxs=None, name='aug',
+                args=args, scanvp_cands_file=args.scanvp_cands_file
+            )
+
+        # Load the training dataset
+        train_instr_data = construct_instrs(
+            args.anno_dir, args.dataset, ['train'],
             tokenizer=args.tokenizer, max_instr_len=args.max_instr_len, for_debug=args.for_debug,
-            tok=instr_tok,
-            is_rxr=(args.dataset=='rxr')
+            tok=instr_tok, is_rxr=(args.dataset=='rxr')
         )
-        aug_env = dataset_class(
-            aug_feat_db, aug_instr_data, args.connectivity_dir, 
-            batch_size=args.batch_size, angle_feat_size=args.angle_feat_size, 
-            seed=args.seed+rank, sel_data_idxs=None, name='aug', 
+        train_env = dataset_class(
+            train_feat_db, train_instr_data, args.connectivity_dir,
+            batch_size=args.batch_size,
+            angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
+            sel_data_idxs=None, name='train',
             args=args, scanvp_cands_file=args.scanvp_cands_file
         )
+
+    if args.test:
+        if args.eval_splits is None:
+            val_env_names = ['val_seen', 'val_unseen']
+            if args.submit and args.dataset != 'rxr':
+                val_env_names.append('test')
+        else:
+            val_env_names = list(args.eval_splits)
+
+        disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
+        if disallowed_splits:
+            raise ValueError(
+                'Training splits are not allowed in evaluation-only mode: '
+                + ', '.join(sorted(disallowed_splits))
+            )
     else:
-        aug_env = None
+        val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
+        if args.dataset == 'rxr':
+            val_env_names.remove('val_train_seen')
+            if not args.submit:
+                val_env_names.remove('val_seen')
 
-    # Load the training dataset
-    train_instr_data = construct_instrs(
-        args.anno_dir, args.dataset, ['train'], 
-        tokenizer=args.tokenizer, max_instr_len=args.max_instr_len, for_debug=args.for_debug,
-        tok=instr_tok, is_rxr=(args.dataset=='rxr')
-    )
-    train_env = dataset_class(
-        train_feat_db, train_instr_data, args.connectivity_dir,
-        batch_size=args.batch_size, 
-        angle_feat_size=args.angle_feat_size, seed=args.seed+rank,
-        sel_data_idxs=None, name='train', 
-        args=args, scanvp_cands_file=args.scanvp_cands_file
-    )
-
-    val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
-    if args.dataset == 'rxr':
-        val_env_names.remove('val_train_seen')
-        if not args.submit:
-            val_env_names.remove('val_seen')
-    
-    if args.submit and args.dataset != 'rxr':
-        val_env_names.append('test')
+        if args.submit and args.dataset != 'rxr':
+            val_env_names.append('test')
         
+    if args.episode_order_manifest is not None:
+        if args.dataset != 'r2r':
+            raise ValueError('episode_order_manifest currently supports r2r only')
+        if not args.test or args.world_size != 1 or args.batch_size != 1:
+            raise ValueError(
+                'episode_order_manifest requires --test, world_size=1, and batch_size=1'
+            )
+        val_env_names = canonicalize_eval_splits(val_env_names)
+
     val_envs = {}
     for split in val_env_names:
         val_instr_data = construct_instrs(
@@ -132,6 +164,14 @@ def build_dataset(args, rank=0):
             sel_data_idxs=None if args.world_size < 2 else (rank, args.world_size), name=split,
             args=args, scanvp_cands_file=args.scanvp_cands_file
         )  
+        if args.episode_order_manifest is not None:
+            manifest_path = resolve_episode_order_manifest_path(
+                args.episode_order_manifest, split
+            )
+            manifest = load_episode_order_manifest(
+                manifest_path, expected_split=split
+            )
+            configure_exact_episode_env(val_env, manifest)
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env, bert_tok, speaker_tok, z_dicts, train_instr_data, front_feat_loader

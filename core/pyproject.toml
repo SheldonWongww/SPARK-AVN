@@ -1,12 +1,15 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = [
+    "setuptools>=40.8,<60; python_version < '3.7'",
+    "setuptools>=61; python_version >= '3.7'",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "navtta-core"
 version = "0.1.0"
 description = "Task-agnostic test-time adaptation utilities for embodied navigation"
-requires-python = ">=3.8"
+requires-python = ">=3.6"
 
 [tool.setuptools.packages.find]
 where = ["."]
