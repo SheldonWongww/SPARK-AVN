@@ -26,6 +26,20 @@ export uses the workspace LF policy and omits three upstream-tracked Python
 bytecode cache files as well as MP3D connectivity metadata bundled by ETPNav
 and BEVBert.
 
+The evolving Source/TTA comparison, literature anchors, and small-search
+policy are maintained in [`VLN_TTA_REPORT.md`](VLN_TTA_REPORT.md).  Tracked
+machine-readable summaries live under `results/`; downloaded raw logs and
+leaderboard prediction files remain ignored.
+
+HAMT R2R uses the paper's final `vitbase-finetune-e2e` checkpoint and its
+matching `r2r.e2e.ft.22k` visual features.  Run HAMT alone on both supported
+benchmarks with:
+
+```bash
+TAG="hamt-e2e-source-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_hamt_e2e_source_eval.sh --gpu 0 --run-tag "$TAG"
+```
+
 ## Canonical source evaluation
 
 The reproducible split order is `val_seen`, `val_unseen`, then `test`.  Online

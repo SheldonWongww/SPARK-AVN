@@ -617,20 +617,20 @@ case "${SETTING}" in
             --world_size 1 --seed 0 --tokenizer bert --ob_type pano
             --num_l_layers 9 --num_x_layers 4 --hist_enc_pano
             --hist_pano_num_layers 2 --fix_lang_embedding --fix_hist_embedding
-            --features vitbase --feedback sample --max_action_len 15
+            --features vitbase_r2rfte2e --feedback sample --max_action_len 15
             --max_action_steps 50 --max_instr_len 60 --image_feat_size 768
             --angle_feat_size 4
             --batch_size 1 --ml_weight 0.2 --feat_dropout 0.4 --dropout 0.5
-            --resume_file ../datasets/R2R/trained_models/vitbase-finetune/ckpts/best_val_unseen
+            --resume_file ../datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen
             --strict_checkpoint_keys
             --test --eval_splits "${SPLIT}"
             --episode_order_manifest "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt"
         )
         append_submit_flag
         set_run_identity hamt "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
-            "${CHECKPOINT_ROOT}/hamt/R2R/best_val_unseen" \
-            "vln/scripts/run_source_eval.sh#hamt-r2r-fixed-feature" \
-            "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5"
+            "${CHECKPOINT_ROOT}/hamt/R2R/vitbase-finetune-e2e/best_val_unseen" \
+            "vln/scripts/run_source_eval.sh#hamt-r2r-e2e" \
+            "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5"
         run_in "${REPO_ROOT}/vln/baselines/hamt/finetune_src" "${COMMAND[@]}"
         validate_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \

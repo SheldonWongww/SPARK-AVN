@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-10T05:30:00+08:00",
+  "generated_at": "2026-08-10T22:15:00+08:00",
   "scope": "VLN val_seen, val_unseen, and test preflight; train episodes are intentionally excluded",
   "path_base": "/root/autodl-tmp/code/NavTTA",
   "sources": {
@@ -303,6 +303,15 @@
       "sha256": "1c842715e4bd9bf082c73f1d4a5b67501732aa4d82a432e0fa7b0e915ee01f10",
       "source": "hamt_assets",
       "note": "This is the upstream vitbase-finetune fixed-feature checkpoint (epoch 1), not the paper's final e2e checkpoint. Do not associate paper e2e metrics with this binary."
+    },
+    {
+      "id": "hamt_r2r_e2e_checkpoint",
+      "required_for": ["hamt"],
+      "path": "vln/checkpoints/hamt/R2R/vitbase-finetune-e2e/best_val_unseen",
+      "size": 1225431690,
+      "sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+      "source": "hamt_assets",
+      "note": "Final upstream R2R end-to-end checkpoint from R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen. Pair only with hamt_r2r_e2e_features; its history position embedding has shape [50, 768]."
     },
     {
       "id": "hamt_reverie_checkpoint",
@@ -845,6 +854,10 @@
     {
       "path": "vln/data/hamt/R2R/trained_models/vitbase-finetune/ckpts/best_val_unseen",
       "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/R2R/best_val_unseen"
+    },
+    {
+      "path": "vln/data/hamt/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen",
+      "target": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/R2R/vitbase-finetune-e2e/best_val_unseen"
     },
     {
       "path": "vln/data/hamt/REVERIE/trained_models/best_val_unseen",

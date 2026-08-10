@@ -15,11 +15,13 @@ pickle reader that never materialized tensor storage. HDF5 files were opened
 read-only and only their metadata, shapes, dtypes, attributes, and key coverage
 were inspected.
 
-The HAMT R2R checkpoint is intentionally named
-`hamt_r2r_fixed_feature_checkpoint`: it is the upstream `vitbase-finetune`
-checkpoint and must not be paired with the paper's final e2e headline metrics.
-Its history position embedding uses 50 positions (`--max_action_steps 50`) to
-match the released checkpoint.
+The active HAMT R2R evaluation uses the final upstream
+`vitbase-finetune-e2e/best_val_unseen` checkpoint together with
+`pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5`.  The previously used
+`vitbase-finetune` fixed-feature checkpoint is retained only for provenance of
+the superseded 2026-08-10 run and must not be paired with the paper's e2e
+headline metrics.  Both released checkpoints use 50 history positions, so the
+launcher sets `--max_action_steps 50` explicitly.
 
 The official GOAT checkpoints retain auxiliary CFP-era modules that are not
 instantiated by the validation policy graph.  Strict loading narrowly

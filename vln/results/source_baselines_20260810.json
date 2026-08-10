@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "kind": "workspace_source_baseline_summary",
+  "updated_at": "2026-08-10",
+  "rate_unit": "percentage_points",
+  "distance_unit": "meters",
+  "formal_result_policy": {
+    "validation_results": "formal when the referenced per-setting run manifest is completed",
+    "test_results": "no local metric; only leaderboard submission artifacts are recorded",
+    "published_numbers": "excluded; see results/legacy/upstream_published_metrics.json and results/legacy/published_tta_metrics.json"
+  },
+  "log_bundle": {
+    "path": "vln/results/source/grouped-source-20260810T080743Z",
+    "run_tag": "grouped-source-20260810T080743Z",
+    "source_git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+    "copied_to_workstation": "2026-08-10",
+    "file_count": 124,
+    "run_manifest_count": 24,
+    "approximate_size_mib": 111,
+    "git_tracking": "ignored_raw_artifacts"
+  },
+  "protocol": {
+    "split_order": [
+      "val_seen",
+      "val_unseen",
+      "test"
+    ],
+    "process_boundary": "fresh process and source checkpoint for every split",
+    "world_size": 1,
+    "batch_size": 1,
+    "seed": 0,
+    "hardware": "NVIDIA vGPU-32GB",
+    "episode_orders": {
+      "r2r_val_seen": {
+        "episodes": 1021,
+        "sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80"
+      },
+      "r2r_val_unseen": {
+        "episodes": 2349,
+        "sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390"
+      },
+      "reverie_val_seen": {
+        "episodes": 1423,
+        "sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1"
+      },
+      "reverie_val_unseen": {
+        "episodes": 3521,
+        "sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca"
+      },
+      "r2r_ce_val_seen": {
+        "episodes": 778,
+        "sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e"
+      },
+      "r2r_ce_val_unseen": {
+        "episodes": 1839,
+        "sha256": "e5a86bf609770d0525efc0be6527d8b88c02f932a0a35e1c4162b06172307a8a"
+      }
+    }
+  },
+  "records": [
+    {
+      "baseline": "DUET",
+      "benchmark": "R2R",
+      "dataset_variant": "original discrete R2R",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-duet-r2r-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-duet-r2r-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 12.33,
+          "NE": 2.28,
+          "OSR": 85.70,
+          "SR": 78.84,
+          "SPL": 72.88,
+          "nDTW": 78.74,
+          "SDTW": 70.93,
+          "CLS": 77.99
+        },
+        "val_unseen": {
+          "TL": 13.94,
+          "NE": 3.31,
+          "OSR": 80.54,
+          "SR": 71.52,
+          "SPL": 60.41,
+          "nDTW": 67.02,
+          "SDTW": 58.06,
+          "CLS": 65.81
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "HAMT",
+      "benchmark": "R2R",
+      "dataset_variant": "original discrete R2R",
+      "method": "Source",
+      "formal_result": true,
+      "status": "superseded_fixed_feature_reference",
+      "superseded_by": "pending HAMT vitbase-finetune-e2e evaluation",
+      "checkpoint_sha256": "1c842715e4bd9bf082c73f1d4a5b67501732aa4d82a432e0fa7b0e915ee01f10",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-hamt-r2r-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-hamt-r2r-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 9.69,
+          "NE": 4.37,
+          "OSR": 66.01,
+          "SR": 60.63,
+          "SPL": 58.73,
+          "nDTW": 70.00,
+          "SDTW": 54.64,
+          "CLS": 69.35
+        },
+        "val_unseen": {
+          "TL": 9.22,
+          "NE": 4.56,
+          "OSR": 61.00,
+          "SR": 55.34,
+          "SPL": 52.71,
+          "nDTW": 65.33,
+          "SDTW": 48.47,
+          "CLS": 64.54
+        }
+      },
+      "qualification": [
+        "The local R2R checkpoint is the released fixed-feature vitbase-finetune checkpoint, not the final end-to-end HAMT variant reported in the paper.",
+        "Retained for provenance only after the workspace switched its active HAMT-R2R setting to vitbase-finetune-e2e."
+      ]
+    },
+    {
+      "baseline": "GOAT",
+      "benchmark": "R2R",
+      "dataset_variant": "original discrete R2R",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-goat-r2r-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-goat-r2r-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 11.69,
+          "NE": 1.67,
+          "OSR": 89.23,
+          "SR": 84.82,
+          "SPL": 80.05,
+          "nDTW": 84.13,
+          "SDTW": 78.20,
+          "CLS": 82.67
+        },
+        "val_unseen": {
+          "TL": 13.30,
+          "NE": 2.31,
+          "OSR": 85.65,
+          "SR": 78.12,
+          "SPL": 67.58,
+          "nDTW": 72.86,
+          "SDTW": 65.08,
+          "CLS": 71.57
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "DUET",
+      "benchmark": "REVERIE",
+      "dataset_variant": "original discrete REVERIE",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-duet-reverie-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-duet-reverie-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 13.86,
+          "OSR": 73.86,
+          "SR": 71.75,
+          "SPL": 63.94,
+          "RGS": 57.41,
+          "RGSPL": 51.14
+        },
+        "val_unseen": {
+          "TL": 22.11,
+          "OSR": 51.07,
+          "SR": 46.98,
+          "SPL": 33.73,
+          "RGS": 32.15,
+          "RGSPL": 23.03
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "HAMT",
+      "benchmark": "REVERIE",
+      "dataset_variant": "original discrete REVERIE",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-hamt-reverie-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-hamt-reverie-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 12.79,
+          "OSR": 47.65,
+          "SR": 43.29,
+          "SPL": 40.19,
+          "RGS": 27.20,
+          "RGSPL": 25.18
+        },
+        "val_unseen": {
+          "TL": 14.08,
+          "OSR": 36.84,
+          "SR": 32.95,
+          "SPL": 30.20,
+          "RGS": 18.92,
+          "RGSPL": 17.28
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "GOAT",
+      "benchmark": "REVERIE",
+      "dataset_variant": "original discrete REVERIE",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-goat-reverie-val_seen-native",
+        "val_unseen": "grouped-source-20260810T080743Z-goat-reverie-val_unseen-native"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 14.19,
+          "OSR": 82.36,
+          "SR": 80.74,
+          "SPL": 73.44,
+          "RGS": 64.93,
+          "RGSPL": 58.82
+        },
+        "val_unseen": {
+          "TL": 25.20,
+          "OSR": 57.97,
+          "SR": 53.82,
+          "SPL": 37.52,
+          "RGS": 39.17,
+          "RGSPL": 27.00
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "ETPNav",
+      "benchmark": "R2R-CE",
+      "dataset_variant": "R2R_VLNCE_v1-3 unified annotations",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "4e70d2a1b4a6cfb32158901b7300cbc2be657641f16c9a17f35ca8570470d8b3",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-etpnav-r2r-ce-val_seen-v1.3-unified",
+        "val_unseen": "grouped-source-20260810T080743Z-etpnav-r2r-ce-val_unseen-v1.3-unified"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 11.087720,
+          "NE": 3.579145,
+          "OSR": 74.421594,
+          "SR": 67.480720,
+          "SPL": 59.969441,
+          "nDTW": 71.284830,
+          "SDTW": 56.850352
+        },
+        "val_unseen": {
+          "TL": 11.357825,
+          "NE": 4.826516,
+          "OSR": 62.588363,
+          "SR": 55.899946,
+          "SPL": 48.304758,
+          "nDTW": 62.125645,
+          "SDTW": 46.204794
+        }
+      },
+      "qualification": [
+        "The local protocol uses unified v1.3 annotations; published ETPNav values use the released v1.2 preprocessing and are not directly comparable."
+      ]
+    },
+    {
+      "baseline": "BEVBert",
+      "benchmark": "R2R-CE",
+      "dataset_variant": "R2R_VLNCE_v1-3 unified annotations",
+      "method": "Source",
+      "formal_result": true,
+      "checkpoint_sha256": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8",
+      "run_ids": {
+        "val_seen": "grouped-source-20260810T080743Z-bevbert-r2r-ce-val_seen-v1.3-unified",
+        "val_unseen": "grouped-source-20260810T080743Z-bevbert-r2r-ce-val_unseen-v1.3-unified"
+      },
+      "metrics": {
+        "val_seen": {
+          "TL": 12.995782,
+          "NE": 3.619262,
+          "OSR": 75.321337,
+          "SR": 68.380463,
+          "SPL": 59.920701,
+          "nDTW": 68.113373,
+          "SDTW": 56.592709
+        },
+        "val_unseen": {
+          "TL": 12.923038,
+          "NE": 4.528764,
+          "OSR": 66.449157,
+          "SR": 58.238173,
+          "SPL": 48.258807,
+          "nDTW": 61.043709,
+          "SDTW": 45.946548
+        }
+      },
+      "qualification": [
+        "The local protocol uses unified v1.3 annotations; published BEVBert values use the released v1.2 preprocessing and are not directly comparable."
+      ]
+    }
+  ],
+  "test_submission_artifacts": [
+    {
+      "baselines": [
+        "DUET",
+        "HAMT",
+        "GOAT"
+      ],
+      "benchmark": "R2R",
+      "episode_count_each": 4173,
+      "status": "generated_and_validated",
+      "local_metrics": false
+    },
+    {
+      "baselines": [
+        "DUET",
+        "HAMT",
+        "GOAT"
+      ],
+      "benchmark": "REVERIE",
+      "episode_count_each": 6292,
+      "status": "generated_and_validated",
+      "local_metrics": false
+    },
+    {
+      "baselines": [
+        "ETPNav",
+        "BEVBert"
+      ],
+      "benchmark": "R2R-CE",
+      "episode_count_each": 3408,
+      "status": "generated_and_posthoc_validated",
+      "validator_fix_commit": "79b40ac",
+      "original_run_manifest_status": "failed_due_to_removed_invalid_adjacent_displacement_rule",
+      "local_metrics": false
+    }
+  ]
+}

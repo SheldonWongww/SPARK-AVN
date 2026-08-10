@@ -1,0 +1,482 @@
+{
+  "schema_version": 1,
+  "kind": "published_vln_tta_reference_metrics",
+  "curated_at": "2026-08-10",
+  "formal_result": false,
+  "rate_unit": "percentage_points",
+  "distance_unit": "meters",
+  "policy": {
+    "purpose": "Literature anchors for the evolving VLN-TTA report; these values were not produced by this workspace.",
+    "formal_use": "Do not relabel as a workspace reproduction or combine with local values without preserving the source and protocol qualifiers.",
+    "episode_order": "FSTTA reports five shuffled online streams; ATENA reports three random seeds. Neither paper publishes the exact episode orders.",
+    "supervision": "ATENA consumes queried binary episode success/failure feedback and is not an unsupervised TTA method."
+  },
+  "sources": {
+    "fstta": {
+      "title": "Fast-Slow Test-time Adaptation for Online Vision-and-Language Navigation",
+      "paper_url": "https://proceedings.mlr.press/v235/gao24p.html",
+      "pdf_url": "https://raw.githubusercontent.com/mlresearch/v235/main/assets/gao24p/gao24p.pdf",
+      "tables": [
+        "Table 9",
+        "Table 10",
+        "Table 12"
+      ]
+    },
+    "atena": {
+      "title": "Active Test-time Vision-Language Navigation",
+      "paper_url": "https://arxiv.org/abs/2506.06630v1",
+      "pdf_url": "https://arxiv.org/pdf/2506.06630",
+      "tables": [
+        "Table 1",
+        "Table 2",
+        "Table 3"
+      ]
+    }
+  },
+  "records": [
+    {
+      "baseline": "DUET",
+      "method": "FSTTA",
+      "benchmark": "R2R",
+      "source": "fstta",
+      "metrics": {
+        "val_seen": {
+          "TL": 13.39,
+          "NE": 2.25,
+          "OSR": 86,
+          "SR": 79,
+          "SPL": 73
+        },
+        "val_unseen": {
+          "TL": 14.64,
+          "NE": 3.03,
+          "OSR": 82,
+          "SR": 75,
+          "SPL": 62
+        }
+      },
+      "qualification": [
+        "Mean over five shuffled online streams; the paper does not report an R2R test-unseen result for this row."
+      ]
+    },
+    {
+      "baseline": "DUET",
+      "method": "ATENA",
+      "benchmark": "R2R",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "TL": 11.27,
+          "NE": 2.18,
+          "SR": 80,
+          "SPL": 75
+        },
+        "val_unseen": {
+          "TL": 12.31,
+          "NE": 2.90,
+          "SR": 75,
+          "SPL": 66
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds; no test-unseen result is reported."
+      ]
+    },
+    {
+      "baseline": "GOAT",
+      "method": "ATENA",
+      "benchmark": "R2R",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "TL": 11.66,
+          "NE": 1.64,
+          "SR": 85.01,
+          "SPL": 80.13
+        },
+        "val_unseen": {
+          "TL": 12.52,
+          "NE": 2.27,
+          "SR": 79.01,
+          "SPL": 69.30
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds; no test-unseen result is reported."
+      ]
+    },
+    {
+      "baseline": "HAMT",
+      "method": "Tent",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 46.03,
+          "SR": 43.43,
+          "SPL": 40.78,
+          "RGSPL": 25.81
+        },
+        "val_unseen": {
+          "OSR": 32.60,
+          "SR": 30.56,
+          "SPL": 28.23,
+          "RGSPL": 14.48
+        },
+        "test_unseen": {
+          "OSR": 25.06,
+          "SR": 23.73,
+          "SPL": 21.78,
+          "RGSPL": 10.82
+        }
+      },
+      "qualification": [
+        "ATENA-paper reimplementation, marked with a dagger in the paper."
+      ]
+    },
+    {
+      "baseline": "HAMT",
+      "method": "FSTTA",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 48.21,
+          "SR": 42.87,
+          "SPL": 39.56,
+          "RGSPL": 24.58
+        },
+        "val_unseen": {
+          "OSR": 36.78,
+          "SR": 32.89,
+          "SPL": 30.51,
+          "RGSPL": 17.20
+        },
+        "test_unseen": {
+          "OSR": 33.39,
+          "SR": 30.39,
+          "SPL": 26.65,
+          "RGSPL": 13.61
+        }
+      },
+      "qualification": [
+        "ATENA-paper reimplementation, marked with a dagger in the paper."
+      ]
+    },
+    {
+      "baseline": "HAMT",
+      "method": "ATENA",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 52.92,
+          "SR": 57.34,
+          "SPL": 48.08,
+          "RGSPL": 29.60
+        },
+        "val_unseen": {
+          "OSR": 38.85,
+          "SR": 34.00,
+          "SPL": 30.96,
+          "RGSPL": 17.51
+        },
+        "test_unseen": {
+          "OSR": 38.19,
+          "SR": 32.55,
+          "SPL": 28.38,
+          "RGSPL": 14.32
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds.",
+        "The published val-seen OSR is lower than SR; this apparent inconsistency is preserved verbatim rather than silently corrected."
+      ]
+    },
+    {
+      "baseline": "DUET",
+      "method": "Tent",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 73.72,
+          "SR": 71.89,
+          "SPL": 64.06,
+          "RGSPL": 50.41
+        },
+        "val_unseen": {
+          "OSR": 51.43,
+          "SR": 47.55,
+          "SPL": 33.99,
+          "RGSPL": 23.32
+        },
+        "test_unseen": {
+          "OSR": 57.12,
+          "SR": 52.61,
+          "SPL": 36.17,
+          "RGSPL": 22.16
+        }
+      },
+      "qualification": []
+    },
+    {
+      "baseline": "DUET",
+      "method": "FSTTA",
+      "benchmark": "REVERIE",
+      "source": "fstta",
+      "metrics": {
+        "val_seen": {
+          "TL": 15.13,
+          "OSR": 75.59,
+          "SR": 75.48,
+          "SPL": 65.84,
+          "RGS": 58.62,
+          "RGSPL": 52.23
+        },
+        "val_unseen": {
+          "TL": 22.14,
+          "OSR": 56.26,
+          "SR": 54.15,
+          "SPL": 36.41,
+          "RGS": 34.27,
+          "RGSPL": 23.56
+        },
+        "test_unseen": {
+          "TL": 21.52,
+          "OSR": 58.44,
+          "SR": 53.40,
+          "SPL": 36.43,
+          "RGS": 32.99,
+          "RGSPL": 22.40
+        }
+      },
+      "qualification": [
+        "Mean over five shuffled online streams."
+      ]
+    },
+    {
+      "baseline": "DUET",
+      "method": "ATENA",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 85.52,
+          "SR": 84.33,
+          "SPL": 74.31,
+          "RGSPL": 59.99
+        },
+        "val_unseen": {
+          "OSR": 71.88,
+          "SR": 68.11,
+          "SPL": 45.82,
+          "RGSPL": 31.26
+        },
+        "test_unseen": {
+          "OSR": 57.74,
+          "SR": 54.28,
+          "SPL": 40.70,
+          "RGSPL": 25.01
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds."
+      ]
+    },
+    {
+      "baseline": "GOAT",
+      "method": "Tent",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 82.43,
+          "SR": 80.74,
+          "SPL": 73.47,
+          "RGSPL": 58.75
+        },
+        "val_unseen": {
+          "OSR": 57.68,
+          "SR": 53.51,
+          "SPL": 37.49,
+          "RGSPL": 26.99
+        },
+        "test_unseen": {
+          "OSR": 62.00,
+          "SR": 57.28,
+          "SPL": 39.82,
+          "RGSPL": 26.97
+        }
+      },
+      "qualification": [
+        "ATENA-paper reimplementation, marked with a dagger in the paper."
+      ]
+    },
+    {
+      "baseline": "GOAT",
+      "method": "FSTTA",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 82.36,
+          "SR": 80.74,
+          "SPL": 73.42,
+          "RGSPL": 58.82
+        },
+        "val_unseen": {
+          "OSR": 57.94,
+          "SR": 53.79,
+          "SPL": 37.50,
+          "RGSPL": 26.95
+        },
+        "test_unseen": {
+          "OSR": 62.35,
+          "SR": 57.52,
+          "SPL": 39.49,
+          "RGSPL": 26.82
+        }
+      },
+      "qualification": [
+        "ATENA-paper reimplementation, marked with a dagger in the paper."
+      ]
+    },
+    {
+      "baseline": "GOAT",
+      "method": "ATENA",
+      "benchmark": "REVERIE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "OSR": 85.03,
+          "SR": 83.35,
+          "SPL": 76.45,
+          "RGSPL": 61.60
+        },
+        "val_unseen": {
+          "OSR": 70.29,
+          "SR": 67.66,
+          "SPL": 53.15,
+          "RGSPL": 39.80
+        },
+        "test_unseen": {
+          "OSR": 64.26,
+          "SR": 62.03,
+          "SPL": 46.82,
+          "RGSPL": 31.54
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds."
+      ]
+    },
+    {
+      "baseline": "ETPNav",
+      "method": "FSTTA",
+      "benchmark": "R2R-CE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "TL": 11.35,
+          "NE": 3.93,
+          "OSR": 72,
+          "SR": 66,
+          "SPL": 59
+        },
+        "val_unseen": {
+          "TL": 11.57,
+          "NE": 4.77,
+          "OSR": 64,
+          "SR": 57,
+          "SPL": 49
+        }
+      },
+      "qualification": [
+        "ATENA-paper reimplementation on the paper's R2R-CE protocol; no test result is reported."
+      ]
+    },
+    {
+      "baseline": "ETPNav",
+      "method": "ATENA",
+      "benchmark": "R2R-CE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "TL": 10.81,
+          "NE": 3.86,
+          "OSR": 72,
+          "SR": 67,
+          "SPL": 61
+        },
+        "val_unseen": {
+          "TL": 12.89,
+          "NE": 4.53,
+          "OSR": 66,
+          "SR": 58,
+          "SPL": 49
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds; no test result is reported."
+      ]
+    },
+    {
+      "baseline": "BEVBert",
+      "method": "FSTTA",
+      "benchmark": "R2R-CE",
+      "source": "fstta",
+      "metrics": {
+        "val_seen": {
+          "TL": 14.07,
+          "NE": 4.11,
+          "OSR": 74,
+          "SR": 69,
+          "SPL": 60
+        },
+        "val_unseen": {
+          "TL": 13.11,
+          "NE": 4.39,
+          "OSR": 65,
+          "SR": 60,
+          "SPL": 51
+        },
+        "test_unseen": {
+          "TL": 15.02,
+          "NE": 5.45,
+          "OSR": 69,
+          "SR": 60,
+          "SPL": 50
+        }
+      },
+      "qualification": [
+        "Mean over five shuffled online streams on the paper's R2R-CE protocol."
+      ]
+    },
+    {
+      "baseline": "BEVBert",
+      "method": "ATENA",
+      "benchmark": "R2R-CE",
+      "source": "atena",
+      "metrics": {
+        "val_seen": {
+          "TL": 11.31,
+          "NE": 3.24,
+          "OSR": 75,
+          "SR": 71,
+          "SPL": 64
+        },
+        "val_unseen": {
+          "TL": 13.48,
+          "NE": 4.50,
+          "OSR": 67,
+          "SR": 60,
+          "SPL": 51
+        }
+      },
+      "qualification": [
+        "Consumes binary episode feedback and averages three random seeds; no test result is reported."
+      ]
+    }
+  ]
+}
