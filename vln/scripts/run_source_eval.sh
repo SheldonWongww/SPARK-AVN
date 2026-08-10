@@ -125,6 +125,42 @@ case "${REPO_ROOT}" in
     *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
 esac
 
+SOURCE_TAG_LOCK_FD=""
+SOURCE_TAG_LOCK_ROOT="/root/autodl-tmp/tmp/navtta-source-tag-locks"
+SOURCE_TAG_LOCK_FILE="${SOURCE_TAG_LOCK_ROOT}/${RUN_TAG}.lock"
+
+claim_or_verify_source_tag_lock() {
+    local inherited_fd
+    local inherited_path
+    command -v flock >/dev/null 2>&1 || die "flock is required for formal runs"
+    mkdir -p "${SOURCE_TAG_LOCK_ROOT}"
+    if [[ "${NAVTTA_SOURCE_TAG_LOCKED:-}" == "${RUN_TAG}" ]]; then
+        inherited_fd="${NAVTTA_SOURCE_TAG_LOCK_FD:-}"
+        [[ "${inherited_fd}" =~ ^[1-9][0-9]*$ ]] || \
+            die "invalid inherited source tag lock descriptor"
+        if ! inherited_path="$(
+            readlink -f "/proc/$$/fd/${inherited_fd}" 2>/dev/null
+        )"; then
+            die "inherited source tag lock descriptor is unavailable"
+        fi
+        [[ "${inherited_path}" == "${SOURCE_TAG_LOCK_FILE}" ]] || \
+            die "inherited source tag lock points to the wrong tag"
+        flock -n "${inherited_fd}" || die "inherited source tag lock is not held"
+        SOURCE_TAG_LOCK_FD="${inherited_fd}"
+    else
+        exec {SOURCE_TAG_LOCK_FD}>"${SOURCE_TAG_LOCK_FILE}"
+        if ! flock -n "${SOURCE_TAG_LOCK_FD}"; then
+            die "source run tag is already active: ${RUN_TAG}"
+        fi
+        export NAVTTA_SOURCE_TAG_LOCKED="${RUN_TAG}"
+        export NAVTTA_SOURCE_TAG_LOCK_FD="${SOURCE_TAG_LOCK_FD}"
+    fi
+}
+
+if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" ]]; then
+    claim_or_verify_source_tag_lock
+fi
+
 case "${SPLIT}" in
     val_seen|val_unseen|test) ;;
     all)

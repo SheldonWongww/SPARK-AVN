@@ -33,8 +33,8 @@ evaluation uses one process, one environment, and batch size one; each split
 starts in a fresh process.  Complete episode-order manifests and the rationale
 are in `manifests/episode_order/README.md`.
 
-On the AutoDL host, print all nine source-evaluation commands without running
-them:
+On the AutoDL host, print three representative settings (three splits each)
+without running them:
 
 ```bash
 cd /root/autodl-tmp/code/NavTTA
@@ -42,6 +42,29 @@ vln/scripts/run_source_eval.sh duet-r2r all 0 --dry-run
 vln/scripts/run_source_eval.sh goat-reverie all 0 --dry-run
 vln/scripts/run_source_eval.sh streamvln-r2r-ce all 0 --dry-run
 ```
+
+The grouped launcher applies the measured single-GPU schedule automatically:
+DUET/HAMT/GOAT first (three parallel model workers, each running R2R then
+REVERIE), ETPNav/BEVBert second, and StreamVLN last.  Every setting still uses
+fresh processes in canonical split order:
+
+```bash
+TAG="grouped-source-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_grouped_source_eval.sh --gpu 0 --run-tag "$TAG"
+```
+
+Use `--dry-run --skip-preflight` to validate the complete schedule without
+evaluation.  The default continuous protocol is `v1.3-unified`.  The optional
+`--ce-data-version v1.2-native` applies only to ETPNav/BEVBert; StreamVLN stays
+on v1.3, so such a mixed-version run is provenance-only and must not be used as
+a cross-model comparison.  A failed worker prevents the next resource group
+from starting, interruption terminates active child process groups, and each
+launcher log is retained under
+`/root/autodl-tmp/tmp/navtta-grouped-source/TAG/`.
+Every launcher attempt, including a dry-run, requires a fresh tag; formal runs
+also reject any tag already present in source results or run manifests.
+Grouped and standalone formal launchers share an atomic per-tag lock, so they
+cannot write the same result tag concurrently.
 
 Before a run, repeat the lightweight asset and CPU/offline checks:
 
