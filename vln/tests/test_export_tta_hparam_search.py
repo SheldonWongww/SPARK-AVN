@@ -231,7 +231,7 @@ class CampaignFixture:
             self.search_root / method / self.batch_id / "stages" / stage
             / "jobs" / "{:04d}-{}".format(ordinal, setting)
         )
-        result_root = self.results_root / run_tag
+        result_root = self.results_root / run_tag / setting / "val_seen"
         result_root.mkdir(parents=True)
         config_method = "source" if stage in ("controls", "final_controls") else method
         parameters = (
@@ -336,6 +336,7 @@ class CampaignFixture:
             write_json(per_episode_path, per_episode)
             formal_artifacts.append(per_episode_path)
         job = {
+            "batch_id": self.batch_id,
             "ordinal": ordinal,
             "base_run_tag": run_tag,
             "run_tag": run_tag,
@@ -357,7 +358,11 @@ class CampaignFixture:
             "config_path": str(job_dir / "parameters.json"),
             "job_dir": str(job_dir),
             "result_root": str(result_root),
-            "command": ["runner", setting, stage],
+            "command": [
+                str(SEARCH.RUNNER), setting, "val_seen", "0",
+                "--run-tag", run_tag,
+                "--tta-config", str(job_dir / "parameters.json"),
+            ] + (["--episode-limit", str(episodes)] if episodes > 0 else []),
         }
         result = dict(job)
         result.update({
@@ -553,6 +558,7 @@ class CampaignFixture:
             asset_manifest_path=self.assets,
             environment_manifest_path=self.environment,
             order_root=self.order_root,
+            tuning_root=self.results_root,
             **kwargs
         )
 
@@ -589,6 +595,266 @@ class CompactExportTest(unittest.TestCase):
             "manifest": manifest,
             "stage_manifest": stage_manifest,
         }
+
+    @staticmethod
+    def _authenticated_stage_manifest(evidence, commit):
+        fixture = evidence["fixture"]
+        job = evidence["job"]
+        return {
+            "schema": "navtta.vln_tta_search_stage.v1",
+            "batch_id": fixture.batch_id,
+            "method": job["search_method"],
+            "stage": job["stage"],
+            "episodes": job["episodes"],
+            "job_count": 1,
+            "settings": list(fixture.settings),
+            "git_commit": commit,
+            "spec_sha256": fixture.spec_sha,
+        }
+
+    def _collision_evidence(self, directory, setting="duet-r2r"):
+        fixture = CampaignFixture(Path(directory))
+        owner, _ = fixture._job(
+            "tent", "final_controls", setting, 0, 0
+        )
+        owner_stage = (
+            fixture.search_root / "tent" / fixture.batch_id
+            / "stages/final_controls"
+        )
+        owner_manifest = {
+            "schema": "navtta.vln_tta_search_stage.v1",
+            "batch_id": fixture.batch_id,
+            "method": "tent",
+            "stage": "final_controls",
+            "episodes": -1,
+            "job_count": 1,
+            "settings": list(fixture.settings),
+            "git_commit": fixture.git_commit,
+            "spec_sha256": fixture.spec_sha,
+        }
+        write_json(owner_stage / "stage_manifest.json", owner_manifest)
+
+        current = copy.deepcopy(owner)
+        current["search_method"] = "fstta"
+        current_dir = (
+            fixture.search_root / "fstta" / fixture.batch_id
+            / "stages/final_controls/jobs/0000-{}".format(setting)
+        )
+        current["job_dir"] = str(current_dir)
+        current["config_path"] = str(current_dir / "parameters.json")
+        current["command"] = list(owner["command"])
+        current["command"][
+            current["command"].index("--tta-config") + 1
+        ] = current["config_path"]
+        write_json(current_dir / "job.json", current)
+        write_json(current_dir / "parameters.json", {
+            "schema": "navtta.vln_tta_job.v1",
+            "method": "source",
+            "search_method": "fstta",
+            "stage": "final_controls",
+            "episodes": -1,
+            "parameters": current["parameters"],
+        })
+        current_manifest = dict(owner_manifest, method="fstta")
+        return {
+            "fixture": fixture,
+            "exporter": fixture.exporter(Path(directory) / "export"),
+            "job": current,
+            "job_dir": current_dir,
+            "stage_manifest": current_manifest,
+            "owner": owner,
+        }
+
+    @staticmethod
+    def _collision_attempt(evidence, declared=True, present=False):
+        job = copy.deepcopy(evidence["job"])
+        job["attempt"] = 1
+        job["run_tag"] = job["base_run_tag"] + "-retry1"
+        old_result_root = Path(job["result_root"])
+        old_parts = list(old_result_root.parts)
+        old_parts[old_parts.index(job["base_run_tag"])] = job["run_tag"]
+        job["result_root"] = str(Path(*old_parts))
+        run_tag_index = job["command"].index("--run-tag")
+        job["command"][run_tag_index + 1] = job["run_tag"]
+        attempt = evidence["job_dir"] / "attempts" / "attempt-00"
+        attempt.mkdir(parents=True)
+        write_json(attempt / "job.json", evidence["job"])
+        archived = {}
+        archived_result = attempt / "result_root"
+        archived_formal = attempt / "formal_run_manifest"
+        if declared:
+            archived["result_root"] = str(archived_result)
+            archived["formal_run_manifest"] = str(archived_formal)
+        if present:
+            archived_result.mkdir()
+            (archived_result / "owner-result.json").write_text(
+                '{"owner":"other-method"}\n', encoding="utf-8"
+            )
+        write_json(attempt / "archived_evidence.json", archived)
+        (attempt / "console.log").write_text(
+            "error: output is not empty; use a new run directory: {}\n".format(
+                evidence["job"]["result_root"]
+            ),
+            encoding="utf-8",
+        )
+        (attempt / "exitcode").write_text("1\n", encoding="utf-8")
+        write_json(attempt / "worker_state.json", {
+            "status": "finished", "exit_code": 1,
+        })
+        return job, attempt
+
+    def _successful_collision_owner(self, evidence, method, attempt_index):
+        fixture = evidence["fixture"]
+        job = copy.deepcopy(evidence["owner"])
+        setting = job["setting"]
+        job_dir = (
+            fixture.search_root / method / fixture.batch_id
+            / "stages/final_controls/jobs/0000-{}".format(setting)
+        )
+        job["search_method"] = method
+        job["job_dir"] = str(job_dir)
+        job["config_path"] = str(job_dir / "parameters.json")
+        job["attempt"] = attempt_index
+        job["run_tag"] = MODULE.BatchExporter._canonical_attempt_run_tag(
+            job["base_run_tag"], attempt_index
+        )
+        job["result_root"] = str(
+            fixture.results_root / job["run_tag"] / setting / "val_seen"
+        )
+        job["command"] = list(job["command"])
+        job["command"][job["command"].index("--run-tag") + 1] = (
+            job["run_tag"]
+        )
+        job["command"][job["command"].index("--tta-config") + 1] = (
+            job["config_path"]
+        )
+
+        result_root = Path(job["result_root"])
+        result_root.mkdir(parents=True)
+        artifact = result_root / "source_metrics.json"
+        artifact.write_text('{"source":true}\n', encoding="utf-8")
+        metrics = fixture._metrics(setting, 70.0, 80.0)
+        result = dict(job)
+        result.update({
+            "metrics": metrics,
+            "expected_episodes": int(
+                fixture.spec["setting_episode_counts"][setting]
+            ),
+            "diagnostics_path": None,
+            "diagnostics_sha256": None,
+            "adapter_diagnostics": None,
+            "requires_posthoc_late_collapse_check": True,
+        })
+        write_json(job_dir / "job.json", job)
+        write_json(job_dir / "parameters.json", {
+            "schema": "navtta.vln_tta_job.v1",
+            "method": "source",
+            "search_method": method,
+            "stage": "final_controls",
+            "episodes": -1,
+            "parameters": job["parameters"],
+        })
+        write_json(job_dir / "metrics.json", result)
+        (job_dir / "exitcode").write_text("0\n", encoding="utf-8")
+        write_json(job_dir / "worker_state.json", {
+            "status": "finished", "exit_code": 0,
+        })
+        (job_dir / "console.log").write_text(
+            "Env name: val_seen, " + ", ".join(
+                "{}: {:.10f}".format(name.lower(), value)
+                for name, value in metrics.items()
+            ) + "\n",
+            encoding="utf-8",
+        )
+        write_json(
+            job_dir.parent.parent / "stage_manifest.json",
+            dict(evidence["stage_manifest"], method=method),
+        )
+        fixture._formal_manifest(job, artifact)
+        return job
+
+    @staticmethod
+    def _install_collision_ladder(job):
+        job_dir = Path(job["job_dir"])
+        for attempt_index in range(job["attempt"]):
+            attempt_job = copy.deepcopy(job)
+            attempt_job["attempt"] = attempt_index
+            attempt_job["run_tag"] = (
+                MODULE.BatchExporter._canonical_attempt_run_tag(
+                    job["base_run_tag"], attempt_index
+                )
+            )
+            attempt_job["result_root"] = str(
+                Path(job["result_root"]).parents[2]
+                / attempt_job["run_tag"] / job["setting"] / "val_seen"
+            )
+            attempt_job["command"][
+                attempt_job["command"].index("--run-tag") + 1
+            ] = attempt_job["run_tag"]
+            attempt = (
+                job_dir / "attempts"
+                / "attempt-{:02d}".format(attempt_index)
+            )
+            attempt.mkdir(parents=True)
+            write_json(attempt / "job.json", attempt_job)
+            write_json(attempt / "archived_evidence.json", {
+                "result_root": str(attempt / "result_root"),
+                "formal_run_manifest": str(
+                    attempt / "formal_run_manifest"
+                ),
+            })
+            (attempt / "console.log").write_text(
+                "error: output is not empty; use a new run directory: {}\n"
+                .format(attempt_job["result_root"]),
+                encoding="utf-8",
+            )
+            (attempt / "exitcode").write_text("1\n", encoding="utf-8")
+            write_json(attempt / "worker_state.json", {
+                "status": "finished", "exit_code": 1,
+            })
+
+    def _archived_formal_attempt(self, directory):
+        fixture = CampaignFixture(Path(directory))
+        job, _ = fixture._job("tent", "final", "duet-r2r", 0)
+        exporter = fixture.exporter(Path(directory) / "export")
+        job_dir = Path(job["job_dir"])
+        attempt = job_dir / "attempts" / "attempt-00"
+        attempt.mkdir(parents=True)
+        write_json(attempt / "job.json", job)
+        for name in ("console.log", "exitcode", "metrics.json", "worker_state.json"):
+            (job_dir / name).rename(attempt / name)
+        archived_result = attempt / "result_root"
+        Path(job["result_root"]).rename(archived_result)
+        formal_path, _ = exporter.formal_by_run_tag[job["run_tag"]][0]
+        archived_formal = attempt / "formal_run_manifest"
+        formal_path.parent.rename(archived_formal)
+        write_json(attempt / "archived_evidence.json", {
+            "result_root": str(archived_result),
+            "formal_run_manifest": str(archived_formal),
+        })
+
+        current = copy.deepcopy(job)
+        current["attempt"] = 1
+        current["run_tag"] = current["base_run_tag"] + "-retry1"
+        old_root = Path(current["result_root"])
+        parts = list(old_root.parts)
+        parts[parts.index(current["base_run_tag"])] = current["run_tag"]
+        current["result_root"] = str(Path(*parts))
+        run_tag_index = current["command"].index("--run-tag")
+        current["command"][run_tag_index + 1] = current["run_tag"]
+        stage_manifest = {
+            "schema": "navtta.vln_tta_search_stage.v1",
+            "batch_id": fixture.batch_id,
+            "method": "tent",
+            "stage": "final",
+            "episodes": -1,
+            "job_count": 1,
+            "settings": list(fixture.settings),
+            "git_commit": fixture.git_commit,
+            "spec_sha256": fixture.spec_sha,
+        }
+        exporter.working_dir = Path(directory)
+        return exporter, current, job_dir, attempt, stage_manifest
 
     def test_carriage_return_progress_is_split_and_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -848,6 +1114,613 @@ class CompactExportTest(unittest.TestCase):
                     MODULE.ExportError, "must omit order_seed entirely"):
                 evidence["exporter"]._validate_job_config(
                     evidence["job"], evidence["job_dir"], evidence["config"]
+                )
+
+    def test_legacy_null_order_seed_requires_authenticated_pinned_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(directory)
+            evidence["config"]["order_seed"] = None
+            pinned = self._authenticated_stage_manifest(
+                evidence, MODULE.LEGACY_NULL_ORDER_SEED_COMMIT
+            )
+            evidence["exporter"]._validate_job_config(
+                evidence["job"], evidence["job_dir"], evidence["config"],
+                stage_manifest=pinned,
+            )
+
+            current = copy.deepcopy(pinned)
+            current["git_commit"] = evidence["fixture"].git_commit
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must omit order_seed entirely"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"],
+                    stage_manifest=current,
+                )
+
+            forged = copy.deepcopy(pinned)
+            forged["method"] = "eam"
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must omit order_seed entirely"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"],
+                    stage_manifest=forged,
+                )
+
+            evidence["config"]["order_seed"] = 0
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must omit order_seed entirely"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"],
+                    stage_manifest=pinned,
+                )
+
+    def test_pinned_stage_with_legacy_null_configs_exports_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = CampaignFixture(Path(directory))
+            fixture._stage("tent", "stage1")
+            stage = (
+                fixture.search_root / "tent" / fixture.batch_id
+                / "stages/stage1"
+            )
+            manifest_path = stage / "stage_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["git_commit"] = MODULE.LEGACY_NULL_ORDER_SEED_COMMIT
+            write_json(manifest_path, manifest)
+            config_paths = sorted((stage / "jobs").glob("*/parameters.json"))
+            before = {}
+            for path in config_paths:
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document["order_seed"] = None
+                write_json(path, document)
+                before[path] = path.read_bytes()
+
+            exporter = fixture.exporter(Path(directory) / "export")
+            exporter.working_dir = Path(directory) / "working"
+            exporter.working_dir.mkdir()
+            result = exporter._validate_stage("tent", "stage1", stage)
+            self.assertEqual(len(result["jobs"]), len(fixture.settings))
+            self.assertEqual(
+                {path: path.read_bytes() for path in config_paths}, before
+            )
+
+    def test_legacy_null_rejects_mutable_nonpinned_spec(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(directory)
+            modified_spec = copy.deepcopy(evidence["fixture"].spec)
+            modified_spec["experiment_id"] = "mutable-forged-spec"
+            modified_spec_path = Path(directory) / "modified-spec.json"
+            write_json(modified_spec_path, modified_spec)
+            exporter = evidence["fixture"].exporter(
+                Path(directory) / "modified-export",
+                spec_path=modified_spec_path,
+            )
+            evidence["config"]["order_seed"] = None
+            forged = self._authenticated_stage_manifest(
+                evidence, MODULE.LEGACY_NULL_ORDER_SEED_COMMIT
+            )
+            forged["spec_sha256"] = MODULE.sha256(modified_spec_path)
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must omit order_seed entirely"):
+                exporter._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"],
+                    stage_manifest=forged,
+                )
+
+    def test_restored_collision_attempt_exports_derived_recovery_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=True, present=False
+            )
+            destination = Path(directory) / "compact-job"
+            evidence["exporter"].working_dir = Path(directory)
+            evidence["exporter"]._copy_attempts(
+                current, evidence["job_dir"], destination, "fixture/job",
+                evidence["stage_manifest"],
+            )
+            ledger = json.loads((
+                destination / "attempts/attempt-00/evidence.json"
+            ).read_text(encoding="utf-8"))
+            self.assertTrue(ledger["output_collision"])
+            self.assertEqual(
+                ledger["recovery_status"], "owner_evidence_restored"
+            )
+            self.assertTrue(ledger["archived"]["result_root"]["declared"])
+            self.assertFalse(ledger["archived"]["result_root"]["present"])
+            self.assertTrue(ledger["collision_owner"]["authenticated"])
+            self.assertEqual(
+                ledger["collision_owner"]["search_method"], "tent"
+            )
+            self.assertEqual(
+                ledger["campaign_identity"]["git_commit"],
+                evidence["fixture"].git_commit,
+            )
+            self.assertRegex(
+                ledger["source_evidence"]["attempt_job_sha256"],
+                r"^[0-9a-f]{64}$",
+            )
+
+    def test_collision_attempt_held_owner_exports_authenticated_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=False, present=False
+            )
+            destination = Path(directory) / "compact-job"
+            evidence["exporter"].working_dir = Path(directory)
+            evidence["exporter"]._copy_attempts(
+                current, evidence["job_dir"], destination, "fixture/job",
+                evidence["stage_manifest"],
+            )
+            ledger = json.loads((
+                destination / "attempts/attempt-00/evidence.json"
+            ).read_text(encoding="utf-8"))
+            self.assertEqual(
+                ledger["recovery_status"],
+                "owner_evidence_held_before_retry",
+            )
+            self.assertTrue(ledger["collision_owner"]["authenticated"])
+
+    def test_shared_source_retry_ladders_authenticate_retry_owners(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            jobs = {
+                "fstta": self._successful_collision_owner(
+                    evidence, "fstta", 1
+                ),
+                "eam": self._successful_collision_owner(
+                    evidence, "eam", 2
+                ),
+                "atena": self._successful_collision_owner(
+                    evidence, "atena", 3
+                ),
+            }
+            for job in jobs.values():
+                self._install_collision_ladder(job)
+
+            exporter = evidence["fixture"].exporter(
+                Path(directory) / "export"
+            )
+            exporter.working_dir = Path(directory) / "working"
+            exporter.working_dir.mkdir()
+            expected_owners = {
+                "fstta": ["tent"],
+                "eam": ["tent", "fstta"],
+                "atena": ["tent", "fstta", "eam"],
+            }
+            for method, job in jobs.items():
+                with self.subTest(method=method):
+                    destination = exporter.working_dir / method
+                    exporter._copy_attempts(
+                        job, Path(job["job_dir"]), destination,
+                        "fixture/{}".format(method),
+                        dict(evidence["stage_manifest"], method=method),
+                    )
+                    ledgers = [
+                        json.loads(path.read_text(encoding="utf-8"))
+                        for path in sorted(
+                            (destination / "attempts").glob(
+                                "attempt-*/evidence.json"
+                            )
+                        )
+                    ]
+                    self.assertEqual(
+                        [
+                            item["collision_owner"]["search_method"]
+                            for item in ledgers
+                        ],
+                        expected_owners[method],
+                    )
+                    self.assertTrue(all(
+                        item["recovery_status"]
+                        == "owner_evidence_restored"
+                        for item in ledgers
+                    ))
+
+    def test_retry_collision_owner_keeps_canonical_retry_identity(self):
+        cases = (
+            ("attempt_type", "attempt number is not canonical"),
+            ("attempt_tag", "run_tag is not canonical"),
+            ("result_root", "result_root mismatch"),
+            ("command", "command is not canonical"),
+        )
+        for mutation, pattern in cases:
+            with self.subTest(mutation=mutation):
+                with tempfile.TemporaryDirectory() as directory:
+                    evidence = self._collision_evidence(directory)
+                    owner = self._successful_collision_owner(
+                        evidence, "fstta", 1
+                    )
+                    collision = copy.deepcopy(owner)
+                    collision["search_method"] = "eam"
+                    collision_dir = (
+                        evidence["fixture"].search_root / "eam"
+                        / evidence["fixture"].batch_id
+                        / "stages/final_controls/jobs/0000-duet-r2r"
+                    )
+                    collision["job_dir"] = str(collision_dir)
+                    collision["config_path"] = str(
+                        collision_dir / "parameters.json"
+                    )
+                    collision["command"][
+                        collision["command"].index("--tta-config") + 1
+                    ] = collision["config_path"]
+
+                    owner_path = Path(owner["job_dir"]) / "job.json"
+                    mutated_owner = json.loads(
+                        owner_path.read_text(encoding="utf-8")
+                    )
+                    if mutation == "attempt_type":
+                        mutated_owner["attempt"] = True
+                    elif mutation == "attempt_tag":
+                        mutated_owner["attempt"] = 2
+                    elif mutation == "result_root":
+                        forged_root = str(
+                            evidence["fixture"].results_root / owner["run_tag"]
+                            / owner["setting"] / "val_unseen"
+                        )
+                        mutated_owner["result_root"] = forged_root
+                        collision["result_root"] = forged_root
+                    else:
+                        mutated_owner["command"].append("--dry-run")
+                    write_json(owner_path, mutated_owner)
+
+                    exporter = evidence["fixture"].exporter(
+                        Path(directory) / "export"
+                    )
+                    with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                        exporter._authenticated_collision_owner(
+                            collision, collision_dir,
+                            dict(evidence["stage_manifest"], method="eam"),
+                        )
+
+    def test_collision_attempt_rejects_retained_owner_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=True, present=True
+            )
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "retains archived owner evidence"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
+                )
+
+    def test_collision_attempt_requires_restored_authenticated_owner(self):
+        cases = ("missing_result", "missing_job")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, _ = self._collision_attempt(
+                    evidence, declared=True, present=False
+                )
+                if case == "missing_result":
+                    shutil.rmtree(Path(evidence["owner"]["result_root"]))
+                    pattern = "was not restored"
+                else:
+                    Path(evidence["owner"]["job_dir"], "job.json").unlink()
+                    pattern = "not uniquely authenticated"
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+    def test_collision_attempt_requires_exact_terminal_exit_one(self):
+        cases = (
+            ("missing_state", None, None, "worker state"),
+            ("state_zero", "1", 0, "consistent terminal pair"),
+            ("exit_two", "2", 1, "consistent terminal pair"),
+            ("exit_whitespace", " 1 ", 1, "canonical integer line"),
+        )
+        for case, exit_text, state_code, pattern in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, attempt = self._collision_attempt(
+                    evidence, declared=True, present=False
+                )
+                if case == "missing_state":
+                    (attempt / "worker_state.json").unlink()
+                else:
+                    (attempt / "exitcode").write_text(
+                        exit_text + "\n", encoding="utf-8"
+                    )
+                    write_json(attempt / "worker_state.json", {
+                        "status": "finished", "exit_code": state_code,
+                    })
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+    def test_collision_attempt_requires_canonical_path_and_command(self):
+        for case in (
+                "attempt", "result_root", "current_result_root", "command"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, attempt = self._collision_attempt(
+                    evidence, declared=True, present=False
+                )
+                archived_job_path = attempt / "job.json"
+                archived_job = json.loads(
+                    archived_job_path.read_text(encoding="utf-8")
+                )
+                if case == "attempt":
+                    archived_job["attempt"] = False
+                    pattern = "attempt number disagrees"
+                elif case == "result_root":
+                    archived_job["result_root"] = "/tmp/forged-owner-location"
+                    (attempt / "console.log").write_text(
+                        "error: output is not empty; use a new run directory: "
+                        "/tmp/forged-owner-location\n",
+                        encoding="utf-8",
+                    )
+                    pattern = "result_root is not canonical"
+                elif case == "current_result_root":
+                    current["result_root"] = str(
+                        Path(directory) / current["run_tag"]
+                    )
+                    pattern = "current job result_root is not canonical"
+                else:
+                    index = archived_job["command"].index("--run-tag")
+                    archived_job["command"][index + 1] = "forged-run-tag"
+                    pattern = "command/run_tag is not canonical"
+                write_json(archived_job_path, archived_job)
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+    def test_attempt_archive_rejects_unvalidated_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=True, present=False
+            )
+            (evidence["job_dir"] / "attempts/README.txt").write_text(
+                "unexpected\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "contains a non-directory"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
+                )
+
+    def test_missing_noncollision_archive_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, attempt = self._collision_attempt(
+                evidence, declared=True, present=False
+            )
+            (attempt / "console.log").write_text(
+                "RuntimeError: unrelated failure\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "missing without a verified"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
+                )
+
+    def test_retry_result_root_rejects_symlink_component_escape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=False, present=False
+            )
+            outside = Path(directory) / "outside-result"
+            outside.mkdir()
+            (evidence["fixture"].results_root / current["run_tag"]).symlink_to(
+                outside, target_is_directory=True
+            )
+            with self.assertRaisesRegex(MODULE.ExportError, "symlink"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
+                )
+
+    def test_noncollision_attempt_requires_worker_exit_consistency(self):
+        cases = (
+            ("state_mismatch", "0\n", {"status": "finished", "exit_code": 1},
+             "consistent terminal pair"),
+            ("noncanonical_exit", " 1 \n",
+             {"status": "finished", "exit_code": 1}, "canonical integer line"),
+            ("negative_zero", "-0\n",
+             {"status": "finished", "exit_code": 0}, "canonical integer line"),
+            ("missing_state", "1\n", None, "worker state"),
+        )
+        for name, exit_text, state, pattern in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, attempt = self._collision_attempt(
+                    evidence, declared=False, present=False
+                )
+                (attempt / "console.log").write_text(
+                    "RuntimeError: unrelated failure\n", encoding="utf-8"
+                )
+                (attempt / "exitcode").write_text(exit_text, encoding="utf-8")
+                if state is None:
+                    (attempt / "worker_state.json").unlink()
+                else:
+                    write_json(attempt / "worker_state.json", state)
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+    def test_orphaned_running_attempt_is_a_valid_retry_rung(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, attempt = self._collision_attempt(
+                evidence, declared=False, present=False
+            )
+            (attempt / "console.log").write_text(
+                "worker disappeared before exit\n", encoding="utf-8"
+            )
+            (attempt / "exitcode").unlink()
+            write_json(attempt / "worker_state.json", {
+                "status": "running", "worker_pid": 123, "runner_pid": 456,
+            })
+            destination = Path(directory) / "compact-job"
+            evidence["exporter"].working_dir = Path(directory)
+            evidence["exporter"]._copy_attempts(
+                current, evidence["job_dir"], destination, "fixture/job",
+                evidence["stage_manifest"],
+            )
+            ledger = json.loads((
+                destination / "attempts/attempt-00/evidence.json"
+            ).read_text(encoding="utf-8"))
+            self.assertIsNone(ledger["source_evidence"]["exitcode_sha256"])
+            self.assertEqual(ledger["recovery_status"], "no_archived_output")
+
+    def test_archived_formal_manifest_is_fully_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            exporter, current, job_dir, _, stage_manifest = (
+                self._archived_formal_attempt(directory)
+            )
+            destination = Path(directory) / "compact-job"
+            exporter._copy_attempts(
+                current, job_dir, destination, "fixture/job", stage_manifest
+            )
+            ledger = json.loads((
+                destination / "attempts/attempt-00/evidence.json"
+            ).read_text(encoding="utf-8"))
+            self.assertRegex(
+                ledger["source_evidence"]["formal_manifest_sha256"],
+                r"^[0-9a-f]{64}$",
+            )
+            self.assertTrue((
+                destination / "attempts/attempt-00/formal_run_manifest.json"
+            ).is_file())
+
+        for mutation, pattern in (
+                ("identity", "immutable identity SHA256 mismatch"),
+                ("extra", "exactly manifest.json")):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                exporter, current, job_dir, attempt, stage_manifest = (
+                    self._archived_formal_attempt(directory)
+                )
+                formal_root = attempt / "formal_run_manifest"
+                if mutation == "identity":
+                    manifest_path = formal_root / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    manifest["immutable_identity_sha256"] = "0" * 64
+                    write_json(manifest_path, manifest)
+                else:
+                    (formal_root / "unexpected.txt").write_text(
+                        "unexpected\n", encoding="utf-8"
+                    )
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    exporter._copy_attempts(
+                        current, job_dir, Path(directory) / "compact-job",
+                        "fixture/job", stage_manifest,
+                    )
+
+    def test_attempt_directory_rejects_internal_unexpected_entries(self):
+        for kind in ("file", "directory", "symlink"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, attempt = self._collision_attempt(
+                    evidence, declared=False, present=False
+                )
+                unexpected = attempt / "unexpected"
+                if kind == "file":
+                    unexpected.write_text("unexpected\n", encoding="utf-8")
+                    pattern = "unexpected entry"
+                elif kind == "directory":
+                    unexpected.mkdir()
+                    pattern = "unexpected entry"
+                else:
+                    unexpected.symlink_to(attempt / "job.json")
+                    pattern = "symlink"
+                with self.assertRaisesRegex(MODULE.ExportError, pattern):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, attempt = self._collision_attempt(
+                evidence, declared=True, present=True
+            )
+            nested = attempt / "result_root" / "nested-link"
+            nested.symlink_to(attempt / "job.json")
+            with self.assertRaisesRegex(MODULE.ExportError, "uses a symlink"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
+                )
+
+    def test_retry_commands_require_exact_scheduler_executable_and_shape(self):
+        for mutation in ("runner", "split", "gpu", "extra"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                evidence = self._collision_evidence(directory)
+                current, _ = self._collision_attempt(
+                    evidence, declared=False, present=False
+                )
+                if mutation == "runner":
+                    current["command"][0] = "/tmp/forged-runner"
+                elif mutation == "split":
+                    current["command"][2] = "val_unseen"
+                elif mutation == "gpu":
+                    current["command"][3] = "+0"
+                else:
+                    current["command"].append("--dry-run")
+                with self.assertRaisesRegex(MODULE.ExportError, "command.*canonical"):
+                    evidence["exporter"]._copy_attempts(
+                        current, evidence["job_dir"],
+                        Path(directory) / "compact-job", "fixture/job",
+                        evidence["stage_manifest"],
+                    )
+
+    def test_batch_id_is_bound_across_job_metrics_and_retry_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(directory)
+            evidence["job"]["batch_id"] = "other-batch"
+            with self.assertRaisesRegex(MODULE.ExportError, "batch_id"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"]
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(directory)
+            evidence["result"]["batch_id"] = "other-batch"
+            with self.assertRaisesRegex(MODULE.ExportError, "batch_id"):
+                evidence["exporter"]._validate_metrics_identity(
+                    evidence["job"], evidence["result"], evidence["csv_row"],
+                    evidence["result"]["expected_episodes"],
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._collision_evidence(directory)
+            current, _ = self._collision_attempt(
+                evidence, declared=False, present=False
+            )
+            owner_path = Path(evidence["owner"]["job_dir"]) / "job.json"
+            owner = json.loads(owner_path.read_text(encoding="utf-8"))
+            owner["batch_id"] = "other-batch"
+            write_json(owner_path, owner)
+            with self.assertRaisesRegex(MODULE.ExportError, "batch_id"):
+                evidence["exporter"]._copy_attempts(
+                    current, evidence["job_dir"],
+                    Path(directory) / "compact-job", "fixture/job",
+                    evidence["stage_manifest"],
                 )
 
     def test_job_config_rejects_noninteger_rng_seed_parameters(self):
@@ -1227,7 +2100,8 @@ class CompactExportTest(unittest.TestCase):
             ("hardware", "hardware metadata is incomplete"),
             ("pinned", "pinned manifests are incomplete"),
             ("pinned_schema", "asset manifest schema is invalid"),
-            ("artifact_escape", "artifact escapes result_root"),
+            ("artifact_escape", "artifact name/path mismatch"),
+            ("artifact_dotdot", "artifact name is not canonical"),
             ("artifact_hash", "result artifact.*SHA256 mismatch"),
         )
         identity_attacks = {
@@ -1310,6 +2184,12 @@ class CompactExportTest(unittest.TestCase):
                     outside.write_text("{}\n", encoding="utf-8")
                     manifest["result_artifacts"][0] = {
                         "name": "outside-result.json",
+                        **CampaignFixture._metadata(outside),
+                    }
+                elif attack == "artifact_dotdot":
+                    outside = evidence["job_dir"] / "job.json"
+                    manifest["result_artifacts"][0] = {
+                        "name": "../job.json",
                         **CampaignFixture._metadata(outside),
                     }
                 elif attack == "artifact_hash":

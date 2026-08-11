@@ -8,6 +8,7 @@ prediction paths recorded by run manifests.
 """
 
 import argparse
+import copy
 import csv
 from collections import deque
 from datetime import datetime
@@ -48,6 +49,7 @@ from tools.run_manifest_identity import (  # noqa: E402
 
 DEFAULT_SEARCH_ROOT = REPO_ROOT / "vln/results/logs/hparam_search"
 DEFAULT_RUNS_ROOT = REPO_ROOT / "vln/results/runs"
+DEFAULT_TUNING_ROOT = REPO_ROOT / "vln/results/tuning"
 DEFAULT_EXPORT_ROOT = REPO_ROOT / "vln/results/logs/hparam_exports"
 DEFAULT_ASSET_MANIFEST = REPO_ROOT / "vln/manifests/assets/eval_assets.json"
 DEFAULT_ENVIRONMENT_MANIFEST = (
@@ -89,6 +91,19 @@ CONSOLE_SIGNAL = re.compile(
 )
 SAFE_BATCH_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 HEX_SHA256 = re.compile(r"[0-9a-f]{64}")
+ATTEMPT_DIRECTORY = re.compile(r"attempt-([0-9]+)")
+CANONICAL_EXITCODE = re.compile(rb"(?:0|-?[1-9][0-9]*)\n")
+ATTEMPT_FILES = {
+    "archived_evidence.json", "console.log", "exitcode", "job.json",
+    "metrics.json", "worker_state.json",
+}
+ATTEMPT_DIRECTORIES = {"formal_run_manifest", "result_root"}
+LEGACY_NULL_ORDER_SEED_COMMIT = (
+    "9ad8a423443531c16970e72ac261000417e99c57"
+)
+LEGACY_NULL_ORDER_SEED_SPEC_SHA256 = (
+    "389cd63a7d52f68040c920d41c9e0ead331189945e0c313e05f772f8bf645525"
+)
 MAX_CONSOLE_LINE_BYTES = 16 * 1024
 MAX_CONSOLE_SIGNAL_LINES = 200
 SETTING_CHECKPOINT_ASSET = {
@@ -433,10 +448,14 @@ class BatchExporter:
                  allow_legacy_prefix_controls=False,
                  asset_manifest_path=DEFAULT_ASSET_MANIFEST,
                  environment_manifest_path=DEFAULT_ENVIRONMENT_MANIFEST,
-                 order_root=DEFAULT_ORDER_ROOT):
+                 order_root=DEFAULT_ORDER_ROOT,
+                 tuning_root=DEFAULT_TUNING_ROOT):
         self.batch_id = validate_batch_id(batch_id)
         self.method_roots = {key: Path(value) for key, value in method_roots.items()}
         self.runs_root = Path(runs_root)
+        tuning_root = Path(tuning_root).absolute()
+        reject_symlink(tuning_root, "TTA tuning result root")
+        self.tuning_root = tuning_root
         self.output_dir = Path(output_dir)
         self.export_root = Path(export_root)
         self.allow_legacy_prefix_controls = bool(allow_legacy_prefix_controls)
@@ -727,7 +746,42 @@ class BatchExporter:
             raise ExportError("{} SHA256 mismatch".format(label))
         return path
 
-    def _validate_job_config(self, job, job_dir, config_document):
+    def _legacy_null_order_seed_allowed(self, job, stage_manifest):
+        """Recognize the one persisted scheduler version that wrote null.
+
+        Commit 9ad8a42 wrote ``order_seed: null`` into every ordinary job
+        configuration.  New schedulers deliberately omit that member.  Keep
+        the compatibility exception bound to a fully identified persisted
+        stage so a forged config cannot opt itself into legacy handling.
+        """
+        if not isinstance(stage_manifest, dict):
+            return False
+        if sha256(self.spec_path) != LEGACY_NULL_ORDER_SEED_SPEC_SHA256:
+            return False
+        checks = (
+            ("schema", "navtta.vln_tta_search_stage.v1"),
+            ("git_commit", LEGACY_NULL_ORDER_SEED_COMMIT),
+            ("batch_id", self.batch_id),
+            ("method", job.get("search_method")),
+            ("stage", job.get("stage")),
+            ("episodes", job.get("episodes")),
+            ("spec_sha256", LEGACY_NULL_ORDER_SEED_SPEC_SHA256),
+        )
+        if any(stage_manifest.get(key) != expected for key, expected in checks):
+            return False
+        settings = stage_manifest.get("settings")
+        return (
+            job.get("batch_id") == self.batch_id
+            and isinstance(settings, list)
+            and len(settings) == len(self.settings)
+            and set(settings) == set(self.settings)
+            and job.get("setting") in settings
+        )
+
+    def _validate_job_config(self, job, job_dir, config_document,
+                             stage_manifest=None):
+        if job.get("batch_id") != self.batch_id:
+            raise ExportError("job batch_id does not match the export campaign")
         identity_fields = {
             "method": job.get("config_method"),
             "search_method": job.get("search_method"),
@@ -759,9 +813,14 @@ class BatchExporter:
                             .format(key)
                         )
         elif "order_seed" in config_document:
-            raise ExportError(
-                "ordinary job config must omit order_seed entirely"
+            legacy_null = (
+                config_document.get("order_seed") is None
+                and self._legacy_null_order_seed_allowed(job, stage_manifest)
             )
+            if not legacy_null:
+                raise ExportError(
+                    "ordinary job config must omit order_seed entirely"
+                )
         for key, expected in identity_fields.items():
             if canonical(config_document.get(key)) != canonical(expected):
                 raise ExportError("job/parameters identity mismatch: {}".format(key))
@@ -781,18 +840,22 @@ class BatchExporter:
         if declared_job_dir != job_dir.absolute():
             raise ExportError("job job_dir identity mismatch")
 
-    def _validate_metrics_identity(self, job, result, csv_row, expected_episodes):
+    @staticmethod
+    def _validate_result_job_identity(job, result, label="metrics"):
         identity_fields = (
-            "ordinal", "base_run_tag", "run_tag", "attempt", "setting",
+            "batch_id", "ordinal", "base_run_tag", "run_tag", "attempt", "setting",
             "model", "family", "benchmark", "search_method", "config_method",
             "stage", "episodes", "order_seed", "parameters",
             "parent_run_tags", "config_path", "job_dir", "result_root", "command",
         )
         for key in identity_fields:
             if canonical(result.get(key)) != canonical(job.get(key)):
-                raise ExportError("job/metrics identity mismatch for {}: {}".format(
-                    job.get("run_tag"), key
+                raise ExportError("job/{} identity mismatch for {}: {}".format(
+                    label, job.get("run_tag"), key
                 ))
+
+    def _validate_metrics_identity(self, job, result, csv_row, expected_episodes):
+        self._validate_result_job_identity(job, result)
         if int(result.get("expected_episodes", -1)) != expected_episodes:
             raise ExportError("metrics expected_episodes mismatch for {}".format(
                 job["run_tag"]
@@ -1060,7 +1123,9 @@ class BatchExporter:
 
     def _validate_formal_manifest(self, manifest_path, document, job,
                                   stage_manifest, diagnostics_path,
-                                  expected_exit_code=0):
+                                  expected_exit_code=0,
+                                  allow_archived_location=False,
+                                  record_identity=True):
         order_identity = self._order_identity(job)
         effective_order_seed = (
             int(job["order_seed"]) if job.get("order_seed") is not None else 0
@@ -1117,7 +1182,11 @@ class BatchExporter:
         )
         if document.get("run_id") != expected_run_id:
             raise ExportError("formal run_id mismatch")
-        if Path(manifest_path).parent.name != expected_run_id:
+        manifest_parent_name = Path(manifest_path).parent.name
+        if allow_archived_location:
+            if manifest_parent_name != "formal_run_manifest":
+                raise ExportError("archived formal manifest location is invalid")
+        elif manifest_parent_name != expected_run_id:
             raise ExportError("formal manifest directory/run_id mismatch")
         config = document.get("config")
         # Every search job, including matched Source controls, is launched
@@ -1269,16 +1338,31 @@ class BatchExporter:
             name = item.get("name") if isinstance(item, dict) else None
             if not isinstance(name, str) or not name or name in artifact_names:
                 raise ExportError("formal result artifact names are invalid")
+            name_path = Path(name)
+            if (name_path.is_absolute() or name_path.as_posix() != name
+                    or name_path in (Path("."), Path(".."))
+                    or ".." in name_path.parts):
+                raise ExportError("formal result artifact name is not canonical")
             artifact_names.add(name)
+            declared_path = item.get("path")
+            if not isinstance(declared_path, str) or not declared_path:
+                raise ExportError("formal result artifact path is invalid")
+            declared_path = Path(declared_path)
+            if not declared_path.is_absolute():
+                declared_path = manifest_dir / declared_path
+            declared_path = declared_path.absolute()
+            expected_artifact_path = (result_root / name_path).absolute()
+            if declared_path != expected_artifact_path:
+                raise ExportError("formal result artifact name/path mismatch")
             path = self._validate_file_metadata(
                 item, "sha256", "formal result artifact {}".format(name),
                 manifest_dir,
             ).absolute()
-            if not path_is_within(path, result_root):
+            resolved_root = result_root.resolve(strict=False)
+            resolved_path = path.resolve(strict=True)
+            if not path_is_within(resolved_path, resolved_root):
                 raise ExportError("formal result artifact escapes result_root")
             reject_symlink(path, "formal result artifact", stop=result_root)
-            if name != path.relative_to(result_root).as_posix():
-                raise ExportError("formal result artifact name/path mismatch")
             artifact_records[name] = {
                 "path": path,
                 "size": item["size"],
@@ -1290,12 +1374,14 @@ class BatchExporter:
             raise ExportError("formal artifacts omit tta_diagnostics.json")
         if (expected_exit_code == 0 and job.get("family") == "continuous"
                 and job.get("stage") in PER_EPISODE_STAGES):
-            self.per_episode_source_by_run_tag[job["run_tag"]] = (
-                self._validate_continuous_per_episode_stats(
-                    job, artifact_records,
-                    int(self.spec["setting_episode_counts"][job["setting"]]),
-                )
+            per_episode_source = self._validate_continuous_per_episode_stats(
+                job, artifact_records,
+                int(self.spec["setting_episode_counts"][job["setting"]]),
             )
+            if record_identity:
+                self.per_episode_source_by_run_tag[job["run_tag"]] = (
+                    per_episode_source
+                )
         identity = {
             "benchmark": document["benchmark"],
             "checkpoint_path": str(checkpoint_path),
@@ -1308,15 +1394,16 @@ class BatchExporter:
             "episode_order_manifest_sha256": pinned["episode_order"]["sha256"],
         }
         identity_key = (job["setting"], effective_order_seed)
-        prior = self.formal_identity_by_setting_seed.get(identity_key)
-        if prior is not None and canonical(prior) != canonical(identity):
-            raise ExportError(
-                "full-stream formal asset identity differs across methods for {} seed {}"
-                .format(job["setting"], effective_order_seed)
-            )
-        self.formal_identity_by_setting_seed[identity_key] = identity
-        if effective_order_seed == 0:
-            self.formal_identity_by_setting[job["setting"]] = identity
+        if record_identity:
+            prior = self.formal_identity_by_setting_seed.get(identity_key)
+            if prior is not None and canonical(prior) != canonical(identity):
+                raise ExportError(
+                    "full-stream formal asset identity differs across methods for {} seed {}"
+                    .format(job["setting"], effective_order_seed)
+                )
+            self.formal_identity_by_setting_seed[identity_key] = identity
+            if effective_order_seed == 0:
+                self.formal_identity_by_setting[job["setting"]] = identity
         return identity
 
     def _copy_json(self, source, destination, source_label):
@@ -1409,16 +1496,722 @@ class BatchExporter:
                 )
         return reparsed
 
-    def _copy_attempts(self, job_dir, export_job_dir, source_prefix):
+    @staticmethod
+    def _archived_tree_shape(path):
+        files = directories = total_bytes = 0
+        for child in Path(path).rglob("*"):
+            if child.is_symlink():
+                raise ExportError(
+                    "archived attempt evidence uses a symlink: {}".format(child)
+                )
+            if child.is_dir():
+                directories += 1
+            elif child.is_file():
+                files += 1
+                total_bytes += child.stat().st_size
+            else:
+                raise ExportError(
+                    "archived attempt evidence has a special file: {}".format(
+                        child
+                    )
+                )
+        return {
+            "directories": directories,
+            "files": files,
+            "total_bytes": total_bytes,
+        }
+
+    @staticmethod
+    def _canonical_attempt_run_tag(base_run_tag, attempt_index):
+        if not isinstance(base_run_tag, str) or not base_run_tag:
+            raise ExportError("job has an invalid base_run_tag")
+        if (isinstance(attempt_index, bool)
+                or not isinstance(attempt_index, int)
+                or attempt_index < 0):
+            raise ExportError("job has an invalid attempt number")
+        return (
+            base_run_tag if attempt_index == 0
+            else "{}-retry{}".format(base_run_tag, attempt_index)
+        )
+
+    def _validated_job_command(self, job, label):
+        command = job.get("command")
+        if (not isinstance(command, list) or not command
+                or not all(isinstance(value, str) for value in command)):
+            raise ExportError("{} command is invalid".format(label))
+        run_tag_positions = [
+            index for index, value in enumerate(command) if value == "--run-tag"
+        ]
+        config_positions = [
+            index for index, value in enumerate(command)
+            if value == "--tta-config"
+        ]
+        if (len(run_tag_positions) != 1
+                or run_tag_positions[0] + 1 >= len(command)
+                or command[run_tag_positions[0] + 1] != job.get("run_tag")):
+            raise ExportError("{} command/run_tag is not canonical".format(label))
+        if (len(config_positions) != 1
+                or config_positions[0] + 1 >= len(command)
+                or command[config_positions[0] + 1] != job.get("config_path")):
+            raise ExportError("{} command/config_path is not canonical".format(label))
+        gpu = command[3] if len(command) > 3 else None
+        if (not isinstance(gpu, str) or re.fullmatch(r"0|[1-9][0-9]*", gpu) is None):
+            raise ExportError("{} command GPU is not canonical".format(label))
+        episodes = job.get("episodes")
+        if isinstance(episodes, bool) or not isinstance(episodes, int):
+            raise ExportError("{} episodes are invalid".format(label))
+        expected = [
+            str(search.RUNNER), job.get("setting"), "val_seen", gpu,
+            "--run-tag", job.get("run_tag"),
+            "--tta-config", job.get("config_path"),
+        ]
+        if episodes > 0:
+            expected.extend(["--episode-limit", str(episodes)])
+        order_seed = job.get("order_seed")
+        if order_seed is not None:
+            if type(order_seed) is not int:
+                raise ExportError("{} order_seed is invalid".format(label))
+            expected.extend(["--order-seed", str(order_seed)])
+        if command != expected:
+            raise ExportError("{} command is not canonical".format(label))
+        return command, run_tag_positions[0]
+
+    @staticmethod
+    def _replace_path_component(path, old_value, new_value, label):
+        path = Path(path)
+        if not path.is_absolute():
+            raise ExportError("{} is not absolute".format(label))
+        parts = list(path.parts)
+        positions = [
+            index for index, value in enumerate(parts) if value == old_value
+        ]
+        if len(positions) != 1:
+            raise ExportError(
+                "{} does not contain exactly one run_tag component".format(label)
+            )
+        parts[positions[0]] = new_value
+        return Path(*parts)
+
+    def _expected_tuning_result_root(self, job, run_tag):
+        if (not isinstance(run_tag, str) or not run_tag
+                or run_tag in (".", "..")
+                or Path(run_tag).name != run_tag):
+            raise ExportError("job run_tag is not one safe path component")
+        setting = job.get("setting")
+        if setting not in self.settings:
+            raise ExportError("job setting is not canonical")
+        candidate = (
+            self.tuning_root / run_tag / setting / "val_seen"
+        ).absolute()
+        reject_symlink(
+            candidate, "TTA tuning result path", stop=self.tuning_root
+        )
+        resolved_root = self.tuning_root.resolve(strict=False)
+        resolved_candidate = candidate.resolve(strict=False)
+        if (resolved_candidate == resolved_root
+                or not path_is_within(resolved_candidate, resolved_root)):
+            raise ExportError("TTA tuning result path escapes tuning_root")
+        return candidate
+
+    @staticmethod
+    def _read_canonical_exitcode(path, label, stop):
+        path = require_regular_file(path, label, stop=stop)
+        try:
+            value = path.read_bytes()
+        except OSError as error:
+            raise ExportError("cannot read {}: {}".format(label, error))
+        if CANONICAL_EXITCODE.fullmatch(value) is None:
+            raise ExportError(
+                "{} is not one canonical integer line".format(label)
+            )
+        return int(value)
+
+    def _validate_worker_exit_evidence(self, directory, label,
+                                       allow_incomplete):
+        directory = Path(directory)
+        state_path = require_regular_file(
+            directory / "worker_state.json", "{} worker state".format(label),
+            stop=directory,
+        )
+        state = read_json(state_path)
+        if not isinstance(state, dict):
+            raise ExportError("{} worker state is not an object".format(label))
+        exit_path = directory / "exitcode"
+        exit_present = exit_path.exists() or exit_path.is_symlink()
+        if exit_present:
+            exit_code = self._read_canonical_exitcode(
+                exit_path, "{} exitcode".format(label), directory
+            )
+            if (state.get("status") != "finished"
+                    or type(state.get("exit_code")) is not int
+                    or state["exit_code"] != exit_code):
+                raise ExportError(
+                    "{} worker state/exitcode is not a consistent terminal pair"
+                    .format(label)
+                )
+            return exit_code, exit_path, state_path
+        if not allow_incomplete:
+            raise ExportError("{} lacks exitcode".format(label))
+        if (state.get("status") not in ("starting", "running")
+                or "exit_code" in state):
+            raise ExportError(
+                "{} incomplete worker state is not retryable".format(label)
+            )
+        return None, None, state_path
+
+    @staticmethod
+    def _validate_attempt_directory_entries(attempt):
+        for child in Path(attempt).iterdir():
+            if child.is_symlink():
+                raise ExportError(
+                    "job attempt directory contains a symlink: {}".format(child)
+                )
+            if child.name in ATTEMPT_FILES:
+                if not child.is_file():
+                    raise ExportError(
+                        "job attempt entry is not a regular file: {}".format(child)
+                    )
+            elif child.name in ATTEMPT_DIRECTORIES:
+                if not child.is_dir():
+                    raise ExportError(
+                        "job attempt entry is not a directory: {}".format(child)
+                    )
+            else:
+                raise ExportError(
+                    "job attempt directory contains an unexpected entry: {}"
+                    .format(child)
+                )
+
+    def _validate_archived_formal_manifest(
+            self, attempt_job, stage_manifest, formal_root, result_root,
+            exit_code):
+        if exit_code is None:
+            raise ExportError(
+                "archived formal manifest lacks terminal exit evidence"
+            )
+        if attempt_job.get("episodes") != -1:
+            raise ExportError(
+                "non-formal prefix attempt has an archived run manifest"
+            )
+        children = list(Path(formal_root).iterdir())
+        if (len(children) != 1 or children[0].name != "manifest.json"
+                or children[0].is_symlink() or not children[0].is_file()):
+            raise ExportError(
+                "archived formal run directory is not exactly manifest.json"
+            )
+        manifest_path = require_regular_file(
+            children[0], "archived formal run manifest", stop=formal_root
+        )
+        document = read_json(manifest_path)
+        if not isinstance(document, dict):
+            raise ExportError("archived formal run manifest is not an object")
+        relocated = copy.deepcopy(document)
+        artifacts = relocated.get("result_artifacts")
+        old_result_root = Path(attempt_job["result_root"]).absolute()
+        relocated_result_root = Path(result_root).absolute()
+        if isinstance(artifacts, list):
+            run_id = document.get("run_id")
+            original_manifest_dir = self.runs_root / str(run_id)
+            for item in artifacts:
+                path_value = item.get("path") if isinstance(item, dict) else None
+                if not isinstance(path_value, str) or not path_value:
+                    continue
+                original = Path(path_value)
+                if not original.is_absolute():
+                    original = original_manifest_dir / original
+                original = original.absolute()
+                if not path_is_within(original, old_result_root):
+                    raise ExportError(
+                        "archived formal result artifact escapes original result_root"
+                    )
+                relative = original.relative_to(old_result_root)
+                item["path"] = str(relocated_result_root / relative)
+        relocated_job = dict(attempt_job)
+        relocated_job["result_root"] = str(relocated_result_root)
+        diagnostics_path = None
+        if isinstance(artifacts, list) and any(
+                isinstance(item, dict)
+                and item.get("name") == "tta_diagnostics.json"
+                for item in artifacts):
+            diagnostics_path = relocated_result_root / "tta_diagnostics.json"
+        self._validate_formal_manifest(
+            manifest_path, relocated, relocated_job, stage_manifest,
+            diagnostics_path, expected_exit_code=exit_code,
+            allow_archived_location=True, record_identity=False,
+        )
+        return manifest_path, document
+
+    def _authenticated_collision_owner(self, attempt_job, current_job_dir,
+                                       current_stage_manifest):
+        """Bind a recovered collision to one successful campaign owner."""
+        matches = []
+        old_result_root = Path(attempt_job["result_root"]).absolute()
+        shared_fields = (
+            "batch_id", "ordinal", "base_run_tag", "run_tag", "setting",
+            "model", "family", "benchmark", "config_method", "stage",
+            "episodes", "order_seed", "parameters", "parent_run_tags",
+            "result_root",
+        )
+        for owner_method, method_root in sorted(self.method_roots.items()):
+            if not method_root.is_dir():
+                continue
+            reject_symlink(method_root, "collision owner method root")
+            for owner_job_path in sorted(
+                    method_root.glob("stages/*/jobs/*/job.json")):
+                owner_job_path = require_regular_file(
+                    owner_job_path, "collision owner job", stop=method_root
+                )
+                owner_job_dir = owner_job_path.parent
+                if owner_job_dir.absolute() == current_job_dir.absolute():
+                    continue
+                owner = read_json(owner_job_path)
+                if not isinstance(owner, dict):
+                    raise ExportError("collision owner job is not an object")
+                if owner.get("run_tag") != attempt_job.get("run_tag"):
+                    continue
+                if owner.get("search_method") != owner_method:
+                    raise ExportError(
+                        "collision owner method/path identity mismatch"
+                    )
+                if owner_method == attempt_job.get("search_method"):
+                    raise ExportError(
+                        "collision owner is not a distinct search method"
+                    )
+                if owner.get("batch_id") != self.batch_id:
+                    raise ExportError("collision owner batch_id mismatch")
+                for key in shared_fields:
+                    if canonical(owner.get(key)) != canonical(
+                            attempt_job.get(key)):
+                        raise ExportError(
+                            "collision owner identity mismatch for {}".format(key)
+                        )
+                owner_attempt = owner.get("attempt")
+                if (isinstance(owner_attempt, bool)
+                        or not isinstance(owner_attempt, int)
+                        or owner_attempt < 0):
+                    raise ExportError(
+                        "collision owner attempt number is not canonical"
+                    )
+                expected_owner_tag = self._canonical_attempt_run_tag(
+                    owner.get("base_run_tag"), owner_attempt
+                )
+                if owner.get("run_tag") != expected_owner_tag:
+                    raise ExportError(
+                        "collision owner run_tag is not canonical"
+                    )
+                if Path(owner.get("job_dir", "")).absolute() != (
+                        owner_job_dir.absolute()):
+                    raise ExportError("collision owner job_dir mismatch")
+                owner_stage_dir = owner_job_dir.parent.parent
+                expected_owner_stage_dir = (
+                    method_root / "stages" / str(attempt_job.get("stage"))
+                ).absolute()
+                if owner_stage_dir.absolute() != expected_owner_stage_dir:
+                    raise ExportError("collision owner stage path is not canonical")
+                owner_manifest_path = require_regular_file(
+                    owner_stage_dir / "stage_manifest.json",
+                    "collision owner stage manifest", stop=owner_stage_dir,
+                )
+                owner_manifest = read_json(owner_manifest_path)
+                expected_manifest = (
+                    ("schema", "navtta.vln_tta_search_stage.v1"),
+                    ("batch_id", self.batch_id),
+                    ("method", owner_method),
+                    ("stage", attempt_job.get("stage")),
+                    ("episodes", attempt_job.get("episodes")),
+                    ("git_commit", current_stage_manifest.get("git_commit")),
+                    ("spec_sha256", sha256(self.spec_path)),
+                )
+                if (not isinstance(owner_manifest, dict)
+                        or any(owner_manifest.get(key) != expected
+                               for key, expected in expected_manifest)):
+                    raise ExportError(
+                        "collision owner stage manifest identity mismatch"
+                    )
+                settings = owner_manifest.get("settings")
+                if (not isinstance(settings, list)
+                        or len(settings) != len(self.settings)
+                        or set(settings) != set(self.settings)):
+                    raise ExportError(
+                        "collision owner stage settings are not canonical"
+                    )
+                owner_parameters = require_regular_file(
+                    owner_job_dir / "parameters.json",
+                    "collision owner parameters", stop=owner_job_dir,
+                )
+                self._validate_job_config(
+                    owner, owner_job_dir, read_json(owner_parameters),
+                    stage_manifest=owner_manifest,
+                )
+                self._validated_job_command(owner, "collision owner job")
+                owner_result_root = Path(owner.get("result_root", "")).absolute()
+                expected_owner_result_root = self._expected_tuning_result_root(
+                    owner, expected_owner_tag
+                )
+                if (owner_result_root != expected_owner_result_root
+                        or owner_result_root != old_result_root):
+                    raise ExportError("collision owner result_root mismatch")
+                reject_symlink(owner_result_root, "collision owner result root")
+                if not owner_result_root.is_dir():
+                    raise ExportError(
+                        "collision owner result evidence was not restored"
+                    )
+                owner_exit_code, owner_exit_path, owner_state_path = (
+                    self._validate_worker_exit_evidence(
+                        owner_job_dir, "collision owner", allow_incomplete=False
+                    )
+                )
+                if owner_exit_code != 0:
+                    raise ExportError("collision owner is not successful")
+                owner_metrics_path = require_regular_file(
+                    owner_job_dir / "metrics.json",
+                    "collision owner metrics", stop=owner_job_dir,
+                )
+                owner_result = read_json(owner_metrics_path)
+                if not isinstance(owner_result, dict):
+                    raise ExportError("collision owner metrics are not an object")
+                self._validate_result_job_identity(
+                    owner, owner_result, label="collision-owner metrics"
+                )
+                self._validate_scheduler_reparse(owner, owner_result)
+                expected_episodes = (
+                    owner["episodes"] if owner["episodes"] > 0
+                    else int(self.spec["setting_episode_counts"][owner["setting"]])
+                )
+                owner_diagnostics = self._validate_diagnostics(
+                    owner, owner_result, expected_episodes
+                )
+                formal_sha256 = None
+                formal_matches = self.formal_by_run_tag.get(
+                    owner["run_tag"], []
+                )
+                if owner.get("episodes") == -1:
+                    if len(formal_matches) != 1:
+                        raise ExportError(
+                            "collision owner lacks one formal run manifest"
+                        )
+                    formal_path, formal = formal_matches[0]
+                    self._validate_formal_manifest(
+                        formal_path, formal, owner, owner_manifest,
+                        owner_diagnostics, expected_exit_code=0,
+                        record_identity=False,
+                    )
+                    formal_sha256 = sha256(formal_path)
+                elif formal_matches:
+                    raise ExportError(
+                        "collision owner prefix unexpectedly has a formal manifest"
+                    )
+                matches.append({
+                    "authenticated": True,
+                    "search_method": owner_method,
+                    "stage": owner["stage"],
+                    "run_tag": owner["run_tag"],
+                    "job_manifest_sha256": sha256(owner_job_path),
+                    "parameters_sha256": sha256(owner_parameters),
+                    "metrics_sha256": sha256(owner_metrics_path),
+                    "exitcode_sha256": sha256(owner_exit_path),
+                    "worker_state_sha256": sha256(owner_state_path),
+                    "formal_manifest_sha256": formal_sha256,
+                    "result_root_shape": self._archived_tree_shape(
+                        owner_result_root
+                    ),
+                })
+        if len(matches) != 1:
+            raise ExportError(
+                "output-collision owner evidence is not uniquely authenticated"
+            )
+        return matches[0]
+
+    def _validate_attempt_evidence(self, job, job_dir, attempt,
+                                   stage_manifest):
+        match = ATTEMPT_DIRECTORY.fullmatch(attempt.name)
+        if match is None:
+            raise ExportError(
+                "invalid job attempt directory name: {}".format(attempt.name)
+            )
+        attempt_index = int(match.group(1))
+        if attempt.name != "attempt-{:02d}".format(attempt_index):
+            raise ExportError(
+                "job attempt directory name is not canonical: {}".format(
+                    attempt.name
+                )
+            )
+        self._validate_attempt_directory_entries(attempt)
+        attempt_job_path = require_regular_file(
+            attempt / "job.json", "archived attempt job", stop=attempt
+        )
+        archived_path = require_regular_file(
+            attempt / "archived_evidence.json",
+            "archived attempt evidence manifest", stop=attempt,
+        )
+        attempt_job = read_json(attempt_job_path)
+        archived = read_json(archived_path)
+        if not isinstance(attempt_job, dict):
+            raise ExportError("archived attempt job is not an object")
+        if not isinstance(archived, dict):
+            raise ExportError("archived attempt evidence is not an object")
+        unexpected = set(archived).difference({
+            "result_root", "formal_run_manifest",
+        })
+        if unexpected:
+            raise ExportError(
+                "archived attempt evidence has unexpected keys: {}".format(
+                    ", ".join(sorted(unexpected))
+                )
+            )
+
+        if (job.get("batch_id") != self.batch_id
+                or attempt_job.get("batch_id") != self.batch_id):
+            raise ExportError("retry job batch_id does not match the campaign")
+        archived_attempt = attempt_job.get("attempt")
+        if (isinstance(archived_attempt, bool)
+                or not isinstance(archived_attempt, int)
+                or archived_attempt != attempt_index):
+            raise ExportError("archived attempt number disagrees with directory")
+        expected_run_tag = self._canonical_attempt_run_tag(
+            attempt_job.get("base_run_tag"), archived_attempt
+        )
+        if attempt_job.get("run_tag") != expected_run_tag:
+            raise ExportError("archived attempt run_tag is not canonical")
+        stable_fields = (
+            "batch_id", "ordinal", "base_run_tag", "setting", "model",
+            "family", "benchmark", "search_method", "config_method",
+            "stage", "episodes", "order_seed", "parameters",
+            "parent_run_tags", "config_path", "job_dir",
+        )
+        for key in stable_fields:
+            if canonical(attempt_job.get(key)) != canonical(job.get(key)):
+                raise ExportError(
+                    "archived/current job identity mismatch for {}".format(key)
+                )
+        current_command, current_tag_index = self._validated_job_command(
+            job, "current retry job"
+        )
+        archived_command, _ = self._validated_job_command(
+            attempt_job, "archived attempt job"
+        )
+        expected_archived_command = list(current_command)
+        expected_archived_command[current_tag_index + 1] = expected_run_tag
+        if archived_command != expected_archived_command:
+            raise ExportError("archived attempt command is not canonical")
+        related_result_root = self._replace_path_component(
+            job.get("result_root", ""), job.get("run_tag"), expected_run_tag,
+            "current retry result_root",
+        )
+        expected_result_root = self._expected_tuning_result_root(
+            attempt_job, expected_run_tag
+        )
+        if (Path(job.get("result_root", "")).absolute()
+                != self._expected_tuning_result_root(job, job.get("run_tag"))):
+            raise ExportError("current retry result_root is not canonical")
+        if related_result_root.absolute() != expected_result_root:
+            raise ExportError("retry result_root lineage is not canonical")
+        archived_result_root = Path(
+            attempt_job.get("result_root", "")
+        ).absolute()
+        if archived_result_root != expected_result_root.absolute():
+            raise ExportError("archived attempt result_root is not canonical")
+
+        result_root = attempt / "result_root"
+        formal_root = attempt / "formal_run_manifest"
+        expected_paths = {
+            "result_root": result_root,
+            "formal_run_manifest": formal_root,
+        }
+        evidence = {}
+        for key, expected in expected_paths.items():
+            declared = key in archived
+            if declared:
+                if not isinstance(archived[key], str):
+                    raise ExportError(
+                        "archived attempt {} path is not a string".format(key)
+                    )
+                declared_path = Path(archived[key])
+                if (not declared_path.is_absolute()
+                        or declared_path.absolute() != expected.absolute()):
+                    raise ExportError(
+                        "archived attempt {} path is not canonical".format(key)
+                    )
+            present = expected.exists() or expected.is_symlink()
+            if present:
+                reject_symlink(expected, "archived attempt {}".format(key),
+                               stop=attempt)
+                if not expected.is_dir():
+                    raise ExportError(
+                        "archived attempt {} is not a directory".format(key)
+                    )
+            if present and not declared:
+                raise ExportError(
+                    "undeclared archived attempt {} is present".format(key)
+                )
+            evidence[key] = {
+                "declared": declared,
+                "present": present,
+                "shape": self._archived_tree_shape(expected) if present else None,
+            }
+
+        attempt_exit_code, exit_path, state_path = (
+            self._validate_worker_exit_evidence(
+                attempt, "archived attempt", allow_incomplete=True
+            )
+        )
+        metrics_path = attempt / "metrics.json"
+        metrics_sha256 = None
+        if metrics_path.exists() or metrics_path.is_symlink():
+            metrics_path = require_regular_file(
+                metrics_path, "archived attempt metrics", stop=attempt
+            )
+            metrics = read_json(metrics_path)
+            if not isinstance(metrics, dict):
+                raise ExportError("archived attempt metrics are not an object")
+            self._validate_result_job_identity(
+                attempt_job, metrics, label="archived-attempt metrics"
+            )
+            metrics_sha256 = sha256(metrics_path)
+
+        collision_marker = "output is not empty; use a new run directory: {}".format(
+            attempt_job.get("result_root")
+        )
+        console_path = attempt / "console.log"
+        collision = False
+        if console_path.exists() or console_path.is_symlink():
+            require_regular_file(
+                console_path, "archived attempt console", stop=attempt
+            )
+            collision = any(
+                collision_marker in line
+                for line in iter_bounded_console_records(console_path)
+            )
+        collision_owner = None
+        if collision:
+            if attempt_exit_code != 1:
+                raise ExportError(
+                    "collision attempt worker state is not terminal exit 1"
+                )
+            if metrics_sha256 is not None:
+                raise ExportError("output-collision attempt unexpectedly has metrics")
+            if any(item["present"] for item in evidence.values()):
+                raise ExportError(
+                    "output-collision attempt retains archived owner evidence"
+                )
+            collision_owner = self._authenticated_collision_owner(
+                attempt_job, job_dir, stage_manifest
+            )
+            recovery_status = (
+                "owner_evidence_restored"
+                if any(item["declared"] for item in evidence.values())
+                else "owner_evidence_held_before_retry"
+            )
+        else:
+            missing = [
+                key for key, item in evidence.items()
+                if item["declared"] and not item["present"]
+            ]
+            if missing:
+                raise ExportError(
+                    "archived attempt evidence is missing without a verified "
+                    "output collision: {}".format(", ".join(missing))
+                )
+            recovery_status = (
+                "failed_attempt_output_archived"
+                if any(item["present"] for item in evidence.values())
+                else "no_archived_output"
+            )
+
+        archived_manifest = None
+        archived_manifest_sha256 = None
+        if evidence["formal_run_manifest"]["present"]:
+            archived_manifest, _ = self._validate_archived_formal_manifest(
+                attempt_job, stage_manifest, formal_root, result_root,
+                attempt_exit_code,
+            )
+            archived_manifest_sha256 = sha256(archived_manifest)
+
+        return {
+            "schema": "navtta.vln_tta_attempt_evidence_export.v1",
+            "attempt": attempt_index,
+            "run_tag": attempt_job.get("run_tag"),
+            "campaign_identity": {
+                "batch_id": self.batch_id,
+                "git_commit": stage_manifest.get("git_commit"),
+                "spec_sha256": stage_manifest.get("spec_sha256"),
+            },
+            "source_evidence": {
+                "attempt_job_sha256": sha256(attempt_job_path),
+                "archived_evidence_sha256": sha256(archived_path),
+                "exitcode_sha256": sha256(exit_path) if exit_path else None,
+                "worker_state_sha256": sha256(state_path),
+                "metrics_sha256": metrics_sha256,
+                "formal_manifest_sha256": archived_manifest_sha256,
+            },
+            "output_collision": collision,
+            "recovery_status": recovery_status,
+            "archived": evidence,
+            "collision_owner": collision_owner,
+        }
+
+    def _copy_attempts(self, job, job_dir, export_job_dir, source_prefix,
+                       stage_manifest):
         attempts_root = job_dir / "attempts"
-        if not attempts_root.is_dir():
+        current_attempt = job.get("attempt")
+        if (isinstance(current_attempt, bool)
+                or not isinstance(current_attempt, int)
+                or current_attempt < 0):
+            raise ExportError("job has an invalid attempt number")
+        if job.get("batch_id") != self.batch_id:
+            raise ExportError("job batch_id does not match the export campaign")
+        expected_current_tag = self._canonical_attempt_run_tag(
+            job.get("base_run_tag"), current_attempt
+        )
+        if job.get("run_tag") != expected_current_tag:
+            raise ExportError("current job run_tag is not canonical")
+        if (Path(job.get("result_root", "")).absolute()
+                != self._expected_tuning_result_root(job, expected_current_tag)):
+            raise ExportError("current job result_root is not canonical")
+        self._validated_job_command(job, "current job")
+        if not attempts_root.exists() and not attempts_root.is_symlink():
+            if current_attempt != 0:
+                raise ExportError("retried job lacks archived attempt evidence")
             return
         reject_symlink(attempts_root, "job attempts directory", stop=job_dir)
-        for attempt in sorted(path for path in attempts_root.iterdir()
-                              if path.is_dir()):
+        if not attempts_root.is_dir():
+            raise ExportError("job attempts path is not a directory")
+        attempts = []
+        for path in attempts_root.iterdir():
+            if path.is_symlink():
+                raise ExportError(
+                    "job attempts directory contains a symlink: {}".format(path)
+                )
+            if not path.is_dir():
+                raise ExportError(
+                    "job attempts directory contains a non-directory: {}"
+                    .format(path)
+                )
+            attempts.append(path)
+        indexes = []
+        for attempt in attempts:
+            match = ATTEMPT_DIRECTORY.fullmatch(attempt.name)
+            if match is None:
+                raise ExportError(
+                    "invalid job attempt directory name: {}".format(attempt.name)
+                )
+            indexes.append(int(match.group(1)))
+        attempts = [attempt for _, attempt in sorted(zip(indexes, attempts))]
+        indexes.sort()
+        if (current_attempt < 1 or len(indexes) != current_attempt
+                or any(index != expected
+                       for expected, index in enumerate(indexes))):
+            raise ExportError("job attempt archive is not contiguous")
+        for attempt in attempts:
             reject_symlink(attempt, "job attempt directory", stop=job_dir)
             target = export_job_dir / "attempts" / safe_component(attempt.name)
-            for name in ("console.log", "exitcode", "worker_state.json"):
+            ledger = self._validate_attempt_evidence(
+                job, job_dir, attempt, stage_manifest
+            )
+            write_json(target / "evidence.json", ledger)
+            for name in (
+                    "console.log", "exitcode", "metrics.json",
+                    "worker_state.json"):
                 source = attempt / name
                 if not source.is_file():
                     continue
@@ -1464,7 +2257,9 @@ class BatchExporter:
         if not parameters.is_file():
             raise ExportError("missing parameters for {}".format(run_tag))
         parameter_document = read_json(parameters)
-        self._validate_job_config(job, job_dir, parameter_document)
+        self._validate_job_config(
+            job, job_dir, parameter_document, stage_manifest=stage_manifest
+        )
         self._copy_json(parameters, export_job / "parameters.json",
                         source_prefix + "/parameters.json")
         console = job_dir / "console.log"
@@ -1484,24 +2279,13 @@ class BatchExporter:
 
         metrics_path = job_dir / "metrics.json"
         successful = metrics_path.is_file() and run_tag not in error_tags
-        exit_path = job_dir / "exitcode"
-        if not exit_path.is_file():
-            raise ExportError("terminal job lacks exitcode: {}".format(run_tag))
-        try:
-            exit_code = int(exit_path.read_text(encoding="utf-8").strip())
-        except (OSError, ValueError) as error:
-            raise ExportError("invalid exitcode for {}: {}".format(run_tag, error))
+        exit_code, _, _ = self._validate_worker_exit_evidence(
+            job_dir, "terminal job {}".format(run_tag), allow_incomplete=False
+        )
         if successful and exit_code != 0:
             raise ExportError("validated job has nonzero exitcode: {}".format(run_tag))
         if not successful and exit_code == 0 and run_tag not in error_tags:
             raise ExportError("zero-exit job lacks validated metrics: {}".format(run_tag))
-        worker_state_path = job_dir / "worker_state.json"
-        if not worker_state_path.is_file():
-            raise ExportError("terminal job lacks worker_state.json: {}".format(run_tag))
-        worker_state = read_json(worker_state_path)
-        if (worker_state.get("status") != "finished"
-                or int(worker_state.get("exit_code", -1)) != exit_code):
-            raise ExportError("worker state/exitcode mismatch for {}".format(run_tag))
         result = None
         diagnostics_path = None
         if successful:
@@ -1545,7 +2329,9 @@ class BatchExporter:
                 formal_path, export_job / "formal_run_manifest.json",
                 "runs/{}/manifest.json".format(formal_path.parent.name),
             )
-        self._copy_attempts(job_dir, export_job, source_prefix)
+        self._copy_attempts(
+            job, job_dir, export_job, source_prefix, stage_manifest
+        )
         return job, result
 
     def _validate_stage(self, method, stage, stage_dir):
@@ -1644,6 +2430,7 @@ class BatchExporter:
             )
             raw_job = read_json(raw_job_path)
             expected_job_identity = {
+                "batch_id": self.batch_id,
                 "setting": raw_job.get("setting"),
                 "model": search.SETTING_MODEL.get(raw_job.get("setting")),
                 "search_method": method,
@@ -2531,6 +3318,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--search-root", default=str(DEFAULT_SEARCH_ROOT))
     parser.add_argument("--runs-root", default=str(DEFAULT_RUNS_ROOT))
+    parser.add_argument("--tuning-root", default=str(DEFAULT_TUNING_ROOT))
     parser.add_argument("--spec", default=str(search.SPEC_PATH))
     parser.add_argument("--export-root", default=str(DEFAULT_EXPORT_ROOT))
     parser.add_argument("--output-dir")
@@ -2560,6 +3348,7 @@ def main(argv=None):
             batch_id=batch_id,
             method_roots=method_roots,
             runs_root=args.runs_root,
+            tuning_root=args.tuning_root,
             output_dir=output,
             spec_path=args.spec,
             export_root=export_root,
