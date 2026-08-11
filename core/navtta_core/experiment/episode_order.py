@@ -306,7 +306,7 @@ def reorder_episodes(
 def prefix_episode_order_manifest(
     manifest: Mapping[str, Any], episode_count: int
 ) -> Dict[str, Any]:
-    """Return a self-consistent prefix for non-formal lifecycle smoke tests."""
+    """Return a self-consistent canonical prefix of an order manifest."""
     validate_episode_order_manifest(manifest)
     count = int(episode_count)
     if count <= 0 or count > manifest["episode_count"]:

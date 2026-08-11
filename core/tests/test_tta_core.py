@@ -18,6 +18,7 @@ from navtta_core.tta.tta_core import (
     _small_row_svd,
     build_adapter,
     configure_tta_model,
+    module_state_sha256,
 )
 
 
@@ -163,6 +164,249 @@ class TTACoreTest(unittest.TestCase):
     def setUp(self):
         random.seed(7)
         torch.manual_seed(7)
+
+    def test_zero_update_audit_exercises_all_adapters_without_parameter_drift(self):
+        """Every method reaches a write boundary, but the exact state is stable."""
+        cases = []
+
+        tent_policy = _TinyPolicy()
+        tent = TentAdapter(tent_policy, scope="last_ln")
+        cases.append(("tent", tent, lambda: tent.adapt(
+            _forward(tent_policy, _inputs())[1]
+        )))
+
+        fstta_policy = _TinyPolicy()
+        fstta = FSTTAAdapter(
+            fstta_policy, M=1, N=2, use_slow=False, scope="last_ln"
+        )
+        cases.append(("fstta", fstta, lambda: fstta.adapt(
+            _forward(fstta_policy, _inputs())[1]
+        )))
+
+        eam_policy = _TinyPolicy()
+        eam = EAMAdapter(
+            eam_policy,
+            confidence_scale=10.0,
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+
+        def run_eam():
+            inputs = _inputs()
+            eam.before_inference(policy_inputs=inputs)
+            with torch.no_grad():
+                _, source_logits = _forward(eam_policy, inputs)
+            action_logits = eam.prepare_action(
+                source_logits, policy_inputs=inputs
+            )
+            eam.adapt(action_logits, action=action_logits.argmax(dim=-1))
+
+        cases.append(("eam", eam, run_eam))
+
+        feed_policy = _TinyPolicy()
+        feed = FEEDTTAAdapter(
+            feed_policy,
+            reversal_probability=0.0,
+            trainable_prefixes=("net.norms.3", "action_distribution"),
+        )
+
+        def run_feed():
+            feed.episode_start()
+            _, logits = _forward(feed_policy, _inputs())
+            feed.adapt(logits, action=torch.tensor([[0]]))
+            feed.episode_end({"success": 1.0})
+
+        cases.append(("feedtta", feed, run_feed))
+
+        atena_policy = _TinyPolicy()
+        atena = ATENAAdapter(
+            atena_policy, query_threshold=0.0, weight_decay=0.0
+        )
+
+        def run_atena():
+            atena.episode_start()
+            inputs = _inputs()
+            features, logits = _forward(atena_policy, inputs)
+            action = logits.argmax(dim=-1)
+            atena.adapt(
+                logits, action=action, features=features,
+                policy_inputs=inputs,
+            )
+            atena.episode_end({"success": 1.0})
+
+        cases.append(("atena", atena, run_atena))
+
+        for name, adapter, exercise in cases:
+            with self.subTest(method=name):
+                before = [param.detach().clone() for param in adapter.params]
+                adapter.enable_zero_update_audit()
+                exercise()
+                diagnostics = adapter.diagnostics()
+                self.assertEqual(diagnostics["updates"], 0)
+                self.assertEqual(diagnostics["slow_updates"], 0)
+                self.assertEqual(diagnostics["relative_param_drift"], 0.0)
+                self.assertGreater(diagnostics["parameter_write_attempts"], 0)
+                self.assertGreater(diagnostics["optimizer_step_attempts"], 0)
+                self.assertEqual(
+                    diagnostics["parameter_write_attempts"],
+                    diagnostics["suppressed_parameter_write_attempts"],
+                )
+                self.assertEqual(
+                    diagnostics["optimizer_step_attempts"],
+                    diagnostics["suppressed_optimizer_step_attempts"],
+                )
+                self.assertTrue(diagnostics["parameter_state_hash_match"])
+                self.assertTrue(diagnostics["model_state_hash_match"])
+                self.assertTrue(
+                    diagnostics["deployed_model_states_hash_match"]
+                )
+                self.assertEqual(
+                    diagnostics["parameter_state_before_sha256"],
+                    diagnostics["parameter_state_after_sha256"],
+                )
+                if name == "fstta":
+                    self.assertTrue(
+                        diagnostics["slow_anchor_state_hash_match"]
+                    )
+                if name == "eam":
+                    self.assertGreater(diagnostics["update_attempts"], 0)
+                    self.assertGreater(diagnostics["replayed_steps"], 0)
+                    self.assertGreater(diagnostics["accepted_samples"], 0)
+                    self.assertTrue(
+                        diagnostics["auxiliary_model_state_hash_match"]
+                    )
+                if name == "feedtta":
+                    self.assertEqual(diagnostics["feedback_episodes"], 1)
+                    self.assertEqual(diagnostics["policy_gradient_steps"], 1)
+                    self.assertEqual(
+                        diagnostics["episode_end_optimizer_attempts"], 1
+                    )
+                if name == "atena":
+                    self.assertTrue(
+                        diagnostics["auxiliary_head_state_hash_match"]
+                    )
+                    self.assertEqual(
+                        diagnostics["query_gate_evaluations"], 1
+                    )
+                    self.assertEqual(
+                        diagnostics["self_prediction_evaluations"], 1
+                    )
+                    self.assertEqual(diagnostics["replayed_steps"], 1)
+                    self.assertTrue(
+                        diagnostics["auxiliary_head_constructed"]
+                    )
+                for old, current in zip(before, adapter.params):
+                    torch.testing.assert_close(old, current.detach(), rtol=0, atol=0)
+
+    def test_tent_audit_consumes_native_per_episode_update_budget(self):
+        policy = _TinyPolicy()
+        adapter = TentAdapter(
+            policy,
+            scope="last_ln",
+            update_interval=1,
+            max_updates_per_episode=1,
+        ).enable_zero_update_audit(expected_episodes=1)
+        adapter.episode_start()
+        for _ in range(3):
+            adapter.adapt(_forward(policy, _inputs())[1])
+        adapter.episode_end()
+        diagnostics = adapter.diagnostics()
+
+        self.assertEqual(diagnostics["episode_updates"], 1)
+        self.assertEqual(diagnostics["optimizer_step_attempts"], 1)
+        self.assertEqual(diagnostics["suppressed_optimizer_step_attempts"], 1)
+        self.assertEqual(diagnostics["skipped_updates_by_budget"], 2)
+        self.assertEqual(diagnostics["updates"], 0)
+
+    def test_fstta_audit_shadow_reaches_fast_and_slow_boundaries(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy,
+            M=1,
+            N=2,
+            use_slow=True,
+            scope="last_ln",
+            reset_optimizer_each_episode=True,
+        ).enable_zero_update_audit(expected_episodes=2)
+
+        for _ in range(2):
+            adapter.episode_start()
+            adapter.adapt(_forward(policy, _inputs())[1])
+            adapter.episode_end()
+
+        diagnostics = adapter.diagnostics()
+        self.assertTrue(diagnostics["use_slow"])
+        self.assertEqual(diagnostics["fast_optimizer_attempts"], 2)
+        self.assertEqual(
+            diagnostics["fast_optimizer_attempts_suppressed"], 2
+        )
+        self.assertEqual(diagnostics["completed_slow_windows"], 1)
+        self.assertEqual(diagnostics["slow_optimizer_attempts"], 1)
+        self.assertEqual(
+            diagnostics["slow_optimizer_attempts_suppressed"], 1
+        )
+        self.assertGreater(diagnostics["last_slow_step_norm"], 0.0)
+        self.assertEqual(diagnostics["updates"], 0)
+        self.assertEqual(diagnostics["slow_updates"], 0)
+        self.assertEqual(diagnostics["relative_param_drift"], 0.0)
+        self.assertTrue(diagnostics["model_state_hash_match"])
+        self.assertTrue(diagnostics["slow_anchor_state_hash_match"])
+
+    def test_full_model_hash_detects_unselected_parameter_mutation(self):
+        policy = _TinyPolicy()
+        adapter = TentAdapter(policy, scope="last_ln").enable_zero_update_audit(
+            expected_episodes=1
+        )
+        adapter.episode_start()
+        adapter.adapt(_forward(policy, _inputs())[1])
+        with torch.no_grad():
+            # The action head is outside Tent's selected LayerNorm scope.
+            policy.action_distribution.linear.bias.add_(1.0)
+        adapter.episode_end()
+        diagnostics = adapter.diagnostics()
+
+        self.assertTrue(diagnostics["parameter_state_hash_match"])
+        self.assertFalse(diagnostics["model_state_hash_match"])
+        self.assertFalse(diagnostics["deployed_model_states_hash_match"])
+
+    def test_full_model_hash_detects_nonpersistent_buffer_mutation(self):
+        policy = _TinyPolicy()
+        policy.register_buffer(
+            "transient_audit_state", torch.zeros(3), persistent=False
+        )
+        self.assertNotIn("transient_audit_state", policy.state_dict())
+        adapter = TentAdapter(policy, scope="last_ln").enable_zero_update_audit(
+            expected_episodes=1
+        )
+        adapter.episode_start()
+        adapter.adapt(_forward(policy, _inputs())[1])
+        with torch.no_grad():
+            policy.transient_audit_state[1] = 7.0
+        adapter.episode_end()
+        diagnostics = adapter.diagnostics()
+
+        self.assertTrue(diagnostics["parameter_state_hash_match"])
+        self.assertFalse(diagnostics["model_state_hash_match"])
+        self.assertFalse(diagnostics["deployed_model_states_hash_match"])
+
+    def test_full_model_hash_avoids_newer_named_state_api(self):
+        class LegacyCompatiblePolicy(_TinyPolicy):
+            def named_parameters(self, *args, **kwargs):
+                raise AssertionError("named_parameters must not be called")
+
+            def named_buffers(self, *args, **kwargs):
+                raise AssertionError("named_buffers must not be called")
+
+        policy = LegacyCompatiblePolicy()
+        policy.register_buffer(
+            "transient_audit_state", torch.zeros(3), persistent=False
+        )
+        before = module_state_sha256(policy)
+        with torch.no_grad():
+            policy.transient_audit_state[1] = 7.0
+        after = module_state_sha256(policy)
+
+        self.assertNotEqual(before, after)
 
     def test_layernorm_scope_variants_select_exact_modules(self):
         cases = {

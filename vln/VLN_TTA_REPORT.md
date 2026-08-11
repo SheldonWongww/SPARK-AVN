@@ -118,6 +118,32 @@ FSTTA 发布代码的 REVERIE 锚点为 `lr_fast=6e-4`、`lr_slow=1e-3`、`M=3`�
 6. 每个 split 从 Source checkpoint 重新开始，保存参数更新范围、可训练参数数、优化器状态策略、每 episode 更新次数、查询反馈比例、峰值显存和墙钟时间。
 7. 无监督表与二值反馈表分开排名；若需要一张总表，ATENA/FeedTTA 必须带 `†` 并在表头说明监督预算。
 
+### 6.3 冻结参数后的零更新适配器一致性审计
+
+超参数搜索结束后、正式解释增益前，必须完成独立的 256-episode
+canonical-prefix 审计。计划固定为 56 个任务：`5 方法 × 8 setting = 40`
+个零写入适配器任务，外加 8 个 argmax Source 与 8 个 sampled Source。
+FeedTTA 只与 sampled Source 配对，其余方法只与 argmax Source 配对。
+
+这里的“零更新”不是把学习率设成 0，也不是绕开适配器。审计模式仍执行
+loss、backward、FSTTA fast/slow 调度、EAM replay/gate、FeedTTA episode
+feedback/SGR、ATENA query/self-label/replay 等完整控制流，只在最后的
+optimizer/direct-copy 参数写入边界拦截并计数。一个组合只有同时满足以下
+条件才通过：suppressed attempts 大于 0 且等于所有 write attempts，
+`updates=0`、`slow_updates=0`、relative drift 精确为 0，完整部署模型（全部
+parameter 与 buffer）适配前后 SHA256 完全相同；FSTTA fast/slow、EAM
+reliable replay、FeedTTA feedback/policy-gradient、ATENA gate/self-prediction/
+replay 均有正向执行证据；256 个 episode ID/顺序正确；action trajectory SHA256、
+逐 episode 输出证据和聚合指标与 matched Source 精确一致。
+
+审计使用独立 spec、job schema 和 `results/audits/adapter_parity/` 结果空间，
+并绑定 audit commit、搜索阶段冻结参数文件、资产/环境 manifest、dataset 与
+episode-order digest；每个 job 还生成不可变 formal run manifest，钉住精确
+256 条 prefix manifest 及其 canonical parent，并在执行前后检查干净 Git
+状态，同时要求 `verify_preflight.py --hash all` 通过。它只
+证明“适配器在不允许写参数时与 Source 路径等价”，不产生可进入论文对比表
+的 TTA 性能结果。
+
 ## 7. 后续更新流程
 
 1. StreamVLN Source 完成后，下载其完整日志和 run manifests；只在完整 val split 通过后更新第 3.3 节。

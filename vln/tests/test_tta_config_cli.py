@@ -12,12 +12,12 @@ from tta_config_cli import translate  # noqa: E402
 
 
 class TTAConfigCLITest(unittest.TestCase):
-    def _translate(self, setting, method, parameters):
+    def _translate(self, setting, method, parameters, **extra):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
-            path.write_text(json.dumps({
-                "method": method, "parameters": parameters,
-            }), encoding="utf-8")
+            document = {"method": method, "parameters": parameters}
+            document.update(extra)
+            path.write_text(json.dumps(document), encoding="utf-8")
             return translate(setting, str(path), str(Path(directory) / "diag.json"))
 
     def test_discrete_fstta_mapping(self):
@@ -45,6 +45,50 @@ class TTAConfigCLITest(unittest.TestCase):
     def test_unknown_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown tent parameters"):
             self._translate("hamt-r2r", "tent", {"typo": 1})
+
+    def test_adapter_parity_schema_maps_only_explicit_audit_modes(self):
+        common = {
+            "schema": "navtta.vln_tta_adapter_parity_job.v1",
+            "namespace": "adapter_parity_audit",
+            "episodes": 256,
+        }
+        method, discrete = self._translate(
+            "duet-r2r", "tent", {"lr": 1e-6},
+            audit_zero_update=True, audit_control=False, **common
+        )
+        self.assertEqual(method, "tent")
+        self.assertIn("--tta_audit_zero_update", discrete)
+        method, continuous = self._translate(
+            "etpnav-r2r-ce", "source",
+            {"action_selection": "argmax", "action_seed": 0},
+            audit_zero_update=False, audit_control=True, **common
+        )
+        self.assertEqual(method, "source")
+        self.assertEqual(
+            continuous[continuous.index("TTA.AUDIT_CONTROL") + 1], "True"
+        )
+        self.assertEqual(
+            continuous[
+                continuous.index("TTA.AUDIT_EXPECTED_EPISODES") + 1
+            ],
+            "256",
+        )
+
+    def test_ordinary_search_schema_cannot_enable_audit(self):
+        with self.assertRaisesRegex(ValueError, "adapter-parity job schema"):
+            self._translate(
+                "hamt-r2r", "tent", {},
+                schema="navtta.vln_tta_job.v1",
+                audit_zero_update=True,
+            )
+
+    def test_ordinary_schema_cannot_spoof_audit_namespace(self):
+        with self.assertRaisesRegex(ValueError, "cannot claim"):
+            self._translate(
+                "hamt-r2r", "tent", {},
+                schema="navtta.vln_tta_job.v1",
+                namespace="adapter_parity_audit",
+            )
 
 
 if __name__ == "__main__":

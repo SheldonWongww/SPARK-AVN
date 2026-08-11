@@ -34,3 +34,11 @@ caps, live GPU/RAM launch guards, and the launch stagger can be overridden only
 after smoke measurements justify doing so.  A failed attempt is never erased:
 `--resume --retry-failed` archives its console, result root, and any formal run
 manifest before assigning a new run tag.
+
+`tta_adapter_parity_audit_v1.json` is a separate, post-search evidence
+protocol. It consumes (but cannot modify or promote) the five frozen winner
+files and fixes a 56-job canonical-prefix plan: 40 zero-write adapters, eight
+argmax Source controls, and eight sampled Source controls. Its dedicated
+runner flag, job schema, and `results/audits/adapter_parity/` namespace are
+mandatory; ordinary search jobs cannot opt into audit mode. See
+`vln/README.md` for the plan/run/validate commands and pass criteria.

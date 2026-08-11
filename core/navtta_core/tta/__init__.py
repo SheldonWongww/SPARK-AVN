@@ -5,6 +5,7 @@ from .tta_core import (
     FEEDTTAAdapter,
     ATENAAdapter,
     configure_tta_model,
+    module_state_sha256,
     build_adapter,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "FEEDTTAAdapter",
     "ATENAAdapter",
     "configure_tta_model",
+    "module_state_sha256",
     "build_adapter",
 ]

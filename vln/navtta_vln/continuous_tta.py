@@ -7,12 +7,13 @@ losses, avoiding ``0 * log(0)`` NaNs while retaining an exact native-index map.
 """
 
 import json
+import hashlib
 import os
 from pathlib import Path
 
 import torch
 
-from navtta_core.tta import build_adapter
+from navtta_core.tta import build_adapter, module_state_sha256
 
 
 TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena")
@@ -23,6 +24,9 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     """Return the common YACS config surface used by both CE baselines."""
     config = CN()
     config.METHOD = "none"
+    config.AUDIT_ZERO_UPDATE = False
+    config.AUDIT_CONTROL = False
+    config.AUDIT_EXPECTED_EPISODES = -1
     config.DIAGNOSTICS_FILE = ""
     config.ACTION_SELECTION = "argmax"
     config.MATCHED_FEEDTTA_SOURCE = False
@@ -177,6 +181,17 @@ class ContinuousVLNTTA:
         self.move_actions = 0
         self.max_probability_sum = 0.0
         self._episode_open = False
+        self._trajectory_hasher = hashlib.sha256()
+        self.trajectory_steps = 0
+        self.audit_control = bool(getattr(tta_cfg, "AUDIT_CONTROL", False))
+        self.audit_expected_episodes = (
+            int(getattr(tta_cfg, "AUDIT_EXPECTED_EPISODES", -1))
+            if self.audit_control else None
+        )
+        self.model_state_before_sha256 = (
+            module_state_sha256(self.model) if self.audit_control else None
+        )
+        self.model_state_after_sha256 = None
 
         feed_cfg = getattr(tta_cfg, "FEEDTTA", None)
         self.action_seed = int(
@@ -284,6 +299,9 @@ class ContinuousVLNTTA:
             self._action_generator.manual_seed(episode_seed)
         if self.adapter is not None:
             self.adapter.episode_start()
+        self._trajectory_hasher.update(
+            "episode:{}\0".format(self.episode_count).encode("ascii")
+        )
         self._episode_open = True
 
     def _matched_sample(self, logits):
@@ -341,6 +359,13 @@ class ContinuousVLNTTA:
             max_probability = float(
                 action_logits.softmax(dim=-1).max(dim=-1)[0].mean().item()
             )
+            action_values = native_action.detach().cpu().view(-1).tolist()
+            self._trajectory_hasher.update(
+                ("actions:" + ",".join(map(str, action_values)) + "\0").encode(
+                    "ascii"
+                )
+            )
+            self.trajectory_steps += len(action_values)
 
         if self.adapter is not None:
             self.adapter.adapt(
@@ -367,15 +392,46 @@ class ContinuousVLNTTA:
             raise RuntimeError("TTA episode_end called without episode_start")
         if self.adapter is not None:
             self.adapter.episode_end(episode_stats=episode_stats)
+        self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
         self.episode_count += 1
         self.write_diagnostics()
 
     def diagnostics(self):
+        source_control = None
+        if self.audit_control:
+            if (
+                self.episode_count >= self.audit_expected_episodes
+                and self.model_state_after_sha256 is None
+            ):
+                self.model_state_after_sha256 = module_state_sha256(self.model)
+            source_control = {
+                "action_steps": self.action_steps,
+                "episodes": self.episode_count,
+                "updates": 0,
+                "relative_param_drift": 0.0,
+                "control": "source_no_update",
+                "audit_expected_episodes": self.audit_expected_episodes,
+                "model_state_before_sha256": (
+                    self.model_state_before_sha256
+                ),
+                "model_state_after_sha256": self.model_state_after_sha256,
+                "model_state_hash_match": (
+                    None if self.model_state_after_sha256 is None else
+                    self.model_state_after_sha256
+                    == self.model_state_before_sha256
+                ),
+            }
         return {
             "schema": "navtta.vln_ce_tta.v1",
             "baseline": self.variant,
             "method": self.method,
+            "audit_zero_update": bool(
+                getattr(self.tta_cfg, "AUDIT_ZERO_UPDATE", False)
+            ),
+            "audit_control": bool(
+                getattr(self.tta_cfg, "AUDIT_CONTROL", False)
+            ),
             "stream": self.stream_name,
             "episode_count": self.episode_count,
             "batch_size": 1,
@@ -398,13 +454,16 @@ class ContinuousVLNTTA:
             ),
             "masked_action_entropy": "finite_logits_only",
             "action_steps": self.action_steps,
+            "trajectory_steps": self.trajectory_steps,
+            "trajectory_sha256": self._trajectory_hasher.hexdigest(),
             "stop_actions": self.stop_actions,
             "move_actions": self.move_actions,
             "mean_max_action_probability": (
                 self.max_probability_sum / max(1, self.action_steps)
             ),
             "adapter": (
-                None if self.adapter is None else self.adapter.diagnostics()
+                source_control if self.adapter is None else
+                self.adapter.diagnostics()
             ),
         }
 
@@ -428,6 +487,18 @@ def validate_continuous_tta_run(config, mode, envs):
     """Reject protocol drift before constructing a stateful TTA adapter."""
     tta_cfg = getattr(config, "TTA", None)
     method = str(getattr(tta_cfg, "METHOD", "none")).lower()
+    audit_zero_update = bool(getattr(tta_cfg, "AUDIT_ZERO_UPDATE", False))
+    audit_control = bool(getattr(tta_cfg, "AUDIT_CONTROL", False))
+    if audit_zero_update and method == "source":
+        raise ValueError("zero-update adapter audit requires a TTA method")
+    if audit_control and method != "source":
+        raise ValueError("adapter audit controls require method=source")
+    if audit_zero_update and audit_control:
+        raise ValueError("audit job cannot be both adapter and Source control")
+    if (audit_zero_update or audit_control) and int(
+        getattr(tta_cfg, "AUDIT_EXPECTED_EPISODES", -1)
+    ) <= 0:
+        raise ValueError("adapter audit requires expected episodes > 0")
     if method in ("none", ""):
         return method
     if method not in TTA_METHODS:

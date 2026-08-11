@@ -44,6 +44,30 @@ def _load(path):
         document = json.load(stream)
     if not isinstance(document, dict):
         raise ValueError("TTA config must be a JSON object")
+    schema = document.get("schema")
+    audit_zero_update = bool(document.get("audit_zero_update", False))
+    audit_control = bool(document.get("audit_control", False))
+    audit_expected_episodes = document.get("episodes") if (
+        audit_zero_update or audit_control
+    ) else None
+    if (audit_zero_update or audit_control) and schema != (
+        "navtta.vln_tta_adapter_parity_job.v1"
+    ):
+        raise ValueError(
+            "zero-update audit requires the adapter-parity job schema"
+        )
+    if (
+        schema == "navtta.vln_tta_adapter_parity_job.v1"
+        and document.get("namespace") != "adapter_parity_audit"
+    ):
+        raise ValueError("adapter-parity job has an invalid namespace")
+    if (
+        schema != "navtta.vln_tta_adapter_parity_job.v1"
+        and document.get("namespace") == "adapter_parity_audit"
+    ):
+        raise ValueError(
+            "ordinary TTA schema cannot claim the adapter-parity namespace"
+        )
     method = str(document.get("method", "")).lower()
     if method not in METHODS:
         raise ValueError("invalid or missing TTA method: {!r}".format(method))
@@ -57,7 +81,28 @@ def _load(path):
     for key, value in parameters.items():
         if isinstance(value, float) and not math.isfinite(value):
             raise ValueError("non-finite parameter {}".format(key))
-    return method, parameters
+    if audit_zero_update and method == "source":
+        raise ValueError("Source controls cannot claim adapter audit mode")
+    if audit_control and method != "source":
+        raise ValueError("adapter audit controls must use method=source")
+    if (
+        schema == "navtta.vln_tta_adapter_parity_job.v1"
+        and audit_control == audit_zero_update
+    ):
+        raise ValueError(
+            "adapter-parity jobs require exactly one of audit_control or "
+            "audit_zero_update"
+        )
+    if (audit_zero_update or audit_control) and (
+        isinstance(audit_expected_episodes, bool)
+        or not isinstance(audit_expected_episodes, int)
+        or audit_expected_episodes <= 0
+    ):
+        raise ValueError("adapter audit requires a positive episode count")
+    return (
+        method, parameters, audit_zero_update, audit_control,
+        audit_expected_episodes,
+    )
 
 
 def _scalar(value):
@@ -66,9 +111,20 @@ def _scalar(value):
     return str(value)
 
 
-def _continuous(method, params, diagnostics):
+def _continuous(
+    method, params, diagnostics, audit_zero_update=False, audit_control=False,
+    audit_expected_episodes=None,
+):
     tokens = ["TTA.METHOD", method,
               "TTA.DIAGNOSTICS_FILE", diagnostics]
+    if audit_zero_update:
+        tokens.extend(["TTA.AUDIT_ZERO_UPDATE", "True"])
+    if audit_control:
+        tokens.extend(["TTA.AUDIT_CONTROL", "True"])
+    if audit_zero_update or audit_control:
+        tokens.extend([
+            "TTA.AUDIT_EXPECTED_EPISODES", str(audit_expected_episodes)
+        ])
     common_map = {
         "lr": "TTA.LR", "norm_scope": "TTA.NORM_SCOPE",
         "last_k_ln": "TTA.LAST_K_LN", "optimizer": "TTA.OPTIMIZER",
@@ -118,8 +174,19 @@ def _continuous(method, params, diagnostics):
     return tokens
 
 
-def _discrete(method, params, diagnostics):
+def _discrete(
+    method, params, diagnostics, audit_zero_update=False, audit_control=False,
+    audit_expected_episodes=None,
+):
     tokens = ["--tta_method", method, "--tta_diagnostics", diagnostics]
+    if audit_zero_update:
+        tokens.append("--tta_audit_zero_update")
+    if audit_control:
+        tokens.append("--tta_audit_control")
+    if audit_zero_update or audit_control:
+        tokens.extend([
+            "--tta_audit_expected_episodes", str(audit_expected_episodes)
+        ])
     common_map = {
         "lr": "--tta_lr", "norm_scope": "--tta_norm_scope",
         "last_k_ln": "--tta_last_k_ln", "optimizer": "--tta_optimizer",
@@ -189,11 +256,24 @@ def _discrete(method, params, diagnostics):
 
 
 def translate(setting, config_path, diagnostics):
-    method, params = _load(config_path)
+    (
+        method, params, audit_zero_update, audit_control,
+        audit_expected_episodes,
+    ) = _load(config_path)
     if setting in DISCRETE_SETTINGS:
-        return method, _discrete(method, params, diagnostics)
+        return method, _discrete(
+            method, params, diagnostics,
+            audit_zero_update=audit_zero_update,
+            audit_control=audit_control,
+            audit_expected_episodes=audit_expected_episodes,
+        )
     if setting in CONTINUOUS_SETTINGS:
-        return method, _continuous(method, params, diagnostics)
+        return method, _continuous(
+            method, params, diagnostics,
+            audit_zero_update=audit_zero_update,
+            audit_control=audit_control,
+            audit_expected_episodes=audit_expected_episodes,
+        )
     raise ValueError("TTA search does not support setting {!r}".format(setting))
 
 
@@ -203,6 +283,7 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--diagnostics", required=True)
     parser.add_argument("--print-method", action="store_true")
+    parser.add_argument("--print-namespace", action="store_true")
     parser.add_argument("--nul", action="store_true")
     args = parser.parse_args()
     method, tokens = translate(
@@ -210,6 +291,11 @@ def main():
     )
     if args.print_method:
         print(method)
+        return
+    if args.print_namespace:
+        with open(args.config, "r", encoding="utf-8") as stream:
+            document = json.load(stream)
+        print(document.get("namespace", "tuning"))
         return
     if args.nul:
         sys.stdout.buffer.write(b"\0".join(token.encode("utf-8") for token in tokens))

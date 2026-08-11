@@ -34,6 +34,7 @@ venv/
 /vln/results/source/
 /vln/results/smoke/
 /vln/results/tuning/
+/vln/results/audits/
 /objectnav/data/
 /objectnav/checkpoints/
 

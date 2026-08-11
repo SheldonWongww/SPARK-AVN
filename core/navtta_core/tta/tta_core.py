@@ -7,6 +7,7 @@ episodes (not after N optimizer steps).  Evaluation code must therefore use a
 single environment and call ``episode_start`` / ``episode_end``.
 """
 from copy import deepcopy
+import hashlib
 import logging
 import math
 import random
@@ -220,6 +221,84 @@ def _relative_drift(current, reference):
     return ((current - reference).norm() / denom).item()
 
 
+def _parameter_state_sha256(params, names):
+    """Hash the exact selected parameter state without serialization metadata."""
+    digest = hashlib.sha256()
+    for name, param in zip(names, params):
+        value = param.detach().contiguous()
+        digest.update(str(name).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(value.dtype).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(tuple(value.shape)).encode("ascii"))
+        digest.update(b"\0")
+        # Viewing as bytes also supports dtypes (for example bfloat16) that
+        # NumPy cannot always expose directly.
+        raw = value.reshape(-1).view(torch.uint8).cpu().numpy().tobytes(
+            order="C"
+        )
+        digest.update(raw)
+    return digest.hexdigest()
+
+
+def module_state_sha256(module):
+    """Hash every registered parameter and buffer, including non-persistent.
+
+    ``state_dict`` intentionally omits buffers registered with
+    ``persistent=False``.  Torch 1.9 also lacks the ``remove_duplicate``
+    argument on ``named_parameters`` and ``named_buffers``, so the audit walks
+    every named submodule and reads its registration tables directly.  This
+    retains registered ``None`` values, tied aliases, shared-module aliases,
+    and non-persistent buffers.  The digest includes state kind,
+    fully-qualified name, dtype, shape, and exact bytes, so a frozen parameter,
+    running statistic, or transient runtime buffer cannot change unnoticed.
+    """
+    digest = hashlib.sha256()
+    entries = []
+    seen = set()
+    for module_name, submodule in module.named_modules(remove_duplicate=False):
+        prefix = module_name + "." if module_name else ""
+        for kind, registrations in (
+            ("parameter", submodule._parameters),
+            ("buffer", submodule._buffers),
+        ):
+            for local_name, value in registrations.items():
+                name = prefix + local_name
+                key = (kind, name)
+                if key in seen:
+                    raise RuntimeError(
+                        "duplicate named {} entry {!r}".format(kind, name)
+                    )
+                seen.add(key)
+                entries.append((kind, name, value))
+
+    for kind, name, value in sorted(entries, key=lambda item: item[:2]):
+        digest.update(kind.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(name).encode("utf-8"))
+        digest.update(b"\0")
+        if value is None:
+            digest.update(b"none\0")
+            continue
+        if not torch.is_tensor(value):
+            raise TypeError(
+                "state_dict value {!r} is not a Tensor or None".format(name)
+            )
+        tensor = value.detach().contiguous()
+        digest.update(b"tensor\0")
+        digest.update(str(tensor.dtype).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(tuple(tensor.shape)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(
+            tensor.reshape(-1).view(torch.uint8).cpu().numpy().tobytes(
+                order="C"
+            )
+        )
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def _tree_map(value, tensor_fn):
     """Apply ``tensor_fn`` to tensors in a nested policy-input structure."""
     if torch.is_tensor(value):
@@ -339,6 +418,87 @@ class _AdapterDiagnostics:
         self.last_loss = 0.0
         self.last_grad_norm = 0.0
         self.current_lr = self.base_lr
+        self.parameter_write_attempts = 0
+        self.suppressed_parameter_write_attempts = 0
+        self.optimizer_step_attempts = 0
+        self.suppressed_optimizer_step_attempts = 0
+        if not hasattr(self, "zero_update_audit"):
+            self.zero_update_audit = False
+            self.audit_parameter_state_before_sha256 = None
+            self.audit_parameter_state_after_sha256 = None
+            self.audit_model_states_before_sha256 = None
+            self.audit_model_states_after_sha256 = None
+            self.audit_expected_episodes = None
+        elif self.zero_update_audit:
+            self.audit_parameter_state_after_sha256 = None
+            self.audit_model_states_after_sha256 = None
+
+    def _audit_deployed_modules(self):
+        """Return named deployed modules whose complete state must not change."""
+        return (("primary_model", self.model),)
+
+    def _capture_audit_model_states(self):
+        modules = self._audit_deployed_modules()
+        names = [name for name, _ in modules]
+        if len(names) != len(set(names)) or "primary_model" not in names:
+            raise RuntimeError(
+                "audit deployed modules require unique names and primary_model"
+            )
+        return {
+            name: module_state_sha256(module)
+            for name, module in modules
+        }
+
+    def enable_zero_update_audit(self, expected_episodes=None):
+        """Exercise adaptation while suppressing every parameter write.
+
+        This is deliberately enabled only after an adapter has been fully
+        constructed.  It is an evidence mode, not a learning-rate trick: the
+        native loss, backward, replay, gating, feedback, and update scheduling
+        paths still run, but writes at optimizer/copy/restore boundaries are
+        counted and suppressed.
+        """
+        if self.action_steps or self.update_count:
+            raise RuntimeError("zero-update audit must be enabled before adaptation")
+        self.zero_update_audit = True
+        self.parameter_write_attempts = 0
+        self.suppressed_parameter_write_attempts = 0
+        self.optimizer_step_attempts = 0
+        self.suppressed_optimizer_step_attempts = 0
+        if expected_episodes is not None and int(expected_episodes) <= 0:
+            raise ValueError("audit expected episode count must be positive")
+        self.audit_expected_episodes = (
+            None if expected_episodes is None else int(expected_episodes)
+        )
+        self.audit_parameter_state_before_sha256 = _parameter_state_sha256(
+            self.params, self.names
+        )
+        self.audit_parameter_state_after_sha256 = None
+        self.audit_model_states_before_sha256 = (
+            self._capture_audit_model_states()
+        )
+        self.audit_model_states_after_sha256 = None
+        return self
+
+    def _optimizer_step(self, optimizer):
+        self.parameter_write_attempts += 1
+        self.optimizer_step_attempts += 1
+        if self.zero_update_audit:
+            self.suppressed_parameter_write_attempts += 1
+            self.suppressed_optimizer_step_attempts += 1
+            return False
+        optimizer.step()
+        return True
+
+    def _parameter_write(self, callback):
+        """Run one non-optimizer parameter write unless audit suppresses it."""
+        self.parameter_write_attempts += 1
+        if self.zero_update_audit:
+            self.suppressed_parameter_write_attempts += 1
+            return False
+        with torch.no_grad():
+            callback()
+        return True
 
     def prepare_action(self, source_logits, **kwargs):
         """Return logits used to sample the environment action."""
@@ -360,7 +520,7 @@ class _AdapterDiagnostics:
 
     def diagnostics(self):
         current = _flatten_params(self.params)
-        return {
+        output = {
             "action_steps": int(self.action_steps),
             "updates": int(self.update_count),
             "episodes": int(getattr(self, "episode_count", 0)),
@@ -372,6 +532,71 @@ class _AdapterDiagnostics:
             "relative_param_drift": _relative_drift(current, self._source_flat),
             "adapted_parameter_names": list(self.names),
         }
+        if self.zero_update_audit:
+            final_evidence_due = (
+                self.audit_expected_episodes is None
+                or int(getattr(self, "episode_count", 0))
+                >= self.audit_expected_episodes
+            )
+            if (
+                final_evidence_due
+                and self.audit_parameter_state_after_sha256 is None
+            ):
+                self.audit_parameter_state_after_sha256 = (
+                    _parameter_state_sha256(self.params, self.names)
+                )
+                self.audit_model_states_after_sha256 = (
+                    self._capture_audit_model_states()
+                )
+            state_after = self.audit_parameter_state_after_sha256
+            model_states_before = self.audit_model_states_before_sha256
+            model_states_after = self.audit_model_states_after_sha256
+            primary_before = (
+                None if model_states_before is None else
+                model_states_before["primary_model"]
+            )
+            primary_after = (
+                None if model_states_after is None else
+                model_states_after["primary_model"]
+            )
+            output.update({
+                "audit_mode": "zero_update_adapter_parity",
+                "parameter_writes_suppressed": True,
+                "parameter_write_attempts": int(
+                    self.parameter_write_attempts
+                ),
+                "suppressed_parameter_write_attempts": int(
+                    self.suppressed_parameter_write_attempts
+                ),
+                "optimizer_step_attempts": int(
+                    self.optimizer_step_attempts
+                ),
+                "suppressed_optimizer_step_attempts": int(
+                    self.suppressed_optimizer_step_attempts
+                ),
+                "parameter_state_before_sha256": (
+                    self.audit_parameter_state_before_sha256
+                ),
+                "parameter_state_after_sha256": state_after,
+                "parameter_state_hash_match": (
+                    None if state_after is None else
+                    state_after == self.audit_parameter_state_before_sha256
+                ),
+                "model_state_before_sha256": primary_before,
+                "model_state_after_sha256": primary_after,
+                "model_state_hash_match": (
+                    None if primary_after is None else
+                    primary_after == primary_before
+                ),
+                "deployed_model_states_before_sha256": model_states_before,
+                "deployed_model_states_after_sha256": model_states_after,
+                "deployed_model_states_hash_match": (
+                    None if model_states_after is None else
+                    model_states_after == model_states_before
+                ),
+                "audit_expected_episodes": self.audit_expected_episodes,
+            })
+        return output
 
 
 class TentAdapter(_AdapterDiagnostics):
@@ -444,6 +669,10 @@ class TentAdapter(_AdapterDiagnostics):
         should_update = scheduled_update and within_episode_budget
         self._record_loss(loss)
         if should_update:
+            # The per-episode budget counts scheduled native optimizer
+            # attempts.  In zero-write audit mode the write is suppressed, but
+            # the same later decisions must still be skipped by the budget.
+            self.episode_update_count += 1
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -451,16 +680,18 @@ class TentAdapter(_AdapterDiagnostics):
                 self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
             )
             self.last_grad_norm = float(grad_norm.item())
-            self.optimizer.step()
+            wrote_parameters = self._optimizer_step(self.optimizer)
             self.optimizer.zero_grad(set_to_none=True)
-            self.update_count += 1
-            self.episode_update_count += 1
+            if wrote_parameters:
+                self.update_count += 1
         elif scheduled_update:
             self.skipped_updates_by_budget += 1
         return loss.detach()
 
     def reset(self):
-        self.model.load_state_dict(self._model_state, strict=True)
+        self._parameter_write(
+            lambda: self.model.load_state_dict(self._model_state, strict=True)
+        )
         self.optimizer.load_state_dict(self._optim_state)
 
     def episode_start(self):
@@ -603,6 +834,10 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.episode_count = 0
         self.slow_update_count = 0
         self.slow_trajectory = []
+        self.audit_shadow_fast = None
+        self.audit_shadow_fast_optimizer = None
+        self.audit_shadow_slow_anchor = None
+        self.audit_shadow_slow_optimizer = None
         self._init_diagnostics()
         self._init_fstta_diagnostics()
 
@@ -622,6 +857,36 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.last_slow_step_norm = 0.0
         self.last_slow_snap_norm = 0.0
         self.slow_optimizer_reset_count = 0
+        self.fast_optimizer_attempt_count = 0
+        self.fast_optimizer_suppressed_count = 0
+        self.slow_optimizer_attempt_count = 0
+        self.slow_optimizer_suppressed_count = 0
+        self.completed_slow_window_count = 0
+
+    def enable_zero_update_audit(self, expected_episodes=None):
+        super().enable_zero_update_audit(expected_episodes)
+        self.audit_slow_anchor_before_sha256 = _parameter_state_sha256(
+            [self.slow_anchor], ["slow_anchor"]
+        )
+        self.audit_slow_anchor_after_sha256 = None
+        # The deployed policy and slow anchor remain immutable, but the audit
+        # must still exercise the native FAST->SLOW schedule.  These flat
+        # shadows receive the same clipped gradients and optimizer semantics;
+        # they are evidence-only state and are never used for environment
+        # actions or exposed as deployed model parameters.
+        self.audit_shadow_fast = nn.Parameter(
+            self._source_flat.detach().clone(), requires_grad=True
+        )
+        self.audit_shadow_fast_optimizer = _make_optimizer(
+            [self.audit_shadow_fast], **self._optimizer_args
+        )
+        self.audit_shadow_slow_anchor = nn.Parameter(
+            self._source_flat.detach().clone(), requires_grad=True
+        )
+        self.audit_shadow_slow_optimizer = _make_optimizer(
+            [self.audit_shadow_slow_anchor], **self._slow_optimizer_args
+        )
+        return self
 
     def _record_lr_scale(self, scale, sigma):
         scale = float(scale)
@@ -639,6 +904,8 @@ class FSTTAAdapter(_AdapterDiagnostics):
 
     def _clear_optimizer_state(self):
         self.optimizer.state.clear()
+        if self.audit_shadow_fast_optimizer is not None:
+            self.audit_shadow_fast_optimizer.state.clear()
         self._reset_fast_lr()
 
     def _reset_fast_lr(self):
@@ -662,13 +929,22 @@ class FSTTAAdapter(_AdapterDiagnostics):
 
     @torch.no_grad()
     def _snap_fast_to_slow_anchor(self, fast_before_snap=None):
-        if fast_before_snap is None:
-            fast_before_snap = _flatten_params(self.params)
-        anchor = self.slow_anchor.detach()
+        if self.zero_update_audit:
+            if fast_before_snap is None:
+                fast_before_snap = self.audit_shadow_fast.detach().clone()
+            anchor_for_norm = self.audit_shadow_slow_anchor.detach()
+        else:
+            if fast_before_snap is None:
+                fast_before_snap = _flatten_params(self.params)
+            anchor_for_norm = self.slow_anchor.detach()
         self.last_slow_snap_norm = float(
-            (fast_before_snap - anchor).norm().item()
+            (fast_before_snap - anchor_for_norm).norm().item()
         )
-        _copy_flat_to_params(anchor, self.params)
+        self._parameter_write(
+            lambda: _copy_flat_to_params(self.slow_anchor.detach(), self.params)
+        )
+        if self.zero_update_audit:
+            self.audit_shadow_fast.copy_(anchor_for_norm)
         # Fast optimizer moments describe the pre-snap trajectory and must not
         # be applied to the newly deployed slow anchor. Slow moments persist.
         self._clear_optimizer_state()
@@ -706,10 +982,21 @@ class FSTTAAdapter(_AdapterDiagnostics):
                 self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
             )
             self.last_grad_norm = float(grad_norm.item())
-            self.optimizer.step()
+            clipped_fast_grad = _flatten_grads(self.params).clone()
+            self.fast_optimizer_attempt_count += 1
+            wrote_parameters = self._optimizer_step(self.optimizer)
+            if self.zero_update_audit:
+                self.fast_optimizer_suppressed_count += 1
+                for group in self.audit_shadow_fast_optimizer.param_groups:
+                    group["lr"] = self.current_lr
+                self.audit_shadow_fast_optimizer.zero_grad(set_to_none=True)
+                self.audit_shadow_fast.grad = clipped_fast_grad
+                self.audit_shadow_fast_optimizer.step()
+                self.audit_shadow_fast_optimizer.zero_grad(set_to_none=True)
             self.optimizer.zero_grad(set_to_none=True)
             self.grad_buffer = []
-            self.update_count += 1
+            if wrote_parameters:
+                self.update_count += 1
         else:
             self.optimizer.zero_grad(set_to_none=True)
         return loss.detach()
@@ -717,18 +1004,27 @@ class FSTTAAdapter(_AdapterDiagnostics):
     @torch.no_grad()
     def _slow_step(self):
         self.slow_attempt_count += 1
+        self.completed_slow_window_count += 1
         if self.reset_slow_optimizer_each_window:
             # A trajectory window is an independent SLOW optimization
             # problem in this ablation. Clear moments even when its geometry
             # later proves degenerate and no parameter step can be taken.
             self.slow_optimizer.state.clear()
+            if self.audit_shadow_slow_optimizer is not None:
+                self.audit_shadow_slow_optimizer.state.clear()
             self.slow_optimizer_reset_count += 1
         self.last_slow_reference_norm = 0.0
         self.last_slow_grad_norm = 0.0
         self.last_slow_step_norm = 0.0
         self.last_slow_snap_norm = 0.0
-        anchor = self.slow_anchor.detach()
-        fast_before_snap = _flatten_params(self.params).clone()
+        anchor = (
+            self.audit_shadow_slow_anchor.detach()
+            if self.zero_update_audit else self.slow_anchor.detach()
+        )
+        fast_before_snap = (
+            self.audit_shadow_fast.detach().clone()
+            if self.zero_update_audit else _flatten_params(self.params).clone()
+        )
         states = [anchor.clone()] + self.slow_trajectory
         matrix = torch.stack(states, dim=0)
         centered = matrix - matrix.mean(dim=0, keepdim=True)
@@ -778,22 +1074,38 @@ class FSTTAAdapter(_AdapterDiagnostics):
         anchor_before = self.slow_anchor.detach().clone()
         self.slow_optimizer.zero_grad(set_to_none=True)
         self.slow_anchor.grad = slow_grad.detach().clone()
-        self.slow_optimizer.step()
+        self.slow_optimizer_attempt_count += 1
+        wrote_parameters = self._optimizer_step(self.slow_optimizer)
+        if self.zero_update_audit:
+            self.slow_optimizer_suppressed_count += 1
+            shadow_anchor_before = self.audit_shadow_slow_anchor.detach().clone()
+            self.audit_shadow_slow_optimizer.zero_grad(set_to_none=True)
+            self.audit_shadow_slow_anchor.grad = slow_grad.detach().clone()
+            self.audit_shadow_slow_optimizer.step()
+            self.audit_shadow_slow_optimizer.zero_grad(set_to_none=True)
+            anchor_after = self.audit_shadow_slow_anchor.detach()
+            step_reference = shadow_anchor_before
+        else:
+            anchor_after = self.slow_anchor.detach()
+            step_reference = anchor_before
         self.slow_optimizer.zero_grad(set_to_none=True)
-        anchor_after = self.slow_anchor.detach()
         self.last_slow_step_norm = float(
-            (anchor_after - anchor_before).norm().item()
+            (anchor_after - step_reference).norm().item()
         )
 
         self.slow_trajectory = []
-        self.slow_update_count += 1
+        if wrote_parameters:
+            self.slow_update_count += 1
         self._snap_fast_to_slow_anchor(fast_before_snap)
 
     def reset(self):
-        self.model.load_state_dict(self._model_state, strict=True)
+        self._parameter_write(
+            lambda: self.model.load_state_dict(self._model_state, strict=True)
+        )
         self.optimizer.load_state_dict(self._optim_state)
-        with torch.no_grad():
-            self.slow_anchor.copy_(_flatten_params(self.params))
+        self._parameter_write(
+            lambda: self.slow_anchor.copy_(_flatten_params(self.params))
+        )
         self.slow_optimizer.load_state_dict(
             deepcopy(self._slow_optim_state)
         )
@@ -803,6 +1115,12 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.episode_count = 0
         self.slow_update_count = 0
         self.slow_trajectory = []
+        if self.zero_update_audit:
+            with torch.no_grad():
+                self.audit_shadow_fast.copy_(self._source_flat)
+                self.audit_shadow_slow_anchor.copy_(self._source_flat)
+            self.audit_shadow_fast_optimizer.state.clear()
+            self.audit_shadow_slow_optimizer.state.clear()
         self._init_diagnostics()
         self._init_fstta_diagnostics()
 
@@ -824,7 +1142,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
         self.discarded_fast_gradients += len(self.grad_buffer)
         self.grad_buffer = []
         if self.use_slow:
-            self.slow_trajectory.append(_flatten_params(self.params).clone())
+            episode_state = (
+                self.audit_shadow_fast.detach().clone()
+                if self.zero_update_audit else _flatten_params(self.params).clone()
+            )
+            self.slow_trajectory.append(episode_state)
             if len(self.slow_trajectory) == self.N:
                 self._slow_step()
 
@@ -850,6 +1172,15 @@ class FSTTAAdapter(_AdapterDiagnostics):
             ),
             "slow_optimizer_resets": self.slow_optimizer_reset_count,
             "slow_attempts": self.slow_attempt_count,
+            "completed_slow_windows": self.completed_slow_window_count,
+            "fast_optimizer_attempts": self.fast_optimizer_attempt_count,
+            "fast_optimizer_attempts_suppressed": (
+                self.fast_optimizer_suppressed_count
+            ),
+            "slow_optimizer_attempts": self.slow_optimizer_attempt_count,
+            "slow_optimizer_attempts_suppressed": (
+                self.slow_optimizer_suppressed_count
+            ),
             "slow_skipped_updates": self.slow_skip_count,
             "slow_pending_episodes": len(self.slow_trajectory),
             "discarded_fast_gradients": self.discarded_fast_gradients,
@@ -874,6 +1205,27 @@ class FSTTAAdapter(_AdapterDiagnostics):
                 current, anchor
             ),
         })
+        if self.zero_update_audit:
+            if (
+                output["parameter_state_after_sha256"] is not None
+                and self.audit_slow_anchor_after_sha256 is None
+            ):
+                self.audit_slow_anchor_after_sha256 = _parameter_state_sha256(
+                    [self.slow_anchor], ["slow_anchor"]
+                )
+            output.update({
+                "slow_anchor_state_before_sha256": (
+                    self.audit_slow_anchor_before_sha256
+                ),
+                "slow_anchor_state_after_sha256": (
+                    self.audit_slow_anchor_after_sha256
+                ),
+                "slow_anchor_state_hash_match": (
+                    None if self.audit_slow_anchor_after_sha256 is None else
+                    self.audit_slow_anchor_after_sha256
+                    == self.audit_slow_anchor_before_sha256
+                ),
+            })
         return output
 
 
@@ -996,6 +1348,15 @@ class EAMAdapter(_AdapterDiagnostics):
     @property
     def device(self):
         return self.params[0].device
+
+    def _audit_deployed_modules(self):
+        # Both policies participate in deployed decisions: source provides the
+        # confidence/pseudo-label branch and auxiliary provides the adaptive
+        # branch.  A write to either must fail parity validation.
+        return (
+            ("primary_model", self.source_model),
+            ("auxiliary_model", self.aux_model),
+        )
 
     @staticmethod
     def _default_forward_policy(model, policy_inputs):
@@ -1225,10 +1586,11 @@ class EAMAdapter(_AdapterDiagnostics):
                     self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
                 )
                 self.last_grad_norm = float(grad_norm.item())
-                self.optimizer.step()
+                wrote_parameters = self._optimizer_step(self.optimizer)
                 self.optimizer.zero_grad(set_to_none=True)
                 loss_value = float(loss.detach().item())
-                self.update_count += 1
+                if wrote_parameters:
+                    self.update_count += 1
                 self.accepted_samples += reliable_count
                 self.train_loss_sum += loss_value
                 self.last_train_loss = loss_value
@@ -1239,7 +1601,11 @@ class EAMAdapter(_AdapterDiagnostics):
         return None
 
     def reset(self):
-        self.aux_model.load_state_dict(self._model_state, strict=True)
+        self._parameter_write(
+            lambda: self.aux_model.load_state_dict(
+                self._model_state, strict=True
+            )
+        )
         self.optimizer.load_state_dict(self._optim_state)
         self.replay = []
         self.seen_samples = 0
@@ -1313,6 +1679,22 @@ class EAMAdapter(_AdapterDiagnostics):
             "update_interval_unit": "action_step",
             "loss_reduction": "mean_over_reliable_replay_steps",
         })
+        if self.zero_update_audit:
+            before = self.audit_model_states_before_sha256 or {}
+            after = self.audit_model_states_after_sha256 or {}
+            output.update({
+                "auxiliary_model_state_before_sha256": before.get(
+                    "auxiliary_model"
+                ),
+                "auxiliary_model_state_after_sha256": after.get(
+                    "auxiliary_model"
+                ),
+                "auxiliary_model_state_hash_match": (
+                    None if not after else
+                    after.get("auxiliary_model")
+                    == before.get("auxiliary_model")
+                ),
+            })
         return output
 
 
@@ -1431,6 +1813,8 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.last_sgr_selected_dimensions = 0
         self.last_sgr_selected_fraction = 0.0
         self._sgr_generators = {}
+        self.feedback_episode_count = 0
+        self.episode_end_optimizer_attempt_count = 0
         self._init_diagnostics()
 
     def _clear_trajectory(self):
@@ -1515,7 +1899,9 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         )
 
     def reset(self):
-        self.model.load_state_dict(self._model_state, strict=True)
+        self._parameter_write(
+            lambda: self.model.load_state_dict(self._model_state, strict=True)
+        )
         self.optimizer.load_state_dict(self._optim_state)
         self._clear_trajectory()
         self.episode_count = 0
@@ -1530,6 +1916,8 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.last_sgr_selected_dimensions = 0
         self.last_sgr_selected_fraction = 0.0
         self._sgr_generators = {}
+        self.feedback_episode_count = 0
+        self.episode_end_optimizer_attempt_count = 0
         self._init_diagnostics()
 
     def episode_start(self):
@@ -1541,6 +1929,7 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
     def episode_end(self, episode_stats=None):
         success = _episode_success(episode_stats)
         self.episode_count += 1
+        self.feedback_episode_count += 1
         self.successful_episodes += int(success)
         self.failed_episodes += int(not success)
         if self._trajectory_gradient is None:
@@ -1555,9 +1944,11 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.last_grad_norm = _set_flat_grad(
             grad, self.params, self.max_grad_norm
         )
-        self.optimizer.step()
+        self.episode_end_optimizer_attempt_count += 1
+        wrote_parameters = self._optimizer_step(self.optimizer)
         self.optimizer.zero_grad(set_to_none=True)
-        self.update_count += 1
+        if wrote_parameters:
+            self.update_count += 1
         self.total_trajectory_steps += trajectory_steps
         self.max_trajectory_steps = max(
             self.max_trajectory_steps, trajectory_steps
@@ -1598,6 +1989,11 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             "trajectory_gradient_storage": "online_discounted_accumulator",
             "gradient_accumulator_elements": int(self._source_flat.numel()),
             "total_trajectory_steps": self.total_trajectory_steps,
+            "policy_gradient_steps": self.total_trajectory_steps,
+            "feedback_episodes": self.feedback_episode_count,
+            "episode_end_optimizer_attempts": (
+                self.episode_end_optimizer_attempt_count
+            ),
             "max_trajectory_steps": self.max_trajectory_steps,
             "mean_trajectory_steps": (
                 self.total_trajectory_steps / max(1, self.update_count)
@@ -1718,6 +2114,8 @@ class ATENAAdapter(_AdapterDiagnostics):
 
         self.self_prediction_head = None
         self._head_state = None
+        self.audit_head_state_before_sha256 = None
+        self.audit_head_state_after_sha256 = None
         self.trajectory = []
         self.trajectory_features = []
         self.trajectory_mixture_entropies = []
@@ -1741,6 +2139,9 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.max_replay_feature_error = 0.0
         self.adaptation_time_seconds = 0.0
         self.max_episode_adaptation_seconds = 0.0
+        self.query_gate_evaluation_count = 0
+        self.self_prediction_evaluation_count = 0
+        self.replayed_step_count = 0
         self._init_diagnostics()
 
     def _ensure_head(self, feature_dim, device, dtype):
@@ -1763,6 +2164,11 @@ class ATENAAdapter(_AdapterDiagnostics):
                 nn.init.ones_(module.weight)
                 nn.init.zeros_(module.bias)
         self._head_state = deepcopy(self.self_prediction_head.state_dict())
+        if self.zero_update_audit:
+            self.audit_head_state_before_sha256 = module_state_sha256(
+                self.self_prediction_head
+            )
+            self.audit_head_state_after_sha256 = None
 
     def _build_episode_optimizer(self, lr):
         # The official code constructs a fresh AdamW after each episode, so no
@@ -1878,9 +2284,15 @@ class ATENAAdapter(_AdapterDiagnostics):
         return mixture_entropy
 
     def reset(self):
-        self.model.load_state_dict(self._model_state, strict=True)
+        self._parameter_write(
+            lambda: self.model.load_state_dict(self._model_state, strict=True)
+        )
         if self.self_prediction_head is not None and self._head_state is not None:
-            self.self_prediction_head.load_state_dict(self._head_state, strict=True)
+            self._parameter_write(
+                lambda: self.self_prediction_head.load_state_dict(
+                    self._head_state, strict=True
+                )
+            )
         self.optimizer = None
         self.trajectory = []
         self.trajectory_mixture_entropies = []
@@ -1904,6 +2316,9 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.max_replay_feature_error = 0.0
         self.adaptation_time_seconds = 0.0
         self.max_episode_adaptation_seconds = 0.0
+        self.query_gate_evaluation_count = 0
+        self.self_prediction_evaluation_count = 0
+        self.replayed_step_count = 0
         self._init_diagnostics()
 
     def episode_start(self):
@@ -1928,10 +2343,12 @@ class ATENAAdapter(_AdapterDiagnostics):
             self.trajectory_features, dim=0
         ).to(self.device).mean(0, keepdim=True).detach().requires_grad_(True)
         prediction_logit = self.self_prediction_head(mean_feature).view(())
+        self.self_prediction_evaluation_count += 1
         predicted_success = bool(torch.sigmoid(prediction_logit.detach()) > 0.5)
         average_entropy = sum(self.trajectory_entropies) / len(self.trajectory_entropies)
         self.episode_entropy_sum += average_entropy
         query = average_entropy > self.query_threshold
+        self.query_gate_evaluation_count += 1
         if query:
             # Access evaluator/human feedback only for actively queried
             # episodes. Non-query episodes remain self-supervised.
@@ -1979,6 +2396,7 @@ class ATENAAdapter(_AdapterDiagnostics):
         replay_scale = 1.0 / float(trajectory_steps)
 
         for index, entry in enumerate(self.trajectory):
+            self.replayed_step_count += 1
             replay_inputs = _tree_to_device(entry["policy_inputs"], self.device)
             replay_features, replay_logits = self._forward_policy(
                 self.model, replay_inputs
@@ -2032,9 +2450,10 @@ class ATENAAdapter(_AdapterDiagnostics):
             self.max_grad_norm if self.max_grad_norm > 0 else math.inf,
         )
         self.last_grad_norm = float(grad_norm.item())
-        self.optimizer.step()
+        wrote_parameters = self._optimizer_step(self.optimizer)
         self.optimizer.zero_grad(set_to_none=True)
-        self.update_count += 1
+        if wrote_parameters:
+            self.update_count += 1
         adaptation_seconds = time.perf_counter() - adaptation_started
         self.adaptation_time_seconds += adaptation_seconds
         self.max_episode_adaptation_seconds = max(
@@ -2055,6 +2474,11 @@ class ATENAAdapter(_AdapterDiagnostics):
                 self.query_prediction_correct / max(1, self.query_count)
             ),
             "self_label_episodes": self.self_label_count,
+            "query_gate_evaluations": self.query_gate_evaluation_count,
+            "self_prediction_evaluations": (
+                self.self_prediction_evaluation_count
+            ),
+            "replayed_steps": self.replayed_step_count,
             "self_feedback_successes": self.self_feedback_successes,
             "queried_feedback_successes": self.queried_feedback_successes,
             "feedback_observed_episodes": self.feedback_observed_count,
@@ -2091,6 +2515,9 @@ class ATENAAdapter(_AdapterDiagnostics):
                     for parameter in self.self_prediction_head.parameters()
                 ) if self.self_prediction_head is not None else 0
             ),
+            "auxiliary_head_constructed": (
+                self.self_prediction_head is not None
+            ),
             "optimizer": (
                 self.optimizer.__class__.__name__
                 if self.optimizer is not None else self._optimizer_args["name"]
@@ -2112,6 +2539,27 @@ class ATENAAdapter(_AdapterDiagnostics):
                 if self.device.type == "cuda" else 0
             ),
         })
+        if self.zero_update_audit and self.self_prediction_head is not None:
+            if (
+                output["parameter_state_after_sha256"] is not None
+                and self.audit_head_state_after_sha256 is None
+            ):
+                self.audit_head_state_after_sha256 = module_state_sha256(
+                    self.self_prediction_head
+                )
+            output.update({
+                "auxiliary_head_state_before_sha256": (
+                    self.audit_head_state_before_sha256
+                ),
+                "auxiliary_head_state_after_sha256": (
+                    self.audit_head_state_after_sha256
+                ),
+                "auxiliary_head_state_hash_match": (
+                    None if self.audit_head_state_after_sha256 is None else
+                    self.audit_head_state_after_sha256
+                    == self.audit_head_state_before_sha256
+                ),
+            })
         return output
 
 
@@ -2130,6 +2578,15 @@ def build_adapter(model, tta_cfg, forward_policy=None):
     def value(key, default):
         return getattr(tta_cfg, key, default)
 
+    audit_zero_update = bool(value("AUDIT_ZERO_UPDATE", False))
+    audit_expected_episodes = value("AUDIT_EXPECTED_EPISODES", None)
+
+    def finalize(adapter):
+        return (
+            adapter.enable_zero_update_audit(audit_expected_episodes)
+            if audit_zero_update else adapter
+        )
+
     common = dict(
         steps=int(value("STEPS", 1)),
         episodic=bool(value("EPISODIC", False)),
@@ -2145,7 +2602,7 @@ def build_adapter(model, tta_cfg, forward_policy=None):
     )
     lr = float(value("LR", 1e-6))
     if method == "tent":
-        return TentAdapter(
+        return finalize(TentAdapter(
             model,
             lr=lr,
             update_interval=int(value("UPDATE_INTERVAL", 1)),
@@ -2153,7 +2610,7 @@ def build_adapter(model, tta_cfg, forward_policy=None):
                 value("MAX_UPDATES_PER_EPISODE", -1)
             ),
             **common
-        )
+        ))
     if method == "fstta":
         fstta_cfg = getattr(tta_cfg, "FSTTA", None)
 
@@ -2167,7 +2624,7 @@ def build_adapter(model, tta_cfg, forward_policy=None):
         common["beta1"] = float(fvalue("BETA1", 0.9))
         common["beta2"] = float(fvalue("BETA2", 0.99))
         common["weight_decay"] = float(fvalue("WEIGHT_DECAY", 0.0))
-        return FSTTAAdapter(
+        return finalize(FSTTAAdapter(
             model,
             lr_fast=lr,
             lr_slow=float(fvalue("LR_SLOW", 1e-4)),
@@ -2199,14 +2656,14 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             ),
             eigen_eps=float(fvalue("EIGEN_EPS", 1e-6)),
             **common
-        )
+        ))
     if method == "eam":
         eam_cfg = getattr(tta_cfg, "EAM", None)
 
         def evalue(key, default):
             return getattr(eam_cfg, key, default) if eam_cfg is not None else default
 
-        return EAMAdapter(
+        return finalize(EAMAdapter(
             model,
             lr=float(evalue("LR", 1e-5)),
             confidence_scale=float(evalue("CONFIDENCE_SCALE", 0.4)),
@@ -2226,14 +2683,14 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             max_grad_norm=float(evalue("MAX_GRAD_NORM", 0.0)),
             episodic=common["episodic"],
             forward_policy=forward_policy,
-        )
+        ))
     if method == "feedtta":
         feed_cfg = getattr(tta_cfg, "FEEDTTA", None)
 
         def fdvalue(key, default):
             return getattr(feed_cfg, key, default) if feed_cfg is not None else default
 
-        return FEEDTTAAdapter(
+        return finalize(FEEDTTAAdapter(
             model,
             lr=float(fdvalue("LR", 5e-6)),
             reversal_probability=float(fdvalue("P", 0.05)),
@@ -2256,14 +2713,14 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             weight_decay=float(fdvalue("WEIGHT_DECAY", 0.0)),
             optimizer_eps=float(fdvalue("EPS", 1e-5)),
             max_grad_norm=float(fdvalue("MAX_GRAD_NORM", 0.0)),
-        )
+        ))
     if method == "atena":
         atena_cfg = getattr(tta_cfg, "ATENA", None)
 
         def avalue(key, default):
             return getattr(atena_cfg, key, default) if atena_cfg is not None else default
 
-        return ATENAAdapter(
+        return finalize(ATENAAdapter(
             model,
             lr_query=float(avalue("LR_QUERY", 1e-6)),
             lr_self=float(avalue("LR_SELF", 1e-7)),
@@ -2281,5 +2738,5 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             weight_decay=float(avalue("WEIGHT_DECAY", 0.01)),
             max_grad_norm=float(avalue("MAX_GRAD_NORM", 0.0)),
             forward_policy=forward_policy,
-        )
+        ))
     raise ValueError("Unknown TTA method: {}".format(method))

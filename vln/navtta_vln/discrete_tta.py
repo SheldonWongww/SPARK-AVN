@@ -8,13 +8,14 @@ callback; FeedTTA and ATENA receive only binary navigation-success feedback.
 """
 
 import json
+import hashlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import torch
 
-from navtta_core.tta import build_adapter
+from navtta_core.tta import build_adapter, module_state_sha256
 
 
 TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena")
@@ -24,6 +25,21 @@ def add_discrete_tta_args(parser):
     """Install the identical TTA CLI on every discrete VLN parser."""
     group = parser.add_argument_group("discrete VLN test-time adaptation")
     group.add_argument("--tta_method", choices=TTA_METHODS, default="source")
+    group.add_argument(
+        "--tta_audit_zero_update", action="store_true", default=False,
+        help=(
+            "exercise the selected adapter while suppressing and auditing "
+            "every parameter write (formal adapter-parity audit only)"
+        ),
+    )
+    group.add_argument(
+        "--tta_audit_control", action="store_true", default=False,
+        help="emit no-update Source evidence for an adapter-parity audit",
+    )
+    group.add_argument(
+        "--tta_audit_expected_episodes", type=int, default=-1,
+        help="defer the expensive final parameter-state hash to this episode",
+    )
     group.add_argument("--tta_diagnostics", default=None)
     group.add_argument(
         "--tta_action_selection",
@@ -242,6 +258,11 @@ def _adapter_config(args, trainable_prefixes):
     )
     return SimpleNamespace(
         METHOD=args.tta_method,
+        AUDIT_ZERO_UPDATE=bool(args.tta_audit_zero_update),
+        AUDIT_EXPECTED_EPISODES=(
+            None if args.tta_audit_expected_episodes < 0
+            else int(args.tta_audit_expected_episodes)
+        ),
         LR=args.tta_lr,
         STEPS=1,
         EPISODIC=args.tta_episodic,
@@ -353,13 +374,24 @@ class _SourceAdapter:
 
     requires_source_grad = False
 
-    def __init__(self):
+    def __init__(
+        self, model, control="source_no_update", audit_expected_episodes=None
+    ):
+        self.model = model
         self.action_steps = 0
         self.episode_count = 0
+        self.control = str(control)
+        self.audit_expected_episodes = audit_expected_episodes
+        self.model_state_before_sha256 = (
+            module_state_sha256(model)
+            if audit_expected_episodes is not None else None
+        )
+        self.model_state_after_sha256 = None
 
     def reset(self):
         self.action_steps = 0
         self.episode_count = 0
+        self.model_state_after_sha256 = None
 
     def episode_start(self):
         return None
@@ -377,12 +409,26 @@ class _SourceAdapter:
         self.action_steps += int(logits.shape[0])
 
     def diagnostics(self):
+        if (
+            self.audit_expected_episodes is not None
+            and self.episode_count >= self.audit_expected_episodes
+            and self.model_state_after_sha256 is None
+        ):
+            self.model_state_after_sha256 = module_state_sha256(self.model)
         return {
             "action_steps": self.action_steps,
             "episodes": self.episode_count,
             "updates": 0,
             "relative_param_drift": 0.0,
-            "control": "matched_source_sampling_no_update",
+            "control": self.control,
+            "audit_expected_episodes": self.audit_expected_episodes,
+            "model_state_before_sha256": self.model_state_before_sha256,
+            "model_state_after_sha256": self.model_state_after_sha256,
+            "model_state_hash_match": (
+                None if self.model_state_after_sha256 is None else
+                self.model_state_after_sha256
+                == self.model_state_before_sha256
+            ),
         }
 
 
@@ -393,6 +439,18 @@ class DiscreteTTAController:
         self.args = args
         self.model = model
         self.method = str(args.tta_method).lower()
+        audit_zero_update = bool(args.tta_audit_zero_update)
+        audit_control = bool(args.tta_audit_control)
+        if audit_zero_update and self.method == "source":
+            raise ValueError("zero-update adapter audit requires a TTA method")
+        if audit_control and self.method != "source":
+            raise ValueError("adapter audit controls require method=source")
+        if audit_zero_update and audit_control:
+            raise ValueError("audit job cannot be both adapter and Source control")
+        if (audit_zero_update or audit_control) and int(
+            args.tta_audit_expected_episodes
+        ) <= 0:
+            raise ValueError("adapter audit requires expected episodes > 0")
         requested_selection = str(args.tta_action_selection).lower()
         self.action_selection = (
             "sample" if self.method == "feedtta" else "argmax"
@@ -414,6 +472,8 @@ class DiscreteTTAController:
         self.episode_count = 0
         self._episode_open = False
         self._pending_policy_inputs = None
+        self._trajectory_hasher = hashlib.sha256()
+        self.trajectory_steps = 0
         self.diagnostics_path = args.tta_diagnostics or os.path.join(
             args.output_dir, "tta_diagnostics.json"
         )
@@ -428,7 +488,16 @@ class DiscreteTTAController:
         if self.method == "source":
             self.model.eval()
             self.model.requires_grad_(False)
-            self.adapter = _SourceAdapter()
+            self.adapter = _SourceAdapter(
+                self.model,
+                "matched_source_sampling_no_update"
+                if self.action_selection == "sample"
+                else "source_argmax_no_update",
+                audit_expected_episodes=(
+                    int(args.tta_audit_expected_episodes)
+                    if audit_control else None
+                ),
+            )
         else:
             self.adapter = build_adapter(
                 model,
@@ -443,6 +512,8 @@ class DiscreteTTAController:
         self._action_generator.manual_seed(self.action_seed)
         self._episode_open = False
         self._pending_policy_inputs = None
+        self._trajectory_hasher = hashlib.sha256()
+        self.trajectory_steps = 0
 
     def diagnostics(self):
         return self.adapter.diagnostics()
@@ -458,6 +529,9 @@ class DiscreteTTAController:
         )
         self._action_generator.manual_seed(self.current_action_seed)
         self.adapter.episode_start()
+        self._trajectory_hasher.update(
+            "episode:{}\0".format(self.episode_count).encode("ascii")
+        )
         self._episode_open = True
 
     def detach_state(self, value):
@@ -514,8 +588,15 @@ class DiscreteTTAController:
             cumulative = probabilities.cumsum(dim=-1)
             sampled = (uniforms > cumulative).sum(dim=-1)
             sampled.clamp_(max=probabilities.shape[-1] - 1)
-            return sampled.to(device=logits.device)
-        return logits.argmax(dim=-1).detach()
+            selected = sampled.to(device=logits.device)
+        else:
+            selected = logits.argmax(dim=-1).detach()
+        values = selected.detach().cpu().view(-1).tolist()
+        self._trajectory_hasher.update(
+            ("actions:" + ",".join(map(str, values)) + "\0").encode("ascii")
+        )
+        self.trajectory_steps += len(values)
+        return selected
 
     def adapt_step(self, logits, action=None, **context):
         if not self._episode_open:
@@ -555,6 +636,7 @@ class DiscreteTTAController:
                         "success": float(observation["distance"]) < 3.0
                     }
         self.adapter.episode_end(episode_stats=episode_stats)
+        self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
         self.episode_count += 1
         self.write_diagnostics()
@@ -564,8 +646,15 @@ class DiscreteTTAController:
         payload = {
             "schema": "navtta.vln_discrete_tta.v1",
             "method": self.method,
+            "audit_zero_update": bool(
+                getattr(self.args, "tta_audit_zero_update", False)
+            ),
+            "audit_control": bool(
+                getattr(self.args, "tta_audit_control", False)
+            ),
             "stream": self.stream_name,
             "episode_count": self.episode_count,
+            "action_steps": diagnostics["action_steps"],
             "batch_size": 1,
             "tta_step_unit": "high_level_navigation_decision",
             "action_selection": (
@@ -578,6 +667,8 @@ class DiscreteTTAController:
             "action_rng": "dedicated_cpu_uniform_inverse_cdf",
             "masked_action_entropy": "finite_logits_only",
             "cached_policy_state": "detached_between_decisions",
+            "trajectory_steps": self.trajectory_steps,
+            "trajectory_sha256": self._trajectory_hasher.hexdigest(),
             "supervision": (
                 "binary_navigation_success_feedback"
                 if self.method in ("feedtta", "atena")
@@ -603,7 +694,8 @@ class DiscreteTTAAgentMixin:
         action_selection = str(
             getattr(self.args, "tta_action_selection", "auto")
         ).lower()
-        if method == "source" and action_selection != "sample":
+        audit_control = bool(getattr(self.args, "tta_audit_control", False))
+        if method == "source" and action_selection != "sample" and not audit_control:
             return
         if not bool(getattr(self.args, "test", False)):
             raise ValueError("Discrete TTA is evaluation-only and requires --test")

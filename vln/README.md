@@ -176,3 +176,44 @@ Published paper numbers are preserved only as provenance-limited references in
 Source baselines, but cannot be relabelled as canonical-order or TTA reruns.
 Any new formal result must also have a run manifest tied to the top-level Git
 commit, exact configuration, asset digests, seed, and hardware.
+
+## Post-search zero-update adapter parity audit
+
+After all five methods have immutable `FROZEN_HPARAMETERS.json` files, run the
+separate adapter-parity audit before interpreting TTA gains.  It uses the exact
+canonical 256-episode `val_seen` prefix and creates exactly 56 jobs: 40 frozen
+method adapters, eight argmax Source controls, and eight sampled Source
+controls.  FeedTTA is paired with sampled Source; every other method is paired
+with argmax Source.
+
+```bash
+SEARCH_BATCH=vln-tta-hparam-final-YYYYMMDDTHHMMSSZ
+AUDIT_BATCH=vln-tta-adapter-parity-YYYYMMDDTHHMMSSZ
+
+python3 vln/scripts/run_tta_adapter_parity_audit.py plan \
+  --batch-id "$AUDIT_BATCH" --search-batch-id "$SEARCH_BATCH" --gpu 0
+python3 vln/scripts/run_tta_adapter_parity_audit.py run \
+  --batch-id "$AUDIT_BATCH" --max-workers 3 --max-per-model 1
+python3 vln/scripts/run_tta_adapter_parity_audit.py validate \
+  --batch-id "$AUDIT_BATCH"
+```
+
+This is not a zero-learning-rate ablation.  Explicit audit mode executes each
+adapter's native loss, backward, replay, gating, binary-feedback, and update
+scheduling paths, intercepting every optimizer/direct parameter write at the
+last boundary.  Validation requires positive suppressed attempts, `updates=0`,
+zero drift, identical before/after full-model state SHA256, method-specific
+positive path evidence (including FSTTA's shadow FAST/SLOW audit trajectory),
+the exact pinned episode IDs/order, identical action-trajectory SHA256,
+identical per-episode output evidence, and exact aggregate metrics versus the
+matched Source job.  Every job uses the formal source-tag lock and immutable
+run-manifest lifecycle; its manifest pins the generated 256-record prefix,
+canonical parent order, audit config, assets, dataset, seed, commit, and
+hardware, with clean-tree checks at run start, immediately before model
+execution, and at finalization.
+Planning also pins the audit commit, frozen-search artifacts, asset/environment
+manifests, datasets, and order manifests; execution requires an all-asset
+preflight.  Audit configs use their own schema and
+`vln/results/audits/adapter_parity/` namespace, so they cannot be passed through
+the ordinary hyperparameter-search protocol or confused with scientific TTA
+results.

@@ -14,6 +14,7 @@ Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--ce-data-version VERSION]
                                       [--smoke-episodes N]
                                       [--tta-config FILE]
+                                      [--adapter-parity-audit]
                                       [--episode-limit N] [--dry-run]
 
 SETTING:
@@ -32,8 +33,12 @@ StreamVLN start states) or v1.2-native (paper/upstream reproduction).
 val_seen, uses the canonical prefix, and writes under vln/results/smoke/.
 
 --tta-config FILE enables a provenance-recorded TTA/control job described by
-one JSON file.  --episode-limit N is a non-formal development prefix used by
-the hyperparameter scheduler; complete finalist jobs omit it.
+one JSON file.  --episode-limit N is ordinarily a non-formal development
+prefix used by the hyperparameter scheduler.  The isolated adapter-parity
+audit is the sole exception: it requires exactly 256 canonical-prefix
+episodes and receives the formal manifest/clean-tree lifecycle.
+--adapter-parity-audit is required by the isolated zero-write parity schema
+and is rejected for every ordinary tuning/source configuration.
 EOF
 }
 
@@ -57,6 +62,7 @@ CE_DATA_VERSION_SET=0
 SMOKE_EPISODES=""
 TTA_CONFIG=""
 EPISODE_LIMIT=""
+ADAPTER_PARITY_AUDIT=0
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         --dry-run)
@@ -97,6 +103,12 @@ while [[ "$#" -gt 0 ]]; do
             [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--episode-limit must be a positive integer"
             EPISODE_LIMIT="$2"
             shift 2
+            ;;
+        --adapter-parity-audit)
+            [[ "${ADAPTER_PARITY_AUDIT}" -eq 0 ]] || \
+                die "duplicate option: --adapter-parity-audit"
+            ADAPTER_PARITY_AUDIT=1
+            shift
             ;;
         ''|*[!0-9]*)
             die "unknown option or invalid GPU index: $1"
@@ -158,6 +170,7 @@ case "${REPO_ROOT}" in
 esac
 
 TTA_METHOD=source
+TTA_NAMESPACE=tuning
 TTA_TRANSLATOR="${REPO_ROOT}/vln/scripts/tta_config_cli.py"
 if [[ -n "${TTA_CONFIG}" ]]; then
     [[ "${TTA_CONFIG}" = /* ]] || TTA_CONFIG="${REPO_ROOT}/${TTA_CONFIG}"
@@ -170,6 +183,33 @@ if [[ -n "${TTA_CONFIG}" ]]; then
     )"; then
         die "invalid TTA config: ${TTA_CONFIG}"
     fi
+    if ! TTA_NAMESPACE="$(
+        python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+            --config "${TTA_CONFIG}" --diagnostics /tmp/navtta-unused.json \
+            --print-namespace
+    )"; then
+        die "cannot resolve TTA result namespace: ${TTA_CONFIG}"
+    fi
+    case "${TTA_NAMESPACE}" in
+        tuning|adapter_parity_audit) ;;
+        *) die "unsupported TTA result namespace: ${TTA_NAMESPACE}" ;;
+    esac
+fi
+if [[ "${TTA_NAMESPACE}" == "adapter_parity_audit" && \
+      "${ADAPTER_PARITY_AUDIT}" -ne 1 ]]; then
+    die "adapter-parity config requires --adapter-parity-audit"
+fi
+if [[ "${TTA_NAMESPACE}" != "adapter_parity_audit" && \
+      "${ADAPTER_PARITY_AUDIT}" -ne 0 ]]; then
+    die "--adapter-parity-audit requires the adapter-parity config schema"
+fi
+if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
+    [[ "${SPLIT}" == "val_seen" ]] || \
+        die "adapter-parity audit is restricted to val_seen"
+    [[ -z "${SMOKE_EPISODES}" ]] || \
+        die "adapter-parity audit cannot use --smoke-episodes"
+    [[ "${EPISODE_LIMIT}" == "256" ]] || \
+        die "adapter-parity audit requires --episode-limit 256"
 fi
 
 SOURCE_TAG_LOCK_FD=""
@@ -204,7 +244,8 @@ claim_or_verify_source_tag_lock() {
     fi
 }
 
-if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && -z "${EPISODE_LIMIT}" ]]; then
+if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && \
+      ( -z "${EPISODE_LIMIT}" || "${ADAPTER_PARITY_AUDIT}" -eq 1 ) ]]; then
     claim_or_verify_source_tag_lock
 fi
 
@@ -231,6 +272,8 @@ DATA_ROOT="${REPO_ROOT}/vln/data"
 CHECKPOINT_ROOT="${REPO_ROOT}/vln/checkpoints"
 if [[ -n "${SMOKE_EPISODES}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/smoke/${RUN_TAG}/${SETTING}/${SPLIT}"
+elif [[ -n "${TTA_CONFIG}" && "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; then
+    RESULT_ROOT="${REPO_ROOT}/vln/results/audits/adapter_parity/runs/${RUN_TAG}/${SETTING}/${SPLIT}"
 elif [[ -n "${TTA_CONFIG}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/tuning/${RUN_TAG}/${SETTING}/${SPLIT}"
 else
@@ -324,7 +367,8 @@ check_formal_git_state() {
 }
 
 FORMAL_RUN=0
-if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && -z "${EPISODE_LIMIT}" ]]; then
+if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && \
+      ( -z "${EPISODE_LIMIT}" || "${ADAPTER_PARITY_AUDIT}" -eq 1 ) ]]; then
     FORMAL_RUN=1
     if ! RUN_GIT_COMMIT="$(
         git -C "${REPO_ROOT}" rev-parse --verify HEAD 2>&1
@@ -356,6 +400,7 @@ RUN_CONFIG_REF=""
 RUN_AUX_CHECKPOINTS=()
 RUN_MANIFEST_ACTIVE=0
 RUN_MANIFEST_PATH=""
+RUN_PREFIX_ORDER_FILE=""
 
 set_run_identity() {
     RUN_MODEL="$1"
@@ -403,10 +448,13 @@ finalize_formal_manifest() {
     trap - EXIT
     set +e
     if [[ "${RUN_MANIFEST_ACTIVE}" -eq 1 ]]; then
-        if [[ "${status}" -eq 0 ]] && \
-           ! check_formal_git_state "${RUN_GIT_COMMIT}"; then
-            printf 'error: refusing to mark a run successful after Git state changed\n' >&2
-            status=1
+        if ! check_formal_git_state "${RUN_GIT_COMMIT}"; then
+            if [[ "${status}" -eq 0 ]]; then
+                printf 'error: refusing to mark a run successful after Git state changed\n' >&2
+                status=1
+            else
+                printf 'error: Git state also changed during the failed formal run\n' >&2
+            fi
         fi
         if [[ "${status}" -eq 0 ]]; then
             while IFS= read -r -d '' artifact; do
@@ -457,8 +505,18 @@ prepare_formal_manifest() {
        -n "${RUN_PRIMARY_CHECKPOINT}" && -n "${RUN_CONFIG_REF}" ]] || \
         die "formal run identity is incomplete"
 
-    local order_file="${RUN_ORDER_DIR}/${SPLIT}.json"
-    [[ -f "${order_file}" ]] || die "missing episode-order manifest: ${order_file}"
+    local canonical_order_file="${RUN_ORDER_DIR}/${SPLIT}.json"
+    [[ -f "${canonical_order_file}" ]] || \
+        die "missing episode-order manifest: ${canonical_order_file}"
+    local order_file="${canonical_order_file}"
+    if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
+        RUN_PREFIX_ORDER_FILE="${RESULT_ROOT}/episode_order_prefix.json"
+        "${PYTHON}" "${REPO_ROOT}/vln/scripts/create_episode_order_prefix.py" \
+            --parent "${canonical_order_file}" \
+            --output "${RUN_PREFIX_ORDER_FILE}" --episodes 256 \
+            --protocol zero_update_adapter_parity
+        order_file="${RUN_PREFIX_ORDER_FILE}"
+    fi
     local -a order_metadata
     mapfile -t order_metadata < <(
         "${PYTHON}" - "${order_file}" <<'PY'
@@ -535,12 +593,22 @@ run_in() {
         evaluated_command+=("${tta_args[@]}")
         RUN_CONFIG_REF="${TTA_CONFIG}"
     fi
+    if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
+        RUN_AUX_CHECKPOINTS+=(
+            "audit_job_config=${TTA_CONFIG}"
+            "canonical_episode_order_parent=${RUN_ORDER_DIR}/${SPLIT}.json"
+        )
+    fi
     validate_run_identity_paths
     printf 'workdir: %s\ncommand:' "${workdir}"
     printf ' %q' "${evaluated_command[@]}"
     printf '\n'
     if [[ "${DRY_RUN}" -eq 0 ]]; then
         prepare_formal_manifest "${evaluated_command[@]}"
+        if [[ "${FORMAL_RUN}" -eq 1 ]]; then
+            check_formal_git_state "${RUN_GIT_COMMIT}" || \
+                die "formal execution tree changed before model invocation"
+        fi
         (cd "${workdir}" && "${evaluated_command[@]}")
     fi
 }
@@ -562,7 +630,8 @@ assert_gpu() {
 }
 
 append_submit_flag() {
-    if [[ "${SPLIT}" == "test" || -n "${SMOKE_EPISODES}" ]]; then
+    if [[ "${SPLIT}" == "test" || -n "${SMOKE_EPISODES}" || \
+          "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; then
         COMMAND+=(--submit)
     fi
 }

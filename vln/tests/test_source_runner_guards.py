@@ -60,7 +60,7 @@ class SourceRunnerGuardTest(unittest.TestCase):
 
         self.assertIn("check_formal_git_state()", source)
         self.assertEqual(
-            source.count('check_formal_git_state "${RUN_GIT_COMMIT}"'), 2
+            source.count('check_formal_git_state "${RUN_GIT_COMMIT}"'), 3
         )
         self.assertIn("rev-parse --verify HEAD 2>&1", source)
         self.assertIn("status --porcelain --untracked-files=no 2>&1", source)
@@ -165,6 +165,30 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertNotIn('CE_EPISODE_COUNT="${EPISODE_LIMIT}"', source)
         self.assertNotIn('CE_EPISODE_COUNT="${SMOKE_EPISODES}"', source)
         self.assertIn('export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"', source)
+
+    def test_adapter_parity_namespace_requires_its_dedicated_runner_flag(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn("--adapter-parity-audit", source)
+        self.assertIn(
+            'adapter-parity config requires --adapter-parity-audit', source
+        )
+        self.assertIn(
+            '--adapter-parity-audit requires the adapter-parity config schema',
+            source,
+        )
+        self.assertIn(
+            'vln/results/audits/adapter_parity/runs/${RUN_TAG}', source
+        )
+        self.assertIn(
+            'adapter-parity audit requires --episode-limit 256', source
+        )
+        self.assertIn("create_episode_order_prefix.py", source)
+        self.assertIn('"audit_job_config=${TTA_CONFIG}"', source)
+        self.assertIn(
+            '"canonical_episode_order_parent=${RUN_ORDER_DIR}/${SPLIT}.json"',
+            source,
+        )
 
 
 if __name__ == "__main__":
