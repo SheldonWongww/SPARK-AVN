@@ -108,15 +108,26 @@ DUET 和 HAMT 与各自论文中的对应 Source 行基本一致。GOAT 本地�
 
 FSTTA 发布代码的 REVERIE 锚点为 `lr_fast=6e-4`、`lr_slow=1e-3`、`M=3`、`N=4`。ATENA 发布脚本还给出 DUET-R2R 的 `lr_query=8e-7, lr_self=1e-7, lambda=0.75, delta=0.1` 和 DUET-REVERIE 的 `5e-6, 1e-7, 0.5, 0.1`；这些 model-specific 点比无约束大网格更适合作为本项目起点。
 
-### 6.2 本项目的小搜索规则
+### 6.2 本项目的 benchmark 级共享超参数规则
 
-1. 每个“模型 × 方法 × benchmark”先运行 2-episode lifecycle smoke，再运行固定 `val_seen` prefix 的数值稳定性检查。
+主对比表不采用“每个模型各自选择最优超参数”的协议。对每一种 TTA 方法，
+在同一 benchmark 上只选择并冻结一组共享超参数：R2R 由 DUET、HAMT、GOAT
+共同选择，REVERIE 由 DUET、HAMT、GOAT 共同选择，R2R-CE 由 ETPNav、
+BEVBert 共同选择。当前不参加搜索的 StreamVLN 不参与 R2R-CE winner 的选择；
+后续若报告其 TTA 结果，应直接使用已经冻结的 R2R-CE 共享配置，或明确列入
+补充实验，不能利用其评估结果重新调参。该协议避免为某个模型单独定制配置，
+使同一方法在同一 benchmark 内的模型间比较更公平。
+
+1. 每个候选配置必须以完全相同的参数在该 benchmark 的所有纳入模型上评估。每个“模型 × 方法 × benchmark”先运行 2-episode lifecycle smoke，再运行固定 `val_seen` prefix 的数值稳定性检查。
 2. 论文默认配置始终保留为主候选；最多增加两个学习率邻点（`0.5×`、`2×`）。只有论文明确存在第二个关键参数时，再增加不超过三个值。
-3. 256-episode canonical prefix 只用于分阶段筛选，并始终与相同前缀的 matched Source 比较。最后五个候选和独立的 `final_controls` Source 均在完整 `val_seen` canonical stream 上运行；winner 必须按这一全量 matched Source 约束选择并立即冻结。
-4. `FROZEN_HPARAMETERS.json` 在固定顺序的完整 `val_seen` 决赛结束后生成，不依赖多顺序实验。主表使用 seed 0 固定顺序；计算允许时，后续 order seeds `0/1/2` 只能消费已经冻结的配置并形成 robustness 附表，不能重新定义 winner。FSTTA 的 5-shuffle、ATENA 的 3-seed 论文协议单独标注，不与 canonical 主表合并。
-5. StreamVLN 只运行论文默认点和至多一个保守学习率邻点；prefix 建议不超过 64 episodes。除非默认点发生发散，不进行二维以上搜索。
-6. 每个 split 从 Source checkpoint 重新开始，保存参数更新范围、可训练参数数、优化器状态策略、每 episode 更新次数、查询反馈比例、峰值显存和墙钟时间。
-7. 无监督表与二值反馈表分开排名；若需要一张总表，ATENA/FeedTTA 必须带 `†` 并在表头说明监督预算。
+3. 256-episode canonical prefix 只用于分阶段筛选，并始终与相同模型、相同 episode 顺序和相同前缀的 matched Source 比较。分阶段晋级时不得只依据单个模型的结果；只有在该 benchmark 的全部模型上完成的同一候选才可参与比较。
+4. 最后候选和独立的 `final_controls` Source 均在完整固定顺序 `val_seen` canonical stream 上运行。候选必须在每个纳入模型的主指标上都**严格优于** matched Source 才是有效候选：R2R 使用 SPL，REVERIE 使用 RGSPL，R2R-CE 使用 SPL。
+5. 在全部有效候选中，winner 取“相对 Source 的最弱模型增益”最大者，即最大化 `min_model(TTA - Source)`；若并列，依次选择平均增益更高、参数漂移更小、更新次数更少的候选。所有增益均以指标的绝对百分点计算。
+6. 如果没有任何候选能使该 benchmark 的所有纳入模型都优于 Source，则明确记录“无有效共享配置”，不得在主表中悄然改用各模型独立调参的结果。每个模型各自的最优配置只能作为补充材料中的 oracle/upper-bound 分析，并清楚标注其不可与共享配置主结果直接比较。
+7. `FROZEN_HPARAMETERS.json` 在固定顺序的完整 `val_seen` 决赛结束后按上述规则生成。参数一经冻结，`val_unseen`、`test` 和 order seeds `0/1/2` 只能消费该配置，不能重新定义 winner。主表使用 seed 0 固定顺序；多顺序结果形成 robustness 附表。FSTTA 的 5-shuffle、ATENA 的 3-seed 论文协议单独标注，不与 canonical 主表合并。
+8. StreamVLN 只运行论文默认点和至多一个保守学习率邻点；prefix 建议不超过 64 episodes。除非默认点发生发散，不进行二维以上搜索。若这项探索发生在共享配置冻结之后，其结果不能反向改变 R2R-CE winner。
+9. 每个 split 从 Source checkpoint 重新开始，保存参数更新范围、可训练参数数、优化器状态策略、每 episode 更新次数、查询反馈比例、峰值显存和墙钟时间。
+10. 无监督表与二值反馈表分开排名；若需要一张总表，ATENA/FeedTTA 必须带 `†` 并在表头说明监督预算。
 
 ### 6.3 冻结参数后的零更新适配器一致性审计
 
