@@ -25,7 +25,13 @@ import time
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SPEC_PATH = REPO_ROOT / "vln/experiments/tta_hparam_search_v1.json"
+DEFAULT_SPEC_PATH = REPO_ROOT / "vln/experiments/tta_hparam_search_v1.json"
+_configured_spec = os.environ.get("NAVTTA_VLN_HPARAM_SPEC")
+SPEC_PATH = (
+    (Path(_configured_spec) if Path(_configured_spec).is_absolute()
+     else REPO_ROOT / _configured_spec).resolve()
+    if _configured_spec else DEFAULT_SPEC_PATH
+)
 LOG_ROOT = REPO_ROOT / "vln/results/logs/hparam_search"
 TUNING_ROOT = REPO_ROOT / "vln/results/tuning"
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"

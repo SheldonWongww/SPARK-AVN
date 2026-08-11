@@ -713,6 +713,62 @@ class TTAHparamSearchTest(unittest.TestCase):
         self.assertEqual(totals, expected)
         self.assertEqual(sum(totals.values()), 2531)
 
+    def test_compact_post_eam_campaign_counts(self):
+        compact_path = (
+            MODULE.REPO_ROOT
+            / "vln/experiments/tta_hparam_search_compact_v1.json"
+        )
+        compact = MODULE.load_spec(compact_path)
+        self.assertEqual(compact["profile"]["name"], "compact")
+
+        feed_stage1 = len(list(MODULE.stage1_points(
+            "feedtta", "duet-r2r", compact
+        )))
+        self.assertEqual(feed_stage1, 15)
+        feed_anchor = MODULE.clean_parameters(MODULE.anchor_for(
+            "feedtta", "duet-r2r", compact
+        ))
+        feed_second = dict(feed_anchor, lr=1e-6)
+        feed_stage2 = MODULE.expand_stage(
+            "feedtta", "stage2", "duet-r2r", [
+                result("anchor", "duet-r2r", feed_anchor, 80),
+                result("second", "duet-r2r", feed_second, 79),
+            ], compact,
+        )
+        self.assertEqual(len(feed_stage2), 22)
+
+        atena_stage1 = len(list(MODULE.stage1_points(
+            "atena", "duet-r2r", compact
+        )))
+        self.assertEqual(atena_stage1, 5)
+        atena_anchor = MODULE.clean_parameters(MODULE.anchor_for(
+            "atena", "duet-r2r", compact
+        ))
+        atena_second = dict(atena_anchor)
+        atena_second["lr_query"] *= 2
+        atena_second["lr_self"] *= 2
+        promoted = [
+            result("anchor", "duet-r2r", atena_anchor, 80),
+            result("second", "duet-r2r", atena_second, 79),
+        ]
+        atena_stage2 = MODULE.expand_stage(
+            "atena", "stage2", "duet-r2r", promoted, compact
+        )
+        atena_stage3 = MODULE.expand_stage(
+            "atena", "stage3", "duet-r2r", promoted, compact
+        )
+        self.assertEqual(len(atena_stage2), 10)
+        self.assertEqual(len(atena_stage3), 8)
+
+        fixed_stages = 8 + 8 + 8 + 5 * 8
+        feed_total = fixed_stages + feed_stage1 * 8 + len(feed_stage2) * 8
+        atena_total = (
+            fixed_stages + atena_stage1 * 8
+            + len(atena_stage2) * 8 + len(atena_stage3) * 8
+        )
+        self.assertEqual(feed_total, 360)
+        self.assertEqual(atena_total, 248)
+
     def test_status_reports_final_controls_stage(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
