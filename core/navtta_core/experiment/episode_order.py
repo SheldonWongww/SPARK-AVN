@@ -20,6 +20,9 @@ from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Seque
 EPISODE_ORDER_SCHEMA = "navtta.episode_order.v1"
 CANONICAL_SPLIT_ORDER = ("val_seen", "val_unseen", "test")
 CANONICAL_ORDER_POLICY = "scene_id_then_natural_episode_id_v1"
+SEEDED_ORDER_POLICY = "domain_separated_sha256_rank_v1"
+SEEDED_ORDER_ALGORITHM = "sha256_rank_v1"
+SEEDED_ORDER_DOMAIN_SEPARATOR = "navtta.episode_order.sha256_rank.v1"
 
 
 def sha256_file(path: str, chunk_size: int = 1024 * 1024) -> str:
@@ -111,6 +114,97 @@ def _records_sha256(records: Sequence[Mapping[str, str]]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _seeded_record_digest(
+    record: Mapping[str, str], *, order_seed: int, parent_order_sha256: str
+) -> str:
+    """Return the domain-separated rank digest for one episode record."""
+    payload = json.dumps(
+        {
+            "domain_separator": SEEDED_ORDER_DOMAIN_SEPARATOR,
+            "episode_id": str(record["episode_id"]),
+            "order_seed": int(order_seed),
+            "parent_order_sha256": str(parent_order_sha256),
+            "scene_id": str(record["scene_id"]),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def seeded_episode_records(
+    records: Iterable[Mapping[str, str]],
+    *,
+    order_seed: int,
+    parent_order_sha256: str,
+) -> List[Dict[str, str]]:
+    """Rank records by a deterministic, domain-separated SHA256 digest."""
+    if isinstance(order_seed, bool) or not isinstance(order_seed, int):
+        raise ValueError("order_seed must be an integer")
+    if order_seed <= 0:
+        raise ValueError("derived episode orders require a positive order_seed")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(parent_order_sha256)):
+        raise ValueError("parent_order_sha256 must be a lowercase SHA256 digest")
+    normalized = [
+        {
+            "episode_id": str(record["episode_id"]),
+            "scene_id": str(record["scene_id"]),
+        }
+        for record in records
+    ]
+    return sorted(
+        normalized,
+        key=lambda record: (
+            _seeded_record_digest(
+                record,
+                order_seed=order_seed,
+                parent_order_sha256=parent_order_sha256,
+            ),
+            record["scene_id"],
+            record["episode_id"],
+        ),
+    )
+
+
+def derive_seeded_episode_order_manifest(
+    parent: Mapping[str, Any],
+    *,
+    order_seed: int,
+    parent_manifest_path: str,
+    parent_manifest_sha256: str,
+) -> Dict[str, Any]:
+    """Derive a reproducible SHA256-ranked order from one canonical parent."""
+    validate_episode_order_manifest(parent)
+    if parent.get("order_policy") != CANONICAL_ORDER_POLICY:
+        raise ValueError("Seeded episode orders require a canonical parent")
+    if not parent_manifest_path:
+        raise ValueError("parent_manifest_path is required")
+    parent_manifest_sha256 = str(parent_manifest_sha256)
+    if not re.fullmatch(r"[0-9a-f]{64}", parent_manifest_sha256):
+        raise ValueError("parent_manifest_sha256 must be a lowercase SHA256 digest")
+    records = seeded_episode_records(
+        parent["episodes"],
+        order_seed=order_seed,
+        parent_order_sha256=parent["order_sha256"],
+    )
+    derived = dict(parent)
+    derived["order_policy"] = SEEDED_ORDER_POLICY
+    derived["order_seed"] = int(order_seed)
+    derived["derivation"] = {
+        "algorithm": SEEDED_ORDER_ALGORITHM,
+        "domain_separator": SEEDED_ORDER_DOMAIN_SEPARATOR,
+        "order_seed": int(order_seed),
+        "parent_manifest_path": str(parent_manifest_path),
+        "parent_manifest_sha256": parent_manifest_sha256,
+        "parent_order_sha256": parent["order_sha256"],
+    }
+    derived["episodes"] = records
+    derived["order_sha256"] = _records_sha256(records)
+    validate_episode_order_manifest(derived)
+    return derived
+
+
 def build_episode_order_manifest(
     episodes: Iterable[Any],
     *,
@@ -172,7 +266,8 @@ def validate_episode_order_manifest(
         )
     if manifest.get("split_ordinal") != CANONICAL_SPLIT_ORDER.index(split):
         raise ValueError("Manifest split_ordinal is inconsistent")
-    if manifest.get("order_policy") != CANONICAL_ORDER_POLICY:
+    order_policy = manifest.get("order_policy")
+    if order_policy not in (CANONICAL_ORDER_POLICY, SEEDED_ORDER_POLICY):
         raise ValueError("Manifest contains an unsupported order policy")
     benchmark = manifest.get("benchmark")
     if not isinstance(benchmark, str) or not benchmark:
@@ -212,7 +307,44 @@ def validate_episode_order_manifest(
         normalized.append(normalized_record)
     if manifest.get("episode_count") != len(normalized):
         raise ValueError("Manifest episode_count is inconsistent")
-    if normalized != sorted(normalized, key=_record_key):
+    if order_policy == CANONICAL_ORDER_POLICY:
+        if "order_seed" in manifest or "derivation" in manifest:
+            raise ValueError("Canonical manifest cannot claim seeded derivation")
+        expected_order = sorted(normalized, key=_record_key)
+    else:
+        order_seed = manifest.get("order_seed")
+        derivation = manifest.get("derivation")
+        if (isinstance(order_seed, bool) or not isinstance(order_seed, int)
+                or order_seed <= 0):
+            raise ValueError("Derived manifest order_seed is invalid")
+        if not isinstance(derivation, Mapping):
+            raise ValueError("Derived manifest provenance is missing")
+        if derivation.get("algorithm") != SEEDED_ORDER_ALGORITHM:
+            raise ValueError("Derived manifest algorithm is unsupported")
+        if derivation.get("domain_separator") != SEEDED_ORDER_DOMAIN_SEPARATOR:
+            raise ValueError("Derived manifest domain separator is unsupported")
+        derivation_order_seed = derivation.get("order_seed")
+        if (isinstance(derivation_order_seed, bool)
+                or not isinstance(derivation_order_seed, int)
+                or derivation_order_seed != order_seed):
+            raise ValueError("Derived manifest order_seed provenance is inconsistent")
+        parent_path = derivation.get("parent_manifest_path")
+        if not isinstance(parent_path, str) or not parent_path:
+            raise ValueError("Derived manifest parent path is missing")
+        parent_manifest_sha256 = str(
+            derivation.get("parent_manifest_sha256", "")
+        )
+        if not re.fullmatch(r"[0-9a-f]{64}", parent_manifest_sha256):
+            raise ValueError("Derived manifest parent SHA256 is invalid")
+        parent_order_sha256 = str(derivation.get("parent_order_sha256", ""))
+        if not re.fullmatch(r"[0-9a-f]{64}", parent_order_sha256):
+            raise ValueError("Derived manifest parent order SHA256 is invalid")
+        expected_order = seeded_episode_records(
+            normalized,
+            order_seed=order_seed,
+            parent_order_sha256=parent_order_sha256,
+        )
+    if normalized != expected_order:
         raise ValueError("Manifest episodes do not follow the declared order policy")
     if manifest.get("order_sha256") != _records_sha256(normalized):
         raise ValueError("Manifest order_sha256 does not match episodes")

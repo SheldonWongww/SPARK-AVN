@@ -68,6 +68,24 @@ def _load(path):
         raise ValueError(
             "ordinary TTA schema cannot claim the adapter-parity namespace"
         )
+    order_seed = None
+    if schema == "navtta.vln_tta_adapter_parity_job.v1":
+        order_seed = document.get("order_seed")
+        if type(order_seed) is not int or order_seed != 0:
+            raise ValueError(
+                "adapter-parity config order_seed must be the exact integer 0"
+            )
+    elif (schema == "navtta.vln_tta_job.v1"
+          and document.get("stage") == "orders"):
+        order_seed = document.get("order_seed")
+        if type(order_seed) is not int or order_seed not in (0, 1, 2):
+            raise ValueError(
+                "orders config order_seed must be an exact integer in [0, 1, 2]"
+            )
+    elif "order_seed" in document:
+        raise ValueError(
+            "ordinary non-orders config must omit order_seed entirely"
+        )
     method = str(document.get("method", "")).lower()
     if method not in METHODS:
         raise ValueError("invalid or missing TTA method: {!r}".format(method))
@@ -78,6 +96,16 @@ def _load(path):
     if unknown:
         raise ValueError("unknown {} parameters: {}".format(
             method, ", ".join(sorted(unknown))))
+    for key in ("action_seed", "sgr_seed"):
+        if key in parameters and type(parameters[key]) is not int:
+            raise ValueError("{} must be an exact integer".format(key))
+    if (schema == "navtta.vln_tta_job.v1"
+            and document.get("stage") == "orders" and method == "feedtta"):
+        for key in ("action_seed", "sgr_seed"):
+            if parameters.get(key) != order_seed:
+                raise ValueError(
+                    "FeedTTA orders config {} must equal order_seed".format(key)
+                )
     for key, value in parameters.items():
         if isinstance(value, float) and not math.isfinite(value):
             raise ValueError("non-finite parameter {}".format(key))

@@ -1,5 +1,6 @@
 import copy
 import csv
+import hashlib
 import importlib.util
 import json
 import os
@@ -376,7 +377,6 @@ class CampaignFixture:
             "search_method": method,
             "stage": stage,
             "episodes": episodes,
-            "order_seed": None,
             "parameters": parameters,
         })
         write_json(job_dir / "metrics.json", result)
@@ -616,6 +616,252 @@ class CompactExportTest(unittest.TestCase):
                 max(map(len, compact.splitlines())),
                 MODULE.MAX_CONSOLE_LINE_BYTES + 100,
             )
+
+    def test_derived_order_parent_and_stage_guards(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = CampaignFixture(Path(directory))
+            setting = "duet-r2r"
+            identity = fixture.setting_assets[setting]
+            parent = json.loads(identity["order"].read_text(encoding="utf-8"))
+            parent.update({
+                "split_ordinal": 0,
+                "order_policy": "scene_id_then_natural_episode_id_v1",
+                "source_id_field": "episode_id",
+            })
+            write_json(identity["order"], parent)
+            records = MODULE.seeded_episode_records(
+                parent["episodes"],
+                order_seed=1,
+                parent_order_sha256=parent["order_sha256"],
+            )
+            order_sha = hashlib.sha256(json.dumps(
+                records, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")).hexdigest()
+            derived = copy.deepcopy(parent)
+            derived.update({
+                "split_ordinal": 0,
+                "order_policy": MODULE.SEEDED_ORDER_POLICY,
+                "source_id_field": "episode_id",
+                "order_seed": 1,
+                "derivation": {
+                    "algorithm": MODULE.SEEDED_ORDER_ALGORITHM,
+                    "domain_separator": MODULE.SEEDED_ORDER_DOMAIN_SEPARATOR,
+                    "order_seed": 1,
+                    "parent_manifest_path": str(identity["order"]),
+                    "parent_manifest_sha256": MODULE.sha256(identity["order"]),
+                    "parent_order_sha256": parent["order_sha256"],
+                },
+                "episodes": records,
+                "order_sha256": order_sha,
+            })
+            derived_path = (
+                fixture.order_root / "order_seed_1"
+                / MODULE.SETTING_ORDER_DIRECTORY[setting] / "val_seen.json"
+            )
+            write_json(derived_path, derived)
+            exporter = fixture.exporter(Path(directory) / "export")
+            selected = exporter._order_identity({
+                "setting": setting, "stage": "orders", "order_seed": 1,
+            })
+            self.assertEqual(selected["path"], derived_path.absolute())
+            self.assertEqual(selected["document"]["order_sha256"], order_sha)
+            with self.assertRaisesRegex(MODULE.ExportError, "only the orders stage"):
+                exporter._order_identity({
+                    "setting": setting, "stage": "final", "order_seed": 1,
+                })
+            with self.assertRaisesRegex(MODULE.ExportError, "invalid order_seed"):
+                exporter._order_identity({
+                    "setting": setting, "stage": "orders", "order_seed": 1.0,
+                })
+
+            derived["derivation"]["parent_manifest_sha256"] = "0" * 64
+            write_json(derived_path, derived)
+            exporter = fixture.exporter(Path(directory) / "export-2")
+            with self.assertRaisesRegex(MODULE.ExportError, "parent_manifest_sha256"):
+                exporter._order_identity({
+                    "setting": setting, "stage": "orders", "order_seed": 1,
+                })
+
+    def test_order_robustness_is_recomputed_from_validated_stage_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = CampaignFixture(Path(directory))
+            exporter = fixture.exporter(Path(directory) / "export")
+            method = "tent"
+            frozen = {
+                "schema": "navtta.vln_tta_frozen_hparams.v1",
+                "method": method,
+                "split": "val_seen",
+                "generated_from": "FINAL_SELECTION.json",
+                "git_commit": fixture.git_commit,
+                "spec_sha256": fixture.spec_sha,
+                "settings": {},
+            }
+            results = []
+            expected_settings = {}
+            for setting in fixture.settings:
+                parameters = dict(SEARCH.anchor_for(method, setting, fixture.spec))
+                frozen["settings"][setting] = parameters
+                runs = []
+                values = []
+                for seed in (0, 1, 2):
+                    metrics = {
+                        "SR": 80.0 + seed,
+                        "SPL": 70.0 + 2 * seed,
+                    }
+                    item = {
+                        "run_tag": "{}-{}-{}".format(method, setting, seed),
+                        "setting": setting,
+                        "order_seed": seed,
+                        "parameters": dict(parameters),
+                        "metrics": metrics,
+                    }
+                    results.append(item)
+                    values.append(item)
+                    runs.append({
+                        "run_tag": item["run_tag"],
+                        "order_seed": seed,
+                        "metrics": metrics,
+                    })
+                expected_settings[setting] = {
+                    "frozen_parameters": parameters,
+                    "runs": runs,
+                    "aggregate": {
+                        metric: {
+                            "mean": MODULE.statistics.fmean(
+                                item["metrics"][metric] for item in values
+                            ),
+                            "sample_std": MODULE.statistics.stdev(
+                                item["metrics"][metric] for item in values
+                            ),
+                        } for metric in ("SPL", "SR")
+                    },
+                }
+            document = {
+                "schema": "navtta.vln_tta_order_robustness.v1",
+                "method": method,
+                "split": "val_seen",
+                "git_commit": fixture.git_commit,
+                "spec_sha256": fixture.spec_sha,
+                "required_order_seeds": [0, 1, 2],
+                "settings": expected_settings,
+            }
+            orders_stage = {"results": results}
+            exporter._validate_order_robustness(
+                method, document, orders_stage, frozen,
+                fixture.git_commit, fixture.spec_sha,
+            )
+
+            forged = copy.deepcopy(document)
+            forged["settings"][fixture.settings[0]]["aggregate"]["SPL"][
+                "mean"
+            ] += 1.0
+            with self.assertRaisesRegex(MODULE.ExportError, "disagrees"):
+                exporter._validate_order_robustness(
+                    method, forged, orders_stage, frozen,
+                    fixture.git_commit, fixture.spec_sha,
+                )
+
+            forged_stage = copy.deepcopy(orders_stage)
+            forged_stage["results"][0]["parameters"] = {"lr": 999.0}
+            with self.assertRaisesRegex(MODULE.ExportError, "frozen winner"):
+                exporter._validate_order_robustness(
+                    method, document, forged_stage, frozen,
+                    fixture.git_commit, fixture.spec_sha,
+                )
+
+            float_seed_stage = copy.deepcopy(orders_stage)
+            float_seed_stage["results"][1]["order_seed"] = 1.0
+            with self.assertRaisesRegex(MODULE.ExportError, "non-integer seed"):
+                exporter._validate_order_robustness(
+                    method, document, float_seed_stage, frozen,
+                    fixture.git_commit, fixture.spec_sha,
+                )
+
+            forged_run = copy.deepcopy(document)
+            forged_run["settings"][fixture.settings[0]]["runs"][0]["metrics"][
+                "SR"
+            ] = -1.0
+            with self.assertRaisesRegex(MODULE.ExportError, "disagrees"):
+                exporter._validate_order_robustness(
+                    method, forged_run, orders_stage, frozen,
+                    fixture.git_commit, fixture.spec_sha,
+                )
+
+            selection = {
+                "schema": "navtta.vln_tta_final_selection.v1",
+                "method": method,
+                "split": "val_seen",
+                "finalist_stage": "final",
+                "matched_source_stage": "final_controls",
+                "git_commit": fixture.git_commit,
+                "spec_sha256": fixture.spec_sha,
+                "settings": {
+                    setting: {
+                        "winner_run_tag": "winner-{}".format(setting),
+                        "source_run_tag": "source-{}".format(setting),
+                        "frozen_parameters": frozen["settings"][setting],
+                        "winner_metrics": {},
+                        "source_metrics": {},
+                        "selection": {},
+                    } for setting in fixture.settings
+                },
+            }
+            forged_stage_document = copy.deepcopy(document)
+            forged_stage_document["settings"][fixture.settings[0]][
+                "aggregate"
+            ]["SPL"]["mean"] += 1.0
+            documents = [
+                {
+                    "name": "FINAL_SELECTION.json",
+                    "source_relative": "FINAL_SELECTION.json",
+                    "document": selection,
+                },
+                {
+                    "name": "FROZEN_HPARAMETERS.json",
+                    "source_relative": "FROZEN_HPARAMETERS.json",
+                    "document": frozen,
+                },
+                {
+                    "name": "ORDER_ROBUSTNESS.json",
+                    "source_relative": "ORDER_ROBUSTNESS.json",
+                    "document": document,
+                },
+                {
+                    "name": "ORDER_ROBUSTNESS.json",
+                    "source_relative": "stages/orders/ORDER_ROBUSTNESS.json",
+                    "document": forged_stage_document,
+                },
+            ]
+            with self.assertRaisesRegex(MODULE.ExportError, "disagrees"):
+                exporter._validate_official_documents(
+                    method, Path(directory), documents,
+                    fixture.git_commit, fixture.spec_sha,
+                    {"orders": orders_stage},
+                )
+
+    def test_ordinary_job_config_rejects_explicit_null_order_seed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(directory)
+            evidence["config"]["order_seed"] = None
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must omit order_seed entirely"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"]
+                )
+
+    def test_job_config_rejects_noninteger_rng_seed_parameters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = self._single_evidence(
+                directory, method="feedtta", setting="duet-r2r"
+            )
+            evidence["job"]["parameters"]["action_seed"] = False
+            evidence["config"]["parameters"]["action_seed"] = False
+            with self.assertRaisesRegex(
+                    MODULE.ExportError, "must be an exact integer"):
+                evidence["exporter"]._validate_job_config(
+                    evidence["job"], evidence["job_dir"], evidence["config"]
+                )
 
     def test_job_parameter_metrics_and_csv_identity_tampering_is_rejected(self):
         cases = (
@@ -969,6 +1215,7 @@ class CompactExportTest(unittest.TestCase):
             ("commit", "git_commit mismatch"),
             ("setting_split", "source_setting mismatch"),
             ("seed", "seed mismatch"),
+            ("seed_bool", "seed must be an exact integer"),
             ("config", "config reference mismatch"),
             ("immutable", "immutable identity SHA256 mismatch"),
             ("checkpoint", "checkpoint SHA256 mismatch"),
@@ -984,7 +1231,7 @@ class CompactExportTest(unittest.TestCase):
             ("artifact_hash", "result artifact.*SHA256 mismatch"),
         )
         identity_attacks = {
-            "commit", "setting_split", "seed", "config", "order",
+            "commit", "setting_split", "seed", "seed_bool", "config", "order",
             "hardware", "pinned",
             "pinned_schema",
             "checkpoint_rehashed", "auxiliary_rehashed", "dataset_rehashed",
@@ -1003,6 +1250,8 @@ class CompactExportTest(unittest.TestCase):
                     )
                 elif attack == "seed":
                     manifest["seed"] = 7
+                elif attack == "seed_bool":
+                    manifest["seed"] = False
                 elif attack == "config":
                     manifest["config"] = "/tampered/config.json"
                 elif attack == "immutable":
@@ -1263,6 +1512,7 @@ class CompactExportTest(unittest.TestCase):
                     "tent", Path(directory), [],
                     evidence["fixture"].git_commit,
                     evidence["fixture"].spec_sha,
+                    {},
                 )
 
     def test_complete_campaign_export_is_deterministic_and_binary_free(self):

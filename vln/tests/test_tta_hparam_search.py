@@ -55,12 +55,18 @@ def write_stage_manifest(root, stage, method, settings, commit=None,
         MODULE.stage_episode_count(stage, MODULE.load_spec())
         if episodes is None else episodes
     )
-    for ordinal, setting in enumerate(settings):
+    planned = (
+        [(setting, seed) for seed in (0, 1, 2) for setting in settings]
+        if stage == "orders" else [(setting, None) for setting in settings]
+    )
+    for ordinal, (setting, order_seed) in enumerate(planned):
         job_dir = directory / "jobs" / str(ordinal)
         job_dir.mkdir(parents=True, exist_ok=True)
         command = ["runner"]
         if episodes > 0:
             command.extend(["--episode-limit", str(episodes)])
+        if order_seed is not None:
+            command.extend(["--order-seed", str(order_seed)])
         (job_dir / "job.json").write_text(json.dumps({
             "batch_id": batch_id,
             "ordinal": ordinal,
@@ -69,6 +75,7 @@ def write_stage_manifest(root, stage, method, settings, commit=None,
             "search_method": method,
             "stage": stage,
             "episodes": episodes,
+            "order_seed": order_seed,
             "command": command,
         }), encoding="utf-8")
     (directory / "stage_manifest.json").write_text(json.dumps({
@@ -79,7 +86,7 @@ def write_stage_manifest(root, stage, method, settings, commit=None,
         "method": method,
         "stage": stage,
         "episodes": episodes,
-        "job_count": len(settings),
+        "job_count": len(planned),
         "settings": list(settings),
     }), encoding="utf-8")
     return directory
@@ -122,6 +129,24 @@ class TTAHparamSearchTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.spec = MODULE.load_spec()
+
+    def test_spec_order_seeds_require_exact_integers(self):
+        attacks = (
+            ("final-float", "final_order_seeds", [0.0, 1.0, 2.0]),
+            ("final-bool", "final_order_seeds", [False, True, 2]),
+            ("primary-float", "primary_order_seed", 0.0),
+            ("primary-bool", "primary_order_seed", False),
+        )
+        for name, key, value in attacks:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                document = json.loads(
+                    MODULE.SPEC_PATH.read_text(encoding="utf-8")
+                )
+                document[key] = value
+                path = Path(directory) / "spec.json"
+                path.write_text(json.dumps(document), encoding="utf-8")
+                with self.assertRaisesRegex(MODULE.UserError, "order seed"):
+                    MODULE.load_spec(path)
 
     def test_stage1_grids_are_complete_and_round_robin(self):
         expected_per_setting = {
@@ -268,6 +293,82 @@ class TTAHparamSearchTest(unittest.TestCase):
             index = job["command"].index("--order-seed")
             self.assertEqual(job["command"][index + 1], str(seed))
 
+    def test_written_configs_only_declare_order_seed_for_orders_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for stage, seed in (("final", None), ("orders", 1)):
+                job_dir = root / stage
+                job = {
+                    "job_dir": str(job_dir),
+                    "config_path": str(job_dir / "parameters.json"),
+                    "config_method": "tent",
+                    "search_method": "tent",
+                    "stage": stage,
+                    "episodes": -1,
+                    "order_seed": seed,
+                    "parameters": {"lr": 1e-6},
+                }
+                MODULE._write_job(job)
+                config = json.loads(
+                    (job_dir / "parameters.json").read_text(encoding="utf-8")
+                )
+                if seed is None:
+                    self.assertNotIn("order_seed", config)
+                else:
+                    self.assertEqual(config["order_seed"], seed)
+
+    def test_order_method_rng_rules_and_nonorder_seed_guard(self):
+        frozen = {"lr": 1e-6, "action_seed": 0, "sgr_seed": 0}
+        self.assertEqual(
+            MODULE._order_parameters("feedtta", frozen, 2),
+            {"lr": 1e-6, "action_seed": 2, "sgr_seed": 2},
+        )
+        self.assertEqual(
+            MODULE._order_parameters("eam", {"lr": 1e-6}, 2),
+            {"lr": 1e-6},
+        )
+        with self.assertRaisesRegex(MODULE.UserError, "exact integer"):
+            MODULE._candidate({"lr": 1e-6}, order_seed=1.0)
+        with self.assertRaisesRegex(MODULE.UserError, "exact integer"):
+            MODULE._candidate({"lr": 1e-6, "action_seed": False})
+        with self.assertRaisesRegex(MODULE.UserError, "exact integer"):
+            MODULE._order_parameters("eam", {"lr": 1e-6}, 1.0)
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(
+                MODULE.UserError, "only orders candidates"):
+            MODULE.build_jobs(
+                args(settings=["duet-r2r"], stage="final", episodes=-1),
+                self.spec,
+                Path(directory),
+                stage="final",
+                candidates_by_setting={
+                    "duet-r2r": [
+                        MODULE._candidate({"lr": 1e-6}, order_seed=1)
+                    ]
+                },
+            )
+
+    def test_persisted_orders_reject_float_seed_identity(self):
+        jobs = []
+        for seed in (0, 1, 2):
+            jobs.append({
+                "batch_id": "unit-test",
+                "ordinal": seed,
+                "run_tag": "order-{}".format(seed),
+                "setting": "duet-r2r",
+                "search_method": "tent",
+                "stage": "orders",
+                "episodes": -1,
+                "order_seed": seed,
+                "command": ["runner", "--order-seed", str(seed)],
+            })
+        jobs[1]["order_seed"] = 1.0
+        jobs[1]["command"][-1] = "1.0"
+        with self.assertRaisesRegex(MODULE.UserError, "invalid order_seed"):
+            MODULE._validate_jobs(
+                jobs, "unit-test", "tent", ["duet-r2r"], "orders",
+                self.spec,
+            )
+
     def test_final_selection_freezes_full_val_winner_before_orders(self):
         setting = "duet-r2r"
         anchor = MODULE.clean_parameters(
@@ -326,9 +427,13 @@ class TTAHparamSearchTest(unittest.TestCase):
                 )
             self.assertEqual(selection_path.read_bytes(), original_selection)
             self.assertEqual(frozen_path.read_bytes(), before)
-            candidates, promotion = MODULE._stage_candidates(
-                "tent", "orders", [setting], self.spec, root
-            )
+            finalists[0]["metrics"]["SPL"] = 70
+            with mock.patch.object(
+                MODULE, "load_stage_results", side_effect=load
+            ):
+                candidates, promotion = MODULE._stage_candidates(
+                    "tent", "orders", [setting], self.spec, root
+                )
             self.assertFalse(promotion)
             self.assertEqual(
                 [item["order_seed"] for item in candidates[setting]], [0, 1, 2]
@@ -345,9 +450,13 @@ class TTAHparamSearchTest(unittest.TestCase):
                 )
                 item["order_seed"] = seed
                 order_results.append(item)
+            def load_with_orders(stage_dir, spec, allow_partial=False):
+                if Path(stage_dir).name == "orders":
+                    return order_results
+                return load(stage_dir, spec, allow_partial)
             write_stage_manifest(root, "orders", "tent", [setting])
             with mock.patch.object(
-                MODULE, "load_stage_results", return_value=order_results
+                MODULE, "load_stage_results", side_effect=load_with_orders
             ):
                 MODULE.summarize_orders(
                     root, "unit-test", "tent", [setting], self.spec
@@ -355,7 +464,7 @@ class TTAHparamSearchTest(unittest.TestCase):
             order_path = root / "ORDER_ROBUSTNESS.json"
             original_order = order_path.read_bytes()
             with mock.patch.object(
-                MODULE, "load_stage_results", return_value=order_results
+                MODULE, "load_stage_results", side_effect=load_with_orders
             ):
                 MODULE.summarize_orders(
                     root, "unit-test", "tent", [setting], self.spec
@@ -363,7 +472,7 @@ class TTAHparamSearchTest(unittest.TestCase):
             self.assertEqual(order_path.read_bytes(), original_order)
             order_results[0]["metrics"]["SPL"] = 100
             with mock.patch.object(
-                MODULE, "load_stage_results", return_value=order_results
+                MODULE, "load_stage_results", side_effect=load_with_orders
             ), self.assertRaisesRegex(MODULE.UserError, "immutable output"):
                 MODULE.summarize_orders(
                     root, "unit-test", "tent", [setting], self.spec
@@ -592,6 +701,54 @@ class TTAHparamSearchTest(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.UserError, "setting set mismatch"):
                 MODULE._load_frozen_selection(
                     root, "tent", settings[:1], self.spec
+                )
+
+    def test_mutually_forged_frozen_documents_cannot_override_final_evidence(self):
+        setting = "duet-r2r"
+        anchor = MODULE.clean_parameters(
+            MODULE.anchor_for("tent", setting, self.spec)
+        )
+        finalists = []
+        for index in range(5):
+            parameters = dict(anchor, lr=(index + 1) * 1e-6)
+            finalists.append(result(
+                "final-{}".format(index), setting, parameters,
+                70 + index, sr=80,
+            ))
+        source = result("source", setting, {}, 69, sr=80)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_stage_manifest(root, "final", "tent", [setting])
+            write_stage_manifest(root, "final_controls", "tent", [setting])
+
+            def load(stage_dir, spec, allow_partial=False):
+                del spec, allow_partial
+                return (
+                    finalists if Path(stage_dir).name == "final" else [source]
+                )
+
+            with mock.patch.object(
+                    MODULE, "load_stage_results", side_effect=load):
+                MODULE.summarize_final(
+                    root, "unit-test", "tent", [setting], self.spec
+                )
+            selection_path = root / "FINAL_SELECTION.json"
+            frozen_path = root / "FROZEN_HPARAMETERS.json"
+            selection = json.loads(selection_path.read_text(encoding="utf-8"))
+            frozen = json.loads(frozen_path.read_text(encoding="utf-8"))
+            forged = {"lr": 999.0}
+            selection["settings"][setting]["winner_run_tag"] = "forged-winner"
+            selection["settings"][setting]["frozen_parameters"] = forged
+            frozen["settings"][setting] = forged
+            selection_path.write_text(json.dumps(selection), encoding="utf-8")
+            frozen_path.write_text(json.dumps(frozen), encoding="utf-8")
+            with mock.patch.object(
+                    MODULE, "load_stage_results", side_effect=load), \
+                    self.assertRaisesRegex(
+                        MODULE.UserError, "not authenticated"
+                    ):
+                MODULE._load_frozen_selection(
+                    root, "tent", [setting], self.spec
                 )
 
     def test_subset_resume_cannot_overwrite_full_search_artifacts(self):

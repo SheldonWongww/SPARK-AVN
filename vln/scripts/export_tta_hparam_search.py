@@ -18,18 +18,29 @@ import os
 from pathlib import Path
 import re
 import shutil
+import statistics
 import sys
 import tempfile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_DIR = Path(__file__).resolve().parent
+CORE_DIR = REPO_ROOT / "core"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+if str(CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_DIR))
 
 import run_tta_hparam_search as search  # noqa: E402
+from navtta_core.experiment import (  # noqa: E402
+    SEEDED_ORDER_ALGORITHM,
+    SEEDED_ORDER_DOMAIN_SEPARATOR,
+    SEEDED_ORDER_POLICY,
+    seeded_episode_records,
+    validate_episode_order_manifest,
+)
 from tools.run_manifest_identity import (  # noqa: E402
     immutable_identity_sha256,
 )
@@ -452,7 +463,9 @@ class BatchExporter:
         self.canonical_assets = self._load_canonical_assets()
         self.canonical_environment = read_json(self.environment_manifest_path)
         self.canonical_orders = self._load_canonical_orders()
+        self.derived_orders = {}
         self.formal_identity_by_setting = {}
+        self.formal_identity_by_setting_seed = {}
         self.per_episode_source_by_run_tag = {}
         self.per_episode_exports = []
 
@@ -500,6 +513,108 @@ class BatchExporter:
                 "document": document,
             }
         return output
+
+    def _load_derived_order(self, setting, order_seed):
+        if type(order_seed) is not int or order_seed not in (1, 2):
+            raise ExportError("derived order seed must be exact integer 1 or 2")
+        key = (setting, order_seed)
+        if key in self.derived_orders:
+            return self.derived_orders[key]
+        parent = self.canonical_orders[setting]
+        if (self._verified_file_sha256(
+                parent["path"], "canonical derived-order parent")
+                != parent["sha256"]
+                or canonical(read_json(parent["path"]))
+                != canonical(parent["document"])):
+            raise ExportError("derived episode-order parent changed during export")
+        directory = SETTING_ORDER_DIRECTORY[setting]
+        path = (
+            self.order_root / "order_seed_{}".format(order_seed)
+            / directory / "val_seen.json"
+        )
+        require_regular_file(
+            path, "derived {} seed {} episode order".format(setting, order_seed),
+            stop=self.order_root,
+        )
+        document = read_json(path)
+        try:
+            validate_episode_order_manifest(
+                document, expected_split="val_seen",
+                expected_benchmark=parent["document"].get("benchmark"),
+            )
+        except (TypeError, ValueError) as error:
+            raise ExportError(
+                "derived episode order is invalid for {} seed {}: {}".format(
+                    setting, order_seed, error
+                )
+            )
+        derivation = document.get("derivation")
+        expected_derivation = {
+            "algorithm": SEEDED_ORDER_ALGORITHM,
+            "domain_separator": SEEDED_ORDER_DOMAIN_SEPARATOR,
+            "order_seed": order_seed,
+            "parent_manifest_path": None,
+            "parent_manifest_sha256": parent["sha256"],
+            "parent_order_sha256": parent["document"].get("order_sha256"),
+        }
+        if (document.get("order_policy") != SEEDED_ORDER_POLICY
+                or document.get("order_seed") != order_seed
+                or not isinstance(derivation, dict)):
+            raise ExportError("derived episode-order identity is invalid")
+        for name, expected in expected_derivation.items():
+            if name == "parent_manifest_path":
+                continue
+            if derivation.get(name) != expected:
+                raise ExportError(
+                    "derived episode-order {} provenance mismatch".format(name)
+                )
+        declared_parent = Path(derivation.get("parent_manifest_path", ""))
+        if not declared_parent.is_absolute():
+            declared_parent = REPO_ROOT / declared_parent
+        if declared_parent.absolute() != parent["path"]:
+            raise ExportError("derived episode-order parent path mismatch")
+        parent_document = parent["document"]
+        for name in (
+                "schema", "benchmark", "split", "split_ordinal",
+                "source_id_field", "dataset", "episode_count"):
+            if canonical(document.get(name)) != canonical(parent_document.get(name)):
+                raise ExportError(
+                    "derived episode-order parent identity mismatch for {}".format(name)
+                )
+        parent_records = parent_document.get("episodes")
+        derived_records = document.get("episodes")
+        if (not isinstance(parent_records, list)
+                or not isinstance(derived_records, list)
+                or {canonical(item) for item in parent_records}
+                != {canonical(item) for item in derived_records}):
+            raise ExportError("derived episode-order episode set differs from parent")
+        expected_records = seeded_episode_records(
+            parent_records,
+            order_seed=order_seed,
+            parent_order_sha256=parent_document["order_sha256"],
+        )
+        if canonical(derived_records) != canonical(expected_records):
+            raise ExportError("derived episode-order SHA256 ranking mismatch")
+        identity = {
+            "path": path.absolute(),
+            "sha256": sha256(path),
+            "document": document,
+        }
+        self.derived_orders[key] = identity
+        return identity
+
+    def _order_identity(self, job):
+        seed = job.get("order_seed")
+        if job.get("stage") == "orders":
+            if (type(seed) is not int
+                    or seed not in self.spec["final_order_seeds"]):
+                raise ExportError("orders job has an invalid order_seed")
+            if seed:
+                return self._load_derived_order(job["setting"], seed)
+            return self.canonical_orders[job["setting"]]
+        if seed is not None:
+            raise ExportError("only the orders stage may use an order_seed")
+        return self.canonical_orders[job["setting"]]
 
     def _validated_output_paths(self):
         export_root = self.export_root.absolute()
@@ -623,6 +738,30 @@ class BatchExporter:
         }
         if config_document.get("schema") != "navtta.vln_tta_job.v1":
             raise ExportError("unsupported job parameter schema")
+        parameters = config_document.get("parameters")
+        if not isinstance(parameters, dict):
+            raise ExportError("job config parameters are not an object")
+        for key in ("action_seed", "sgr_seed"):
+            if key in parameters and type(parameters[key]) is not int:
+                raise ExportError(
+                    "job config {} must be an exact integer".format(key)
+                )
+        if job.get("stage") == "orders":
+            value = config_document.get("order_seed")
+            if ("order_seed" not in config_document or type(value) is not int
+                    or value not in self.spec["final_order_seeds"]):
+                raise ExportError("orders config has an invalid order_seed")
+            if job.get("search_method") == "feedtta":
+                for key in ("action_seed", "sgr_seed"):
+                    if parameters.get(key) != value:
+                        raise ExportError(
+                            "FeedTTA orders config {} does not match order_seed"
+                            .format(key)
+                        )
+        elif "order_seed" in config_document:
+            raise ExportError(
+                "ordinary job config must omit order_seed entirely"
+            )
         for key, expected in identity_fields.items():
             if canonical(config_document.get(key)) != canonical(expected):
                 raise ExportError("job/parameters identity mismatch: {}".format(key))
@@ -769,13 +908,14 @@ class BatchExporter:
             raise ExportError("metrics and TTA adapter diagnostics disagree")
         return path
 
-    def _canonical_episode_ids(self, setting, expected_count):
-        order = self.canonical_orders[setting]["document"]
+    def _episode_ids(self, job, expected_count):
+        order = self._order_identity(job)["document"]
+        setting = job["setting"]
         records = order.get("episodes")
         if (not isinstance(records, list) or len(records) != expected_count
                 or int(order.get("episode_count", -1)) != expected_count):
             raise ExportError(
-                "canonical episode-order count mismatch for {}".format(setting)
+                "episode-order count mismatch for {}".format(setting)
             )
         identifiers = []
         for ordinal, record in enumerate(records):
@@ -789,7 +929,7 @@ class BatchExporter:
             identifiers.append(identifier)
         if len(set(identifiers)) != len(identifiers):
             raise ExportError(
-                "canonical episode-order IDs are not unique for {}".format(setting)
+                "episode-order IDs are not unique for {}".format(setting)
             )
         return identifiers
 
@@ -816,7 +956,8 @@ class BatchExporter:
                 )
             )
         raw = read_json(expected_path)
-        expected_ids = self._canonical_episode_ids(job["setting"], expected_count)
+        order_identity = self._order_identity(job)
+        expected_ids = self._episode_ids(job, expected_count)
         if not isinstance(raw, dict):
             raise ExportError("continuous per-episode stats are not an object")
         actual_ids = list(raw)
@@ -860,12 +1001,8 @@ class BatchExporter:
             "sha256": artifact["sha256"],
             "episode_ids": expected_ids,
             "metrics": raw,
-            "order_sha256": self.canonical_orders[job["setting"]][
-                "document"
-            ]["order_sha256"],
-            "episode_order_manifest_sha256": self.canonical_orders[
-                job["setting"]
-            ]["sha256"],
+            "order_sha256": order_identity["document"]["order_sha256"],
+            "episode_order_manifest_sha256": order_identity["sha256"],
         }
 
     def _export_continuous_per_episode_stats(self, job, source, destination):
@@ -924,6 +1061,10 @@ class BatchExporter:
     def _validate_formal_manifest(self, manifest_path, document, job,
                                   stage_manifest, diagnostics_path,
                                   expected_exit_code=0):
+        order_identity = self._order_identity(job)
+        effective_order_seed = (
+            int(job["order_seed"]) if job.get("order_seed") is not None else 0
+        )
         required = {
             "run_id", "task", "benchmark", "model", "method", "run_tag",
             "source_setting", "seed", "git_commit", "config",
@@ -944,11 +1085,17 @@ class BatchExporter:
             "model": job.get("model"),
             "method": job.get("config_method"),
             "run_tag": job.get("run_tag"),
-            "seed": 0,
+            "seed": effective_order_seed,
             "git_commit": stage_manifest.get("git_commit"),
             "status": "completed" if expected_exit_code == 0 else "failed",
             "exit_code": expected_exit_code,
         }
+        if type(document.get("seed")) is not int:
+            raise ExportError(
+                "formal manifest seed must be an exact integer for {}".format(
+                    job["run_tag"]
+                )
+            )
         for key, value in expected.items():
             if document.get(key) != value:
                 raise ExportError("formal manifest {} mismatch for {}".format(
@@ -1042,8 +1189,8 @@ class BatchExporter:
                 sha256(self.environment_manifest_path),
             ),
             "episode_order": (
-                self.canonical_orders[job["setting"]]["path"],
-                self.canonical_orders[job["setting"]]["sha256"],
+                order_identity["path"],
+                order_identity["sha256"],
             ),
         }
         for name, (expected_path, expected_hash) in canonical_pinned.items():
@@ -1059,9 +1206,9 @@ class BatchExporter:
                 or not isinstance(environment_document.get("environments"), dict)):
             raise ExportError("formal environment manifest schema is invalid")
         order = read_json(pinned_paths["episode_order"])
-        canonical_order = self.canonical_orders[job["setting"]]["document"]
-        if canonical(order) != canonical(canonical_order):
-            raise ExportError("formal episode-order content is not canonical")
+        expected_order = order_identity["document"]
+        if canonical(order) != canonical(expected_order):
+            raise ExportError("formal episode-order content is not the selected order")
         expected_count = int(self.spec["setting_episode_counts"][job["setting"]])
         if (order.get("schema") != "navtta.episode_order.v1"
                 or order.get("split") != "val_seen"
@@ -1078,13 +1225,13 @@ class BatchExporter:
         manifest_dataset = Path(dataset["path"])
         if order_dataset.absolute() != manifest_dataset.absolute():
             raise ExportError("formal dataset/order paths disagree")
-        if (dataset.get("index_sha256") != canonical_order["dataset"]["sha256"]
+        if (dataset.get("index_sha256") != expected_order["dataset"]["sha256"]
                 or dataset.get("stream_content_sha256")
-                != canonical_order["dataset"]["sha256"]
+                != expected_order["dataset"]["sha256"]
                 or dataset.get("stream_order_sha256")
-                != canonical_order["order_sha256"]
-                or document.get("benchmark") != canonical_order["benchmark"]):
-            raise ExportError("formal dataset/order identity is not canonical")
+                != expected_order["order_sha256"]
+                or document.get("benchmark") != expected_order["benchmark"]):
+            raise ExportError("formal dataset/order identity is not the selected order")
 
         hardware = document.get("hardware")
         hardware_fields = {
@@ -1160,13 +1307,16 @@ class BatchExporter:
             "stream_content_sha256": dataset["stream_content_sha256"],
             "episode_order_manifest_sha256": pinned["episode_order"]["sha256"],
         }
-        prior = self.formal_identity_by_setting.get(job["setting"])
+        identity_key = (job["setting"], effective_order_seed)
+        prior = self.formal_identity_by_setting_seed.get(identity_key)
         if prior is not None and canonical(prior) != canonical(identity):
             raise ExportError(
-                "full-stream formal asset identity differs across methods for {}"
-                .format(job["setting"])
+                "full-stream formal asset identity differs across methods for {} seed {}"
+                .format(job["setting"], effective_order_seed)
             )
-        self.formal_identity_by_setting[job["setting"]] = identity
+        self.formal_identity_by_setting_seed[identity_key] = identity
+        if effective_order_seed == 0:
+            self.formal_identity_by_setting[job["setting"]] = identity
         return identity
 
     def _copy_json(self, source, destination, source_label):
@@ -1487,6 +1637,7 @@ class BatchExporter:
         base_run_tags = set()
         config_paths = set()
         config_identities = set()
+        order_seeds_by_setting = {setting: [] for setting in self.settings}
         for job_dir in job_dirs:
             raw_job_path = require_regular_file(
                 job_dir / "job.json", "job manifest", stop=job_dir
@@ -1527,6 +1678,26 @@ class BatchExporter:
                 raise ExportError("{} {} job config_method mismatch".format(
                     method, stage
                 ))
+            order_seed = raw_job.get("order_seed")
+            command = raw_job.get("command")
+            if not isinstance(command, list):
+                raise ExportError("{} {} job command is invalid".format(method, stage))
+            command_order_seeds = [
+                command[index + 1]
+                for index, value in enumerate(command[:-1])
+                if value == "--order-seed"
+            ]
+            if stage == "orders":
+                if (type(order_seed) is not int
+                        or order_seed not in self.spec["final_order_seeds"]):
+                    raise ExportError("orders job has an invalid order_seed")
+                if command_order_seeds != [str(order_seed)]:
+                    raise ExportError("orders job command/order_seed mismatch")
+                order_seeds_by_setting[raw_job["setting"]].append(order_seed)
+            elif order_seed is not None or command_order_seeds:
+                raise ExportError(
+                    "only the orders stage may use an order_seed"
+                )
             ordinal = raw_job.get("ordinal")
             if (isinstance(ordinal, bool) or not isinstance(ordinal, int)
                     or ordinal in ordinals):
@@ -1569,6 +1740,14 @@ class BatchExporter:
                 results.append(result)
         if ordinals != set(range(len(job_dirs))):
             raise ExportError("{} {} ordinals are not contiguous".format(method, stage))
+        if stage == "orders":
+            for setting, seeds in order_seeds_by_setting.items():
+                if sorted(seeds) != self.spec["final_order_seeds"]:
+                    raise ExportError(
+                        "{} orders stage lacks exactly seeds {} for {}".format(
+                            method, self.spec["final_order_seeds"], setting
+                        )
+                    )
         if set(csv_by_tag) != {item["run_tag"] for item in results}:
             raise ExportError("{} {} metrics.csv/result tag mismatch".format(
                 method, stage
@@ -1659,12 +1838,91 @@ class BatchExporter:
             })
         return found
 
+    def _validate_order_robustness(self, method, document, orders_stage,
+                                   frozen, git_commit, spec_sha256):
+        if not isinstance(document, dict):
+            raise ExportError("ORDER_ROBUSTNESS is not an object")
+        results = orders_stage.get("results")
+        if not isinstance(results, list):
+            raise ExportError("orders stage has no validated results")
+        expected = {
+            "schema": "navtta.vln_tta_order_robustness.v1",
+            "method": method,
+            "split": self.spec["split"],
+            "git_commit": git_commit,
+            "spec_sha256": spec_sha256,
+            "required_order_seeds": list(self.spec["final_order_seeds"]),
+            "settings": {},
+        }
+        for setting in self.settings:
+            values = [item for item in results if item.get("setting") == setting]
+            if any(type(item.get("order_seed")) is not int for item in values):
+                raise ExportError(
+                    "orders stage contains a non-integer seed for {}".format(setting)
+                )
+            values.sort(key=lambda item: item["order_seed"])
+            seeds = [item["order_seed"] for item in values]
+            if seeds != self.spec["final_order_seeds"]:
+                raise ExportError(
+                    "orders stage lacks exact seeds for {}".format(setting)
+                )
+            frozen_parameters = frozen["settings"].get(setting)
+            if not isinstance(frozen_parameters, dict):
+                raise ExportError(
+                    "frozen parameters are missing for {}".format(setting)
+                )
+            for item in values:
+                parameters = search._order_parameters(
+                    method, frozen_parameters, item["order_seed"]
+                )
+                if canonical(item.get("parameters")) != canonical(parameters):
+                    raise ExportError(
+                        "orders parameters differ from frozen winner for {} seed {}"
+                        .format(setting, item["order_seed"])
+                    )
+                if not isinstance(item.get("metrics"), dict) or not item["metrics"]:
+                    raise ExportError(
+                        "orders metrics are missing for {} seed {}".format(
+                            setting, item["order_seed"]
+                        )
+                    )
+            metric_names = sorted(set.intersection(*(
+                set(item["metrics"]) for item in values
+            )))
+            expected["settings"][setting] = {
+                "frozen_parameters": frozen_parameters,
+                "runs": [{
+                    "run_tag": item["run_tag"],
+                    "order_seed": item["order_seed"],
+                    "metrics": item["metrics"],
+                } for item in values],
+                "aggregate": {
+                    metric: {
+                        "mean": statistics.fmean(
+                            item["metrics"][metric] for item in values
+                        ),
+                        "sample_std": statistics.stdev(
+                            item["metrics"][metric] for item in values
+                        ),
+                    } for metric in metric_names
+                },
+            }
+        if canonical(document) != canonical(expected):
+            raise ExportError(
+                "ORDER_ROBUSTNESS disagrees with validated orders-stage evidence"
+            )
+
     def _validate_official_documents(self, method, method_root, documents,
-                                     git_commit, spec_sha256):
+                                     git_commit, spec_sha256, stages):
         by_relative = {item["source_relative"]: item["document"]
                        for item in documents}
         selection = by_relative.get("FINAL_SELECTION.json")
         frozen = by_relative.get("FROZEN_HPARAMETERS.json")
+        order_robustness = by_relative.get("ORDER_ROBUSTNESS.json")
+        order_robustness_documents = [
+            item["document"] for item in documents
+            if item["name"] == "ORDER_ROBUSTNESS.json"
+        ]
         if not self.allow_legacy_prefix_controls and (
                 selection is None or frozen is None):
             raise ExportError(
@@ -1711,6 +1969,24 @@ class BatchExporter:
                     raise ExportError("FROZEN_HPARAMETERS {} mismatch".format(key))
             if set(frozen.get("settings", {})) != set(self.settings):
                 raise ExportError("FROZEN_HPARAMETERS setting coverage mismatch")
+        if "orders" in stages:
+            if order_robustness is None:
+                raise ExportError(
+                    "completed orders stage requires root ORDER_ROBUSTNESS.json"
+                )
+            if frozen is None:
+                raise ExportError(
+                    "ORDER_ROBUSTNESS requires authenticated frozen parameters"
+                )
+            for document in order_robustness_documents:
+                self._validate_order_robustness(
+                    method, document, stages["orders"], frozen,
+                    git_commit, spec_sha256,
+                )
+        elif order_robustness_documents:
+            raise ExportError(
+                "ORDER_ROBUSTNESS exists without a validated orders stage"
+            )
 
     def _promotion_rejections(self, method, method_root):
         for stage in ("stage1", "stage2", "stage3"):
@@ -2006,7 +2282,8 @@ class BatchExporter:
         if len(commits) != 1 or len(spec_hashes) != 1:
             raise ExportError("{} mixes commits or search specifications".format(method))
         self._validate_official_documents(
-            method, method_root, optional_documents, commits[0], spec_hashes[0]
+            method, method_root, optional_documents, commits[0], spec_hashes[0],
+            stages,
         )
         settings = self._select_settings(method, stages, optional_documents)
         return {

@@ -51,6 +51,7 @@ class TTAConfigCLITest(unittest.TestCase):
             "schema": "navtta.vln_tta_adapter_parity_job.v1",
             "namespace": "adapter_parity_audit",
             "episodes": 256,
+            "order_seed": 0,
         }
         method, discrete = self._translate(
             "duet-r2r", "tent", {"lr": 1e-6},
@@ -74,6 +75,25 @@ class TTAConfigCLITest(unittest.TestCase):
             "256",
         )
 
+    def test_adapter_parity_order_seed_requires_exact_integer_zero(self):
+        common = {
+            "schema": "navtta.vln_tta_adapter_parity_job.v1",
+            "namespace": "adapter_parity_audit",
+            "episodes": 256,
+            "audit_zero_update": True,
+            "audit_control": False,
+        }
+        self._translate(
+            "duet-r2r", "tent", {"lr": 1e-6}, order_seed=0, **common
+        )
+        for invalid_seed in (1, 2, True, False, 0.0, None, "0"):
+            with self.subTest(order_seed=invalid_seed), self.assertRaisesRegex(
+                    ValueError, "exact integer 0"):
+                self._translate(
+                    "duet-r2r", "tent", {"lr": 1e-6},
+                    order_seed=invalid_seed, **common
+                )
+
     def test_ordinary_search_schema_cannot_enable_audit(self):
         with self.assertRaisesRegex(ValueError, "adapter-parity job schema"):
             self._translate(
@@ -89,6 +109,66 @@ class TTAConfigCLITest(unittest.TestCase):
                 schema="navtta.vln_tta_job.v1",
                 namespace="adapter_parity_audit",
             )
+
+    def test_ordinary_configs_omit_order_seed_except_exact_orders_jobs(self):
+        for value in (None, 0, 1.0, False):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, "must omit order_seed"):
+                self._translate(
+                    "hamt-r2r", "tent", {},
+                    schema="navtta.vln_tta_job.v1",
+                    stage="final",
+                    order_seed=value,
+                )
+        self._translate(
+            "hamt-r2r", "tent", {},
+            schema="navtta.vln_tta_job.v1",
+            stage="orders",
+            order_seed=1,
+        )
+        with self.assertRaisesRegex(ValueError, "exact integer"):
+            self._translate(
+                "hamt-r2r", "tent", {},
+                schema="navtta.vln_tta_job.v1",
+                stage="orders",
+            )
+        for value in (True, 1.0, "1", None):
+            with self.subTest(orders_value=value), self.assertRaisesRegex(
+                    ValueError, "exact integer"):
+                self._translate(
+                    "hamt-r2r", "tent", {},
+                    schema="navtta.vln_tta_job.v1",
+                    stage="orders",
+                    order_seed=value,
+                )
+
+    def test_rng_seed_parameters_require_exact_integers(self):
+        for key in ("action_seed", "sgr_seed"):
+            for value in (True, 1.0, "1", None):
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(
+                        ValueError, "must be an exact integer"):
+                    self._translate(
+                        "duet-r2r", "feedtta", {key: value}
+                    )
+
+    def test_feedtta_orders_rng_seeds_match_order_seed(self):
+        common = {
+            "schema": "navtta.vln_tta_job.v1",
+            "stage": "orders",
+            "order_seed": 2,
+        }
+        self._translate(
+            "duet-r2r", "feedtta",
+            {"action_seed": 2, "sgr_seed": 2}, **common
+        )
+        for key in ("action_seed", "sgr_seed"):
+            parameters = {"action_seed": 2, "sgr_seed": 2}
+            parameters[key] = 1
+            with self.subTest(key=key), self.assertRaisesRegex(
+                    ValueError, "must equal order_seed"):
+                self._translate(
+                    "duet-r2r", "feedtta", parameters, **common
+                )
 
 
 if __name__ == "__main__":

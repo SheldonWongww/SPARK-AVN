@@ -171,6 +171,15 @@ manifest, annotation bytes, episode-order manifest, and seed.  Review and
 commit the preparation changes before removing `--dry-run`; smoke mode is
 allowed on a dirty review tree and never creates a formal manifest.
 
+Frozen-winner order robustness is the only use of
+`run_source_eval.sh --order-seed 0|1|2`.  It requires a complete `val_seen`
+`orders`-stage TTA job for one of the eight staged-search settings.  Seed 0
+uses the unchanged canonical order; seeds 1/2 use the tracked derived
+manifests described in `manifests/episode_order/README.md`.  The launcher
+rejects Source, smoke/prefix, StreamVLN, split `all`, and native CE v1.2 uses,
+and records the selected seed as both runtime/model seed and formal-manifest
+seed.
+
 Published paper numbers are preserved only as provenance-limited references in
 `results/legacy/upstream_published_metrics.json`.  They can be used as cited
 Source baselines, but cannot be relabelled as canonical-order or TTA reruns.

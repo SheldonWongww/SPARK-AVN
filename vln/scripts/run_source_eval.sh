@@ -14,6 +14,7 @@ Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--ce-data-version VERSION]
                                       [--smoke-episodes N]
                                       [--tta-config FILE]
+                                      [--order-seed 0|1|2]
                                       [--adapter-parity-audit]
                                       [--episode-limit N] [--dry-run]
 
@@ -39,6 +40,12 @@ audit is the sole exception: it requires exactly 256 canonical-prefix
 episodes and receives the formal manifest/clean-tree lifecycle.
 --adapter-parity-audit is required by the isolated zero-write parity schema
 and is rejected for every ordinary tuning/source configuration.
+
+--order-seed is reserved for complete, frozen-hyperparameter val_seen order
+robustness jobs on the eight staged-search settings.  Seed 0 uses the canonical
+manifest; seeds 1 and 2 use the tracked SHA256-ranked derived manifests.  It
+cannot be combined with smoke/prefix jobs, Source, StreamVLN, split all, or
+native CE v1.2.
 EOF
 }
 
@@ -62,6 +69,8 @@ CE_DATA_VERSION_SET=0
 SMOKE_EPISODES=""
 TTA_CONFIG=""
 EPISODE_LIMIT=""
+ORDER_SEED=""
+ORDER_SEED_SET=0
 ADAPTER_PARITY_AUDIT=0
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -102,6 +111,16 @@ while [[ "$#" -gt 0 ]]; do
             [[ -z "${EPISODE_LIMIT}" ]] || die "episode limit specified more than once"
             [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "--episode-limit must be a positive integer"
             EPISODE_LIMIT="$2"
+            shift 2
+            ;;
+        --order-seed)
+            [[ "$#" -ge 2 ]] || die "--order-seed requires a value"
+            [[ "${ORDER_SEED_SET}" -eq 0 ]] || die "order seed specified more than once"
+            case "$2" in
+                0|1|2) ORDER_SEED="$2" ;;
+                *) die "--order-seed must be exactly 0, 1, or 2" ;;
+            esac
+            ORDER_SEED_SET=1
             shift 2
             ;;
         --adapter-parity-audit)
@@ -162,6 +181,27 @@ fi
 if [[ -n "${EPISODE_LIMIT}" && "${SPLIT}" != "val_seen" ]]; then
     die "prefix hyperparameter jobs are restricted to val_seen"
 fi
+if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
+    [[ "${SPLIT}" == "val_seen" ]] || \
+        die "--order-seed is restricted to complete val_seen robustness jobs"
+    [[ -z "${SMOKE_EPISODES}" ]] || \
+        die "--order-seed cannot be combined with --smoke-episodes"
+    [[ -z "${EPISODE_LIMIT}" ]] || \
+        die "--order-seed cannot be combined with --episode-limit"
+    [[ -n "${TTA_CONFIG}" ]] || \
+        die "--order-seed requires a TTA robustness job config"
+    [[ "${CE_DATA_VERSION}" == "v1.3-unified" ]] || \
+        die "--order-seed requires the unified CE v1.3 protocol"
+    case "${SETTING}" in
+        duet-r2r|duet-reverie|hamt-r2r|hamt-reverie|goat-r2r|goat-reverie|etpnav-r2r-ce|bevbert-r2r-ce) ;;
+        streamvln-r2r-ce) die "--order-seed does not support StreamVLN" ;;
+        *) die "--order-seed supports only the eight staged-search settings" ;;
+    esac
+fi
+MODEL_SEED=0
+if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
+    MODEL_SEED="${ORDER_SEED}"
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 case "${REPO_ROOT}" in
@@ -202,6 +242,67 @@ fi
 if [[ "${TTA_NAMESPACE}" != "adapter_parity_audit" && \
       "${ADAPTER_PARITY_AUDIT}" -ne 0 ]]; then
     die "--adapter-parity-audit requires the adapter-parity config schema"
+fi
+if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
+    [[ "${TTA_METHOD}" != "source" ]] || \
+        die "--order-seed cannot be used for Source-only jobs"
+    [[ "${TTA_NAMESPACE}" == "tuning" ]] || \
+        die "--order-seed cannot be used for adapter-parity jobs"
+fi
+if [[ -n "${TTA_CONFIG}" ]]; then
+    if ! python3 - "${TTA_CONFIG}" "${ORDER_SEED_SET}" "${ORDER_SEED}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as stream:
+    document = json.load(stream)
+cli_present = sys.argv[2] == "1"
+seed = int(sys.argv[3]) if cli_present else None
+is_adapter_audit = (
+    document.get("schema") == "navtta.vln_tta_adapter_parity_job.v1"
+    and document.get("namespace") == "adapter_parity_audit"
+)
+if is_adapter_audit:
+    audit_order_seed = document.get("order_seed")
+    if type(audit_order_seed) is not int or audit_order_seed != 0:
+        raise SystemExit(
+            "adapter-parity config order_seed must be the exact integer 0"
+        )
+declares_order_metadata = (
+    document.get("stage") == "orders"
+    or (not is_adapter_audit and "order_seed" in document)
+)
+if declares_order_metadata and not cli_present:
+    raise SystemExit(
+        "ordinary TTA config declares orders metadata but --order-seed is absent"
+    )
+if cli_present:
+    checks = {
+        "schema": "navtta.vln_tta_job.v1",
+        "stage": "orders",
+    }
+    for key, expected in checks.items():
+        if document.get(key) != expected:
+            raise SystemExit(
+                "order robustness config {} mismatch: expected {!r}, got {!r}"
+                .format(key, expected, document.get(key))
+            )
+    for key, expected in (("episodes", -1), ("order_seed", seed)):
+        value = document.get(key)
+        if type(value) is not int or value != expected:
+            raise SystemExit(
+                "order robustness config {} mismatch: expected exact integer {!r}, "
+                "got {!r}".format(key, expected, value)
+            )
+    method = document.get("method")
+    if method == "source" or document.get("search_method") != method:
+        raise SystemExit(
+            "order robustness config must name one non-Source search method"
+        )
+PY
+    then
+        die "TTA config and --order-seed protocol do not match"
+    fi
 fi
 if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
     [[ "${SPLIT}" == "val_seen" ]] || \
@@ -281,8 +382,38 @@ else
 fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
 MATTERSIM_MODULE="${MATTERSIM_ROOT}/build/MatterSim.cpython-38-x86_64-linux-gnu.so"
+case "${SETTING}" in
+    duet-r2r|hamt-r2r) ORDER_FAMILY=r2r_duet_hamt ;;
+    duet-reverie|hamt-reverie) ORDER_FAMILY=reverie_duet_hamt ;;
+    goat-r2r) ORDER_FAMILY=r2r_goat ;;
+    goat-reverie) ORDER_FAMILY=reverie_goat ;;
+    etpnav-r2r-ce|bevbert-r2r-ce) ORDER_FAMILY=r2r_ce_v1_3_unified ;;
+    *) ORDER_FAMILY="" ;;
+esac
+
+manifest_for_family() {
+    local family="$1"
+    if [[ "${ORDER_SEED_SET}" -eq 1 && "${ORDER_SEED}" != "0" ]]; then
+        printf '%s/vln/manifests/episode_order/order_seed_%s/%s' \
+            "${REPO_ROOT}" "${ORDER_SEED}" "${family}"
+    else
+        printf '%s/vln/manifests/episode_order/%s' "${REPO_ROOT}" "${family}"
+    fi
+}
+
+R2R_DUET_HAMT_MANIFEST="$(manifest_for_family r2r_duet_hamt)"
+REVERIE_DUET_HAMT_MANIFEST="$(manifest_for_family reverie_duet_hamt)"
+R2R_GOAT_MANIFEST="$(manifest_for_family r2r_goat)"
+REVERIE_GOAT_MANIFEST="$(manifest_for_family reverie_goat)"
+R2R_CE_UNIFIED_MANIFEST="$(manifest_for_family r2r_ce_v1_3_unified)"
+if [[ "${ORDER_SEED_SET}" -eq 1 && "${ORDER_SEED}" != "0" ]]; then
+    [[ -n "${ORDER_FAMILY}" ]] || die "cannot resolve order-manifest family"
+    python3 "${REPO_ROOT}/vln/scripts/build_order_seed_manifests.py" \
+        --check --family "${ORDER_FAMILY}" --order-seed "${ORDER_SEED}" || \
+        die "tracked order-seed manifest failed deterministic verification"
+fi
 if [[ "${CE_DATA_VERSION}" == "v1.3-unified" ]]; then
-    CE_MANIFEST="${REPO_ROOT}/vln/manifests/episode_order/r2r_ce_v1_3_unified"
+    CE_MANIFEST="${R2R_CE_UNIFIED_MANIFEST}"
     CE_DATA_TEMPLATE="${DATA_ROOT}/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/{split}/{split}_bertidx.json.gz"
     CE_TEST_DATA="${DATA_ROOT}/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/test/test_bertidx.json.gz"
     CE_BENCHMARK=r2r_ce_v1_3_unified_etpnav_bevbert
@@ -479,7 +610,7 @@ finalize_formal_manifest() {
                 --manifest "${RUN_MANIFEST_PATH}" --task vln \
                 --benchmark "${RUN_BENCHMARK}" --run-tag "${RUN_TAG}" \
                 --model "${RUN_MODEL}" --method "${TTA_METHOD}" \
-                --source-setting "${RUN_SOURCE_SETTING}" --seed 0 \
+                --source-setting "${RUN_SOURCE_SETTING}" --seed "${MODEL_SEED}" \
                 --git-commit "${RUN_GIT_COMMIT}" \
                 --checkpoint-sha256 "${RUN_PRIMARY_SHA256}" \
                 --stream-order-sha256 "${RUN_ORDER_SHA256}" \
@@ -565,7 +696,7 @@ PY
         --output "${RUN_MANIFEST_PATH}" --run-id "${run_id}" \
         --task vln --benchmark "${RUN_BENCHMARK}" --model "${RUN_MODEL}" \
         --method "${TTA_METHOD}" --run-tag "${RUN_TAG}" \
-        --source-setting "${RUN_SOURCE_SETTING}" --seed 0 \
+        --source-setting "${RUN_SOURCE_SETTING}" --seed "${MODEL_SEED}" \
         --config "${RUN_CONFIG_REF}" --checkpoint "${RUN_PRIMARY_CHECKPOINT}" \
         "${auxiliary_args[@]}" --dataset "${dataset_path}" \
         --dataset-version "${RUN_BENCHMARK}" \
@@ -674,7 +805,7 @@ case "${SETTING}" in
         COMMAND=(
             "${PYTHON}" r2r/main_nav.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
-            --world_size 1 --seed 0 --tokenizer bert --enc_full_graph
+            --world_size 1 --seed "${MODEL_SEED}" --tokenizer bert --enc_full_graph
             --graph_sprels --fusion dynamic --expert_policy spl --train_alg dagger
             --num_l_layers 9 --num_x_layers 4 --num_pano_layers 2
             --max_action_len 15 --max_instr_len 200 --batch_size 1
@@ -683,10 +814,10 @@ case "${SETTING}" in
             --resume_file ../datasets/R2R/trained_models/best_val_unseen
             --strict_checkpoint_keys
             --test --eval_splits "${SPLIT}"
-            --episode_order_manifest "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt"
+            --episode_order_manifest "${R2R_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity duet "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
+        set_run_identity duet "${R2R_DUET_HAMT_MANIFEST}" \
             "${CHECKPOINT_ROOT}/duet/R2R/best_val_unseen" \
             "vln/scripts/run_source_eval.sh#duet-r2r" \
             "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
@@ -697,7 +828,7 @@ case "${SETTING}" in
             "${DATA_ROOT}/duet/R2R/annotations/R2R_test_enc.json"
         validate_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \
-            "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
+            "${R2R_DUET_HAMT_MANIFEST}" \
             r2r_discrete_duet_hamt \
             "${DATA_ROOT}/duet/R2R/annotations/R2R_test_enc.json"
         ;;
@@ -708,7 +839,7 @@ case "${SETTING}" in
         COMMAND=(
             "${PYTHON}" reverie/main_nav_obj.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
-            --world_size 1 --seed 0 --tokenizer bert --enc_full_graph
+            --world_size 1 --seed "${MODEL_SEED}" --tokenizer bert --enc_full_graph
             --graph_sprels --fusion dynamic --multi_endpoints --dagger_sample sample
             --train_alg dagger --num_l_layers 9 --num_x_layers 4
             --num_pano_layers 2 --max_action_len 15 --max_instr_len 200
@@ -719,10 +850,10 @@ case "${SETTING}" in
             --resume_file ../datasets/REVERIE/trained_models/best_val_unseen
             --strict_checkpoint_keys
             --test --eval_splits "${SPLIT}"
-            --episode_order_manifest "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt"
+            --episode_order_manifest "${REVERIE_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity duet "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt" \
+        set_run_identity duet "${REVERIE_DUET_HAMT_MANIFEST}" \
             "${CHECKPOINT_ROOT}/duet/REVERIE/best_val_unseen" \
             "vln/scripts/run_source_eval.sh#duet-reverie" \
             "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
@@ -735,7 +866,7 @@ case "${SETTING}" in
             "${DATA_ROOT}/duet/REVERIE/annotations/REVERIE_test_enc.json"
         validate_discrete_output reverie \
             "${RESULT_ROOT}/preds/submit_test_dynamic.json" \
-            "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt" \
+            "${REVERIE_DUET_HAMT_MANIFEST}" \
             reverie_discrete_duet_hamt \
             "${DATA_ROOT}/duet/REVERIE/annotations/REVERIE_test_enc.json"
         ;;
@@ -749,7 +880,7 @@ case "${SETTING}" in
         COMMAND=(
             "${PYTHON}" r2r/main.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
-            --world_size 1 --seed 0 --tokenizer bert --ob_type pano
+            --world_size 1 --seed "${MODEL_SEED}" --tokenizer bert --ob_type pano
             --num_l_layers 9 --num_x_layers 4 --hist_enc_pano
             --hist_pano_num_layers 2 --fix_lang_embedding --fix_hist_embedding
             --features vitbase_r2rfte2e --feedback sample --max_action_len 15
@@ -759,17 +890,17 @@ case "${SETTING}" in
             --resume_file ../datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen
             --strict_checkpoint_keys
             --test --eval_splits "${SPLIT}"
-            --episode_order_manifest "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt"
+            --episode_order_manifest "${R2R_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity hamt "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
+        set_run_identity hamt "${R2R_DUET_HAMT_MANIFEST}" \
             "${CHECKPOINT_ROOT}/hamt/R2R/vitbase-finetune-e2e/best_val_unseen" \
             "vln/scripts/run_source_eval.sh#hamt-r2r-e2e" \
             "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5"
         run_in "${REPO_ROOT}/vln/baselines/hamt/finetune_src" "${COMMAND[@]}"
         validate_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \
-            "${REPO_ROOT}/vln/manifests/episode_order/r2r_duet_hamt" \
+            "${R2R_DUET_HAMT_MANIFEST}" \
             r2r_discrete_duet_hamt \
             "${DATA_ROOT}/hamt/R2R/annotations/R2R_test_enc.json"
         ;;
@@ -783,7 +914,7 @@ case "${SETTING}" in
         COMMAND=(
             "${PYTHON}" reverie/main_navref.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
-            --world_size 1 --seed 0 --tokenizer bert --multi_endpoints
+            --world_size 1 --seed "${MODEL_SEED}" --tokenizer bert --multi_endpoints
             --ob_type pano --num_l_layers 9 --num_x_layers 4 --hist_enc_pano
             --hist_pano_num_layers 2 --no_lang_ca --features vitbase_r2rfte2e
             --feedback sample --max_action_len 15 --max_instr_len 60
@@ -792,10 +923,10 @@ case "${SETTING}" in
             --resume_file ../datasets/REVERIE/trained_models/best_val_unseen
             --strict_checkpoint_keys
             --test --eval_splits "${SPLIT}"
-            --episode_order_manifest "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt"
+            --episode_order_manifest "${REVERIE_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity hamt "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt" \
+        set_run_identity hamt "${REVERIE_DUET_HAMT_MANIFEST}" \
             "${CHECKPOINT_ROOT}/hamt/REVERIE/best_val_unseen" \
             "vln/scripts/run_source_eval.sh#hamt-reverie" \
             "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5" \
@@ -804,7 +935,7 @@ case "${SETTING}" in
         run_in "${REPO_ROOT}/vln/baselines/hamt/finetune_src" "${COMMAND[@]}"
         validate_discrete_output reverie \
             "${RESULT_ROOT}/preds/submit_test.json" \
-            "${REPO_ROOT}/vln/manifests/episode_order/reverie_duet_hamt" \
+            "${REVERIE_DUET_HAMT_MANIFEST}" \
             reverie_discrete_duet_hamt \
             "${DATA_ROOT}/hamt/REVERIE/annotations/REVERIE_test_enc.json"
         ;;
@@ -817,7 +948,7 @@ case "${SETTING}" in
             DATASET=r2r
             TASK_ROOT=R2R
             NAME=goat_r2r_source
-            MANIFEST="${REPO_ROOT}/vln/manifests/episode_order/r2r_goat"
+            MANIFEST="${R2R_GOAT_MANIFEST}"
             RESUME=../datasets/R2R/navigator/goat_r2r/ckpts/best_val_unseen.pt
             BACKDOOR=../datasets/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv
             FRONTDOOR=../datasets/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv
@@ -827,7 +958,7 @@ case "${SETTING}" in
             DATASET=reverie
             TASK_ROOT=REVERIE
             NAME=goat_reverie_source
-            MANIFEST="${REPO_ROOT}/vln/manifests/episode_order/reverie_goat"
+            MANIFEST="${REVERIE_GOAT_MANIFEST}"
             RESUME=../datasets/REVERIE/navigator/goat_reverie/ckpts/best_val_unseen.pt
             BACKDOOR=../datasets/REVERIE/navigator/goat_reverie/logs/backdoor/backdoor_update_features.tsv
             FRONTDOOR=../datasets/REVERIE/navigator/goat_reverie/logs/frontdoor/frontdoor_update_features.tsv
@@ -836,7 +967,7 @@ case "${SETTING}" in
         COMMAND=(
             "${PYTHON}" "${ENTRY}"
             --root_dir ../datasets --dataset "${DATASET}"
-            --output_dir "${RESULT_ROOT}" --world_size 1 --seed 0
+            --output_dir "${RESULT_ROOT}" --world_size 1 --seed "${MODEL_SEED}"
             --tokenizer roberta --mode valid --name "${NAME}"
             --enc_full_graph --graph_sprels --fusion dynamic --train_alg dagger
             --num_l_layers 6 --num_x_layers 3 --num_pano_layers 2
@@ -908,7 +1039,7 @@ case "${SETTING}" in
         COMMON=(
             SIMULATOR_GPU_IDS '[0]' TORCH_GPU_ID 0 TORCH_GPU_IDS '[0]'
             GPU_NUMBERS 1 NUM_ENVIRONMENTS 1
-            TASK_CONFIG.SEED 0
+            TASK_CONFIG.SEED "${MODEL_SEED}"
             TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.ALLOW_SLIDING True
             TASK_CONFIG.DATASET.DATA_PATH "${CE_DATA_TEMPLATE}"
             MODEL.pretrained_path None

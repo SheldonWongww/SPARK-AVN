@@ -1,4 +1,5 @@
 import ast
+import json
 from pathlib import Path
 import shlex
 import subprocess
@@ -54,6 +55,28 @@ class SourceRunnerGuardTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             check=False,
         )
+
+    @staticmethod
+    def _order_config_gate(config, seed=None, cli_present=True):
+        source = RUNNER.read_text(encoding="utf-8")
+        marker = 'import json\nimport sys\n\nwith open(sys.argv[1], "r", encoding="utf-8")'
+        start = source.index(marker)
+        end = source.index("\nPY\n", start)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "parameters.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            return subprocess.run(
+                [
+                    "python3", "-", str(path),
+                    "1" if cli_present else "0",
+                    str(seed) if cli_present else "",
+                ],
+                input=source[start:end],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
 
     def test_formal_git_state_is_checked_before_and_after_execution(self):
         source = RUNNER.read_text(encoding="utf-8")
@@ -189,6 +212,135 @@ class SourceRunnerGuardTest(unittest.TestCase):
             '"canonical_episode_order_parent=${RUN_ORDER_DIR}/${SPLIT}.json"',
             source,
         )
+
+    def test_order_seed_is_narrow_and_controls_runtime_and_manifest_seed(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn('--order-seed 0|1|2', source)
+        self.assertIn('0|1|2) ORDER_SEED="$2"', source)
+        self.assertIn('"stage": "orders"', source)
+        self.assertIn('(("episodes", -1), ("order_seed", seed))', source)
+        self.assertIn('type(value) is not int', source)
+        self.assertIn('order_seed_%s/%s', source)
+        self.assertIn('--seed "${MODEL_SEED}"', source)
+        self.assertIn('TASK_CONFIG.SEED "${MODEL_SEED}"', source)
+        self.assertEqual(
+            source.count('--source-setting "${RUN_SOURCE_SETTING}" --seed "${MODEL_SEED}"'),
+            2,
+        )
+        for arguments, message in (
+            (("duet-r2r", "val_seen", "--order-seed", "3"),
+             "exactly 0, 1, or 2"),
+            (("duet-r2r", "val_seen", "--order-seed", "1"),
+             "requires a TTA robustness job config"),
+            (("streamvln-r2r-ce", "val_seen", "--tta-config", "missing.json",
+              "--order-seed", "1"), "does not support StreamVLN"),
+            (("duet-r2r", "all", "--tta-config", "missing.json",
+              "--order-seed", "1"), "complete val_seen"),
+            (("duet-r2r", "val_seen", "--tta-config", "missing.json",
+              "--smoke-episodes", "1", "--order-seed", "1"),
+             "cannot be combined with --smoke-episodes"),
+            (("duet-r2r", "val_seen", "--tta-config", "missing.json",
+              "--episode-limit", "2", "--order-seed", "1"),
+             "cannot be combined with --episode-limit"),
+        ):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    [str(RUNNER), *arguments],
+                    cwd=REPO_ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
+    def test_order_config_gate_rejects_boolean_and_float_integer_lookalikes(self):
+        valid = {
+            "schema": "navtta.vln_tta_job.v1",
+            "method": "tent",
+            "search_method": "tent",
+            "stage": "orders",
+            "episodes": -1,
+            "order_seed": 1,
+        }
+        self.assertEqual(self._order_config_gate(valid, 1).returncode, 0)
+        cases = (
+            ("boolean order seed 1", "order_seed", True, 1),
+            ("boolean order seed 0", "order_seed", False, 0),
+            ("float order seed", "order_seed", 1.0, 1),
+            ("false episodes", "episodes", False, 1),
+            ("true episodes", "episodes", True, 1),
+            ("float episodes", "episodes", -1.0, 1),
+        )
+        for label, key, value, seed in cases:
+            config = dict(valid)
+            config["order_seed"] = seed
+            config[key] = value
+            with self.subTest(label=label):
+                result = self._order_config_gate(config, seed)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("expected exact integer", result.stderr)
+
+    def test_order_config_gate_requires_bidirectional_cli_coupling(self):
+        orders = {
+            "schema": "navtta.vln_tta_job.v1",
+            "method": "tent",
+            "search_method": "tent",
+            "stage": "orders",
+            "episodes": -1,
+            "order_seed": 1,
+        }
+        result = self._order_config_gate(orders, cli_present=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--order-seed is absent", result.stderr)
+
+        result = self._order_config_gate(orders, seed=2)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected exact integer", result.stderr)
+
+        ordinary = {
+            "schema": "navtta.vln_tta_job.v1",
+            "method": "tent",
+            "search_method": "tent",
+            "stage": "final",
+            "episodes": -1,
+            "parameters": {},
+        }
+        self.assertEqual(
+            self._order_config_gate(ordinary, cli_present=False).returncode, 0
+        )
+        for smuggled_seed in (None, 1):
+            smuggled = dict(ordinary, order_seed=smuggled_seed)
+            with self.subTest(smuggled_seed=smuggled_seed):
+                result = self._order_config_gate(smuggled, cli_present=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("--order-seed is absent", result.stderr)
+
+        result = self._order_config_gate(ordinary, seed=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stage mismatch", result.stderr)
+
+        audit = {
+            "schema": "navtta.vln_tta_adapter_parity_job.v1",
+            "namespace": "adapter_parity_audit",
+            "method": "tent",
+            "episodes": 256,
+            "order_seed": 0,
+            "parameters": {},
+        }
+        self.assertEqual(
+            self._order_config_gate(audit, cli_present=False).returncode, 0
+        )
+        for invalid_seed in (1, 2, True, False, 0.0, None, "0"):
+            invalid_audit = dict(audit, order_seed=invalid_seed)
+            with self.subTest(adapter_audit_order_seed=invalid_seed):
+                result = self._order_config_gate(
+                    invalid_audit, cli_present=False
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exact integer 0", result.stderr)
 
 
 if __name__ == "__main__":

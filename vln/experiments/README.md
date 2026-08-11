@@ -15,8 +15,18 @@ The scheduler's default complete workflow ends after the five full canonical
 keeps the current hyperparameter search independent of the later robustness
 section.  Add `--with-orders` to run the frozen configuration under exactly
 order seeds 0, 1, and 2; that option requires matching `--order-seed` support
-in the baseline runner and never silently substitutes three ordinary RNG
+in the baseline runner.  Seed 0 consumes the unchanged canonical manifest;
+seeds 1/2 consume the tracked, parent-pinned SHA256-ranked manifests.  The
+runner also sets the model/runtime/formal-manifest seed to the order seed.
+FeedTTA's action and SGR seeds follow it explicitly, while EAM replay consumes
+the global model seed.  This never silently substitutes three ordinary RNG
 seeds for three episode permutations.
+
+`--order-seed` is deliberately unavailable to smoke/prefix jobs, Source-only
+controls, StreamVLN, split `all`, and native CE v1.2.  The job config must say
+`stage=orders`, `episodes=-1`, and carry the identical seed.  All screening,
+final-control, final-selection, and frozen-winner decisions remain canonical
+seed 0.
 
 Typical invocations are:
 
@@ -25,6 +35,7 @@ python3 vln/scripts/run_tta_hparam_search.py all --batch-id SEARCH_ID
 python3 vln/scripts/run_tta_hparam_search.py all --batch-id SEARCH_ID --resume
 python3 vln/scripts/run_tta_hparam_search.py all --batch-id SEARCH_ID --status
 python3 vln/scripts/run_tta_hparam_search.py all --batch-id SEARCH_ID --watch
+python3 vln/scripts/run_tta_hparam_search.py all --batch-id SEARCH_ID --with-orders
 ```
 
 Each method is completed before the next method starts, while settings are

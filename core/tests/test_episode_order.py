@@ -5,10 +5,14 @@ import tempfile
 import unittest
 
 from navtta_core.experiment.episode_order import (
+    SEEDED_ORDER_ALGORITHM,
+    SEEDED_ORDER_DOMAIN_SEPARATOR,
+    SEEDED_ORDER_POLICY,
     build_episode_order_manifest,
     canonical_episode_records,
     canonicalize_eval_splits,
     configure_exact_episode_env,
+    derive_seeded_episode_order_manifest,
     iter_exact_batches,
     load_episode_order_manifest,
     prefix_episode_order_manifest,
@@ -17,6 +21,7 @@ from navtta_core.experiment.episode_order import (
     run_exact_agent_epoch,
     select_allowed_episodes_in_order,
     sha256_file,
+    validate_episode_order_manifest,
     verify_manifest_dataset,
 )
 
@@ -63,6 +68,73 @@ class EpisodeOrderTest(unittest.TestCase):
             loaded = load_episode_order_manifest(path, expected_split="val_seen")
         ordered = reorder_episodes(self.episodes, loaded)
         self.assertEqual([item["instr_id"] for item in ordered], ["3_0", "2_0", "10_0"])
+
+    def test_seeded_manifest_is_domain_separated_and_reproducible(self):
+        parent = self._manifest()
+        parent_file_sha = hashlib.sha256(b"parent manifest bytes").hexdigest()
+        first = derive_seeded_episode_order_manifest(
+            parent,
+            order_seed=1,
+            parent_manifest_path="vln/manifests/episode_order/example/val_seen.json",
+            parent_manifest_sha256=parent_file_sha,
+        )
+        repeated = derive_seeded_episode_order_manifest(
+            parent,
+            order_seed=1,
+            parent_manifest_path="vln/manifests/episode_order/example/val_seen.json",
+            parent_manifest_sha256=parent_file_sha,
+        )
+        second = derive_seeded_episode_order_manifest(
+            parent,
+            order_seed=2,
+            parent_manifest_path="vln/manifests/episode_order/example/val_seen.json",
+            parent_manifest_sha256=parent_file_sha,
+        )
+        self.assertEqual(first, repeated)
+        self.assertNotEqual(first["order_sha256"], second["order_sha256"])
+        self.assertEqual(first["order_policy"], SEEDED_ORDER_POLICY)
+        self.assertEqual(first["derivation"], {
+            "algorithm": SEEDED_ORDER_ALGORITHM,
+            "domain_separator": SEEDED_ORDER_DOMAIN_SEPARATOR,
+            "order_seed": 1,
+            "parent_manifest_path": (
+                "vln/manifests/episode_order/example/val_seen.json"
+            ),
+            "parent_manifest_sha256": parent_file_sha,
+            "parent_order_sha256": parent["order_sha256"],
+        })
+
+    def test_seeded_manifest_rejects_algorithm_and_order_tampering(self):
+        derived = derive_seeded_episode_order_manifest(
+            self._manifest(),
+            order_seed=1,
+            parent_manifest_path="parent.json",
+            parent_manifest_sha256="b" * 64,
+        )
+        derived["derivation"]["algorithm"] = "random.shuffle"
+        with self.assertRaisesRegex(ValueError, "algorithm"):
+            validate_episode_order_manifest(derived)
+
+        derived["derivation"]["algorithm"] = SEEDED_ORDER_ALGORITHM
+        derived["derivation"]["order_seed"] = True
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            validate_episode_order_manifest(derived)
+
+        derived["derivation"]["order_seed"] = 1
+        derived["episodes"] = list(reversed(derived["episodes"]))
+        with self.assertRaisesRegex(ValueError, "declared order policy"):
+            validate_episode_order_manifest(derived)
+
+    def test_seeded_manifest_requires_an_exact_integer_seed(self):
+        for seed in (True, 1.0, "1"):
+            with self.subTest(seed=seed), self.assertRaisesRegex(
+                    ValueError, "must be an integer"):
+                derive_seeded_episode_order_manifest(
+                    self._manifest(),
+                    order_seed=seed,
+                    parent_manifest_path="parent.json",
+                    parent_manifest_sha256="b" * 64,
+                )
 
     def test_manifest_checks_expected_benchmark(self):
         manifest = self._manifest()

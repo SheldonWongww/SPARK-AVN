@@ -96,8 +96,13 @@ def load_spec(path=SPEC_PATH):
         spec = json.load(stream)
     if spec.get("schema") != "navtta.vln_tta_hparam_search.v1":
         raise UserError("unsupported search specification schema")
-    if spec.get("final_order_seeds") != [0, 1, 2]:
+    final_order_seeds = spec.get("final_order_seeds")
+    if (final_order_seeds != [0, 1, 2]
+            or any(type(value) is not int for value in final_order_seeds)):
         raise UserError("the search specification must use order seeds [0, 1, 2]")
+    if type(spec.get("primary_order_seed")) is not int or spec.get(
+            "primary_order_seed") != 0:
+        raise UserError("the search specification primary order seed must be integer 0")
     protocol = spec.get("protocol", {})
     if not protocol.get("full_val_seen_matched_source_controls"):
         raise UserError("the search requires full-val matched Source controls")
@@ -215,13 +220,29 @@ def clean_parameters(point):
     return {key: value for key, value in point.items() if key not in ignored}
 
 
+def _validate_parameter_seeds(parameters, expected_order_seed=None):
+    for key in ("action_seed", "sgr_seed"):
+        if key in parameters and type(parameters[key]) is not int:
+            raise UserError("{} must be an exact integer".format(key))
+    if expected_order_seed is not None:
+        for key in ("action_seed", "sgr_seed"):
+            if parameters.get(key) != expected_order_seed:
+                raise UserError(
+                    "FeedTTA orders {} must equal order_seed".format(key)
+                )
+
+
 def _candidate(parameters, parents=(), order_seed=None, config_method=None):
+    parameters = clean_parameters(parameters)
+    _validate_parameter_seeds(parameters)
     value = {
-        "parameters": clean_parameters(parameters),
+        "parameters": parameters,
         "parent_run_tags": list(parents),
     }
     if order_seed is not None:
-        value["order_seed"] = int(order_seed)
+        if type(order_seed) is not int:
+            raise UserError("order_seed must be an exact integer")
+        value["order_seed"] = order_seed
     if config_method is not None:
         value["config_method"] = config_method
     return value
@@ -623,6 +644,7 @@ def _validate_jobs(jobs, batch_id, method, settings, stage, spec,
                 sorted(expected_settings), sorted(actual_settings)
             )
         )
+    order_seeds_by_setting = {setting: [] for setting in settings}
     for job in jobs:
         checks = (
             ("batch_id", batch_id),
@@ -653,6 +675,39 @@ def _validate_jobs(jobs, batch_id, method, settings, stage, spec,
                     job.get("run_tag", job.get("ordinal"))
                 )
             )
+        order_values = [
+            command[index + 1]
+            for index, value in enumerate(command[:-1])
+            if value == "--order-seed"
+        ]
+        order_seed = job.get("order_seed")
+        parameters = job.get("parameters", {})
+        if not isinstance(parameters, dict):
+            raise UserError("job parameters must be an object")
+        _validate_parameter_seeds(parameters)
+        if stage == "orders":
+            if (type(order_seed) is not int
+                    or order_seed not in spec["final_order_seeds"]):
+                raise UserError("orders job has an invalid order_seed")
+            if method == "feedtta":
+                _validate_parameter_seeds(
+                    parameters, expected_order_seed=order_seed
+                )
+            if order_values != [str(order_seed)]:
+                raise UserError("orders job command does not pin its order_seed")
+            order_seeds_by_setting[job["setting"]].append(order_seed)
+        elif order_seed is not None or order_values:
+            raise UserError(
+                "only the orders stage may carry an order_seed"
+            )
+    if stage == "orders":
+        for setting, seeds in order_seeds_by_setting.items():
+            if seeds != spec["final_order_seeds"]:
+                raise UserError(
+                    "{} orders jobs must be exactly seeds {}".format(
+                        setting, spec["final_order_seeds"]
+                    )
+                )
 
 
 def _validate_persisted_stage(stage_dir, batch_id, method, settings, spec,
@@ -789,6 +844,38 @@ def _load_frozen_selection(batch_root, method, settings, spec):
                     )
                 )
         _validate_exact_setting_keys(document, settings, label)
+    try:
+        final_manifest = json.loads(
+            (batch_root / "stages/final/stage_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        control_manifest = json.loads(
+            (batch_root / "stages/final_controls/stage_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError(
+            "frozen selection lacks completed final-stage provenance: {}".format(
+                error
+            )
+        )
+    batch_id = final_manifest.get("batch_id")
+    if (not isinstance(batch_id, str) or not batch_id
+            or control_manifest.get("batch_id") != batch_id):
+        raise UserError("final and final_controls batch provenance disagrees")
+    authenticated_selection, authenticated_frozen = _derive_final_documents(
+        batch_root, batch_id, method, settings, spec
+    )
+    if _canonical(selection) != _canonical(authenticated_selection):
+        raise UserError(
+            "FINAL_SELECTION is not authenticated by completed final evidence"
+        )
+    if _canonical(frozen) != _canonical(authenticated_frozen):
+        raise UserError(
+            "FROZEN_HPARAMETERS is not authenticated by completed final evidence"
+        )
     output = {}
     for setting in settings:
         try:
@@ -808,10 +895,14 @@ def _load_frozen_selection(batch_root, method, settings, spec):
 
 
 def _order_parameters(method, frozen, order_seed):
+    if type(order_seed) is not int or order_seed not in (0, 1, 2):
+        raise UserError("order_seed must be an exact integer in [0, 1, 2]")
     parameters = dict(frozen)
     if method == "feedtta":
-        parameters["action_seed"] = int(order_seed)
-        parameters["sgr_seed"] = int(order_seed)
+        parameters["action_seed"] = order_seed
+        parameters["sgr_seed"] = order_seed
+    # EAM replay sampling intentionally consumes the runner's global model
+    # seed, which run_source_eval.sh derives from --order-seed.
     return parameters
 
 
@@ -920,6 +1011,15 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
             if point_index >= len(points):
                 continue
             candidate = points[point_index]
+            candidate_order_seed = candidate.get("order_seed")
+            if stage == "orders":
+                if (type(candidate_order_seed) is not int
+                        or candidate_order_seed not in spec["final_order_seeds"]):
+                    raise UserError(
+                        "orders candidates require one of the declared order seeds"
+                    )
+            elif candidate_order_seed is not None:
+                raise UserError("only orders candidates may set order_seed")
             parameters = candidate["parameters"]
             config_method = candidate.get("config_method", args.method)
             config_identity = {
@@ -945,7 +1045,7 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
             ]
             if episodes > 0:
                 command += ["--episode-limit", str(episodes)]
-            order_seed = candidate.get("order_seed")
+            order_seed = candidate_order_seed
             if order_seed is not None:
                 command += ["--order-seed", str(order_seed)]
             job = {
@@ -981,15 +1081,17 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
 def _write_job(job):
     job_dir = Path(job["job_dir"])
     job_dir.mkdir(parents=True, exist_ok=True)
-    atomic_json(job["config_path"], {
+    config = {
         "schema": "navtta.vln_tta_job.v1",
         "method": job["config_method"],
         "search_method": job["search_method"],
         "stage": job["stage"],
         "episodes": job["episodes"],
-        "order_seed": job["order_seed"],
         "parameters": job["parameters"],
-    })
+    }
+    if job["order_seed"] is not None:
+        config["order_seed"] = job["order_seed"]
+    atomic_json(job["config_path"], config)
     atomic_json(job_dir / "job.json", job)
 
 
@@ -1616,7 +1718,7 @@ def ensure_stage_plan(args, spec, batch_root, stage):
     return stage_dir, jobs
 
 
-def summarize_final(batch_root, batch_id, method, settings, spec):
+def _derive_final_documents(batch_root, batch_id, method, settings, spec):
     batch_root = Path(batch_root)
     _validate_persisted_stage(
         batch_root / "stages" / "final_controls",
@@ -1689,6 +1791,14 @@ def summarize_final(batch_root, batch_id, method, settings, spec):
             for setting in settings
         },
     }
+    return output, frozen_output
+
+
+def summarize_final(batch_root, batch_id, method, settings, spec):
+    batch_root = Path(batch_root)
+    output, frozen_output = _derive_final_documents(
+        batch_root, batch_id, method, settings, spec
+    )
     _write_immutable_documents((
         (batch_root / "FINAL_SELECTION.json", output),
         (batch_root / "FROZEN_HPARAMETERS.json", frozen_output),
@@ -1715,8 +1825,12 @@ def summarize_orders(batch_root, batch_id, method, settings, spec):
     }
     for setting in settings:
         values = [item for item in results if item["setting"] == setting]
-        values.sort(key=lambda item: int(item["order_seed"]))
-        seeds = [int(item["order_seed"]) for item in values]
+        if any(
+                type(item.get("order_seed")) is not int
+                for item in values):
+            raise UserError("{} contains a non-integer order seed".format(setting))
+        values.sort(key=lambda item: item["order_seed"])
+        seeds = [item["order_seed"] for item in values]
         if seeds != spec["final_order_seeds"]:
             raise UserError("{} does not have exactly order seeds {}".format(
                 setting, spec["final_order_seeds"]
