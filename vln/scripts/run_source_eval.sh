@@ -14,6 +14,7 @@ Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--ce-data-version VERSION]
                                       [--smoke-episodes N]
                                       [--tta-config FILE]
+                                      [--result-root DIR]
                                       [--order-seed 0|1|2]
                                       [--adapter-parity-audit]
                                       [--episode-limit N] [--dry-run]
@@ -68,6 +69,8 @@ CE_DATA_VERSION="${NAVTTA_CE_DATA_VERSION:-v1.3-unified}"
 CE_DATA_VERSION_SET=0
 SMOKE_EPISODES=""
 TTA_CONFIG=""
+RESULT_ROOT_OVERRIDE=""
+RESULT_ROOT_SET=0
 EPISODE_LIMIT=""
 ORDER_SEED=""
 ORDER_SEED_SET=0
@@ -104,6 +107,14 @@ while [[ "$#" -gt 0 ]]; do
             [[ "$#" -ge 2 ]] || die "--tta-config requires a value"
             [[ -z "${TTA_CONFIG}" ]] || die "TTA config specified more than once"
             TTA_CONFIG="$2"
+            shift 2
+            ;;
+        --result-root)
+            [[ "$#" -ge 2 ]] || die "--result-root requires a value"
+            [[ "${RESULT_ROOT_SET}" -eq 0 ]] || \
+                die "result root specified more than once"
+            RESULT_ROOT_OVERRIDE="$2"
+            RESULT_ROOT_SET=1
             shift 2
             ;;
         --episode-limit)
@@ -312,6 +323,16 @@ if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
     [[ "${EPISODE_LIMIT}" == "256" ]] || \
         die "adapter-parity audit requires --episode-limit 256"
 fi
+if [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
+    [[ -n "${TTA_CONFIG}" ]] || \
+        die "--result-root is reserved for TTA search jobs"
+    [[ "${TTA_NAMESPACE}" == "tuning" ]] || \
+        die "--result-root cannot override a non-tuning namespace"
+    [[ "${SPLIT}" == "val_seen" ]] || \
+        die "--result-root is restricted to val_seen tuning jobs"
+    [[ "${RESULT_ROOT_OVERRIDE}" = /* ]] || \
+        die "--result-root must be absolute"
+fi
 
 SOURCE_TAG_LOCK_FD=""
 SOURCE_TAG_LOCK_ROOT="/root/autodl-tmp/tmp/navtta-source-tag-locks"
@@ -375,6 +396,16 @@ if [[ -n "${SMOKE_EPISODES}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/smoke/${RUN_TAG}/${SETTING}/${SPLIT}"
 elif [[ -n "${TTA_CONFIG}" && "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/audits/adapter_parity/runs/${RUN_TAG}/${SETTING}/${SPLIT}"
+elif [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
+    RESULT_ROOT="$(realpath -m -- "${RESULT_ROOT_OVERRIDE}")"
+    case "${RESULT_ROOT}" in
+        "${REPO_ROOT}/vln/results/tuning/"*) ;;
+        *) die "--result-root must stay inside vln/results/tuning" ;;
+    esac
+    case "${RESULT_ROOT}" in
+        */"${RUN_TAG}"/"${SPLIT}") ;;
+        *) die "--result-root must end with RUN_TAG/SPLIT" ;;
+    esac
 elif [[ -n "${TTA_CONFIG}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/tuning/${RUN_TAG}/${SETTING}/${SPLIT}"
 else

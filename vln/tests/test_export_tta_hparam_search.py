@@ -564,6 +564,43 @@ class CampaignFixture:
 
 
 class CompactExportTest(unittest.TestCase):
+    def test_v2_result_layout_and_explicit_runner_root_are_canonical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            exporter = object.__new__(MODULE.BatchExporter)
+            exporter.tuning_root = Path(directory).absolute()
+            exporter.settings = tuple(SEARCH.load_spec()["settings"])
+            run_tag = "batch-eam-stage1-0000-duet-r2r-deadbeef00"
+            result_root = (
+                exporter.tuning_root / "eam" / "batch" / "stage1"
+                / "duet-r2r" / run_tag / "val_seen"
+            )
+            job = {
+                "batch_id": "batch",
+                "search_method": "eam",
+                "config_method": "eam",
+                "stage": "stage1",
+                "setting": "duet-r2r",
+                "run_tag": run_tag,
+                "config_path": "/tmp/parameters.json",
+                "result_layout": SEARCH.RESULT_LAYOUT,
+                "result_namespace": "eam",
+                "result_root": str(result_root),
+                "episodes": 256,
+                "order_seed": None,
+            }
+            job["command"] = [
+                str(SEARCH.RUNNER), "duet-r2r", "val_seen", "0",
+                "--run-tag", run_tag,
+                "--tta-config", job["config_path"],
+                "--result-root", str(result_root),
+                "--episode-limit", "256",
+            ]
+            self.assertEqual(
+                exporter._expected_tuning_result_root(job, run_tag),
+                result_root,
+            )
+            exporter._validated_job_command(job, "v2 fixture")
+
     def _single_evidence(self, directory, method="tent", setting="duet-r2r"):
         fixture = CampaignFixture(Path(directory))
         job, result = fixture._job(method, "final", setting, 0, 4)

@@ -27,7 +27,9 @@ import time
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "vln/experiments/tta_hparam_search_v1.json"
 LOG_ROOT = REPO_ROOT / "vln/results/logs/hparam_search"
+TUNING_ROOT = REPO_ROOT / "vln/results/tuning"
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
+RESULT_LAYOUT = "method_batch_stage_setting_run_v2"
 METHODS = ("tent", "fstta", "eam", "feedtta", "atena")
 DISCRETE_SETTINGS = {
     "duet-r2r", "duet-reverie", "hamt-r2r", "hamt-reverie",
@@ -579,6 +581,34 @@ def point_tag(point):
     return hashlib.sha256(_canonical(point).encode("utf-8")).hexdigest()[:10]
 
 
+def tuning_result_root(method, batch_id, stage, setting, run_tag,
+                       result_namespace=None):
+    """Return the canonical, human-browsable raw tuning-result directory."""
+    namespace = result_namespace or method
+    components = {
+        "method": method,
+        "result_namespace": namespace,
+        "batch_id": batch_id,
+        "stage": stage,
+        "setting": setting,
+        "run_tag": run_tag,
+    }
+    for label, value in components.items():
+        if (not isinstance(value, str) or not value
+                or Path(value).name != value
+                or value in (".", "..")):
+            raise UserError("unsafe {} path component: {!r}".format(label, value))
+    if method not in METHODS:
+        raise UserError("unknown tuning-result method {}".format(method))
+    if namespace not in METHODS + ("_shared",):
+        raise UserError(
+            "unknown tuning-result namespace {}".format(namespace)
+        )
+    if setting not in SETTING_MODEL:
+        raise UserError("unknown tuning-result setting {}".format(setting))
+    return TUNING_ROOT / namespace / batch_id / stage / setting / run_tag / "val_seen"
+
+
 def _source_candidates(method, settings, spec):
     candidates = {}
     for setting in settings:
@@ -620,7 +650,14 @@ def _validate_stage_manifest(stage_dir, batch_id, method, settings, spec,
                 "stage manifest {} mismatch for {}: expected {!r}, got {!r}".format(
                     manifest_path, key, expected, manifest.get(key)
                 )
+                )
+    recorded_layout = manifest.get("result_layout")
+    if recorded_layout not in (None, RESULT_LAYOUT):
+        raise UserError(
+            "stage manifest {} has an unsupported result layout".format(
+                manifest_path
             )
+        )
     return manifest
 
 
@@ -663,6 +700,36 @@ def _validate_jobs(jobs, batch_id, method, settings, stage, spec,
         if job.get("setting") not in expected_settings:
             raise UserError("job plan contains an unrequested setting")
         command = list(job.get("command", []))
+        layout = job.get("result_layout")
+        if layout not in (None, RESULT_LAYOUT):
+            raise UserError("job plan has an unsupported result layout")
+        result_values = [
+            command[index + 1]
+            for index, value in enumerate(command[:-1])
+            if value == "--result-root"
+        ]
+        if layout == RESULT_LAYOUT:
+            namespace = job.get("result_namespace") or method
+            if namespace == "_shared" and job.get("config_method") != "source":
+                raise UserError("only Source jobs may use _shared results")
+            expected_root = tuning_result_root(
+                method, batch_id, stage, job["setting"], job["run_tag"],
+                result_namespace=namespace,
+            )
+            if Path(job.get("result_root", "")) != expected_root:
+                raise UserError(
+                    "job {} result_root disagrees with the canonical layout".format(
+                        job.get("run_tag", job.get("ordinal"))
+                    )
+                )
+            if result_values != [str(expected_root)]:
+                raise UserError(
+                    "job {} command does not pin its result_root".format(
+                        job.get("run_tag", job.get("ordinal"))
+                    )
+                )
+        elif result_values and result_values != [job.get("result_root")]:
+            raise UserError("legacy job result-root command disagrees with metadata")
         limit_values = [
             command[index + 1]
             for index, value in enumerate(command[:-1])
@@ -1035,17 +1102,16 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
             base_run_tag = "{}-{}-{}-{:04d}-{}-{}".format(
                 args.batch_id, args.method, stage, ordinal, setting, digest
             )
-            job_dir = Path(stage_dir) / "jobs" / (
-                "{:04d}-{}-{}".format(ordinal, setting, digest)
-            )
+            job_dir = Path(stage_dir) / "jobs" / setting / base_run_tag
             config_path = job_dir / "parameters.json"
-            result_root = (
-                REPO_ROOT / "vln/results/tuning" / base_run_tag
-                / setting / "val_seen"
+            result_root = tuning_result_root(
+                args.method, args.batch_id, stage, setting, base_run_tag,
+                result_namespace=args.method,
             )
             command = [
                 str(RUNNER), setting, "val_seen", gpu,
                 "--run-tag", base_run_tag, "--tta-config", str(config_path),
+                "--result-root", str(result_root),
             ]
             if episodes > 0:
                 command += ["--episode-limit", str(episodes)]
@@ -1067,6 +1133,8 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
                 ),
                 "search_method": args.method,
                 "config_method": config_method,
+                "result_layout": RESULT_LAYOUT,
+                "result_namespace": args.method,
                 "stage": stage,
                 "episodes": episodes,
                 "order_seed": order_seed,
@@ -1093,6 +1161,14 @@ def _write_job(job):
         "episodes": job["episodes"],
         "parameters": job["parameters"],
     }
+    if job.get("result_layout") is not None:
+        config.update({
+            "batch_id": job.get("batch_id"),
+            "setting": job.get("setting"),
+            "run_tag": job.get("run_tag"),
+            "result_layout": job.get("result_layout"),
+            "result_namespace": job.get("result_namespace"),
+        })
     if job["order_seed"] is not None:
         config["order_seed"] = job["order_seed"]
     atomic_json(job["config_path"], config)
@@ -1105,7 +1181,8 @@ def write_plan(stage_dir, jobs):
     fields = [
         "ordinal", "run_tag", "setting", "model", "family", "benchmark",
         "search_method", "config_method", "stage", "episodes", "order_seed",
-        "config_path", "job_dir", "result_root", "command",
+        "result_layout", "result_namespace", "config_path", "job_dir",
+        "result_root", "command",
     ]
     with (Path(stage_dir) / "grid.csv").open(
         "w", encoding="utf-8", newline=""
@@ -1119,7 +1196,11 @@ def write_plan(stage_dir, jobs):
 
 
 def load_jobs(stage_dir):
-    paths = sorted((Path(stage_dir) / "jobs").glob("*/job.json"))
+    jobs_root = Path(stage_dir) / "jobs"
+    paths = sorted(
+        list(jobs_root.glob("*/job.json"))
+        + list(jobs_root.glob("*/*/job.json"))
+    )
     if not paths:
         raise UserError("stage has no persisted jobs: {}".format(stage_dir))
     jobs = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
@@ -1410,12 +1491,22 @@ def _bump_attempt(job):
     atomic_json(attempt_root / "archived_evidence.json", archived)
     job["attempt"] = int(job.get("attempt", 0)) + 1
     job["run_tag"] = "{}-retry{}".format(job["base_run_tag"], job["attempt"])
-    job["result_root"] = str(
-        REPO_ROOT / "vln/results/tuning" / job["run_tag"]
-        / job["setting"] / "val_seen"
-    )
+    if job.get("result_layout") == RESULT_LAYOUT:
+        job["result_root"] = str(tuning_result_root(
+            job["search_method"], job["batch_id"], job["stage"],
+            job["setting"], job["run_tag"],
+            result_namespace=job.get("result_namespace"),
+        ))
+    else:
+        job["result_root"] = str(
+            TUNING_ROOT / job["run_tag"] / job["setting"] / "val_seen"
+        )
     command = list(job["command"])
     command[command.index("--run-tag") + 1] = job["run_tag"]
+    if "--result-root" in command:
+        command[command.index("--result-root") + 1] = job["result_root"]
+    elif job.get("result_layout") == RESULT_LAYOUT:
+        command += ["--result-root", job["result_root"]]
     job["command"] = command
     _write_job(job)
 
@@ -1670,6 +1761,7 @@ def _stage_manifest(args, stage, jobs, spec):
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "settings": args.settings or spec["settings"],
         "final_order_seeds": spec["final_order_seeds"],
+        "result_layout": RESULT_LAYOUT,
         "resource_limits": {
             "max_workers": args.max_workers,
             "max_per_model": args.max_per_model,
@@ -1679,6 +1771,37 @@ def _stage_manifest(args, stage, jobs, spec):
             "max_memory_gib": args.max_memory_gib,
         },
     }
+
+
+def ensure_batch_manifest(args, spec, batch_root):
+    path = Path(batch_root) / "batch.json"
+    expected = {
+        "schema": "navtta.vln_tta_search_batch.v1",
+        "batch_id": args.batch_id,
+        "method": args.method,
+        "split": spec["split"],
+        "settings": list(args.settings or spec["settings"]),
+        "primary_order_seed": spec["primary_order_seed"],
+        "git_commit": git("rev-parse", "HEAD"),
+        "spec_path": str(SPEC_PATH),
+        "spec_sha256": sha256(SPEC_PATH),
+        "result_layout": RESULT_LAYOUT,
+    }
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise UserError("invalid batch manifest {}: {}".format(path, error))
+        for key, value in expected.items():
+            if existing.get(key) != value:
+                raise UserError(
+                    "batch manifest {} mismatch for {}".format(path, key)
+                )
+        return existing
+    document = dict(expected)
+    document["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    atomic_json(path, document)
+    return document
 
 
 def ensure_stage_plan(args, spec, batch_root, stage):
@@ -1883,6 +2006,7 @@ def runner_supports_order_seed():
 def execute_method(args, spec):
     batch_root = LOG_ROOT / args.method / args.batch_id
     batch_root.mkdir(parents=True, exist_ok=True)
+    ensure_batch_manifest(args, spec, batch_root)
     stages = (
         workflow_stages(args.method, include_orders=args.with_orders)
         if args.stage == "all" else (args.stage,)

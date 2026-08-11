@@ -166,6 +166,23 @@ class TTAHparamSearchTest(unittest.TestCase):
                     "duet-r2r", "etpnav-r2r-ce",
                     "duet-r2r", "etpnav-r2r-ce",
                 ])
+                for job in jobs:
+                    self.assertEqual(job["result_layout"], MODULE.RESULT_LAYOUT)
+                    self.assertEqual(Path(job["job_dir"]).parent.name,
+                                     job["setting"])
+                    self.assertEqual(Path(job["job_dir"]).name,
+                                     job["base_run_tag"])
+                    self.assertEqual(
+                        Path(job["result_root"]),
+                        MODULE.tuning_result_root(
+                            method, "unit-test", "stage1", job["setting"],
+                            job["run_tag"],
+                        ),
+                    )
+                    root_index = job["command"].index("--result-root")
+                    self.assertEqual(
+                        job["command"][root_index + 1], job["result_root"]
+                    )
 
     def test_tent_anchor_includes_fixed_protocol(self):
         anchor = MODULE.anchor_for("tent", "duet-r2r", self.spec)
@@ -184,6 +201,20 @@ class TTAHparamSearchTest(unittest.TestCase):
         self.assertEqual(len(jobs), 2)
         self.assertTrue(all(job["stage"] == "smoke" for job in jobs))
         self.assertTrue(all(job["episodes"] == 2 for job in jobs))
+
+    def test_batch_manifest_records_human_browsable_result_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            document = MODULE.ensure_batch_manifest(
+                args(method="eam", batch_id="eam-vln-val-seen-v1-seed0"),
+                self.spec,
+                root,
+            )
+            self.assertEqual(document["method"], "eam")
+            self.assertEqual(document["split"], "val_seen")
+            self.assertEqual(document["primary_order_seed"], 0)
+            self.assertEqual(document["result_layout"], MODULE.RESULT_LAYOUT)
+            self.assertTrue((root / "batch.json").is_file())
 
     def test_method_specific_stage_expansions(self):
         setting = "duet-r2r"
@@ -551,7 +582,10 @@ class TTAHparamSearchTest(unittest.TestCase):
     def test_namespaced_control_retries_keep_one_canonical_base(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with mock.patch.object(MODULE, "REPO_ROOT", root):
+            with mock.patch.object(MODULE, "REPO_ROOT", root), \
+                    mock.patch.object(
+                        MODULE, "TUNING_ROOT", root / "vln/results/tuning"
+                    ):
                 candidates = MODULE._source_candidates(
                     "fstta", ["duet-r2r"], self.spec
                 )
@@ -577,8 +611,8 @@ class TTAHparamSearchTest(unittest.TestCase):
                 self.assertEqual(job["run_tag"], base_run_tag + "-retry1")
                 self.assertEqual(
                     Path(job["result_root"]),
-                    root / "vln/results/tuning" / job["run_tag"]
-                    / "duet-r2r/val_seen",
+                    root / "vln/results/tuning/fstta/shared-batch/controls"
+                    / "duet-r2r" / job["run_tag"] / "val_seen",
                 )
                 self.assertEqual(
                     job["command"][job["command"].index("--run-tag") + 1],

@@ -787,7 +787,11 @@ class EvidenceStore:
                 )
         by_tag = {}
         by_stage = {}
-        for job_path in sorted(stages_root.glob("*/jobs/*/job.json")):
+        job_paths = sorted(
+            list(stages_root.glob("*/jobs/*/job.json"))
+            + list(stages_root.glob("*/jobs/*/*/job.json"))
+        )
+        for job_path in job_paths:
             job_dir = job_path.parent
             job = read_json(job_path)
             tag = job.get("run_tag")

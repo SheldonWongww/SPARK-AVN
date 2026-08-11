@@ -221,6 +221,22 @@ def read_json(path):
         raise ExportError("cannot read JSON {}: {}".format(path, error))
 
 
+def stage_job_paths(stage_dir):
+    jobs_root = Path(stage_dir) / "jobs"
+    return sorted(
+        list(jobs_root.glob("*/job.json"))
+        + list(jobs_root.glob("*/*/job.json"))
+    )
+
+
+def method_job_paths(method_root):
+    root = Path(method_root)
+    return sorted(
+        list(root.glob("stages/*/jobs/*/job.json"))
+        + list(root.glob("stages/*/jobs/*/*/job.json"))
+    )
+
+
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -790,6 +806,14 @@ class BatchExporter:
             "order_seed": job.get("order_seed"),
             "parameters": job.get("parameters"),
         }
+        if job.get("result_layout") is not None:
+            identity_fields.update({
+                "batch_id": job.get("batch_id"),
+                "setting": job.get("setting"),
+                "run_tag": job.get("run_tag"),
+                "result_layout": job.get("result_layout"),
+                "result_namespace": job.get("result_namespace"),
+            })
         if config_document.get("schema") != "navtta.vln_tta_job.v1":
             raise ExportError("unsupported job parameter schema")
         parameters = config_document.get("parameters")
@@ -847,6 +871,7 @@ class BatchExporter:
             "model", "family", "benchmark", "search_method", "config_method",
             "stage", "episodes", "order_seed", "parameters",
             "parent_run_tags", "config_path", "job_dir", "result_root", "command",
+            "result_layout", "result_namespace",
         )
         for key in identity_fields:
             if canonical(result.get(key)) != canonical(job.get(key)):
@@ -1565,6 +1590,11 @@ class BatchExporter:
             "--run-tag", job.get("run_tag"),
             "--tta-config", job.get("config_path"),
         ]
+        layout = job.get("result_layout")
+        if layout == search.RESULT_LAYOUT:
+            expected.extend(["--result-root", job.get("result_root")])
+        elif layout is not None:
+            raise ExportError("{} result layout is unsupported".format(label))
         if episodes > 0:
             expected.extend(["--episode-limit", str(episodes)])
         order_seed = job.get("order_seed")
@@ -1600,9 +1630,35 @@ class BatchExporter:
         setting = job.get("setting")
         if setting not in self.settings:
             raise ExportError("job setting is not canonical")
-        candidate = (
-            self.tuning_root / run_tag / setting / "val_seen"
-        ).absolute()
+        layout = job.get("result_layout")
+        if layout == search.RESULT_LAYOUT:
+            method = job.get("search_method")
+            namespace = job.get("result_namespace") or method
+            batch_id = job.get("batch_id")
+            stage = job.get("stage")
+            for label, value in (
+                ("search_method", method), ("result_namespace", namespace),
+                ("batch_id", batch_id), ("stage", stage),
+            ):
+                if (not isinstance(value, str) or not value
+                        or Path(value).name != value
+                        or value in (".", "..")):
+                    raise ExportError("job {} is not canonical".format(label))
+            if namespace not in search.METHODS + ("_shared",):
+                raise ExportError("job result_namespace is not canonical")
+            if (namespace == "_shared"
+                    and job.get("config_method") != "source"):
+                raise ExportError("only Source jobs may use _shared results")
+            candidate = (
+                self.tuning_root / namespace / batch_id / stage / setting
+                / run_tag / "val_seen"
+            ).absolute()
+        elif layout is None:
+            candidate = (
+                self.tuning_root / run_tag / setting / "val_seen"
+            ).absolute()
+        else:
+            raise ExportError("job result layout is unsupported")
         reject_symlink(
             candidate, "TTA tuning result path", stop=self.tuning_root
         )
@@ -1750,14 +1806,12 @@ class BatchExporter:
             "batch_id", "ordinal", "base_run_tag", "run_tag", "setting",
             "model", "family", "benchmark", "config_method", "stage",
             "episodes", "order_seed", "parameters", "parent_run_tags",
-            "result_root",
         )
         for owner_method, method_root in sorted(self.method_roots.items()):
             if not method_root.is_dir():
                 continue
             reject_symlink(method_root, "collision owner method root")
-            for owner_job_path in sorted(
-                    method_root.glob("stages/*/jobs/*/job.json")):
+            for owner_job_path in method_job_paths(method_root):
                 owner_job_path = require_regular_file(
                     owner_job_path, "collision owner job", stop=method_root
                 )
@@ -1785,6 +1839,28 @@ class BatchExporter:
                         raise ExportError(
                             "collision owner identity mismatch for {}".format(key)
                         )
+                owner_result_root = Path(owner.get("result_root", "")).absolute()
+                if owner_result_root != old_result_root:
+                    migrated_shared = (
+                        owner.get("result_layout") == search.RESULT_LAYOUT
+                        and owner.get("result_namespace") == "_shared"
+                        and attempt_job.get("result_layout") is None
+                        and attempt_job.get("config_method") == "source"
+                    )
+                    if not migrated_shared:
+                        raise ExportError(
+                            "collision owner result_root identity mismatch"
+                        )
+                    if owner_result_root != self._expected_tuning_result_root(
+                            owner, owner.get("run_tag")):
+                        raise ExportError(
+                            "migrated collision owner result_root is not canonical"
+                        )
+                    if old_result_root != self._expected_tuning_result_root(
+                            attempt_job, attempt_job.get("run_tag")):
+                        raise ExportError(
+                            "legacy collision attempt result_root is not canonical"
+                        )
                 owner_attempt = owner.get("attempt")
                 if (isinstance(owner_attempt, bool)
                         or not isinstance(owner_attempt, int)
@@ -1802,11 +1878,12 @@ class BatchExporter:
                 if Path(owner.get("job_dir", "")).absolute() != (
                         owner_job_dir.absolute()):
                     raise ExportError("collision owner job_dir mismatch")
-                owner_stage_dir = owner_job_dir.parent.parent
                 expected_owner_stage_dir = (
                     method_root / "stages" / str(attempt_job.get("stage"))
                 ).absolute()
-                if owner_stage_dir.absolute() != expected_owner_stage_dir:
+                owner_stage_dir = expected_owner_stage_dir
+                if not path_is_within(
+                        owner_job_dir.absolute(), owner_stage_dir / "jobs"):
                     raise ExportError("collision owner stage path is not canonical")
                 owner_manifest_path = require_regular_file(
                     owner_stage_dir / "stage_manifest.json",
@@ -1992,6 +2069,14 @@ class BatchExporter:
         )
         expected_archived_command = list(current_command)
         expected_archived_command[current_tag_index + 1] = expected_run_tag
+        if "--result-root" in expected_archived_command:
+            result_index = expected_archived_command.index("--result-root")
+            if attempt_job.get("result_layout") == search.RESULT_LAYOUT:
+                expected_archived_command[result_index + 1] = (
+                    attempt_job.get("result_root")
+                )
+            elif attempt_job.get("result_layout") is None:
+                del expected_archived_command[result_index:result_index + 2]
         if archived_command != expected_archived_command:
             raise ExportError("archived attempt command is not canonical")
         related_result_root = self._replace_path_component(
@@ -2004,8 +2089,14 @@ class BatchExporter:
         if (Path(job.get("result_root", "")).absolute()
                 != self._expected_tuning_result_root(job, job.get("run_tag"))):
             raise ExportError("current retry result_root is not canonical")
-        if related_result_root.absolute() != expected_result_root:
-            raise ExportError("retry result_root lineage is not canonical")
+        current_layout = job.get("result_layout")
+        archived_layout = attempt_job.get("result_layout")
+        if current_layout == archived_layout:
+            if related_result_root.absolute() != expected_result_root:
+                raise ExportError("retry result_root lineage is not canonical")
+        elif not (current_layout == search.RESULT_LAYOUT
+                  and archived_layout is None):
+            raise ExportError("retry result layouts have invalid lineage")
         archived_result_root = Path(
             attempt_job.get("result_root", "")
         ).absolute()
@@ -2244,12 +2335,20 @@ class BatchExporter:
         if run_tag in self.seen_run_tags:
             raise ExportError("duplicate run_tag across campaign: {}".format(run_tag))
         self.seen_run_tags.add(run_tag)
+        jobs_root = self.method_roots[method] / "stages" / stage / "jobs"
+        try:
+            relative_job_dir = job_dir.relative_to(jobs_root)
+        except ValueError:
+            raise ExportError("job directory escapes the stage jobs root")
+        safe_relative = Path(*(
+            safe_component(part) for part in relative_job_dir.parts
+        ))
         export_job = (
             self.working_dir / "methods" / method / "stages" / stage / "jobs"
-            / safe_component(job_dir.name)
+            / safe_relative
         )
         source_prefix = "hparam_search/{}/{}/stages/{}/jobs/{}".format(
-            method, self.batch_id, stage, job_dir.name
+            method, self.batch_id, stage, relative_job_dir.as_posix()
         )
         self._copy_json(job_path, export_job / "job.json",
                         source_prefix + "/job.json")
@@ -2367,9 +2466,7 @@ class BatchExporter:
             raise ExportError("{} {} does not cover all eight settings".format(
                 method, stage
             ))
-        job_dirs = sorted(path.parent for path in (stage_dir / "jobs").glob(
-            "*/job.json"
-        ))
+        job_dirs = [path.parent for path in stage_job_paths(stage_dir)]
         for job_dir in job_dirs:
             reject_symlink(job_dir, "job directory", stop=stage_dir)
         if int(manifest.get("job_count", -1)) != len(job_dirs):

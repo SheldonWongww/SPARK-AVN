@@ -10,6 +10,26 @@ Raw consoles, job directories, checkpoints, and scheduler state belong below
 `vln/results/logs/` and are ignored by Git.  Only compact summaries with full
 run-manifest provenance may be added to tracked result files.
 
+New campaigns use the same method/batch/job organization as the AVN search
+logs.  Administrative evidence and raw model outputs are separated:
+
+```text
+vln/results/logs/hparam_search/<method>/<batch>/
+  batch.json
+  stages/<stage>/
+    stage_manifest.json  grid.csv  metrics.csv  SUMMARY.json
+    jobs/<setting>/<run-tag>/
+
+vln/results/tuning/<method>/<batch>/<stage>/<setting>/<run-tag>/val_seen/
+```
+
+`batch.json` identifies the method, split, seed, Git commit, search-spec hash,
+and result-layout version.  The run tag remains globally unique, while the
+directory hierarchy makes the method, stage, and model/benchmark visible
+without decoding the tag.  Migrated legacy controls shared by two searches
+live under `vln/results/tuning/_shared/`; their migration ledger is stored in
+`vln/results/tuning/_migrations/`.
+
 The scheduler's default complete workflow ends after the five full canonical
 `val_seen` finalists per setting and freezes the best configuration.  This
 keeps the current hyperparameter search independent of the later robustness
@@ -47,10 +67,9 @@ after smoke measurements justify doing so.  A failed attempt is never erased:
 manifest before assigning a new run tag.
 
 Newly planned run tags include the search method, so every method owns a
-distinct global tuning-result root even for the identical argmax Source jobs in
-`controls` and `final_controls`.  Resuming or exporting a persisted campaign
-keeps its recorded tag and result-root identities unchanged; retries always add
-`-retryN` to that recorded base tag.
+distinct tuning-result hierarchy even for identical argmax Source jobs in
+`controls` and `final_controls`.  Retries always add `-retryN` to the recorded
+base tag and remain under the same method/batch/stage/setting hierarchy.
 
 `tta_adapter_parity_audit_v1.json` is a separate, post-search evidence
 protocol. It consumes (but cannot modify or promote) the five frozen winner

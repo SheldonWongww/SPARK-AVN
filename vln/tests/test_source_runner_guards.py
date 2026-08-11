@@ -189,6 +189,20 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertNotIn('CE_EPISODE_COUNT="${SMOKE_EPISODES}"', source)
         self.assertIn('export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"', source)
 
+    def test_tuning_result_root_override_is_narrow_and_path_bound(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn("--result-root DIR", source)
+        self.assertIn(
+            "--result-root is reserved for TTA search jobs", source
+        )
+        self.assertIn(
+            "--result-root must stay inside vln/results/tuning", source
+        )
+        self.assertIn(
+            "--result-root must end with RUN_TAG/SPLIT", source
+        )
+
     def test_adapter_parity_namespace_requires_its_dedicated_runner_flag(self):
         source = RUNNER.read_text(encoding="utf-8")
 
