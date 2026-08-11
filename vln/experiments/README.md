@@ -46,6 +46,12 @@ after smoke measurements justify doing so.  A failed attempt is never erased:
 `--resume --retry-failed` archives its console, result root, and any formal run
 manifest before assigning a new run tag.
 
+Newly planned run tags include the search method, so every method owns a
+distinct global tuning-result root even for the identical argmax Source jobs in
+`controls` and `final_controls`.  Resuming or exporting a persisted campaign
+keeps its recorded tag and result-root identities unchanged; retries always add
+`-retryN` to that recorded base tag.
+
 `tta_adapter_parity_audit_v1.json` is a separate, post-search evidence
 protocol. It consumes (but cannot modify or promote) the five frozen winner
 files and fixes a 56-job canonical-prefix plan: 40 zero-write adapters, eight

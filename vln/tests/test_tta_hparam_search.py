@@ -250,6 +250,49 @@ class TTAHparamSearchTest(unittest.TestCase):
             job["parameters"]["action_selection"] == "sample" for job in jobs
         ))
 
+    def test_argmax_source_control_tags_are_unique_across_search_methods(self):
+        methods = ("tent", "fstta", "eam", "atena")
+        setting = "duet-r2r"
+        for stage in ("controls", "final_controls"):
+            with self.subTest(stage=stage), \
+                    tempfile.TemporaryDirectory() as directory:
+                jobs = []
+                for method in methods:
+                    candidates = MODULE._source_candidates(
+                        method, [setting], self.spec
+                    )
+                    jobs.extend(MODULE.build_jobs(
+                        args(
+                            method=method,
+                            settings=[setting],
+                            stage=stage,
+                            batch_id="shared-batch",
+                            episodes=None,
+                        ),
+                        self.spec,
+                        Path(directory) / method / stage,
+                        stage=stage,
+                        candidates_by_setting=candidates,
+                    ))
+
+                self.assertEqual(
+                    {job["config_method"] for job in jobs}, {"source"}
+                )
+                self.assertEqual(
+                    {MODULE._canonical(job["parameters"]) for job in jobs},
+                    {MODULE._canonical({
+                        "action_selection": "argmax", "action_seed": 0,
+                    })},
+                )
+                self.assertEqual(len({job["run_tag"] for job in jobs}), 4)
+                self.assertEqual(len({job["result_root"] for job in jobs}), 4)
+                for method, job in zip(methods, jobs):
+                    self.assertTrue(job["run_tag"].startswith(
+                        "shared-batch-{}-{}-0000-{}-".format(
+                            method, stage, setting
+                        )
+                    ))
+
     def test_promotion_enforces_source_floor_and_keeps_anchor(self):
         setting = "duet-r2r"
         anchor = MODULE.clean_parameters(
@@ -504,6 +547,48 @@ class TTAHparamSearchTest(unittest.TestCase):
             attempt = job_dir / "attempts" / "attempt-00"
             self.assertTrue((attempt / "console.log").is_file())
             self.assertTrue((attempt / "exitcode").is_file())
+
+    def test_namespaced_control_retries_keep_one_canonical_base(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(MODULE, "REPO_ROOT", root):
+                candidates = MODULE._source_candidates(
+                    "fstta", ["duet-r2r"], self.spec
+                )
+                job = MODULE.build_jobs(
+                    args(
+                        method="fstta",
+                        settings=["duet-r2r"],
+                        stage="controls",
+                        batch_id="shared-batch",
+                        episodes=None,
+                    ),
+                    self.spec,
+                    root / "stage",
+                    stage="controls",
+                    candidates_by_setting=candidates,
+                )[0]
+                MODULE._write_job(job)
+                base_run_tag = job["base_run_tag"]
+                self.assertIn("-fstta-controls-", base_run_tag)
+
+                MODULE._bump_attempt(job)
+                self.assertEqual(job["base_run_tag"], base_run_tag)
+                self.assertEqual(job["run_tag"], base_run_tag + "-retry1")
+                self.assertEqual(
+                    Path(job["result_root"]),
+                    root / "vln/results/tuning" / job["run_tag"]
+                    / "duet-r2r/val_seen",
+                )
+                self.assertEqual(
+                    job["command"][job["command"].index("--run-tag") + 1],
+                    job["run_tag"],
+                )
+
+                MODULE._bump_attempt(job)
+                self.assertEqual(job["base_run_tag"], base_run_tag)
+                self.assertEqual(job["run_tag"], base_run_tag + "-retry2")
+                self.assertNotIn("-retry1-retry2", job["run_tag"])
 
     def test_parse_metrics_rejects_incomplete_episode_stream(self):
         with tempfile.TemporaryDirectory() as directory:

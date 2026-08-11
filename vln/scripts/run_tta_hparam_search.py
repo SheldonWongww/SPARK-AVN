@@ -1028,8 +1028,12 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
                 "order_seed": candidate.get("order_seed"),
             }
             digest = point_tag(config_identity)
-            base_run_tag = "{}-{}-{:04d}-{}-{}".format(
-                args.batch_id, stage, ordinal, setting, digest
+            # Tuning outputs share one global result namespace.  Keep the
+            # search method in every newly planned tag even when the executed
+            # config is method-independent Source; persisted plans retain
+            # their recorded legacy tags when resumed.
+            base_run_tag = "{}-{}-{}-{:04d}-{}-{}".format(
+                args.batch_id, args.method, stage, ordinal, setting, digest
             )
             job_dir = Path(stage_dir) / "jobs" / (
                 "{:04d}-{}-{}".format(ordinal, setting, digest)
