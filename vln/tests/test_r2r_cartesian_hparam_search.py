@@ -144,6 +144,16 @@ class R2RCartesianSearchTest(unittest.TestCase):
                 "source", "resume-test", self.spec, gpu=0, resume=True
             )
             self.assertEqual(len(resumed), 3)
+            config_path = Path(resumed[0]["config_path"])
+            original_config = config_path.read_text(encoding="utf-8")
+            config = json.loads(original_config)
+            config["parameters"]["action_selection"] = "sample"
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.UserError, "runtime config mismatch"):
+                MODULE.ensure_plan(
+                    "source", "resume-test", self.spec, gpu=0, resume=True
+                )
+            config_path.write_text(original_config, encoding="utf-8")
             manifest_path = method_root / "GRID.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["spec_sha256"] = "0" * 64
@@ -152,6 +162,30 @@ class R2RCartesianSearchTest(unittest.TestCase):
                 MODULE.ensure_plan(
                     "source", "resume-test", self.spec, gpu=0, resume=True
                 )
+
+    def test_retry_plan_revalidates_current_command_config_and_layout(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(mock.patch.object(MODULE, "LOG_ROOT", root / "logs"))
+            stack.enter_context(mock.patch.object(MODULE, "TUNING_ROOT", root / "tuning"))
+            _, jobs = MODULE.ensure_plan(
+                "tent", "retry-plan", self.spec, gpu=2, resume=False
+            )
+            job = jobs[0]
+            job_dir = Path(job["job_dir"])
+            Path(job["result_root"]).mkdir(parents=True)
+            (job_dir / "console.log").write_text("failed", encoding="utf-8")
+            (job_dir / "exitcode").write_text("1\n", encoding="utf-8")
+            MODULE.staged._bump_attempt(job)
+            _, resumed = MODULE.ensure_plan(
+                "tent", "retry-plan", self.spec, gpu=2, resume=True
+            )
+            self.assertEqual(resumed[0]["attempt"], 1)
+            self.assertTrue(resumed[0]["run_tag"].endswith("-retry1"))
+            self.assertEqual(
+                json.loads(Path(resumed[0]["config_path"]).read_text()),
+                MODULE.staged._job_config(resumed[0]),
+            )
 
     def test_retry_preserves_cartesian_result_layout(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -221,7 +221,7 @@ Run the long campaign in one detached GNU screen session on the AutoDL host:
 ```bash
 cd /root/autodl-tmp/code/NavTTA
 BATCH="vln-r2r-modelwise-cartesian-v2-seed0"
-SESSION="navtta-r2r-cartesian-${BATCH}"
+SESSION="navtta-r2r-v2"
 LAUNCH_DIR="/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/hparam_search/${BATCH}/_launcher"
 
 mkdir -p "$LAUNCH_DIR"
@@ -260,7 +260,7 @@ interrupted batch in a new detached session with the identical batch ID, Git
 commit, and spec:
 
 ```bash
-RESUME_SESSION="${SESSION}-resume-$(date -u +%Y%m%dT%H%M%SZ)"
+RESUME_SESSION="navtta-r2r-v2-r-$(date -u +%Y%m%dT%H%M%SZ)"
 screen -dmS "$RESUME_SESSION" env BATCH="$BATCH" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
   cd /root/autodl-tmp/code/NavTTA || exit 97
   export PYTHONUNBUFFERED=1

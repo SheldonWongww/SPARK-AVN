@@ -258,7 +258,7 @@ def build_jobs(method, batch_id, spec, gpu=0):
     return jobs
 
 
-def plan_manifest(method, batch_id, jobs, spec):
+def plan_manifest(method, batch_id, jobs, spec, gpu):
     return {
         "schema": "navtta.vln_r2r_cartesian_plan.v1",
         "experiment_id": spec["experiment_id"],
@@ -271,6 +271,7 @@ def plan_manifest(method, batch_id, jobs, spec):
         "settings": list(SETTINGS),
         "candidate_count_per_setting": len(jobs) // len(SETTINGS),
         "job_count": len(jobs),
+        "gpu": gpu,
         "git_commit": git("rev-parse", "HEAD"),
         "spec_path": spec["_path"],
         "spec_sha256": spec["_sha256"],
@@ -279,16 +280,16 @@ def plan_manifest(method, batch_id, jobs, spec):
     }
 
 
-def validate_persisted_jobs(method, batch_id, jobs, spec):
-    expected = build_jobs(method, batch_id, spec, gpu=0)
+def validate_persisted_jobs(method, batch_id, jobs, spec, gpu):
+    expected = build_jobs(method, batch_id, spec, gpu=gpu)
     if len(jobs) != len(expected):
         raise UserError(f"persisted {method} job count mismatch")
     for actual, planned in zip(jobs, expected):
         for key in (
             "batch_id", "ordinal", "point_index", "base_run_tag", "setting",
-            "model", "benchmark", "search_method", "config_method", "stage",
-            "config_stage", "episodes", "parameters", "result_layout",
-            "result_namespace",
+            "model", "family", "benchmark", "search_method", "config_method",
+            "stage", "config_stage", "episodes", "order_seed", "parameters",
+            "parent_run_tags", "result_layout", "result_namespace",
         ):
             if actual.get(key) != planned.get(key):
                 raise UserError(
@@ -296,10 +297,50 @@ def validate_persisted_jobs(method, batch_id, jobs, spec):
                 )
         if Path(actual.get("job_dir", "")) != Path(planned["job_dir"]):
             raise UserError("persisted Cartesian job_dir mismatch")
+        if Path(actual.get("config_path", "")) != Path(planned["config_path"]):
+            raise UserError("persisted Cartesian config_path mismatch")
         if Path(actual.get("retry_result_root_parent", "")) != Path(
             planned["retry_result_root_parent"]
         ):
             raise UserError("persisted Cartesian retry root mismatch")
+        attempt = actual.get("attempt")
+        if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 0:
+            raise UserError("persisted Cartesian attempt is invalid")
+        expected_run_tag = planned["base_run_tag"]
+        if attempt:
+            expected_run_tag += f"-retry{attempt}"
+        if actual.get("run_tag") != expected_run_tag:
+            raise UserError("persisted Cartesian retry run_tag mismatch")
+        expected_result_root = (
+            Path(planned["result_root"])
+            if attempt == 0 else
+            Path(planned["retry_result_root_parent"]) / expected_run_tag / "val_seen"
+        )
+        if Path(actual.get("result_root", "")) != expected_result_root:
+            raise UserError("persisted Cartesian current result_root mismatch")
+        expected_command = list(planned["command"])
+        expected_command[expected_command.index("--run-tag") + 1] = expected_run_tag
+        expected_command[expected_command.index("--result-root") + 1] = str(
+            expected_result_root
+        )
+        if actual.get("command") != expected_command:
+            raise UserError("persisted Cartesian command mismatch")
+        try:
+            runtime_config = json.loads(
+                Path(actual["config_path"]).read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise UserError(
+                f"invalid persisted Cartesian runtime config: {error}"
+            ) from error
+        if runtime_config != staged._job_config(actual):
+            raise UserError("persisted Cartesian runtime config mismatch")
+        for prior_attempt in range(attempt):
+            archived = Path(actual["job_dir"]) / "attempts" / (
+                f"attempt-{prior_attempt:02d}"
+            ) / "job.json"
+            if not archived.is_file():
+                raise UserError("persisted Cartesian retry archive mismatch")
 
 
 def ensure_plan(method, batch_id, spec, gpu, resume):
@@ -311,9 +352,19 @@ def ensure_plan(method, batch_id, spec, gpu, resume):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         expected_checks = {
             "schema": "navtta.vln_r2r_cartesian_plan.v1",
+            "experiment_id": spec["experiment_id"],
             "batch_id": batch_id,
             "method": method,
+            "benchmark": "r2r",
+            "split": "val_seen",
+            "episode_count": 1021,
+            "order_seed": 0,
+            "settings": list(SETTINGS),
+            "job_count": len(build_jobs(method, batch_id, spec, gpu=gpu)),
+            "candidate_count_per_setting": len(method_parameters(method, spec)),
+            "gpu": gpu,
             "git_commit": git("rev-parse", "HEAD"),
+            "spec_path": spec["_path"],
             "spec_sha256": spec["_sha256"],
             "result_layout": RESULT_LAYOUT,
         }
@@ -321,14 +372,16 @@ def ensure_plan(method, batch_id, spec, gpu, resume):
             if manifest.get(key) != value:
                 raise UserError(f"persisted {method} GRID.json mismatch for {key}")
         jobs = staged.load_jobs(root)
-        validate_persisted_jobs(method, batch_id, jobs, spec)
+        validate_persisted_jobs(method, batch_id, jobs, spec, gpu)
         return root, jobs
     if root.exists() and any(root.iterdir()):
         raise UserError(f"nonempty Cartesian method root without GRID.json: {root}")
     root.mkdir(parents=True, exist_ok=True)
     jobs = build_jobs(method, batch_id, spec, gpu=gpu)
     staged.write_plan(root, jobs)
-    staged.atomic_json(manifest_path, plan_manifest(method, batch_id, jobs, spec))
+    staged.atomic_json(
+        manifest_path, plan_manifest(method, batch_id, jobs, spec, gpu)
+    )
     return root, jobs
 
 
@@ -608,8 +661,8 @@ def main(argv=None):
         show_status(cli.batch_id, watch=cli.watch)
         return
     spec = load_spec(cli.spec)
-    if git("status", "--porcelain", "--untracked-files=no") and not cli.plan_only:
-        raise UserError("tracked worktree must be clean before launch")
+    if git("status", "--porcelain", "--untracked-files=no"):
+        raise UserError("tracked worktree must be clean before planning or launch")
     methods = METHOD_SEQUENCE if cli.method == "all" else (cli.method,)
     failures = []
     for method in methods:

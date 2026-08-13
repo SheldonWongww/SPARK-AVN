@@ -71,7 +71,9 @@ python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID 
 that order.  Resume revalidates the immutable plans, completed metrics, commit,
 and spec digest.  `--retry-failed` is only valid with `--resume` and archives
 the previous attempt before assigning a `-retryN` run tag.  See `vln/README.md`
-for detached GNU screen launch and recovery commands.
+for detached GNU screen launch and recovery commands. Planning and execution
+both require a clean tracked worktree. `--watch` exits automatically only after
+all 2,379 jobs succeed; use one-shot `--status` when investigating failures.
 
 ## Legacy staged multi-benchmark search
 

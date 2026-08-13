@@ -1156,9 +1156,8 @@ def build_jobs(args, spec, stage_dir, stage=None, candidates_by_setting=None):
     return jobs
 
 
-def _write_job(job):
+def _job_config(job):
     job_dir = Path(job["job_dir"])
-    job_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "schema": "navtta.vln_tta_job.v1",
         "method": job["config_method"],
@@ -1179,6 +1178,13 @@ def _write_job(job):
         })
     if job["order_seed"] is not None:
         config["order_seed"] = job["order_seed"]
+    return config
+
+
+def _write_job(job):
+    job_dir = Path(job["job_dir"])
+    job_dir.mkdir(parents=True, exist_ok=True)
+    config = _job_config(job)
     atomic_json(job["config_path"], config)
     atomic_json(job_dir / "job.json", job)
 
