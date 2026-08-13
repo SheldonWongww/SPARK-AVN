@@ -1,5 +1,80 @@
 # VLN experiment specifications
 
+## R2R model-wise direct Cartesian full-val search
+
+`r2r_modelwise_cartesian_hparam_v2.json` is the immutable design input for the
+active DUET/HAMT/GOAT R2R search.  It is intentionally separate from the older
+staged search described below.  Every declared Cartesian point is evaluated
+directly on the complete 1,021-episode canonical-order R2R `val_seen` stream at
+order seed 0.  There is no smoke run, 256-episode screening prefix, staged
+promotion, or cross-model winner.  Each model/method pair freezes its own
+winner by SR first, SPL second, then lower parameter drift and fewer updates.
+
+The exact grid sizes are:
+
+| Method | Candidates per setting | Three-setting TTA jobs |
+|---|---:|---:|
+| Tent | 40 | 120 |
+| FSTTA | 81 | 243 |
+| EAM | 320 | 960 |
+| FeedTTA | 250 | 750 |
+| ATENA | 100 | 300 |
+| **Total TTA** | **791** | **2,373** |
+
+The campaign also runs one standard argmax Source job and one sampled-Source
+FeedTTA diagnostic job for each of the three settings.  These six controls make
+the complete campaign exactly **2,379 jobs**.  All winner deltas use the three
+standard argmax Source jobs; the sampled controls are diagnostic evidence only
+and never replace the formal Source baseline.
+
+Administrative evidence and raw model outputs both use a benchmark-first
+layout and contain no `stages/` directory:
+
+```text
+vln/results/logs/r2r/hparam_search/<batch>/<method>/
+  GRID.json  grid.csv  metrics.csv  SUMMARY.json  progress.json
+  jobs/<setting>/<run-tag>/
+  WINNER.json  TOP5.csv                 # TTA methods after completion
+
+vln/results/logs/r2r/hparam_search/<batch>/
+  WINNERS.json  FROZEN_HPARAMETERS.json  TOP5.csv
+
+vln/results/tuning/r2r/hparam_search/<batch>/<model>/<method>/jobs/
+  <run-tag>/val_seen/
+```
+
+`GRID.json` pins the top-level Git commit, search-spec digest, exact job count,
+settings, canonical order seed, and result-layout version.  Jobs are ordered
+round-robin across `duet-r2r`, `hamt-r2r`, and `goat-r2r`.  Full-val commands
+deliberately omit both `--episode-limit` and `--order-seed`; `episodes=-1` in
+job metadata means the complete canonical seed-0 stream, not a prefix.
+
+The checked-in scheduler caps reflect the observed 32GB vGPU envelope:
+Source/control `3/1`, Tent `5/2`, FSTTA `8/3`, EAM `6/2`, FeedTTA `5/2`, and
+ATENA `4/1` for `max_workers/max_per_model`. Launches are staggered by 15
+seconds and pause above 25,000 MiB GPU memory or 75 GiB cgroup memory. These
+are launch guards rather than claimed resource requirements; `resource.csv`
+records actual campaign usage.
+
+The foreground lifecycle is:
+
+```text
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --gpu 0 --plan-only
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --gpu 0 --resume
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --status
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --watch
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --resume --gpu 0
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all --batch-id SEARCH_ID --resume --retry-failed --gpu 0
+```
+
+`all` runs `source`, `feedtta_control`, Tent, FSTTA, EAM, FeedTTA, and ATENA in
+that order.  Resume revalidates the immutable plans, completed metrics, commit,
+and spec digest.  `--retry-failed` is only valid with `--resume` and archives
+the previous attempt before assigning a `-retryN` run tag.  See `vln/README.md`
+for detached GNU screen launch and recovery commands.
+
+## Legacy staged multi-benchmark search
+
 `tta_hparam_search_v1.json` is the immutable design input for the five-model,
 five-method `val_seen` hyperparameter search.  Search jobs use canonical order
 seed 0.  After each setting freezes one configuration, that configuration is

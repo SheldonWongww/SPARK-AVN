@@ -1163,10 +1163,12 @@ def _write_job(job):
         "schema": "navtta.vln_tta_job.v1",
         "method": job["config_method"],
         "search_method": job["search_method"],
-        "stage": job["stage"],
         "episodes": job["episodes"],
         "parameters": job["parameters"],
     }
+    config_stage = job.get("config_stage", job["stage"])
+    if config_stage is not None:
+        config["stage"] = config_stage
     if job.get("result_layout") is not None:
         config.update({
             "batch_id": job.get("batch_id"),
@@ -1503,6 +1505,9 @@ def _bump_attempt(job):
             job["setting"], job["run_tag"],
             result_namespace=job.get("result_namespace"),
         ))
+    elif job.get("retry_result_root_parent"):
+        parent = Path(job["retry_result_root_parent"])
+        job["result_root"] = str(parent / job["run_tag"] / "val_seen")
     else:
         job["result_root"] = str(
             TUNING_ROOT / job["run_tag"] / job["setting"] / "val_seen"
@@ -1560,19 +1565,23 @@ def run_batch(args, stage_dir, jobs, spec):
     max_discrete_workers = 1 if stage == "smoke" else args.max_discrete_workers
     max_continuous_workers = 1 if stage == "smoke" else args.max_continuous_workers
     if args.retry_failed:
-        ordered = workflow_stages(args.method, include_orders=True)
-        stage_index = ordered.index(stage)
-        downstream = Path(stage_dir).parent
-        existing_downstream = [
-            name for name in ordered[stage_index + 1:]
-            if (downstream / name / "stage_manifest.json").is_file()
-        ]
-        if existing_downstream:
-            raise UserError(
-                "cannot retry {} after downstream plans exist: {}".format(
-                    stage, ", ".join(existing_downstream)
+        ordered = (
+            workflow_stages(args.method, include_orders=True)
+            if args.method in METHODS else ()
+        )
+        if stage in ordered:
+            stage_index = ordered.index(stage)
+            downstream = Path(stage_dir).parent
+            existing_downstream = [
+                name for name in ordered[stage_index + 1:]
+                if (downstream / name / "stage_manifest.json").is_file()
+            ]
+            if existing_downstream:
+                raise UserError(
+                    "cannot retry {} after downstream plans exist: {}".format(
+                        stage, ", ".join(existing_downstream)
+                    )
                 )
-            )
     running = {}
     pending = []
     terminal_failure = False

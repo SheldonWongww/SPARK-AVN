@@ -186,6 +186,105 @@ Source baselines, but cannot be relabelled as canonical-order or TTA reruns.
 Any new formal result must also have a run manifest tied to the top-level Git
 commit, exact configuration, asset digests, seed, and hardware.
 
+## R2R model-wise Cartesian full-val search
+
+The active R2R-only search is defined by
+`experiments/r2r_modelwise_cartesian_hparam_v2.json` and executed by
+`scripts/run_r2r_cartesian_hparam_search.py`.  It covers DUET-R2R, HAMT-R2R,
+and GOAT-R2R with Tent, FSTTA, EAM, FeedTTA, and ATENA.  Unlike the legacy
+multi-benchmark scheduler, it runs every Cartesian point directly over all
+1,021 canonical-order `val_seen` episodes: there is no smoke job, prefix,
+screening stage, or promotion stage.  Winners are model-specific and selected
+by SR, SPL, lower parameter drift, then fewer updates.
+
+The five grids contain 40, 81, 320, 250, and 100 candidates per setting,
+respectively.  Across three settings this is 2,373 TTA jobs.  Three standard
+argmax Source jobs and three sampled-Source FeedTTA diagnostic controls bring
+the exact campaign total to **2,379 jobs**.  Every reported delta and frozen
+winner uses standard argmax Source; sampled Source is diagnostic only.
+
+Results are benchmark-first:
+
+```text
+vln/results/logs/r2r/hparam_search/<batch>/<method>/
+vln/results/tuning/r2r/hparam_search/<batch>/<model>/<method>/jobs/<run-tag>/val_seen/
+```
+
+The batch-level `WINNERS.json`, `FROZEN_HPARAMETERS.json`, and `TOP5.csv` are
+written under `vln/results/logs/r2r/hparam_search/<batch>/` only after all five
+TTA methods have complete validated evidence.  Per-method plans and progress
+remain in the method subdirectories.  A formal launch requires a clean tracked
+worktree.
+
+Run the long campaign in one detached GNU screen session on the AutoDL host:
+
+```bash
+cd /root/autodl-tmp/code/NavTTA
+BATCH="vln-r2r-modelwise-cartesian-v2-seed0"
+SESSION="navtta-r2r-cartesian-${BATCH}"
+LAUNCH_DIR="/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/hparam_search/${BATCH}/_launcher"
+
+mkdir -p "$LAUNCH_DIR"
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
+  --batch-id "$BATCH" --gpu 0 --plan-only
+
+screen -dmS "$SESSION" env BATCH="$BATCH" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
+  cd /root/autodl-tmp/code/NavTTA || exit 97
+  export PYTHONUNBUFFERED=1
+  python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
+    --batch-id "$BATCH" --gpu 0 --resume \
+    >>"$LAUNCH_DIR/console.log" 2>&1 &
+  pid=$!
+  printf "%s\n" "$pid" >"$LAUNCH_DIR/scheduler.pid"
+  wait "$pid"
+  rc=$?
+  printf "%s\n" "$rc" >"$LAUNCH_DIR/exitcode"
+  exit "$rc"
+'
+```
+
+Observe the screen session and the runner's durable batch status independently:
+
+```bash
+screen -ls
+tail -f "$LAUNCH_DIR/console.log"
+screen -r "$SESSION"                       # detach again with Ctrl-a d
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
+  --batch-id "$BATCH" --status
+python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
+  --batch-id "$BATCH" --watch
+```
+
+After confirming that no original scheduler screen is still running, resume an
+interrupted batch in a new detached session with the identical batch ID, Git
+commit, and spec:
+
+```bash
+RESUME_SESSION="${SESSION}-resume-$(date -u +%Y%m%dT%H%M%SZ)"
+screen -dmS "$RESUME_SESSION" env BATCH="$BATCH" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
+  cd /root/autodl-tmp/code/NavTTA || exit 97
+  export PYTHONUNBUFFERED=1
+  python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
+    --batch-id "$BATCH" --gpu 0 --resume \
+    >>"$LAUNCH_DIR/console.log" 2>&1 &
+  pid=$!
+  printf "%s\n" "$pid" >"$LAUNCH_DIR/scheduler.pid"
+  wait "$pid"
+  rc=$?
+  printf "%s\n" "$rc" >"$LAUNCH_DIR/exitcode"
+  exit "$rc"
+'
+```
+
+Ordinary `--resume` retains completed jobs and reconnects to live worker PIDs.
+If persisted attempts have failed or invalid evidence, use the same command
+with `--resume --retry-failed`; retries archive the old console, result tree,
+worker state, and formal manifest before receiving a new run tag.  Never run
+two schedulers for the same batch concurrently. To stop safely, first verify
+the recorded command with `ps -fp "$(cat "$LAUNCH_DIR/scheduler.pid")"`, then
+send `kill -TERM "$(cat "$LAUNCH_DIR/scheduler.pid")"`; do not kill the screen
+session directly while workers are active.
+
 ## Post-search zero-update adapter parity audit
 
 After all five methods have immutable `FROZEN_HPARAMETERS.json` files, run the
