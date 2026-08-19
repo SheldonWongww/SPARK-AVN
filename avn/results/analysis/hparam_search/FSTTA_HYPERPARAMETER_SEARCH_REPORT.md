@@ -2,6 +2,8 @@
 
 更新日期：2026-08-02
 
+归档：`avn/results/analysis/hparam_search/`；本文件为可提交 Git 的紧凑分析，原始日志仍保留在本地。
+
 状态：探索性超参数开发报告。SMT+Audio 的 240 组核心网格和 92 组机制探索、
 ENMuS 的 48 组模型级强度网格以及 ENMuS multi-source 冻结配置复验均已完成。
 ENMuS 网格 48/48、multi-source 复验 1/1 均保持 clean commit 并通过校验；
@@ -490,7 +492,8 @@ q 和 LR scaler 的主要问题。此时继续在同一开发流上扩展超参�
   `avn/results/logs/fstta_exploration/fstta-exploration-all-v1-seed0/jobs/<run_tag>/console.log`
 - Source 对照：
   `avn/results/logs/source_reval/source-reval-v1-seed0/metrics.csv`
-- Tent 对照与前序稳定性分析：`TENT_HYPERPARAMETER_SEARCH_REPORT.md`
+- Tent 对照与前序稳定性分析：
+  `avn/results/analysis/hparam_search/TENT_HYPERPARAMETER_SEARCH_REPORT.md`
 - ENMuS 模型级网格：
   `avn/results/logs/fstta_enmus_grid/fstta-enmus-grid-avn-val-rerun-v2-seed0/`
 - ENMuS multi-source 冻结复验定义：`avn/experiments/fstta_enmus_multi.yaml`

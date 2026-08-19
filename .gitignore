@@ -62,6 +62,11 @@ venv/
 **/results/**/*.ckpt
 **/results/**/events.out.tfevents*
 
+# Curated AVN Markdown analyses stay versioned even though their source logs
+# remain local under ignored results/logs directories.
+!/avn/results/analysis/
+!/avn/results/analysis/**/*.md
+
 # Archives and temporary files
 *.zip
 *.tar

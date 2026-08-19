@@ -2,6 +2,8 @@
 
 更新日期：2026-08-04
 
+归档：`avn/results/analysis/hparam_search/`；本文件为可提交 Git 的紧凑分析，原始日志仍保留在本地。
+
 状态：已完成 42 次 single-source 超参数开发运行，并将两个模型各自
 冻结的配置直接迁移到 multi-source，新增 2 次完整主表复验。
 44/44 次导航运行均完成并通过各自 launcher 校验。EAM 四个场景

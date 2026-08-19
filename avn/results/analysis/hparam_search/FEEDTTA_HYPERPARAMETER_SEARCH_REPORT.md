@@ -2,6 +2,8 @@
 
 更新日期：2026-08-04
 
+归档：`avn/results/analysis/hparam_search/`；本文件为可提交 Git 的紧凑分析，原始日志仍保留在本地。
+
 状态：SMT+Audio 的 24/24 组 Stage 1 实验完成且通过逐任务校验。
 ENMuS 的 24/24 组都完成 2000 episodes，导航进程返回码为 0，
 也产生了完整最终指标；但 launcher 在运行后因

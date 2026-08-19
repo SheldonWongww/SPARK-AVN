@@ -2,6 +2,8 @@
 
 更新日期：2026-07-26
 
+归档：`avn/results/analysis/hparam_search/`；本文件为可提交 Git 的紧凑分析，原始日志仍保留在本地。
+
 状态：探索性超参数开发报告。Source 已按当前 TTA 协议重评估，但导入权重的
 训练 provenance 和部分 run manifest 仍不完整，因此当前不进入正式结果表。
 
