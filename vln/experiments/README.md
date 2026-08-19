@@ -75,6 +75,59 @@ for detached GNU screen launch and recovery commands. Planning and execution
 both require a clean tracked worktree. `--watch` exits automatically only after
 all 2,379 jobs succeed; use one-shot `--status` when investigating failures.
 
+## R2R FeedTTA low-learning-rate refinement
+
+`r2r_feedtta_low_lr_refinement_v1.json` is a separate follow-up to the completed
+250-point-per-model FeedTTA grid. It does not modify or resume the parent batch.
+The refinement keeps only the lower learning-rate boundary and the SGR profiles
+that were either a parent winner or the no-SGR control:
+
+```text
+LR          = [1e-7, 3e-7, 1e-6]
+gamma       = [0.5, 0.8, 1.0]
+SGR profile = [no_sgr, p005_a005, p010_a010, p010_a020]
+```
+
+This is 36 candidates per model and 108 FeedTTA jobs across DUET, HAMT, and
+GOAT. The `1e-6` level overlaps the parent grid so that cross-batch drift can be
+distinguished from a genuine lower-LR effect. Three standard argmax Source jobs
+and three sampled no-update controls make the executable refinement 114 jobs.
+The lower rates test stability; they are not assumed to recover the performance
+gap caused by FeedTTA's required sampled-action protocol.
+
+Use the independent batch ID below, only after any active ATENA scheduler has
+released the GPU:
+
+```bash
+cd /root/autodl-tmp/code/NavTTA
+SPEC=vln/experiments/r2r_feedtta_low_lr_refinement_v1.json
+BATCH=vln-r2r-feedtta-low-lr-refinement-v1-seed0
+LAUNCH_DIR="$PWD/vln/results/logs/r2r/hparam_search/$BATCH/_launcher"
+
+mkdir -p "$LAUNCH_DIR"
+for METHOD in source feedtta_control feedtta; do
+  /root/miniconda3/bin/python3 \
+    vln/scripts/run_r2r_cartesian_hparam_search.py "$METHOD" \
+    --spec "$SPEC" --batch-id "$BATCH" --gpu 0 --plan-only
+done
+
+screen -dmS navtta-feedtta-low-lr-v1 \
+  env BATCH="$BATCH" SPEC="$SPEC" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
+    cd /root/autodl-tmp/code/NavTTA || exit 97
+    export PYTHONUNBUFFERED=1
+    for METHOD in source feedtta_control feedtta; do
+      /root/miniconda3/bin/python3 \
+        vln/scripts/run_r2r_cartesian_hparam_search.py "$METHOD" \
+        --spec "$SPEC" --batch-id "$BATCH" --gpu 0 --resume --fail-fast \
+        >>"$LAUNCH_DIR/console.log" 2>&1 || exit $?
+    done
+  '
+```
+
+The generic campaign `--status` total is tied to the complete v2 campaign.
+Judge this focused batch by `source`, `feedtta_control`, and `feedtta`
+`progress.json`, followed by FeedTTA `SUMMARY.json` and `WINNER.json`.
+
 ## Legacy staged multi-benchmark search
 
 `tta_hparam_search_v1.json` is the immutable design input for the five-model,

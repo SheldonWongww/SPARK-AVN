@@ -9,6 +9,9 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "vln/scripts/run_r2r_cartesian_hparam_search.py"
+LOW_LR_SPEC = (
+    REPO_ROOT / "vln/experiments/r2r_feedtta_low_lr_refinement_v1.json"
+)
 MODULE_SPEC = importlib.util.spec_from_file_location("r2r_cartesian", SCRIPT)
 MODULE = importlib.util.module_from_spec(MODULE_SPEC)
 MODULE_SPEC.loader.exec_module(MODULE)
@@ -51,6 +54,48 @@ class R2RCartesianSearchTest(unittest.TestCase):
             ),
             2373,
         )
+
+    def test_feedtta_low_lr_refinement_is_focused_and_anchored(self):
+        refinement = MODULE.load_spec(LOW_LR_SPEC)
+        points = MODULE.expand_parameters("feedtta", refinement)
+
+        self.assertEqual(
+            refinement["experiment_id"],
+            "vln-r2r-feedtta-low-lr-refinement-v1",
+        )
+        self.assertEqual(len(points), 36)
+        self.assertEqual(
+            sorted({point["lr"] for point in points}),
+            [1e-7, 3e-7, 1e-6],
+        )
+        self.assertEqual(
+            sorted({point["gamma"] for point in points}),
+            [0.5, 0.8, 1.0],
+        )
+        self.assertEqual(
+            {(point["p"], point["alpha"]) for point in points},
+            {(0.0, -0.2), (0.05, -0.05), (0.1, -0.1), (0.1, -0.2)},
+        )
+        self.assertEqual(
+            refinement["refinement"]["overlap_lr_values"], [1e-6]
+        )
+        self.assertEqual(
+            len(MODULE.build_jobs(
+                "feedtta", "feedtta-low-lr-test", refinement
+            )),
+            108,
+        )
+        self.assertEqual(refinement["expected_tta_jobs"], 1731)
+        self.assertEqual(
+            refinement["scheduler_defaults"]["feedtta"],
+            {"max_workers": 6, "max_per_model": 2},
+        )
+        for method in ("tent", "fstta", "eam", "atena"):
+            with self.subTest(method=method):
+                self.assertEqual(
+                    MODULE.expand_parameters(method, refinement),
+                    MODULE.expand_parameters(method, self.spec),
+                )
 
     def test_special_axes_expand_to_runner_parameters(self):
         eam = MODULE.expand_parameters("eam", self.spec)[0]
