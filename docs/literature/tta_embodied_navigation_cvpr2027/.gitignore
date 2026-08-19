@@ -1,0 +1,3 @@
+# Keep the local reading corpus out of Git. In particular, 03_EAM.pdf is an
+# institution-licensed IEEE copy and must not be redistributed.
+*.pdf
