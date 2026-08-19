@@ -1,0 +1,239 @@
+{
+  "schema": "navtta.vln_r2r_boundary_refinement_plan.v1",
+  "experiment_id": "vln-r2r-tent-fstta-boundary-refinement-v1",
+  "status": "deferred",
+  "purpose": "Small, effect-directed boundary refinement for Tent and FSTTA after the active R2R Cartesian campaign completes.",
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "blocked_by_batch": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "requirements": [
+      "feedtta must be complete with 750/750 jobs, zero failures, and validated SUMMARY.json and WINNER.json",
+      "atena must be complete with 300/300 jobs, zero failures, and validated SUMMARY.json and WINNER.json",
+      "the parent batch must have validated final aggregate artifacts before this plan is activated"
+    ]
+  },
+  "base_campaign": {
+    "batch_id": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "spec": "vln/experiments/r2r_modelwise_cartesian_hparam_v2.json",
+    "reuse_completed_source_controls": true,
+    "deduplicate_against_completed_tent_and_fstta_jobs": true
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "search_order_seed": 0,
+    "settings": [
+      "duet-r2r",
+      "hamt-r2r",
+      "goat-r2r"
+    ],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "primary_selection": [
+      "SR",
+      "SPL",
+      "lower_parameter_drift",
+      "fewer_updates"
+    ],
+    "also_report_constrained_winner": {
+      "require_delta_sr_positive": true,
+      "require_delta_spl_nonnegative": true,
+      "ranking": [
+        "SR",
+        "SPL",
+        "lower_parameter_drift",
+        "fewer_updates"
+      ]
+    },
+    "source_protocol": "standard_argmax",
+    "winner_scope": "model_method"
+  },
+  "methods": {
+    "tent": {
+      "fixed": {
+        "optimizer": "AdamW",
+        "weight_decay": 0.0,
+        "max_grad_norm": 0.0,
+        "norm_scope": "ln",
+        "episodic": false
+      },
+      "stage1_boundary_refinement": {
+        "required": true,
+        "settings": {
+          "duet-r2r": {
+            "rationale": "The current SR-first point is lr=3e-5, update_interval=16; refine beyond the upper interval boundary while retaining nearby learning rates.",
+            "grids": [
+              {
+                "lr": [2e-5, 3e-5, 5e-5, 1e-4],
+                "update_interval": [20, 24, 32]
+              }
+            ],
+            "expected_proposed": 12,
+            "expected_existing_duplicates": 0,
+            "expected_new_jobs": 12
+          },
+          "hamt-r2r": {
+            "rationale": "Densify the neighborhood of the current lr=1e-5, update_interval=2 winner without reopening the broad grid.",
+            "grids": [
+              {
+                "lr": [6e-6, 8e-6, 1e-5, 1.2e-5, 1.5e-5],
+                "update_interval": [1, 2]
+              }
+            ],
+            "points": [
+              {"lr": 8e-6, "update_interval": 3},
+              {"lr": 1e-5, "update_interval": 3},
+              {"lr": 1.2e-5, "update_interval": 3}
+            ],
+            "expected_proposed": 13,
+            "expected_existing_duplicates": 2,
+            "expected_new_jobs": 11
+          },
+          "goat-r2r": {
+            "rationale": "Refine the small-learning-rate interval=1 boundary and retain three probes around the separate high-learning-rate, long-interval SPL ridge.",
+            "points": [
+              {"lr": 4e-6, "update_interval": 1},
+              {"lr": 6e-6, "update_interval": 1},
+              {"lr": 8e-6, "update_interval": 1},
+              {"lr": 1.2e-5, "update_interval": 1},
+              {"lr": 6e-6, "update_interval": 2},
+              {"lr": 8e-6, "update_interval": 2},
+              {"lr": 1.2e-5, "update_interval": 2},
+              {"lr": 2e-4, "update_interval": 16},
+              {"lr": 2e-4, "update_interval": 24},
+              {"lr": 3e-4, "update_interval": 24}
+            ],
+            "expected_proposed": 10,
+            "expected_existing_duplicates": 0,
+            "expected_new_jobs": 10
+          }
+        },
+        "expected_new_jobs": 33
+      }
+    },
+    "fstta": {
+      "fixed": {
+        "q": 0.1,
+        "rho": 0.95,
+        "tau": 0.7,
+        "a": 0.9,
+        "b": 1.1,
+        "optimizer": "AdamW",
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "norm_scope": "last_k_ln",
+        "last_k_ln": 4,
+        "max_grad_norm": 0.0,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "slow_optimizer": "AdamW",
+        "reset_slow_optimizer_each_window": false
+      },
+      "stage1_boundary_refinement": {
+        "required": true,
+        "settings": {
+          "duet-r2r": {
+            "rationale": "Refine the SR-first upper-fast/lower-slow boundary and the separate M=8,N=4 joint-SR/SPL ridge.",
+            "grids": [
+              {
+                "lr_fast": [1.2e-3, 1.8e-3, 2.4e-3, 3e-3],
+                "lr_slow": [1e-4, 2e-4, 3e-4],
+                "m": [3],
+                "n": [16]
+              }
+            ],
+            "points": [
+              {"lr_fast": 1.8e-3, "lr_slow": 1e-4, "m": 8, "n": 4},
+              {"lr_fast": 1.8e-3, "lr_slow": 2e-4, "m": 8, "n": 4}
+            ],
+            "expected_proposed": 14,
+            "expected_existing_duplicates": 1,
+            "expected_new_jobs": 13
+          },
+          "hamt-r2r": {
+            "rationale": "Refine the lower-slow-LR boundary around M=1,N=16 and add missing intermediate fast learning rates.",
+            "grids": [
+              {
+                "lr_fast": [3e-4, 6e-4, 1e-3, 1.8e-3],
+                "lr_slow": [1e-4, 2e-4, 3e-4],
+                "m": [1],
+                "n": [16]
+              }
+            ],
+            "expected_proposed": 12,
+            "expected_existing_duplicates": 2,
+            "expected_new_jobs": 10
+          },
+          "goat-r2r": {
+            "rationale": "Use a tight neighborhood around the current one-episode-gain winner rather than a broad expansion.",
+            "grids": [
+              {
+                "lr_fast": [1.2e-3, 1.8e-3, 2.4e-3, 3e-3],
+                "lr_slow": [6e-4, 1e-3, 1.4e-3],
+                "m": [3],
+                "n": [8]
+              }
+            ],
+            "expected_proposed": 12,
+            "expected_existing_duplicates": 1,
+            "expected_new_jobs": 11
+          }
+        },
+        "expected_new_jobs": 34
+      },
+      "stage2_schedule_bridge": {
+        "required": false,
+        "automatic_launch_forbidden": true,
+        "manual_promotion_required": true,
+        "promotion_guidance": "Run only for a setting where stage 1 improves the current SR-first winner by at least 0.1 percentage points, or ties SR and improves SPL by at least 0.1 percentage points. Review the constrained winner separately.",
+        "settings": {
+          "duet-r2r": {
+            "fixed": {"lr_fast": 1.8e-3, "lr_slow": 3e-4},
+            "m_n_points": [[3, 24], [3, 32], [4, 12], [4, 16], [5, 8], [6, 4]],
+            "expected_new_jobs": 6
+          },
+          "hamt-r2r": {
+            "fixed": {"lr_fast": 6e-4, "lr_slow": 3e-4},
+            "m_n_points": [[1, 24], [1, 32], [2, 12], [2, 16], [2, 24], [3, 32]],
+            "expected_new_jobs": 6
+          },
+          "goat-r2r": {
+            "fixed": {"lr_fast": 1.8e-3, "lr_slow": 1e-3},
+            "m_n_points": [[2, 6], [2, 8], [3, 6], [4, 8]],
+            "expected_new_jobs": 4
+          }
+        },
+        "maximum_new_jobs": 16
+      }
+    }
+  },
+  "job_budget": {
+    "required_tent_jobs": 33,
+    "required_fstta_jobs": 34,
+    "required_total_jobs": 67,
+    "optional_fstta_schedule_jobs": 16,
+    "maximum_search_jobs": 83,
+    "eam_budget_matching": false
+  },
+  "confirmation": {
+    "run_after_search_is_frozen": true,
+    "order_seeds": [1, 2],
+    "candidates_per_model_method": "Run the SR-first winner and the constrained joint-SR/SPL winner; deduplicate when they are identical.",
+    "matched_source_once_per_model_order": true,
+    "do_not_reselect_on_val_unseen": true,
+    "goat_requires_confirmation_before_claiming_improvement": true
+  },
+  "out_of_scope": [
+    "Matching the EAM candidate count",
+    "Expanding FSTTA M beyond 8",
+    "Reusing FSTTA lr_slow=3e-3",
+    "Changing q, rho, tau, a, b, optimizer semantics, fast gradient mode, or normalization scope in the primary refinement",
+    "Using val_unseen or test for hyperparameter selection",
+    "Launching any job before the activation requirements and manual review are satisfied"
+  ]
+}
