@@ -1948,6 +1948,7 @@ def _run_calibration(
 
                 ready_to_launch = False
                 launch_kind = None
+                rapid_initial_launch = False
                 if (
                     stop_reason is None
                     and grouped_start
@@ -2231,6 +2232,10 @@ def _run_calibration(
                     active[process.pid] = record
                     if launch_kind == "initial_group":
                         next_initial_launch = now + stagger_seconds
+                        rapid_initial_launch = (
+                            stagger_seconds == 0
+                            and launched < initial_workers
+                        )
                         if launched == initial_workers:
                             initial_group["status"] = (
                                 "waiting_for_initial_group_load"
@@ -2273,7 +2278,8 @@ def _run_calibration(
                         gate_levels.append(current_level)
 
                 if active or (launched < len(jobs) and stop_reason is None):
-                    time.sleep(sample_interval_seconds)
+                    if not rapid_initial_launch:
+                        time.sleep(sample_interval_seconds)
         except KeyboardInterrupt:
             stop_reason = "interrupted"
             if initial_group is not None and not initial_group[

@@ -1046,7 +1046,7 @@ class CalibrationHelperTests(unittest.TestCase):
                     prior_evidence=None, initial_workers=3,
                 )
 
-            self.assertEqual(launched_at, [0.0, 2.0, 4.0])
+            self.assertEqual(launched_at, [0.0, 0.0, 0.0])
             self.assertEqual(summary["status"], "completed")
             self.assertEqual(summary["recommended_cap"], 3)
             self.assertEqual(summary["initial_group_mode"], "fresh_bootstrap")
