@@ -1,0 +1,273 @@
+{
+  "schema": "navtta.vln_r2r_five_method_local_refinement_plan.v1",
+  "experiment_id": "vln-r2r-four-method-low-lr-refinement-v1",
+  "status": "reviewed_launchable",
+  "purpose": "Low-learning-rate refinement for Tent, FSTTA, FeedTTA, and GOAT-only ATENA after the completed R2R Cartesian campaign.",
+  "parent_evidence": {
+    "batch_id": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "git_commit": "a258ac5b1d604cbdaecd64fe0ac184241e8384c1",
+    "spec": "vln/experiments/r2r_modelwise_cartesian_hparam_v2.json",
+    "spec_sha256": "642558f1c72cfc5eea1e4d2d0b1eec5873696aad549eb87583e6f082f12e8417"
+  },
+  "parent_anchors": {
+    "tent": {
+      "duet-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-tent-cartesian-0000-duet-r2r-8b6fbb29a1",
+        "candidate": {"lr": 3e-7, "update_interval": 1}
+      },
+      "hamt-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-tent-cartesian-0010-hamt-r2r-84fd45bb28",
+        "candidate": {"lr": 3e-6, "update_interval": 1}
+      },
+      "goat-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-tent-cartesian-0015-goat-r2r-a2b3725323",
+        "candidate": {"lr": 1e-5, "update_interval": 1}
+      }
+    },
+    "fstta": {
+      "duet-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0059-duet-r2r-1014c1b455",
+        "candidate": {"lr_fast": 0.0018, "lr_slow": 0.0003, "m": 3, "n": 16}
+      },
+      "hamt-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0029-hamt-r2r-fa2921d98b",
+        "candidate": {"lr_fast": 0.0006, "lr_slow": 0.0003, "m": 1, "n": 16}
+      },
+      "goat-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0067-goat-r2r-f437578332",
+        "candidate": {"lr_fast": 0.0018, "lr_slow": 0.001, "m": 3, "n": 8}
+      }
+    },
+    "feedtta": {
+      "duet-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0064-duet-r2r-674fade414",
+        "candidate": {"lr": 3e-6, "gamma": 0.8, "p": 0.05, "alpha": -0.05}
+      },
+      "hamt-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0118-hamt-r2r-9f1836e390",
+        "candidate": {"lr": 5e-6, "gamma": 0.8, "p": 0.1, "alpha": -0.2}
+      },
+      "goat-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0117-goat-r2r-28aeeba6e4",
+        "candidate": {"lr": 5e-6, "gamma": 0.8, "p": 0.1, "alpha": -0.1}
+      }
+    },
+    "atena": {
+      "goat-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-atena-cartesian-0002-goat-r2r-7017d6c271",
+        "candidate": {"lr_query": 4e-7, "lr_self": 5e-8, "mix_lambda": 0.0, "query_threshold": 0.2}
+      }
+    }
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "requirements": [
+      "Use a new batch ID and bind every run to the launch commit and this plan digest.",
+      "Pass --confirm-reviewed after reviewing the immutable expanded plan.",
+      "Do not modify or resume the completed parent batch."
+    ]
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "order_seed": 0,
+    "settings": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "source_protocol": "standard_argmax",
+    "selection": ["higher_SR", "higher_SPL", "lower_parameter_drift", "fewer_updates"],
+    "sr_quantum_pp": 0.0979431929480901,
+    "seed_variance_estimated": false,
+    "supervision_groups": {
+      "unsupervised": ["tent", "fstta"],
+      "binary_feedback_supervised": ["feedtta", "atena"]
+    }
+  },
+  "execution": {
+    "launchable": true,
+    "strict_model_barrier_required": true,
+    "strict_method_barrier_required": true,
+    "barrier_implementation_status": "implemented_validated",
+    "model_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "method_order_within_model": ["source", "tent", "fstta", "feedtta_control", "feedtta", "atena"],
+    "enabled_methods_by_setting": {
+      "duet-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta"],
+      "hamt-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta"],
+      "goat-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta", "atena"]
+    },
+    "cross_model_overlap_forbidden": true,
+    "cross_method_overlap_forbidden": true,
+    "tail_policy": "Complete the active method and model before starting the next phase.",
+    "control_execution": {
+      "source": {"max_workers": 1, "calibration_exempt": true},
+      "feedtta_control": {"max_workers": 1, "calibration_exempt": true}
+    },
+    "gpu_safety": {
+      "production_planned_steady_used_mib_max": 29000,
+      "emergency_abort_observed_used_mib": 30000,
+      "minimum_production_headroom_mib": 3760,
+      "scheduler_prelaunch_gate_mib_range": [23500, 25000],
+      "production_limit_is_not_a_scheduler_gate": true,
+      "launch_stagger_is_not_a_memory_guard": true,
+      "raise_concurrency_one_worker_at_a_time": true,
+      "require_all_children_at_steady_vram_before_next_raise": true
+    },
+    "concurrency_calibration": {
+      "tent": {
+        "duet-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 1900, "prelaunch_gate_mib": 25000},
+        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2400, "prelaunch_gate_mib": 25000},
+        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2000, "prelaunch_gate_mib": 25000}
+      },
+      "fstta": {
+        "duet-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1900, "prelaunch_gate_mib": 25000},
+        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12], "estimated_mib_per_job": 2350, "prelaunch_gate_mib": 25000},
+        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1950, "prelaunch_gate_mib": 25000}
+      },
+      "feedtta": {
+        "duet-r2r": {"production_cap": 5, "conditional_test_steps": [], "estimated_mib_per_job": 4900, "prelaunch_gate_mib": 24000},
+        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4750, "prelaunch_gate_mib": 24000},
+        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "prelaunch_gate_mib": 24500},
+        "seven_workers_forbidden": true
+      },
+      "atena": {
+        "goat-r2r": {"production_cap": 5, "conditional_test_steps": [], "estimated_mib_per_job": 5290, "observed_peak_mib": 26495, "prelaunch_gate_mib": 23500}
+      }
+    }
+  },
+  "methods": {
+    "tent": {
+      "fixed": {"optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "norm_scope": "ln", "episodic": false},
+      "settings": {
+        "duet-r2r": {"grids": [{"lr": [1e-9, 3e-9, 1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 1.5625e-5], "fixed": {"update_interval": 1}}], "points": [], "candidate_count": 10},
+        "hamt-r2r": {"grids": [{"lr": [1e-9, 3e-9, 1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 1.5625e-5], "fixed": {"update_interval": 1}}], "points": [], "candidate_count": 10},
+        "goat-r2r": {"grids": [{"lr": [1e-9, 3e-9, 1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 1.5625e-5], "fixed": {"update_interval": 1}}], "points": [], "candidate_count": 10}
+      },
+      "candidate_count": 30
+    },
+    "fstta": {
+      "fixed": {
+        "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1,
+        "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99,
+        "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0,
+        "episodic": false, "fast_grad_mode": "concordant",
+        "use_fast_lr_scaler": true, "use_slow": true,
+        "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false,
+        "reset_optimizer_each_episode": true, "eigen_eps": 1e-6
+      },
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 3, "n": 4}},
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 3, "n": 16}}
+          ],
+          "points": [
+            {"lr_fast": 0.0018, "lr_slow": 0.0003, "m": 3, "n": 16, "role": "parent_winner_anchor"},
+            {"lr_fast": 0.0018, "lr_slow": 0.0003, "m": 8, "n": 4, "role": "joint_sr_spl_anchor"}
+          ],
+          "candidate_count": 72
+        },
+        "hamt-r2r": {
+          "grids": [
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 3, "n": 4}},
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 1, "n": 16}}
+          ],
+          "points": [{"lr_fast": 0.0006, "lr_slow": 0.0003, "m": 1, "n": 16, "role": "parent_winner_anchor"}],
+          "candidate_count": 71
+        },
+        "goat-r2r": {
+          "grids": [
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 3, "n": 4}},
+            {"lr_fast": [3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4], "lr_slow": [1e-6, 3e-6, 1e-5, 3e-5, 1e-4], "fixed": {"m": 3, "n": 8}}
+          ],
+          "points": [{"lr_fast": 0.0018, "lr_slow": 0.001, "m": 3, "n": 8, "role": "parent_winner_anchor"}],
+          "candidate_count": 71
+        }
+      },
+      "candidate_count": 214
+    },
+    "feedtta": {
+      "fixed": {"optimizer": "Adam", "optimizer_eps": 1e-5, "max_grad_norm": 0.0, "action_selection": "sample", "action_seed": 0, "sgr_seed": 0, "normalize_gradient": false, "episodic": false},
+      "interpretation": "At fixed action RNG, LR approaching zero tends toward the sampled no-update control rather than standard argmax Source.",
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.5, 0.8, 0.99], "fixed": {"p": 0.0, "alpha": -0.2}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.5, 0.8, 0.99], "fixed": {"p": 0.05, "alpha": -0.05}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.5, 0.8, 0.99], "fixed": {"p": 0.05, "alpha": -0.2}}
+          ],
+          "points": [{"lr": 5e-6, "gamma": 0.99, "p": 0.05, "alpha": -0.2, "role": "paper_default_anchor"}],
+          "candidate_count": 55
+        },
+        "hamt-r2r": {
+          "grids": [
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.1, "alpha": -0.1}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.1, "alpha": -0.2}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.05, "alpha": -0.2}}
+          ],
+          "points": [
+            {"lr": 5e-6, "gamma": 0.8, "p": 0.1, "alpha": -0.2, "role": "parent_winner_anchor"},
+            {"lr": 5e-6, "gamma": 0.99, "p": 0.05, "alpha": -0.2, "role": "paper_default_anchor"}
+          ],
+          "candidate_count": 56
+        },
+        "goat-r2r": {
+          "grids": [
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.01, "alpha": -0.05}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.1, "alpha": -0.1}},
+            {"lr": [1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6], "gamma": [0.8, 0.99, 1.0], "fixed": {"p": 0.05, "alpha": -0.2}}
+          ],
+          "points": [
+            {"lr": 5e-6, "gamma": 0.8, "p": 0.1, "alpha": -0.1, "role": "parent_winner_anchor"},
+            {"lr": 5e-6, "gamma": 0.99, "p": 0.05, "alpha": -0.2, "role": "paper_default_anchor"}
+          ],
+          "candidate_count": 56
+        }
+      },
+      "candidate_count": 167
+    },
+    "atena": {
+      "fixed": {"self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false},
+      "settings": {
+        "goat-r2r": {
+          "grids": [
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 1e-8, "lr_self": 1.25e-9}},
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 3e-8, "lr_self": 3.75e-9}},
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 1e-7, "lr_self": 1.25e-8}},
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 2e-7, "lr_self": 2.5e-8}},
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 3e-7, "lr_self": 3.75e-8}},
+            {"mix_lambda": [0.0, 0.05, 0.1], "query_threshold": [0.15, 0.2, 0.25], "fixed": {"lr_query": 4e-7, "lr_self": 5e-8}}
+          ],
+          "points": [{"lr_query": 1e-6, "lr_self": 1e-7, "mix_lambda": 0.5, "query_threshold": 0.1, "role": "core_default_anchor"}],
+          "candidate_count": 55
+        }
+      },
+      "candidate_count": 55,
+      "secondary_feedback_efficiency_report": {"enabled": true, "rule": "Also report the lowest-query-rate point within 0.1 pp SR and 0.2 pp SPL of the winner when one exists."}
+    }
+  },
+  "controls": {
+    "standard_argmax_source_per_setting": true,
+    "feedtta_sampled_no_update_per_setting": true,
+    "candidate_count": 6
+  },
+  "budget": {
+    "search_candidates": {"tent": 30, "fstta": 214, "feedtta": 167, "atena": 55},
+    "search_total": 466,
+    "controls": 6,
+    "total_before_confirmation": 472,
+    "by_setting_before_controls": {"duet-r2r": 137, "hamt-r2r": 137, "goat-r2r": 192}
+  },
+  "confirmation": {
+    "run_only_after_search_is_frozen": true,
+    "minimum_promotion": "Compare against the matching anchor rerun in the new batch: exact successful-episode count +1, or tied count with SPL +0.1 pp.",
+    "order_seeds": [1, 2],
+    "matched_source_per_model_order": true,
+    "feedtta_seed_pairing": "Use paired (order, action, sgr)=(1,1,1),(2,2,2), not a Cartesian product.",
+    "feedtta_matched_control": "Run sampled no-update Source with the same order and action seed for each promoted FeedTTA replica.",
+    "do_not_reselect_on_val_unseen": true,
+    "feedback_methods_must_report_feedback_budget": true
+  }
+}

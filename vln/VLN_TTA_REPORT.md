@@ -332,9 +332,9 @@ EAM-R2R-CE、ATENA-R2R-CE 等基于 SPL/RGSPL 的“有效”结论由本节取�
 [`VAL_SEEN_TOP5_BY_MODEL_BENCHMARK.md`](results/analysis/hparam_search/VAL_SEEN_TOP5_BY_MODEL_BENCHMARK.md)
 及配套 CSV。
 
-### 7.5 当前 R2R 完整 Cartesian 搜索（运行中）
+### 7.5 R2R 完整 Cartesian 搜索（已完成）
 
-活动协议由 `experiments/r2r_modelwise_cartesian_hparam_v2.json` 定义，batch ID
+该协议由 `experiments/r2r_modelwise_cartesian_hparam_v2.json` 定义，batch ID
 固定为 `vln-r2r-modelwise-cartesian-v2-seed0`。作业顺序为标准 Source、
 FeedTTA sampled control、Tent、FSTTA、EAM、FeedTTA、ATENA；方法内部在
 DUET、HAMT、GOAT 之间 round-robin。日志使用 benchmark-first 目录：
@@ -344,14 +344,22 @@ results/logs/r2r/hparam_search/<batch>/<method>/
 results/tuning/r2r/hparam_search/<batch>/<model>/<method>/jobs/<run-tag>/val_seen/
 ```
 
-全部 2,379 个 jobs 都绑定同一 Git commit 和 spec SHA256。搜索结束后分别为
-15 个 `模型 × 方法` 组合生成 SR-first `WINNER.json`/Top-5，再汇总为 batch
-级 `WINNERS.json` 与 `FROZEN_HPARAMETERS.json`。本小节在完整结果同步回来后
-补入新的绝对 SR/SPL、相对标准 Source 的增益、稳定性与反馈预算分析。
+全部 2,379 个 jobs 已在 commit `a258ac5` 完成，失败数为 0：Source 3、
+FeedTTA sampled control 3、Tent 120、FSTTA 243、EAM 960、FeedTTA 750、
+ATENA 300。15 个 `模型 × 方法` 的 SR-first winner、Top-5、batch 级
+`WINNERS.json` 与 `FROZEN_HPARAMETERS.json` 均已生成。
+
+新的逐模型结果、ATENA 反馈预算、响应面边界、日志包 digest，以及下一轮
+466 个四方法低学习率搜索点和严格模型串行并发方案，见
+[`R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md`](results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md)。
+其中 EAM 是三个模型上都同时提高 SR/SPL 的最稳定无监督方法；ATENA† 在
+DUET/HAMT 上分别达到 `ΔSR/ΔSPL=+1.57/+3.41` 和 `+1.86/+1.98`，但
+GOAT 仍只有 `+0.00/+0.08`。FeedTTA† 尚未在任何模型上同时超过标准
+argmax Source 的 SR/SPL。
 
 ## 8. 后续更新流程
 
-1. 完成并同步 §7.5 的 R2R 全 Cartesian 搜索；按模型/方法核对 1,021 episodes 完整性，并生成 SR-first Top-5 与 winner。
+1. 使用 `scripts/run_r2r_local_refinement.py` 执行 `experiments/r2r_five_method_local_refinement_v1.json`；DUET 全部完成后再启动 HAMT，最后启动 GOAT，并保留人工审核确认门槛。
 2. 对逐模型 winner 运行 §6.3 的零更新适配器一致性审计；未通过的 method/setting 不解释性能增益。
 3. 参考 R2R 的响应面为 REVERIE 和 R2R-CE 缩小各自的 Cartesian 空间，但二者仍需独立 `val_seen` 搜索和独立 winner。
 4. 无监督方法与二值反馈方法继续分表；ATENA/FeedTTA 附加报告真实反馈预算和 performance/query-rate Pareto。
@@ -368,6 +376,8 @@ results/tuning/r2r/hparam_search/<batch>/<model>/<method>/jobs/<run-tag>/val_see
 - Source 调度与复现说明：[`README.md`](README.md)
 - 当前 R2R Cartesian spec：[`experiments/r2r_modelwise_cartesian_hparam_v2.json`](experiments/r2r_modelwise_cartesian_hparam_v2.json)
 - 当前 R2R Cartesian runner：[`scripts/run_r2r_cartesian_hparam_search.py`](scripts/run_r2r_cartesian_hparam_search.py)
+- 当前 R2R Cartesian v2 分析：[`results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md`](results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md)
+- 四方法低学习率补搜计划：[`experiments/r2r_five_method_local_refinement_v1.json`](experiments/r2r_five_method_local_refinement_v1.json)
 - Tent 调参日志：`results/logs/hparam_search/tent/vln-tta-hparam-final-20260810T182823Z/`
 - FSTTA 调参日志：`results/logs/hparam_search/fstta/vln-tta-hparam-final-20260810T182823Z/`
 - EAM 调参日志：`results/logs/hparam_search/eam/vln-val-seen-hparam-v1-seed0/`

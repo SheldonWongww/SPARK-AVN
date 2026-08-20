@@ -1,6 +1,8 @@
 {
   "schema": "navtta.vln_r2r_cartesian_hparam.v1",
   "experiment_id": "vln-r2r-feedtta-low-lr-refinement-v1",
+  "status": "superseded",
+  "superseded_by": "vln/experiments/r2r_five_method_local_refinement_v1.json",
   "parent_experiment_id": "vln-r2r-modelwise-cartesian-v2",
   "refinement": {
     "target_method": "feedtta",

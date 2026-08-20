@@ -3,7 +3,7 @@
 ## R2R model-wise direct Cartesian full-val search
 
 `r2r_modelwise_cartesian_hparam_v2.json` is the immutable design input for the
-active DUET/HAMT/GOAT R2R search.  It is intentionally separate from the older
+completed DUET/HAMT/GOAT R2R search.  It is intentionally separate from the older
 staged search described below.  Every declared Cartesian point is evaluated
 directly on the complete 1,021-episode canonical-order R2R `val_seen` stream at
 order seed 0.  There is no smoke run, 256-episode screening prefix, staged
@@ -75,7 +75,102 @@ for detached GNU screen launch and recovery commands. Planning and execution
 both require a clean tracked worktree. `--watch` exits automatically only after
 all 2,379 jobs succeed; use one-shot `--status` when investigating failures.
 
-## R2R FeedTTA low-learning-rate refinement
+The batch `vln-r2r-modelwise-cartesian-v2-seed0` completed all 2,379 jobs with
+zero failures on commit `a258ac5`.  Its compact analysis is tracked in
+`vln/results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md`.
+
+## R2R four-method low-learning-rate refinement
+
+`r2r_five_method_local_refinement_v1.json` is the next-round design.  It keeps
+Tent at 30 candidates, FSTTA at 214, FeedTTA at 167, and GOAT-only ATENA at 55.
+Three standard Source and three FeedTTA sampled controls make 472 jobs before
+conditional confirmation. EAM is not searched in this round.
+The filename and schema retain the name of an earlier uncommitted draft; the
+validated contents and enabled-method map are the authoritative four-method
+protocol.
+
+The new campaign is model-major and has a strict barrier:
+
+```text
+DUET: all methods complete -> HAMT: all methods complete -> GOAT: all methods
+```
+
+`vln/scripts/run_r2r_local_refinement.py` expands the model-specific grids and
+enforces strict model and method barriers. The spec is launchable only with the
+explicit `--confirm-reviewed` acknowledgement; `max_per_model` alone still does
+not enforce the barrier.
+
+Use a separate plan-only batch for the required GPU calibration.  The helper
+clones jobs into isolated calibration paths, ramps only one phase, stops adding
+workers at 29,000 MiB, aborts its own process groups at 30,000 MiB, and writes
+`CALIBRATION.json` plus `resource.csv` without changing formal job evidence:
+
+```bash
+CAL_BATCH=vln-r2r-four-method-low-lr-v1-calibration
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$CAL_BATCH" --plan-only
+python3 vln/scripts/calibrate_r2r_local_refinement.py \
+  --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
+  --target-workers 14
+```
+
+Repeat the helper for every enabled TTA model/method phase.  Do not run the
+formal scheduler for `CAL_BATCH`; use the reported per-phase recommended caps
+to create a different formal batch.
+
+After the spec and runner are tracked on a clean commit, first finish the
+separate concurrency calibration.  Put every approved override in the same
+argument list, then use that identical list for both immutable planning and
+every launch/resume.  The example below shows the no-override fallback:
+
+```bash
+BATCH=vln-r2r-four-method-low-lr-v1-seed0
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --plan-only --print-commands
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --resume --confirm-reviewed --gpu 0
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --status
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --watch --watch-interval 10
+```
+
+`--phase-max-workers PHASE_ID=N` is repeatable and may select only a worker
+count declared for that exact phase in the spec. For example, after the
+required stepwise calibration, create the formal plan with the approved
+arguments and repeat them unchanged on resume:
+
+```bash
+PHASE_ARGS=(
+  --phase-max-workers 02-duet-r2r-fstta=10
+  --phase-max-workers 15-goat-r2r-atena=5
+)
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --plan-only "${PHASE_ARGS[@]}"
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --batch-id "$BATCH" --resume --confirm-reviewed --gpu 0 \
+  "${PHASE_ARGS[@]}"
+```
+
+`--max-workers` is only a global downward cap; it cannot raise a phase above a
+declared value. Worker overrides and the other runtime limits are pinned in
+`PLAN.json`; changing them requires a new batch ID. Failed jobs require
+`--resume --retry-failed` with the same pinned runtime arguments.
+
+Concurrency is calibrated separately for every enabled method/model. Raise it
+one worker at a time only after all children reach steady VRAM. ATENA is enabled
+only for GOAT and fixed at the observed-safe five workers; the remaining
+conditional caps require pure-model measurement. Production plans must
+remain at or below 29,000 MiB; an observed 30,000 MiB is an emergency rollback
+line, not a planning target.  Per-method pre-launch gates remain 23,500–25,000
+MiB and are secondary guards, not protection against cold-start memory lag.
+
+## Superseded: R2R FeedTTA low-learning-rate refinement
+
+The 108-point common-grid plan below is retained for provenance but is
+superseded by the 167-point model-specific FeedTTA section of
+`r2r_five_method_local_refinement_v1.json`.  Do not launch it for the next
+round.
 
 `r2r_feedtta_low_lr_refinement_v1.json` is a separate follow-up to the completed
 250-point-per-model FeedTTA grid. It does not modify or resume the parent batch.
