@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLAN = REPO_ROOT / "vln/experiments/r2r_five_method_local_refinement_v1.json"
+SOURCE_MANIFEST = REPO_ROOT / "vln/manifests/r2r_reused_source_controls.json"
 METHODS = ("tent", "fstta", "feedtta", "atena")
 SETTINGS = ("duet-r2r", "hamt-r2r", "goat-r2r")
 ENABLED_SETTINGS = {
@@ -55,15 +56,10 @@ class FourMethodLowLRRefinementPlanTests(unittest.TestCase):
         self.assertEqual(
             execution["enabled_methods_by_setting"],
             {
-                "duet-r2r": [
-                    "source", "tent", "fstta", "feedtta_control", "feedtta"
-                ],
-                "hamt-r2r": [
-                    "source", "tent", "fstta", "feedtta_control", "feedtta"
-                ],
+                "duet-r2r": ["tent", "fstta", "feedtta_control", "feedtta"],
+                "hamt-r2r": ["tent", "fstta", "feedtta_control", "feedtta"],
                 "goat-r2r": [
-                    "source", "tent", "fstta", "feedtta_control", "feedtta",
-                    "atena",
+                    "tent", "fstta", "feedtta_control", "feedtta", "atena",
                 ],
             },
         )
@@ -92,7 +88,41 @@ class FourMethodLowLRRefinementPlanTests(unittest.TestCase):
         self.assertEqual(by_setting, budget["by_setting_before_controls"])
         self.assertEqual(sum(by_method.values()), 466)
         self.assertEqual(budget["search_total"], 466)
-        self.assertEqual(budget["total_before_confirmation"], 472)
+        self.assertEqual(budget["controls"], 3)
+        self.assertEqual(budget["total_before_confirmation"], 469)
+
+    def test_source_controls_are_reused_from_pinned_manifest(self):
+        controls = self.plan["controls"]
+        self.assertEqual(
+            controls["standard_argmax_source_execution"],
+            "reuse_completed_manifest",
+        )
+        self.assertEqual(
+            controls["standard_argmax_source_manifest"],
+            "vln/manifests/r2r_reused_source_controls.json",
+        )
+        manifest = json.loads(SOURCE_MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(
+            manifest["schema"], "navtta.vln_r2r_reused_source_controls.v1"
+        )
+        self.assertEqual(set(manifest["records"]), set(SETTINGS))
+        expected_metrics = {
+            "duet-r2r": (78.84, 72.88),
+            "hamt-r2r": (75.61, 72.18),
+            "goat-r2r": (84.82, 80.05),
+        }
+        for setting, (sr, spl) in expected_metrics.items():
+            record = manifest["records"][setting]
+            self.assertEqual(record["parameters"], {
+                "action_selection": "argmax", "action_seed": 0,
+            })
+            self.assertEqual((record["metrics"]["SR"], record["metrics"]["SPL"]), (sr, spl))
+            for key in (
+                "checkpoint_sha256", "formal_manifest_sha256",
+                "job_json_sha256", "metrics_json_sha256",
+                "parameters_json_sha256",
+            ):
+                self.assertEqual(len(record[key]), 64)
 
     def test_low_lr_axes_and_method_caps(self):
         tent_lrs = [

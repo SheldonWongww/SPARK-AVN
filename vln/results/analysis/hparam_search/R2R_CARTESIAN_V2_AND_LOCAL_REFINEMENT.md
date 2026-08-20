@@ -104,8 +104,10 @@ Pareto 点。
 | ATENA† | 0 | 0 | 55 | 55 | 只补 GOAT 的低 LR、低 mixture winner 区域 |
 | **搜索合计** | **137** | **137** | **192** | **466** | — |
 
-另运行每模型一次标准 argmax Source 和一次 FeedTTA sampled no-update control，
-共 6 个 controls；确认实验前总量为 472 jobs。EAM 已有三个模型均同时提高
+三个标准 argmax Source 直接复用父批次的完整 1,021-episode 结果，并通过
+`vln/manifests/r2r_reused_source_controls.json` 固定其 run manifest 与摘要；
+本轮只运行每模型一次 FeedTTA sampled no-update control，共 3 个新 controls。
+确认实验前总量为 469 jobs。EAM 已有三个模型均同时提高
 SR/SPL，下一轮不再补搜。Tent/FSTTA/FeedTTA 均保留父批次锚点，ATENA 仅保留
 GOAT 锚点；所有方法按模型严格串行。
 
@@ -131,17 +133,17 @@ batch drift。R2R 的单 episode SR 量子为
 下一轮采用模型主序：
 
 ```text
-DUET：Source → Tent → FSTTA → FeedTTA control → FeedTTA
+DUET：Tent → FSTTA → FeedTTA control → FeedTTA
 HAMT：上一模型全部归零后执行同一顺序
-GOAT：Source → Tent → FSTTA → FeedTTA control → FeedTTA → ATENA
+GOAT：Tent → FSTTA → FeedTTA control → FeedTTA → ATENA
 ```
 
 只设置 `max_per_model` 不能形成模型 barrier；旧 Cartesian runner 会跳过已满
-模型并发射其他模型。新的 `run_r2r_local_refinement.py` 已按 16 个 filtered
-phase 实现严格 model/method barrier，并由定向测试验证 472-job 展开、phase
+模型并发射其他模型。新的 `run_r2r_local_refinement.py` 已按 13 个 filtered
+phase 实现严格 model/method barrier，并由定向测试验证 469-job 展开、phase
 顺序、失败阻断和 resume 校验。只有活动 method/model 不可避免的最后一个
 partial wave 可以低于并发上限，不能为了填槽提前启动下一方法或模型。Source
-和 FeedTTA sampled control 每次固定单任务运行，不参与并发校准。
+不再执行；FeedTTA sampled control 每次固定单任务运行，不参与并发校准。
 
 下表是校准 baseline 和条件测试上限；除明确标为纯模型实测的两项外，均由混合
 composition 或更低纯模型并发推算，必须逐级实测后才能成为生产 cap。`*` 项

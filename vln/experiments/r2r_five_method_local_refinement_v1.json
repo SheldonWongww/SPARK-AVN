@@ -92,17 +92,16 @@
     "strict_method_barrier_required": true,
     "barrier_implementation_status": "implemented_validated",
     "model_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
-    "method_order_within_model": ["source", "tent", "fstta", "feedtta_control", "feedtta", "atena"],
+    "method_order_within_model": ["tent", "fstta", "feedtta_control", "feedtta", "atena"],
     "enabled_methods_by_setting": {
-      "duet-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta"],
-      "hamt-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta"],
-      "goat-r2r": ["source", "tent", "fstta", "feedtta_control", "feedtta", "atena"]
+      "duet-r2r": ["tent", "fstta", "feedtta_control", "feedtta"],
+      "hamt-r2r": ["tent", "fstta", "feedtta_control", "feedtta"],
+      "goat-r2r": ["tent", "fstta", "feedtta_control", "feedtta", "atena"]
     },
     "cross_model_overlap_forbidden": true,
     "cross_method_overlap_forbidden": true,
     "tail_policy": "Complete the active method and model before starting the next phase.",
     "control_execution": {
-      "source": {"max_workers": 1, "calibration_exempt": true},
       "feedtta_control": {"max_workers": 1, "calibration_exempt": true}
     },
     "gpu_safety": {
@@ -257,14 +256,16 @@
   },
   "controls": {
     "standard_argmax_source_per_setting": true,
+    "standard_argmax_source_execution": "reuse_completed_manifest",
+    "standard_argmax_source_manifest": "vln/manifests/r2r_reused_source_controls.json",
     "feedtta_sampled_no_update_per_setting": true,
-    "candidate_count": 6
+    "candidate_count": 3
   },
   "budget": {
     "search_candidates": {"tent": 30, "fstta": 214, "feedtta": 167, "atena": 55},
     "search_total": 466,
-    "controls": 6,
-    "total_before_confirmation": 472,
+    "controls": 3,
+    "total_before_confirmation": 469,
     "by_setting_before_controls": {"duet-r2r": 137, "hamt-r2r": 137, "goat-r2r": 192}
   },
   "confirmation": {

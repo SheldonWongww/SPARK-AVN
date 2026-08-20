@@ -19,7 +19,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-PHASE_ID = "01-duet-r2r-tent"
+PHASE_ID = "00-duet-r2r-tent"
 
 
 def calibration_policy(**overrides):

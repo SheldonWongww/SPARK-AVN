@@ -240,6 +240,107 @@ class R2RLocalRefinementTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.UserError, "search_total"):
             MODULE._validate_spec(drift)
 
+    def test_reused_source_manifest_is_pinned_and_source_is_not_a_phase(self):
+        binding = self.spec["_reused_source_manifest"]
+        self.assertRegex(binding["sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            binding["document"]["schema"], MODULE.REUSED_SOURCE_SCHEMA
+        )
+        self.assertEqual(
+            set(binding["document"]["records"]), set(MODULE.SETTINGS)
+        )
+        plan_binding = MODULE._reused_source_plan_binding(self.spec)
+        self.assertEqual(plan_binding["reference"], plan_binding["path"])
+        self.assertFalse(Path(plan_binding["path"]).is_absolute())
+        self.assertTrue(all(
+            "source" not in phases
+            for phases in MODULE.enabled_phases_by_setting(self.spec).values()
+        ))
+        self.assertEqual(
+            set(self.spec["execution"]["control_execution"]),
+            {"feedtta_control"},
+        )
+
+        with mock.patch.object(
+            MODULE,
+            "_load_validated_results",
+            side_effect=AssertionError("historical Source artifacts were read"),
+        ):
+            record = MODULE._control_result(
+                "new-campaign", self.spec, "duet-r2r", "source"
+            )
+        self.assertEqual(
+            record,
+            binding["document"]["records"]["duet-r2r"],
+        )
+        record["metrics"]["SR"] = -1
+        self.assertNotEqual(
+            MODULE._control_result(
+                "new-campaign", self.spec, "duet-r2r", "source"
+            )["metrics"]["SR"],
+            -1,
+        )
+
+    def test_reused_source_manifest_rejects_invalid_records_and_paths(self):
+        valid = self.spec["_reused_source_manifest"]["document"]
+        invalid_documents = []
+
+        invalid = copy.deepcopy(valid)
+        invalid["schema"] = "unsupported"
+        invalid_documents.append(("schema", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["records"].pop("goat-r2r")
+        invalid_documents.append(("keys mismatch", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["records"]["duet-r2r"]["parameters"]["action_seed"] = 1
+        invalid_documents.append(("argmax with seed 0", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["records"]["hamt-r2r"]["metrics"].pop("SPL")
+        invalid_documents.append(("metrics.SPL", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["records"]["goat-r2r"]["formal_manifest_sha256"] = None
+        invalid_documents.append(("formal_manifest_sha256", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["source_batch"]["git_commit"] = "0" * 39
+        invalid_documents.append(("40-hex Git commit", invalid))
+
+        invalid = copy.deepcopy(valid)
+        invalid["records"]["duet-r2r"]["job_json_path"] = "../job.json"
+        invalid_documents.append(("safe repository-relative path", invalid))
+
+        for error, document in invalid_documents:
+            with self.subTest(error=error), self.assertRaisesRegex(
+                MODULE.UserError, error
+            ):
+                MODULE._validate_reused_source_document(document, "test-manifest")
+
+        outside = copy.deepcopy(self.spec)
+        outside["controls"]["standard_argmax_source_manifest"] = "/tmp/source.json"
+        with self.assertRaisesRegex(
+            MODULE.UserError, "safe repository-relative path"
+        ):
+            MODULE._validate_spec(outside)
+
+        untracked = copy.deepcopy(self.spec)
+        untracked["controls"]["standard_argmax_source_manifest"] = (
+            "vln/manifests/not-a-tracked-source-control.json"
+        )
+        with self.assertRaisesRegex(MODULE.UserError, "tracked by Git"):
+            MODULE._validate_spec(untracked)
+
+        source_enabled = copy.deepcopy(self.spec)
+        source_enabled["execution"]["method_order_within_model"].insert(0, "source")
+        source_enabled["execution"]["enabled_methods_by_setting"][
+            "duet-r2r"
+        ].insert(0, "source")
+        with self.assertRaisesRegex(MODULE.UserError, "Source phases must be disabled"):
+            MODULE._validate_spec(source_enabled)
+
     def test_every_generated_runtime_config_translates(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory)
@@ -278,6 +379,12 @@ class R2RLocalRefinementTests(unittest.TestCase):
             self.assertEqual(
                 json.loads((campaign / "PLAN.json").read_text())["job_count"],
                 self.spec["budget"]["total_before_confirmation"],
+            )
+            self.assertEqual(
+                json.loads((campaign / "PLAN.json").read_text())[
+                    "reused_source_manifest"
+                ],
+                MODULE._reused_source_plan_binding(self.spec),
             )
             with self.assertRaisesRegex(MODULE.UserError, "use --resume"):
                 MODULE.ensure_campaign_plan(args, self.spec)
@@ -343,6 +450,10 @@ class R2RLocalRefinementTests(unittest.TestCase):
         )
         phase_doc = MODULE.phase_manifest(
             phase, "worker-override", [], self.spec, args
+        )
+        self.assertEqual(
+            phase_doc["reused_source_manifest"],
+            MODULE._reused_source_plan_binding(self.spec),
         )
         self.assertEqual(phase_doc["effective_worker_limit"], value)
         self.assertIn(value, phase_doc["declared_worker_limits"])
@@ -627,13 +738,24 @@ class R2RLocalRefinementTests(unittest.TestCase):
 
             first_root = planned[0][1]
             first_job = planned[0][2][0]
-            Path(first_job["job_dir"], "console.log").write_text(
-                "Env name: val_seen, SR: 78.0, SPL: 72.0\n",
-                encoding="utf-8",
-            )
-            Path(first_job["job_dir"], "exitcode").write_text(
-                "0\n", encoding="utf-8"
-            )
+            for job in planned[0][2]:
+                Path(job["job_dir"], "console.log").write_text(
+                    "Env name: val_seen, SR: 78.0, SPL: 72.0\n",
+                    encoding="utf-8",
+                )
+                Path(job["job_dir"], "exitcode").write_text(
+                    "0\n", encoding="utf-8"
+                )
+                write_json(
+                    Path(job["result_root"]) / "tta_diagnostics.json",
+                    {
+                        "episode_count": 1021,
+                        "adapter": {
+                            "relative_param_drift": 0.01,
+                            "updates": 1,
+                        },
+                    },
+                )
             snapshot = MODULE.status_snapshot("status-test")
             self.assertEqual(snapshot["active_phase"], planned[1][0]["phase_id"])
             self.assertTrue(snapshot["phases"][1]["barrier_released"])
@@ -653,11 +775,9 @@ class R2RLocalRefinementTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(MODULE, "LOG_ROOT", root / "logs"))
             phase = MODULE._find_phase(self.spec, "duet-r2r", "feedtta")
             MODULE.phase_root("summary-test", phase).mkdir(parents=True)
-            source = {
-                "run_tag": "source", "parameters": {},
-                "metrics": {"SR": 78.0, "SPL": 72.0},
-                "adapter_diagnostics": None,
-            }
+            source = MODULE._control_result(
+                "summary-test", self.spec, "duet-r2r", "source"
+            )
             sampled = {
                 "run_tag": "sampled", "parameters": {},
                 "metrics": {"SR": 77.0, "SPL": 68.0},
@@ -682,8 +802,6 @@ class R2RLocalRefinementTests(unittest.TestCase):
             def controls(path, spec):
                 del spec
                 name = Path(path).name
-                if name.endswith("-source"):
-                    return [source]
                 if name.endswith("-feedtta_control"):
                     return [sampled]
                 raise AssertionError(name)
@@ -698,7 +816,10 @@ class R2RLocalRefinementTests(unittest.TestCase):
             self.assertEqual(
                 document["winner_run_tag"], f"candidate-{winner_index}"
             )
-            self.assertAlmostEqual(document["delta_sr_pp"], winner_index / 10.0)
+            self.assertAlmostEqual(
+                document["delta_sr_pp"],
+                78.0 + winner_index / 10.0 - source["metrics"]["SR"],
+            )
             self.assertAlmostEqual(
                 document["delta_sampled_control_sr_pp"],
                 1.0 + winner_index / 10.0,
@@ -739,6 +860,13 @@ class R2RLocalRefinementTests(unittest.TestCase):
 
             document = MODULE.aggregate_campaign(batch_id, self.spec)
             active = MODULE.active_tta_methods(self.spec)
+            for setting in MODULE.SETTINGS:
+                self.assertEqual(
+                    document["controls"][setting]["source"],
+                    self.spec["_reused_source_manifest"]["document"]["records"][
+                        setting
+                    ],
+                )
             self.assertEqual(set(document["methods"]), set(active))
             self.assertTrue(all(
                 set(document["methods"][method])

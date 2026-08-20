@@ -48,6 +48,7 @@ PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_campaign_plan.v1"
 PHASE_SCHEMA = "navtta.vln_r2r_local_refinement_phase.v1"
 CALIBRATION_SCHEMA = "navtta.vln_r2r_local_refinement_calibration.v1"
 CALIBRATION_PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_calibration_plan.v1"
+REUSED_SOURCE_SCHEMA = "navtta.vln_r2r_reused_source_controls.v1"
 STAGE = "local_refinement"
 
 SETTINGS = ("duet-r2r", "hamt-r2r", "goat-r2r")
@@ -67,6 +68,23 @@ SUPPORTED_PHASE_ORDER = (
     "atena",
 )
 CONTROL_METHODS = ("source", "feedtta_control")
+REUSED_SOURCE_PROVENANCE_FIELDS = (
+    "checkpoint_sha256",
+    "formal_manifest_path",
+    "formal_manifest_sha256",
+    "job_json_path",
+    "job_json_sha256",
+    "metrics_json_path",
+    "metrics_json_sha256",
+    "parameters_json_path",
+    "parameters_json_sha256",
+)
+REUSED_SOURCE_BATCH_PROVENANCE_FIELDS = (
+    "grid_path",
+    "grid_sha256",
+    "summary_path",
+    "summary_sha256",
+)
 
 DEFAULT_MAX_MEMORY_GIB = 75.0
 DEFAULT_LAUNCH_STAGGER_SECONDS = 15.0
@@ -132,6 +150,198 @@ def _positive_int(value, label):
     return value
 
 
+def _nonempty_string(value, label):
+    if not isinstance(value, str) or not value:
+        raise UserError(f"{label} must be a nonempty string")
+    return value
+
+
+def _sha256_string(value, label):
+    value = _nonempty_string(value, label)
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise UserError(f"{label} must be a lowercase SHA256 digest")
+    return value
+
+
+def _git_commit_string(value, label):
+    value = _nonempty_string(value, label)
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise UserError(f"{label} must be a lowercase 40-hex Git commit")
+    return value
+
+
+def _safe_relative_path(value, label):
+    value = _nonempty_string(value, label)
+    path = Path(value)
+    if (
+        path.is_absolute()
+        or value != path.as_posix()
+        or any(part in ("", ".", "..") for part in path.parts)
+        or re.fullmatch(r"[A-Za-z0-9._/-]+", value) is None
+    ):
+        raise UserError(f"{label} must be a safe repository-relative path")
+    return value
+
+
+def _validate_reused_source_document(document, label):
+    document = _mapping(document, label)
+    if document.get("schema") != REUSED_SOURCE_SCHEMA:
+        raise UserError("unsupported reused Source controls schema")
+    if document.get("benchmark") != "r2r" or document.get("split") != "val_seen":
+        raise UserError("reused Source controls must be R2R val_seen")
+    if document.get("source_protocol") != "standard_argmax":
+        raise UserError("reused Source controls must use standard_argmax")
+    if document.get("episode_count") != 1021 or document.get("order_seed") != 0:
+        raise UserError(
+            "reused Source controls must use 1,021 episodes and order seed 0"
+        )
+    _sha256_string(
+        document.get("episode_order_sha256"), f"{label}.episode_order_sha256"
+    )
+    _nonempty_string(document.get("dataset_version"), f"{label}.dataset_version")
+    _nonempty_string(document.get("hardware"), f"{label}.hardware")
+
+    source_batch = _mapping(document.get("source_batch"), f"{label}.source_batch")
+    _nonempty_string(
+        source_batch.get("batch_id"), f"{label}.source_batch.batch_id"
+    )
+    _git_commit_string(
+        source_batch.get("git_commit"), f"{label}.source_batch.git_commit"
+    )
+    _sha256_string(
+        source_batch.get("spec_sha256"), f"{label}.source_batch.spec_sha256"
+    )
+    for key in REUSED_SOURCE_BATCH_PROVENANCE_FIELDS:
+        value = source_batch.get(key)
+        validator = _safe_relative_path if key.endswith("_path") else _sha256_string
+        validator(value, f"{label}.source_batch.{key}")
+    for key, value in source_batch.items():
+        _nonempty_string(value, f"{label}.source_batch.{key}")
+        if key.endswith("_path"):
+            _safe_relative_path(value, f"{label}.source_batch.{key}")
+        elif key.endswith("_sha256"):
+            _sha256_string(value, f"{label}.source_batch.{key}")
+
+    records = _mapping(document.get("records"), f"{label}.records")
+    _exact_keys(records, SETTINGS, f"{label}.records")
+    for setting in SETTINGS:
+        record_label = f"{label}.records.{setting}"
+        record = _mapping(records[setting], record_label)
+        run_tag = _nonempty_string(record.get("run_tag"), f"{record_label}.run_tag")
+        batch_id = _nonempty_string(
+            record.get("batch_id"), f"{record_label}.batch_id"
+        )
+        safe_component("reused Source run_tag", run_tag)
+        safe_component("reused Source batch_id", batch_id)
+        if batch_id != source_batch["batch_id"]:
+            raise UserError(f"{record_label}.batch_id does not match source_batch")
+        if record.get("model") != SETTING_MODEL[setting]:
+            raise UserError(f"{record_label}.model mismatch")
+
+        parameters = _mapping(record.get("parameters"), f"{record_label}.parameters")
+        _exact_keys(
+            parameters,
+            ("action_selection", "action_seed"),
+            f"{record_label}.parameters",
+        )
+        if (
+            parameters.get("action_selection") != "argmax"
+            or parameters.get("action_seed") != 0
+        ):
+            raise UserError(
+                f"{record_label}.parameters must select argmax with seed 0"
+            )
+
+        metrics = _mapping(record.get("metrics"), f"{record_label}.metrics")
+        for metric in ("SR", "SPL"):
+            value = metrics.get(metric)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise UserError(f"{record_label}.metrics.{metric} must be finite")
+        for key in REUSED_SOURCE_PROVENANCE_FIELDS:
+            value = record.get(key)
+            validator = _safe_relative_path if key.endswith("_path") else _sha256_string
+            validator(value, f"{record_label}.{key}")
+        for key, value in record.items():
+            if key.endswith("_path"):
+                _safe_relative_path(value, f"{record_label}.{key}")
+            elif key.endswith("_sha256"):
+                _sha256_string(value, f"{record_label}.{key}")
+
+    for key, value in document.items():
+        if key.endswith("_path"):
+            _safe_relative_path(value, f"{label}.{key}")
+        elif key.endswith("_sha256"):
+            _sha256_string(value, f"{label}.{key}")
+
+    try:
+        canonical(document)
+    except (TypeError, ValueError) as error:
+        raise UserError(f"invalid reused Source controls manifest: {error}") from error
+    return document
+
+
+def _load_reused_source_manifest(spec):
+    controls = _mapping(spec.get("controls"), "controls")
+    reference = _nonempty_string(
+        controls.get("standard_argmax_source_manifest"),
+        "controls.standard_argmax_source_manifest",
+    )
+    _safe_relative_path(reference, "controls.standard_argmax_source_manifest")
+    candidate = REPO_ROOT / reference
+    path = candidate.resolve()
+    try:
+        relative = path.relative_to(REPO_ROOT.resolve())
+    except ValueError as error:
+        raise UserError(
+            "controls.standard_argmax_source_manifest must be inside the repository"
+        ) from error
+    try:
+        git("ls-files", "--error-unmatch", "--", relative.as_posix())
+    except subprocess.CalledProcessError as error:
+        raise UserError(
+            "controls.standard_argmax_source_manifest must be tracked by Git"
+        ) from error
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError(f"invalid reused Source controls manifest {path}: {error}") from error
+    _validate_reused_source_document(document, str(relative))
+    return {
+        "reference": reference,
+        "path": str(path),
+        "relative_path": relative.as_posix(),
+        "sha256": sha256(path),
+        "document": document,
+    }
+
+
+def _reused_source_manifest(spec):
+    binding = spec.get("_reused_source_manifest")
+    reference = spec.get("controls", {}).get("standard_argmax_source_manifest")
+    if isinstance(binding, dict) and binding.get("reference") == reference:
+        return binding
+    return _load_reused_source_manifest(spec)
+
+
+def _reused_source_plan_binding(spec):
+    binding = _reused_source_manifest(spec)
+    source_batch = binding["document"]["source_batch"]
+    return {
+        "reference": binding["reference"],
+        "path": binding["relative_path"],
+        "sha256": binding["sha256"],
+        "source_batch": {
+            "batch_id": source_batch["batch_id"],
+            "git_commit": source_batch["git_commit"],
+            "spec_sha256": source_batch["spec_sha256"],
+        },
+    }
+
+
 def enabled_phases_by_setting(spec):
     execution = _mapping(spec.get("execution"), "execution")
     declared = execution.get("enabled_methods_by_setting")
@@ -156,8 +366,6 @@ def enabled_phases_by_setting(spec):
         positions = [global_positions[method] for method in phases]
         if positions != sorted(positions):
             raise UserError(f"enabled phases for {setting} violate method order")
-        if phases[0] != "source":
-            raise UserError(f"enabled phases for {setting} must start with source")
         if ("feedtta" in phases) != ("feedtta_control" in phases):
             raise UserError(
                 f"{setting} must pair FeedTTA with its sampled no-update control"
@@ -345,6 +553,11 @@ def _validate_spec(document):
     if execution.get("model_order") != list(SETTINGS):
         raise UserError("local refinement model order mismatch")
     enabled = enabled_phases_by_setting(document)
+    reused_source_manifest = _load_reused_source_manifest(document)
+    if any("source" in phases for phases in enabled.values()):
+        raise UserError(
+            "Source phases must be disabled when a reused Source manifest is configured"
+        )
     for key in (
         "strict_model_barrier_required",
         "strict_method_barrier_required",
@@ -406,6 +619,10 @@ def _validate_spec(document):
     controls = _mapping(document.get("controls"), "controls")
     if controls.get("standard_argmax_source_per_setting") is not True:
         raise UserError("standard argmax Source controls are required")
+    if controls.get("standard_argmax_source_execution") != "reuse_completed_manifest":
+        raise UserError(
+            "standard argmax Source execution must reuse the completed manifest"
+        )
     if controls.get("feedtta_sampled_no_update_per_setting") is not True:
         raise UserError("FeedTTA sampled no-update controls are required")
     control_count = sum(
@@ -439,10 +656,16 @@ def _validate_spec(document):
     control_execution = _mapping(
         execution.get("control_execution"), "execution.control_execution"
     )
-    _exact_keys(
-        control_execution, CONTROL_METHODS, "execution.control_execution"
+    enabled_control_methods = tuple(
+        method for method in CONTROL_METHODS
+        if any(method in phases for phases in enabled.values())
     )
-    for method in CONTROL_METHODS:
+    _exact_keys(
+        control_execution,
+        enabled_control_methods,
+        "execution.control_execution",
+    )
+    for method in enabled_control_methods:
         value = _mapping(
             control_execution[method], f"execution.control_execution.{method}"
         )
@@ -539,6 +762,7 @@ def _validate_spec(document):
                 )
             for step in steps:
                 _positive_int(step, f"{method}/{setting} conditional worker limit")
+    return reused_source_manifest
 
 
 def load_spec(path=DEFAULT_SPEC):
@@ -547,13 +771,14 @@ def load_spec(path=DEFAULT_SPEC):
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise UserError(f"invalid local-refinement spec {path}: {error}") from error
-    _validate_spec(document)
+    reused_source_manifest = _validate_spec(document)
     document["setting_episode_counts"] = {
         setting: int(document["protocol"]["episode_count"])
         for setting in SETTINGS
     }
     document["_path"] = str(path)
     document["_sha256"] = sha256(path)
+    document["_reused_source_manifest"] = reused_source_manifest
     return document
 
 
@@ -1083,6 +1308,7 @@ def phase_manifest(phase, batch_id, jobs, spec, cli):
         "git_commit": git("rev-parse", "HEAD"),
         "spec_path": spec["_path"],
         "spec_sha256": spec["_sha256"],
+        "reused_source_manifest": _reused_source_plan_binding(spec),
         "result_layout": RESULT_LAYOUT,
         "safe_worker_limit": _safe_worker_limit(phase, spec),
         "effective_worker_limit": _configured_worker_limit(cli, phase, spec),
@@ -1112,6 +1338,7 @@ def campaign_manifest(batch_id, phases, spec, cli):
         "git_commit": git("rev-parse", "HEAD"),
         "spec_path": spec["_path"],
         "spec_sha256": spec["_sha256"],
+        "reused_source_manifest": _reused_source_plan_binding(spec),
         "result_layout": RESULT_LAYOUT,
         "strict_model_barrier": True,
         "strict_method_barrier": True,
@@ -1324,6 +1551,12 @@ def _find_phase(spec, setting, method):
 
 
 def _control_result(batch_id, spec, setting, method):
+    if method == "source":
+        if setting not in SETTINGS:
+            raise UserError(f"unknown reused Source setting {setting}")
+        record = _reused_source_manifest(spec)["document"]["records"][setting]
+        # Return a detached JSON value so callers cannot mutate the pinned manifest.
+        return json.loads(canonical(record))
     phase = _find_phase(spec, setting, method)
     results = _load_validated_results(phase_root(batch_id, phase), spec)
     if len(results) != 1:
@@ -1479,7 +1712,12 @@ def aggregate_campaign(batch_id, spec):
     active_methods = active_tta_methods(spec)
     enabled = enabled_phases_by_setting(spec)
     winners = {method: {} for method in active_methods}
-    controls = {setting: {} for setting in SETTINGS}
+    controls = {
+        setting: {
+            "source": _control_result(batch_id, spec, setting, "source")
+        }
+        for setting in SETTINGS
+    }
     top_rows = []
     for phase in phase_sequence(spec):
         root = phase_root(batch_id, phase)

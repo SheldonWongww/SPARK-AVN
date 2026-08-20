@@ -83,8 +83,10 @@ zero failures on commit `a258ac5`.  Its compact analysis is tracked in
 
 `r2r_five_method_local_refinement_v1.json` is the next-round design.  It keeps
 Tent at 30 candidates, FSTTA at 214, FeedTTA at 167, and GOAT-only ATENA at 55.
-Three standard Source and three FeedTTA sampled controls make 472 jobs before
-conditional confirmation. EAM is not searched in this round.
+The three completed standard Source results are reused through the pinned
+`vln/manifests/r2r_reused_source_controls.json`; only three FeedTTA sampled
+controls are executed. This makes 469 jobs before conditional confirmation.
+EAM is not searched in this round.
 The filename and schema retain the name of an earlier uncommitted draft; the
 validated contents and enabled-method map are the authoritative four-method
 protocol.
@@ -119,16 +121,16 @@ CAL_BATCH=vln-r2r-four-method-low-lr-v1-calibration
 python3 vln/scripts/run_r2r_local_refinement.py \
   --batch-id "$CAL_BATCH" --plan-only
 python3 vln/scripts/calibrate_r2r_local_refinement.py \
-  --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
+  --batch-id "$CAL_BATCH" --phase-id 01-duet-r2r-fstta \
   --target-workers 5 --initial-workers 5 --episode-limit 100 \
   --stagger-seconds 0 --calibration-id duet-fstta-baseline5
 
 PARENT="$PWD/vln/results/logs/r2r/hparam_search/$CAL_BATCH/calibration/\
-02-duet-r2r-fstta/duet-fstta-baseline5/CALIBRATION.json"
+01-duet-r2r-fstta/duet-fstta-baseline5/CALIBRATION.json"
 # Choose N from the phase's declared counts after inspecting the baseline.
 N=10
 python3 vln/scripts/calibrate_r2r_local_refinement.py \
-  --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
+  --batch-id "$CAL_BATCH" --phase-id 01-duet-r2r-fstta \
   --target-workers "$N" --initial-workers "$N" --episode-limit 100 \
   --sizing-parent "$PARENT" --stagger-seconds 0 \
   --calibration-id "duet-fstta-verify${N}"
@@ -160,7 +162,7 @@ The helper remains the required path for raising a phase above the default
 `production_cap`. Do not run the formal scheduler for `CAL_BATCH`; use a
 different batch for formal results.
 
-For the current 472-job launch, the approved defaults are encoded directly as
+For the current 469-job launch, the approved defaults are encoded directly as
 `production_cap`: DUET Tent/FSTTA/FeedTTA = 10/14/6, HAMT = 10/11/5, and GOAT
 Tent/FSTTA/FeedTTA/ATENA = 10/14/6/5. Completed grouped measurements support
 all of these except GOAT FSTTA and GOAT FeedTTA. Those two are explicit
@@ -194,10 +196,10 @@ approved arguments must then be repeated unchanged on resume:
 
 ```bash
 PHASE_ARGS=(
-  --phase-max-workers 07-hamt-r2r-fstta=12
+  --phase-max-workers 05-hamt-r2r-fstta=12
 )
 CALIBRATION_ARGS=(
-  --phase-calibration 07-hamt-r2r-fstta=/absolute/path/to/CALIBRATION.json
+  --phase-calibration 05-hamt-r2r-fstta=/absolute/path/to/CALIBRATION.json
 )
 python3 vln/scripts/run_r2r_local_refinement.py \
   --batch-id "$BATCH" --plan-only \
