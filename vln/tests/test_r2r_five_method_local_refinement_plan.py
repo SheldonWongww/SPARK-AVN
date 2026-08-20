@@ -133,6 +133,37 @@ class FourMethodLowLRRefinementPlanTests(unittest.TestCase):
             55,
         )
 
+    def test_formal_concurrency_caps_and_projection_lines(self):
+        concurrency = self.plan["execution"]["concurrency_calibration"]
+        expected = {
+            "tent": {"duet-r2r": 10, "hamt-r2r": 10, "goat-r2r": 10},
+            "fstta": {"duet-r2r": 14, "hamt-r2r": 11, "goat-r2r": 14},
+            "feedtta": {"duet-r2r": 6, "hamt-r2r": 5, "goat-r2r": 6},
+            "atena": {"goat-r2r": 5},
+        }
+        for method, settings in expected.items():
+            for setting, cap in settings.items():
+                policy = concurrency[method][setting]
+                self.assertEqual(policy["production_cap"], cap)
+                self.assertTrue(policy["cap_basis"])
+
+        self.assertEqual(
+            concurrency["fstta"]["goat-r2r"]["projected_peak_mib"],
+            28102,
+        )
+        self.assertEqual(
+            concurrency["feedtta"]["goat-r2r"]["projected_peak_mib"],
+            26400,
+        )
+        planning_line = self.plan["execution"]["gpu_safety"][
+            "production_planned_steady_used_mib_max"
+        ]
+        for method in ("fstta", "feedtta"):
+            self.assertLess(
+                concurrency[method]["goat-r2r"]["projected_peak_mib"],
+                planning_line,
+            )
+
     def test_every_parent_anchor_occurs_exactly_once(self):
         anchors = self.plan["parent_anchors"]
         self.assertEqual(set(anchors), set(METHODS))

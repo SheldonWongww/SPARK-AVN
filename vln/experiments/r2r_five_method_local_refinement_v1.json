@@ -119,27 +119,28 @@
       "grouped_jump_after_measured_baseline": true,
       "grouped_jump_projection_max_mib": 28500,
       "grouped_jump_per_worker_margin_factor": 1.05,
-      "grouped_jump_requires_independent_steady_validation": true
+      "grouped_jump_requires_independent_steady_validation": true,
+      "formal_cap_policy": "Use completed grouped measurements where available; otherwise use the user-approved conservative projection while retaining launch and emergency VRAM guards."
     },
     "concurrency_calibration": {
       "tent": {
-        "duet-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 1900, "prelaunch_gate_mib": 25000},
-        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2400, "prelaunch_gate_mib": 25000},
-        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2000, "prelaunch_gate_mib": 25000}
+        "duet-r2r": {"production_cap": 10, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 1900, "observed_peak_mib": 18797, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "hamt-r2r": {"production_cap": 10, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2400, "observed_peak_mib": 23395, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "goat-r2r": {"production_cap": 10, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 2000, "observed_peak_mib": 19257, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000}
       },
       "fstta": {
-        "duet-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1900, "prelaunch_gate_mib": 25000},
-        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12], "estimated_mib_per_job": 2350, "prelaunch_gate_mib": 25000},
-        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1950, "prelaunch_gate_mib": 25000}
+        "duet-r2r": {"production_cap": 14, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1900, "observed_peak_mib": 25893, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "hamt-r2r": {"production_cap": 11, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12], "estimated_mib_per_job": 2350, "observed_peak_mib": 25450, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "goat-r2r": {"production_cap": 14, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1950, "baseline_observed_peak_mib": 9559, "projected_peak_mib": 28102, "cap_basis": "user_approved_five_worker_projection", "prelaunch_gate_mib": 25000}
       },
       "feedtta": {
-        "duet-r2r": {"production_cap": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "prelaunch_gate_mib": 24000},
-        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "prelaunch_gate_mib": 24000},
-        "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "prelaunch_gate_mib": 24500},
+        "duet-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "observed_peak_mib": 24178, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 24000},
+        "hamt-r2r": {"production_cap": 5, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "observed_peak_mib": 23539, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 24000},
+        "goat-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "projected_peak_mib": 26400, "cap_basis": "user_approved_per_job_projection", "prelaunch_gate_mib": 24500},
         "seven_workers_forbidden": true
       },
       "atena": {
-        "goat-r2r": {"production_cap": 5, "conditional_test_steps": [], "estimated_mib_per_job": 5290, "observed_peak_mib": 26495, "prelaunch_gate_mib": 23500}
+        "goat-r2r": {"production_cap": 5, "conditional_test_steps": [], "estimated_mib_per_job": 5290, "observed_peak_mib": 26495, "cap_basis": "prior_completed_grouped_measurement", "prelaunch_gate_mib": 23500}
       }
     }
   },

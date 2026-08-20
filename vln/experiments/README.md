@@ -100,8 +100,9 @@ enforces strict model and method barriers. The spec is launchable only with the
 explicit `--confirm-reviewed` acknowledgement; `max_per_model` alone still does
 not enforce the barrier.
 
-Use a separate plan-only batch for the required GPU calibration. The current
-policy clones jobs into isolated calibration paths and starts with one fresh
+For any future increase above a default production cap, use a separate
+plan-only calibration batch. The helper clones jobs into isolated calibration
+paths and starts with one fresh
 five-worker group over the canonical 100-episode prefix. A later worker count
 may be chosen from the measured per-worker VRAM only when its linear projection
 stays at or below 28,500 MiB, and that larger count is then launched as a new,
@@ -155,14 +156,24 @@ plan SHA256 digests are recorded, and the summary binds the raw resource CSV
 digest. Counts observed while a group is launching are transient and never
 approved as formal concurrency.
 
-Repeat the helper for every enabled TTA model/method phase.  Do not run the
-formal scheduler for `CAL_BATCH`; use the reported per-phase recommended caps
-to create a different formal batch.
+The helper remains the required path for raising a phase above the default
+`production_cap`. Do not run the formal scheduler for `CAL_BATCH`; use a
+different batch for formal results.
 
-After the spec and runner are tracked on a clean commit, first finish the
-separate concurrency calibration.  Put every approved override in the same
-argument list, then use that identical list for both immutable planning and
-every launch/resume.  The example below shows the no-override fallback:
+For the current 472-job launch, the approved defaults are encoded directly as
+`production_cap`: DUET Tent/FSTTA/FeedTTA = 10/14/6, HAMT = 10/11/5, and GOAT
+Tent/FSTTA/FeedTTA/ATENA = 10/14/6/5. Completed grouped measurements support
+all of these except GOAT FSTTA and GOAT FeedTTA. Those two are explicit
+user-approved estimates: 14-worker FSTTA projects to 28,102 MiB from its
+successful five-worker group, and six-worker FeedTTA projects to 26,400 MiB
+from the per-job estimate. The formal 15-second launch stagger, per-method
+23,500--25,000 MiB pre-launch gates, 29,000 MiB planning line, and 30,000 MiB
+emergency line remain active. Because these are defaults, the formal batch
+uses the no-override command below; future increases still require completed
+grouped evidence.
+
+After the spec and runner are tracked on a clean commit, create this formal
+batch directly with the no-override commands below:
 
 ```bash
 BATCH=vln-r2r-four-method-low-lr-v1-seed0
@@ -177,17 +188,16 @@ python3 vln/scripts/run_r2r_local_refinement.py \
 ```
 
 `--phase-max-workers PHASE_ID=N` is repeatable and may select only a worker
-count declared for that exact phase in the spec. For example, after the
-required grouped calibration, create the formal plan with the approved
-arguments and repeat them unchanged on resume:
+count declared for that exact phase in the spec. For example, a future increase
+of HAMT FSTTA from its default 11 to 12 requires grouped calibration; the
+approved arguments must then be repeated unchanged on resume:
 
 ```bash
 PHASE_ARGS=(
-  --phase-max-workers 02-duet-r2r-fstta=10
-  --phase-max-workers 15-goat-r2r-atena=5
+  --phase-max-workers 07-hamt-r2r-fstta=12
 )
 CALIBRATION_ARGS=(
-  --phase-calibration 02-duet-r2r-fstta=/absolute/path/to/CALIBRATION.json
+  --phase-calibration 07-hamt-r2r-fstta=/absolute/path/to/CALIBRATION.json
 )
 python3 vln/scripts/run_r2r_local_refinement.py \
   --batch-id "$BATCH" --plan-only \
@@ -209,16 +219,12 @@ declared value. Worker overrides and the other runtime limits are pinned in
 `PLAN.json`; changing them requires a new batch ID. Failed jobs require
 `--resume --retry-failed` with the same pinned runtime arguments.
 
-Concurrency is calibrated separately for every enabled method/model. Start at
-five, project a declared larger count conservatively from measured VRAM, and
-accept that count only after a separate grouped load and steady-VRAM test
-confirms every child; a launch stagger alone is never sufficient.
-ATENA is enabled
-only for GOAT and fixed at the observed-safe five workers; the remaining
-conditional caps require pure-model measurement. Production plans must
-remain at or below 29,000 MiB; an observed 30,000 MiB is an emergency rollback
-line, not a planning target.  Per-method pre-launch gates remain 23,500–25,000
-MiB and are secondary guards, not protection against cold-start memory lag.
+Future concurrency increases start from a five-worker measurement and use the
+grouped validation protocol above. ATENA is enabled only for GOAT and fixed at
+five workers. Production plans must remain at or below 29,000 MiB; an observed
+30,000 MiB is an emergency rollback line, not a planning target. Per-method
+pre-launch gates remain 23,500--25,000 MiB and are secondary guards, not
+protection against cold-start memory lag.
 
 ## Superseded: R2R FeedTTA low-learning-rate refinement
 

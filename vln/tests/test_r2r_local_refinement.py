@@ -378,12 +378,21 @@ class R2RLocalRefinementTests(unittest.TestCase):
         phase = next(
             item for item in phases
             if item["method"] not in MODULE.CONTROL_METHODS
-            and self.spec["execution"]["concurrency_calibration"]
-            [item["method"]][item["setting"]].get("conditional_test_steps")
+            and any(
+                value > MODULE._safe_worker_limit(item, self.spec)
+                for value in self.spec["execution"]["concurrency_calibration"]
+                [item["method"]][item["setting"]].get(
+                    "conditional_test_steps", []
+                )
+            )
         )
-        requested = self.spec["execution"]["concurrency_calibration"][
-            phase["method"]
-        ][phase["setting"]]["conditional_test_steps"][0]
+        requested = next(
+            value
+            for value in self.spec["execution"]["concurrency_calibration"][
+                phase["method"]
+            ][phase["setting"]]["conditional_test_steps"]
+            if value > MODULE._safe_worker_limit(phase, self.spec)
+        )
         args = cli(
             phase_max_workers={phase["phase_id"]: requested},
             phase_calibrations={},
