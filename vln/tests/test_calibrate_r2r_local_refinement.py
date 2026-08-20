@@ -139,7 +139,7 @@ class FakeProcess:
 
 
 class CalibrationHelperTests(unittest.TestCase):
-    def test_cli_defaults_to_full_val_and_fifteen_second_stagger(self):
+    def test_cli_defaults_include_adaptive_steady_gate(self):
         args = MODULE.parse_args([
             "--batch-id", "calibration-test",
             "--phase-id", PHASE_ID,
@@ -148,6 +148,11 @@ class CalibrationHelperTests(unittest.TestCase):
         self.assertIsNone(args.episode_limit)
         self.assertEqual(args.stagger_seconds, 15.0)
         self.assertEqual(args.sample_interval_seconds, 3.0)
+        self.assertEqual(args.steady_seconds, 20.0)
+        self.assertEqual(args.steady_samples, 3)
+        self.assertEqual(args.load_timeout_seconds, 300.0)
+        self.assertEqual(args.min_loaded_memory_mib, 512)
+        self.assertEqual(args.steady_relative_tolerance, 0.02)
 
     def test_clone_isolates_job_config_result_and_exit_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -224,6 +229,11 @@ class CalibrationHelperTests(unittest.TestCase):
             "gpu": 0,
             "stagger_seconds": 2.0,
             "sample_interval_seconds": 2.0,
+            "steady_seconds": 2.0,
+            "steady_samples": 2,
+            "load_timeout_seconds": 30.0,
+            "min_loaded_memory_mib": 500,
+            "steady_relative_tolerance": 0.01,
         })
         return root, phase, clones, calibration_plan
 
@@ -233,34 +243,175 @@ class CalibrationHelperTests(unittest.TestCase):
             root, phase, clones, plan = self._prepared_clones(temp)
             clock = FakeClock()
             launched_at = []
+            processes = []
 
             def launch(_job):
                 launched_at.append(clock.now)
-                return FakeProcess(clock, lifetime=8.0), io.BytesIO()
+                process = FakeProcess(clock, lifetime=20.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 91
 
             with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
                     mock.patch.object(MODULE.time, "sleep", clock.sleep), \
                     mock.patch.object(MODULE, "_launch", side_effect=launch), \
-                    mock.patch.object(MODULE, "_gpu_stats", return_value=(12000, 91)), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
                     mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0):
                 summary = MODULE._run_calibration(
                     root, phase, clones, plan, gpu=0,
-                    stagger_seconds=2.0, sample_interval_seconds=2.0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
                     terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
                 )
 
-            self.assertEqual(launched_at, [0.0, 2.0, 4.0])
+            self.assertEqual(launched_at, [0.0, 4.0, 8.0])
             self.assertEqual(summary["status"], "completed")
             self.assertEqual(summary["max_observed_active_count"], 3)
             self.assertEqual(summary["recommended_cap"], 3)
             self.assertEqual(summary["successful_workers"], 3)
             self.assertTrue(all(job["episode_throughput_eps"] for job in summary["jobs"]))
             levels = {item["active_count"]: item for item in summary["levels"]}
-            self.assertEqual(levels[3]["peak_gpu_memory_mib"], 12000)
-            self.assertEqual(levels[3]["steady_gpu_memory_mib"], 12000.0)
+            self.assertEqual(levels[1]["previous_steady_gpu_memory_mib"], 1000.0)
+            self.assertEqual(levels[1]["steady_gpu_memory_mib"], 2000.0)
+            self.assertEqual(levels[2]["previous_steady_gpu_memory_mib"], 2000.0)
+            self.assertEqual(levels[3]["previous_steady_gpu_memory_mib"], 3000.0)
+            self.assertEqual(levels[3]["peak_gpu_memory_mib"], 4000)
+            self.assertEqual(levels[3]["steady_gpu_memory_mib"], 4000.0)
+            self.assertTrue(all(levels[count]["steady_confirmed"] for count in (1, 2, 3)))
+            self.assertEqual(levels[3]["load_wait_seconds"], 4.0)
             self.assertTrue((root / "resource.csv").is_file())
             persisted = json.loads((root / "CALIBRATION.json").read_text())
             self.assertEqual(persisted["recommended_cap"], 3)
+
+    def test_thirty_second_cold_start_never_releases_second_worker_early(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=2)
+            clock = FakeClock()
+            launched_at = []
+            processes = []
+
+            def launch(_job):
+                launched_at.append(clock.now)
+                process = FakeProcess(clock, lifetime=60.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                if not processes:
+                    return 1, 0
+                if len(processes) == 1:
+                    return (1, 0) if clock.now < 30 else (2001, 90)
+                return 3001, 90
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=50.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                )
+
+            self.assertEqual(launched_at, [0.0, 32.0])
+            self.assertGreater(launched_at[1], 30.0)
+            self.assertEqual(summary["recommended_cap"], 2)
+            levels = {item["active_count"]: item for item in summary["levels"]}
+            self.assertEqual(levels[1]["load_wait_seconds"], 32.0)
+            self.assertEqual(levels[2]["previous_steady_gpu_memory_mib"], 2001.0)
+
+    def test_load_timeout_fails_without_launching_next_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=2)
+            clock = FakeClock()
+            processes = []
+
+            def launch(_job):
+                process = FakeProcess(clock, lifetime=100.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def deliver(process, signum):
+                process.deliver(signum)
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", return_value=(1, 0)), \
+                    mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0), \
+                    mock.patch.object(MODULE, "_signal_process_group", side_effect=deliver):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=20.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                )
+
+            self.assertEqual(len(processes), 1)
+            self.assertEqual(summary["stop_reason"], "load_timeout")
+            self.assertEqual(summary["status"], "failed")
+            self.assertEqual(summary["recommended_cap"], 0)
+            level = next(item for item in summary["levels"] if item["active_count"] == 1)
+            self.assertFalse(level["steady_confirmed"])
+            self.assertEqual(level["previous_steady_gpu_memory_mib"], 1.0)
+            self.assertEqual(level["load_wait_seconds"], 20.0)
+
+    def test_worker_exit_before_new_level_steady_is_inconclusive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=2)
+            clock = FakeClock()
+            processes = []
+
+            def launch(_job):
+                lifetime = 6.0 if not processes else 100.0
+                process = FakeProcess(clock, lifetime=lifetime)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 90
+
+            def deliver(process, signum):
+                process.deliver(signum)
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0), \
+                    mock.patch.object(MODULE, "_signal_process_group", side_effect=deliver):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                )
+
+            self.assertEqual(summary["stop_reason"], "worker_exited_before_steady")
+            self.assertEqual(summary["status"], "inconclusive")
+            self.assertEqual(summary["recommended_cap"], 1)
+            levels = {item["active_count"]: item for item in summary["levels"]}
+            self.assertTrue(levels[1]["steady_confirmed"])
+            self.assertFalse(levels[2]["steady_confirmed"])
 
     def test_29gb_gate_stops_before_next_worker(self):
         with tempfile.TemporaryDirectory() as directory:

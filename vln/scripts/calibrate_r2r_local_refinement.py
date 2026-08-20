@@ -5,7 +5,10 @@ This helper consumes a campaign already materialized by
 ``run_r2r_local_refinement.py --plan-only``.  It never executes a persisted
 formal job in place.  Instead, it clones a prefix of one phase into an
 isolated calibration namespace, rewrites every run/config/result path, and
-then ramps up one worker at a time while sampling GPU and cgroup memory.
+then ramps up one worker at a time while sampling GPU and cgroup memory.  The
+next worker is blocked until the current level rises above the previous
+level's steady VRAM and remains stable for a measured window; the fixed
+stagger is only a minimum delay, never loading evidence.
 
 The two memory lines are deliberately fixed here: stop adding workers once
 29,000 MiB is observed and terminate only this helper's process groups once
@@ -45,6 +48,11 @@ EMERGENCY_MEMORY_MIB = 30_000
 DEFAULT_STAGGER_SECONDS = 15.0
 DEFAULT_SAMPLE_INTERVAL_SECONDS = 3.0
 DEFAULT_TERMINATE_GRACE_SECONDS = 10.0
+DEFAULT_STEADY_SECONDS = 20.0
+DEFAULT_LOAD_TIMEOUT_SECONDS = 300.0
+DEFAULT_MIN_LOADED_MEMORY_MIB = 512
+DEFAULT_STEADY_RELATIVE_TOLERANCE = 0.02
+DEFAULT_STEADY_SAMPLES = 3
 FULL_VAL_EPISODES = 1021
 
 
@@ -563,9 +571,47 @@ RESOURCE_FIELDS = (
 )
 
 
-def _level_summaries(samples, records):
+def _steady_window(
+    loaded_samples, now, steady_seconds, steady_samples, relative_tolerance
+):
+    """Return a stable recent window, or ``None`` while a level is loading.
+
+    ``loaded_samples`` must already be a contiguous run of samples above this
+    level's previous-steady-plus-increment threshold.  Use the shortest recent
+    suffix that spans ``steady_seconds`` so early cold-start growth cannot keep
+    an otherwise settled worker permanently unstable.
+    """
+    eligible = [
+        index for index, sample in enumerate(loaded_samples)
+        if now - sample["monotonic"] >= steady_seconds
+    ]
+    if not eligible:
+        return None
+    window = loaded_samples[max(eligible):]
+    if len(window) < steady_samples:
+        return None
+    span = now - window[0]["monotonic"]
+    if span < steady_seconds:
+        return None
+    memories = [int(sample["gpu_memory_mib"]) for sample in window]
+    steady = float(statistics.median(memories))
+    relative_fluctuation = (max(memories) - min(memories)) / max(1.0, steady)
+    if relative_fluctuation > relative_tolerance:
+        return None
+    return {
+        "steady_gpu_memory_mib": round(steady, 3),
+        "steady_window_seconds": round(span, 6),
+        "steady_window_sample_count": len(window),
+        "steady_relative_fluctuation": round(relative_fluctuation, 8),
+    }
+
+
+def _level_summaries(samples, records, gate_levels):
     output = []
-    counts = sorted({int(row["active_count"]) for row in samples})
+    gate_by_count = {int(level["active_count"]): level for level in gate_levels}
+    counts = sorted(
+        {int(row["active_count"]) for row in samples}.union(gate_by_count)
+    )
     for count in counts:
         rows = [row for row in samples if int(row["active_count"]) == count]
         memories = [int(row["gpu_memory_mib"]) for row in rows]
@@ -574,7 +620,8 @@ def _level_summaries(samples, records):
             float(row["cgroup_memory_gib"])
             for row in rows if row.get("cgroup_memory_gib") is not None
         ]
-        tail = memories[-min(3, len(memories)):]
+        tail = memories[-min(3, len(memories)):] if memories else []
+        gate = gate_by_count.get(count)
         exited = [
             record for record in records
             if record.get("active_count_at_exit") == count
@@ -586,10 +633,43 @@ def _level_summaries(samples, records):
         output.append({
             "active_count": count,
             "sample_count": len(rows),
-            "peak_gpu_memory_mib": max(memories),
-            "steady_gpu_memory_mib": round(float(statistics.median(tail)), 3),
-            "mean_gpu_utilization_pct": round(sum(utils) / len(utils), 3),
+            "peak_gpu_memory_mib": max(memories) if memories else None,
+            "tail_median_gpu_memory_mib": (
+                round(float(statistics.median(tail)), 3) if tail else None
+            ),
+            "mean_gpu_utilization_pct": (
+                round(sum(utils) / len(utils), 3) if utils else None
+            ),
             "peak_cgroup_memory_gib": max(cgroups) if cgroups else None,
+            "steady_confirmed": bool(
+                gate is not None and gate.get("steady_confirmed") is True
+            ),
+            "level_status": gate.get("status") if gate else "not_a_ramp_level",
+            "previous_steady_gpu_memory_mib": (
+                gate.get("previous_steady_gpu_memory_mib") if gate else None
+            ),
+            "required_loaded_gpu_memory_mib": (
+                gate.get("required_loaded_gpu_memory_mib") if gate else None
+            ),
+            "steady_gpu_memory_mib": (
+                gate.get("steady_gpu_memory_mib") if gate else None
+            ),
+            "loaded_memory_increment_mib": (
+                gate.get("loaded_memory_increment_mib") if gate else None
+            ),
+            "first_loaded_elapsed_seconds": (
+                gate.get("first_loaded_elapsed_seconds") if gate else None
+            ),
+            "load_wait_seconds": gate.get("load_wait_seconds") if gate else None,
+            "steady_window_seconds": (
+                gate.get("steady_window_seconds") if gate else None
+            ),
+            "steady_window_sample_count": (
+                gate.get("steady_window_sample_count") if gate else None
+            ),
+            "steady_relative_fluctuation": (
+                gate.get("steady_relative_fluctuation") if gate else None
+            ),
             "exit_codes_observed": [record["exit_code"] for record in exited],
             "completed_job_episode_throughput_eps": (
                 round(sum(successful_throughputs), 6)
@@ -599,31 +679,27 @@ def _level_summaries(samples, records):
     return output
 
 
-def _recommended_cap(levels, records, stop_reason):
+def _recommended_cap(levels, stop_reason):
     by_count = {level["active_count"]: level for level in levels}
     safe = 0
     for count in range(1, max(by_count, default=0) + 1):
         level = by_count.get(count)
-        if level is None or level["sample_count"] < 1:
+        if level is None or level.get("steady_confirmed") is not True:
             break
-        if level["peak_gpu_memory_mib"] >= PLANNED_MEMORY_MIB:
+        peak = level.get("peak_gpu_memory_mib")
+        steady = level.get("steady_gpu_memory_mib")
+        if peak is None or steady is None:
+            break
+        if peak >= PLANNED_MEMORY_MIB or steady >= PLANNED_MEMORY_MIB:
             break
         safe = count
-    failures = [
-        record for record in records
-        if record.get("exit_code") not in (None, 0)
-    ]
-    if failures:
-        first_failure_count = min(
-            int(record.get("active_count_at_exit") or 1) for record in failures
-        )
-        safe = min(safe, max(0, first_failure_count - 1))
     if stop_reason in ("emergency_memory_threshold", "telemetry_failure"):
         # The levels below the event remain useful, but never recommend the
         # level at which monitoring became unsafe or unavailable.
         unsafe_counts = [
             level["active_count"] for level in levels
-            if level["peak_gpu_memory_mib"] >= PLANNED_MEMORY_MIB
+            if level.get("peak_gpu_memory_mib") is not None
+            and level["peak_gpu_memory_mib"] >= PLANNED_MEMORY_MIB
         ]
         if unsafe_counts:
             safe = min(safe, max(0, min(unsafe_counts) - 1))
@@ -631,11 +707,11 @@ def _recommended_cap(levels, records, stop_reason):
 
 
 def _build_summary(
-    calibration_plan, samples, records, started_monotonic, stop_reason,
+    calibration_plan, samples, records, gate_levels, started_monotonic, stop_reason,
     emergency_observed_mib=None, telemetry_error=None,
 ):
-    levels = _level_summaries(samples, records)
-    cap = _recommended_cap(levels, records, stop_reason)
+    levels = _level_summaries(samples, records, gate_levels)
+    cap = _recommended_cap(levels, stop_reason)
     exits = [record.get("exit_code") for record in records]
     launched = len(records)
     successful = sum(code == 0 for code in exits)
@@ -646,13 +722,15 @@ def _build_summary(
     )
     if stop_reason == "emergency_memory_threshold":
         status = "emergency_abort"
+    elif stop_reason == "worker_exited_before_steady":
+        status = "inconclusive"
     elif failed or stop_reason in (
-        "telemetry_failure", "launch_error", "worker_failure"
+        "telemetry_failure", "launch_error", "worker_failure", "load_timeout"
     ):
         status = "failed"
-    elif pending or stop_reason == "planned_memory_threshold":
+    elif stop_reason == "planned_memory_threshold":
         status = "safety_stop"
-    elif max_active < int(calibration_plan["target_workers"]):
+    elif pending or cap < int(calibration_plan["target_workers"]):
         status = "inconclusive"
     elif launched and successful == launched:
         status = "completed"
@@ -701,6 +779,10 @@ def _build_summary(
         "emergency_memory_mib": EMERGENCY_MEMORY_MIB,
         "emergency_observed_gpu_memory_mib": emergency_observed_mib,
         "telemetry_error": telemetry_error,
+        "baseline_gpu_memory_mib": (
+            gate_levels[0]["previous_steady_gpu_memory_mib"]
+            if gate_levels else None
+        ),
         "recommended_cap": cap,
         "max_observed_active_count": max_active,
         "peak_observed_gpu_memory_mib": max(
@@ -723,13 +805,25 @@ def _run_calibration(
     stagger_seconds=DEFAULT_STAGGER_SECONDS,
     sample_interval_seconds=DEFAULT_SAMPLE_INTERVAL_SECONDS,
     terminate_grace_seconds=DEFAULT_TERMINATE_GRACE_SECONDS,
+    steady_seconds=DEFAULT_STEADY_SECONDS,
+    load_timeout_seconds=DEFAULT_LOAD_TIMEOUT_SECONDS,
+    min_loaded_memory_mib=DEFAULT_MIN_LOADED_MEMORY_MIB,
+    steady_relative_tolerance=DEFAULT_STEADY_RELATIVE_TOLERANCE,
+    steady_samples=DEFAULT_STEADY_SAMPLES,
 ):
-    """Run a cloned single-phase ramp and always emit CALIBRATION.json."""
+    """Run a cloned single-phase adaptive ramp and emit CALIBRATION.json.
+
+    A fixed launch delay is only a lower bound.  Worker ``k + 1`` remains
+    blocked until level ``k`` has both loaded relative to level ``k - 1``'s
+    confirmed steady VRAM and stayed within the configured stability window.
+    """
     started = time.monotonic()
-    next_launch = started
     active = {}
     records = []
     samples = []
+    gate_levels = []
+    current_level = None
+    previous_steady_memory = None
     launched = 0
     stop_reason = None
     emergency_observed = None
@@ -744,8 +838,33 @@ def _run_calibration(
         try:
             while active or (launched < len(jobs) and stop_reason is None):
                 now = time.monotonic()
-                if _record_exits(active, records, now) and stop_reason is None:
+                active_before_reap = len(active)
+                worker_failed = _record_exits(active, records, now)
+                worker_exited = len(active) < active_before_reap
+                if worker_failed and stop_reason is None:
                     stop_reason = "worker_failure"
+                    if current_level is not None:
+                        current_level["status"] = stop_reason
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
+                    _terminate_active(active, terminate_grace_seconds)
+                    _record_exits(active, records, time.monotonic())
+                    break
+                if (
+                    worker_exited
+                    and current_level is not None
+                    and current_level.get("steady_confirmed") is not True
+                    and stop_reason is None
+                ):
+                    stop_reason = "worker_exited_before_steady"
+                    current_level["status"] = stop_reason
+                    current_level["load_wait_seconds"] = round(
+                        now - current_level["launched_monotonic"], 6
+                    )
+                    _terminate_active(active, terminate_grace_seconds)
+                    _record_exits(active, records, time.monotonic())
+                    break
 
                 try:
                     gpu_memory, gpu_utilization = _gpu_stats(gpu)
@@ -753,6 +872,11 @@ def _run_calibration(
                 except UserError as error:
                     telemetry_error = str(error)
                     stop_reason = "telemetry_failure"
+                    if current_level is not None:
+                        current_level["status"] = stop_reason
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
                     _terminate_active(active, terminate_grace_seconds)
                     now = time.monotonic()
                     _record_exits(active, records, now)
@@ -769,18 +893,92 @@ def _run_calibration(
                 if gpu_memory >= EMERGENCY_MEMORY_MIB:
                     emergency_observed = gpu_memory
                     stop_reason = "emergency_memory_threshold"
+                    if current_level is not None:
+                        current_level["status"] = stop_reason
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
                     _terminate_active(active, terminate_grace_seconds)
                     now = time.monotonic()
                     _record_exits(active, records, now)
                     break
                 if gpu_memory >= PLANNED_MEMORY_MIB and stop_reason is None:
                     stop_reason = "planned_memory_threshold"
+                    if current_level is not None:
+                        current_level["status"] = stop_reason
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
 
-                if (
+                ready_to_launch = False
+                if stop_reason is None and current_level is not None:
+                    current_level["observed_sample_count"] += 1
+                    if gpu_memory >= current_level[
+                        "required_loaded_gpu_memory_mib"
+                    ]:
+                        if current_level["first_loaded_elapsed_seconds"] is None:
+                            current_level["first_loaded_elapsed_seconds"] = round(
+                                now - started, 6
+                            )
+                        current_level["_loaded_samples"].append({
+                            "monotonic": now,
+                            "gpu_memory_mib": gpu_memory,
+                        })
+                    else:
+                        # A transient rise is not loading evidence.  Require a
+                        # new contiguous above-threshold stability window.
+                        current_level["_loaded_samples"].clear()
+
+                    stable = _steady_window(
+                        current_level["_loaded_samples"], now,
+                        steady_seconds, steady_samples,
+                        steady_relative_tolerance,
+                    )
+                    minimum_delay_reached = (
+                        now - current_level["launched_monotonic"]
+                        >= stagger_seconds
+                    )
+                    if stable is not None and minimum_delay_reached:
+                        current_level.update(stable)
+                        current_level["steady_confirmed"] = True
+                        current_level["status"] = "steady_confirmed"
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
+                        current_level["steady_confirmed_elapsed_seconds"] = round(
+                            now - started, 6
+                        )
+                        current_level["loaded_memory_increment_mib"] = round(
+                            current_level["steady_gpu_memory_mib"]
+                            - current_level["previous_steady_gpu_memory_mib"],
+                            3,
+                        )
+                        previous_steady_memory = current_level[
+                            "steady_gpu_memory_mib"
+                        ]
+                        current_level = None
+                        ready_to_launch = launched < len(jobs)
+                    elif (
+                        now - current_level["launched_monotonic"]
+                        >= load_timeout_seconds
+                    ):
+                        stop_reason = "load_timeout"
+                        current_level["status"] = stop_reason
+                        current_level["load_wait_seconds"] = round(
+                            now - current_level["launched_monotonic"], 6
+                        )
+                        _terminate_active(active, terminate_grace_seconds)
+                        _record_exits(active, records, time.monotonic())
+                        break
+                elif (
                     stop_reason is None
-                    and launched < len(jobs)
-                    and now >= next_launch
+                    and launched == 0
+                    and previous_steady_memory is None
                 ):
+                    previous_steady_memory = float(gpu_memory)
+                    ready_to_launch = True
+
+                if stop_reason is None and ready_to_launch:
                     job = jobs[launched]
                     try:
                         process, console = _launch(job)
@@ -808,12 +1006,42 @@ def _run_calibration(
                     }
                     records.append(record)
                     active[process.pid] = record
-                    next_launch = now + stagger_seconds
+                    current_level = {
+                        "active_count": launched,
+                        "status": "waiting_for_load",
+                        "steady_confirmed": False,
+                        "previous_steady_gpu_memory_mib": round(
+                            float(previous_steady_memory), 3
+                        ),
+                        "required_loaded_gpu_memory_mib": round(
+                            float(previous_steady_memory)
+                            + int(min_loaded_memory_mib),
+                            3,
+                        ),
+                        "loaded_memory_increment_mib": None,
+                        "launched_monotonic": now,
+                        "launched_elapsed_seconds": round(now - started, 6),
+                        "first_loaded_elapsed_seconds": None,
+                        "steady_confirmed_elapsed_seconds": None,
+                        "load_wait_seconds": None,
+                        "steady_gpu_memory_mib": None,
+                        "steady_window_seconds": None,
+                        "steady_window_sample_count": None,
+                        "steady_relative_fluctuation": None,
+                        "observed_sample_count": 0,
+                        "_loaded_samples": [],
+                    }
+                    gate_levels.append(current_level)
 
                 if active or (launched < len(jobs) and stop_reason is None):
                     time.sleep(sample_interval_seconds)
         except KeyboardInterrupt:
             stop_reason = "interrupted"
+            if current_level is not None:
+                current_level["status"] = stop_reason
+                current_level["load_wait_seconds"] = round(
+                    time.monotonic() - current_level["launched_monotonic"], 6
+                )
             _terminate_active(active, terminate_grace_seconds)
             _record_exits(active, records, time.monotonic())
         finally:
@@ -826,7 +1054,7 @@ def _run_calibration(
     if launch_error is not None:
         telemetry_error = launch_error
     summary = _build_summary(
-        calibration_plan, samples, records, started, stop_reason,
+        calibration_plan, samples, records, gate_levels, started, stop_reason,
         emergency_observed_mib=emergency_observed,
         telemetry_error=telemetry_error,
     )
@@ -932,6 +1160,11 @@ def execute(args):
             "gpu": args.gpu,
             "stagger_seconds": args.stagger_seconds,
             "sample_interval_seconds": args.sample_interval_seconds,
+            "steady_seconds": args.steady_seconds,
+            "steady_samples": args.steady_samples,
+            "load_timeout_seconds": args.load_timeout_seconds,
+            "min_loaded_memory_mib": args.min_loaded_memory_mib,
+            "steady_relative_tolerance": args.steady_relative_tolerance,
         })
         _atomic_json(
             calibration_root / "CALIBRATION_PLAN.json", calibration_plan
@@ -942,6 +1175,11 @@ def execute(args):
             stagger_seconds=args.stagger_seconds,
             sample_interval_seconds=args.sample_interval_seconds,
             terminate_grace_seconds=args.terminate_grace_seconds,
+            steady_seconds=args.steady_seconds,
+            steady_samples=args.steady_samples,
+            load_timeout_seconds=args.load_timeout_seconds,
+            min_loaded_memory_mib=args.min_loaded_memory_mib,
+            steady_relative_tolerance=args.steady_relative_tolerance,
         )
 
 
@@ -970,7 +1208,11 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument(
-        "--stagger-seconds", type=float, default=DEFAULT_STAGGER_SECONDS
+        "--stagger-seconds", type=float, default=DEFAULT_STAGGER_SECONDS,
+        help=(
+            "minimum delay per level only; the loaded-and-steady gate always "
+            "controls the next launch"
+        ),
     )
     parser.add_argument(
         "--sample-interval-seconds", type=float,
@@ -980,6 +1222,29 @@ def parse_args(argv=None):
     parser.add_argument(
         "--terminate-grace-seconds", type=float,
         default=DEFAULT_TERMINATE_GRACE_SECONDS,
+    )
+    parser.add_argument(
+        "--steady-seconds", type=float, default=DEFAULT_STEADY_SECONDS,
+        help="minimum duration of the recent stable VRAM window",
+    )
+    parser.add_argument(
+        "--steady-samples", type=int, default=DEFAULT_STEADY_SAMPLES,
+        help="minimum sample count in the recent stable VRAM window",
+    )
+    parser.add_argument(
+        "--load-timeout-seconds", type=float,
+        default=DEFAULT_LOAD_TIMEOUT_SECONDS,
+        help="fail safely if a newly added worker does not load and settle",
+    )
+    parser.add_argument(
+        "--min-loaded-memory-mib", type=int,
+        default=DEFAULT_MIN_LOADED_MEMORY_MIB,
+        help="required VRAM increase over the immediately previous steady level",
+    )
+    parser.add_argument(
+        "--steady-relative-tolerance", type=float,
+        default=DEFAULT_STEADY_RELATIVE_TOLERANCE,
+        help="maximum (window max-min)/median VRAM for steady confirmation",
     )
     args = parser.parse_args(argv)
     try:
@@ -1000,6 +1265,21 @@ def parse_args(argv=None):
         parser.error("--sample-interval-seconds must be in [2, 5]")
     if args.terminate_grace_seconds < 0:
         parser.error("--terminate-grace-seconds must be non-negative")
+    if args.steady_seconds <= 0:
+        parser.error("--steady-seconds must be positive")
+    if args.steady_samples < 2:
+        parser.error("--steady-samples must be at least 2")
+    if args.load_timeout_seconds <= max(
+        args.steady_seconds, args.stagger_seconds
+    ):
+        parser.error(
+            "--load-timeout-seconds must exceed both --steady-seconds and "
+            "--stagger-seconds"
+        )
+    if args.min_loaded_memory_mib < 1:
+        parser.error("--min-loaded-memory-mib must be positive")
+    if not 0 < args.steady_relative_tolerance <= 1:
+        parser.error("--steady-relative-tolerance must be in (0, 1]")
     return args
 
 

@@ -101,9 +101,14 @@ explicit `--confirm-reviewed` acknowledgement; `max_per_model` alone still does
 not enforce the barrier.
 
 Use a separate plan-only batch for the required GPU calibration.  The helper
-clones jobs into isolated calibration paths, ramps only one phase, stops adding
-workers at 29,000 MiB, aborts its own process groups at 30,000 MiB, and writes
-`CALIBRATION.json` plus `resource.csv` without changing formal job evidence:
+clones jobs into isolated calibration paths and ramps only one phase. A fixed
+launch stagger is not evidence that a model has loaded: after adding worker
+`k`, the helper requires VRAM to rise by at least 512 MiB over level `k-1`'s
+confirmed steady VRAM and remain within 2% for a 20-second/three-sample window
+before adding worker `k+1`. Each level has a 300-second load timeout. It also
+stops adding workers at 29,000 MiB, aborts its own process groups at 30,000 MiB,
+and writes `CALIBRATION.json` plus `resource.csv` without changing formal job
+evidence:
 
 ```bash
 CAL_BATCH=vln-r2r-four-method-low-lr-v1-calibration
@@ -113,6 +118,14 @@ python3 vln/scripts/calibrate_r2r_local_refinement.py \
   --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
   --target-workers 14
 ```
+
+The adaptive defaults can be made more conservative with
+`--steady-seconds`, `--steady-samples`, `--load-timeout-seconds`,
+`--min-loaded-memory-mib`, and `--steady-relative-tolerance`. Do not reduce
+them merely to make a slow-loading model advance. `CALIBRATION.json` records
+the previous steady VRAM, confirmed current steady VRAM, and load wait for
+every level; only levels with `steady_confirmed: true` can contribute to
+`recommended_cap`.
 
 Repeat the helper for every enabled TTA model/method phase.  Do not run the
 formal scheduler for `CAL_BATCH`; use the reported per-phase recommended caps
@@ -158,7 +171,9 @@ declared value. Worker overrides and the other runtime limits are pinned in
 `--resume --retry-failed` with the same pinned runtime arguments.
 
 Concurrency is calibrated separately for every enabled method/model. Raise it
-one worker at a time only after all children reach steady VRAM. ATENA is enabled
+one worker at a time only after the adaptive per-level load and steady-VRAM
+gate confirms all children; the 15-second stagger alone is never sufficient.
+ATENA is enabled
 only for GOAT and fixed at the observed-safe five workers; the remaining
 conditional caps require pure-model measurement. Production plans must
 remain at or below 29,000 MiB; an observed 30,000 MiB is an emergency rollback
