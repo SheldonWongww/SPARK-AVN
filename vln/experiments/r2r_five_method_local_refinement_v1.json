@@ -112,8 +112,14 @@
       "scheduler_prelaunch_gate_mib_range": [23500, 25000],
       "production_limit_is_not_a_scheduler_gate": true,
       "launch_stagger_is_not_a_memory_guard": true,
-      "raise_concurrency_one_worker_at_a_time": true,
-      "require_all_children_at_steady_vram_before_next_raise": true
+      "raise_concurrency_one_worker_at_a_time": false,
+      "require_all_children_at_steady_vram_before_next_raise": true,
+      "calibration_initial_group_workers": 5,
+      "calibration_episode_limit": 100,
+      "grouped_jump_after_measured_baseline": true,
+      "grouped_jump_projection_max_mib": 28500,
+      "grouped_jump_per_worker_margin_factor": 1.05,
+      "grouped_jump_requires_independent_steady_validation": true
     },
     "concurrency_calibration": {
       "tent": {
@@ -127,8 +133,8 @@
         "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1950, "prelaunch_gate_mib": 25000}
       },
       "feedtta": {
-        "duet-r2r": {"production_cap": 5, "conditional_test_steps": [], "estimated_mib_per_job": 4900, "prelaunch_gate_mib": 24000},
-        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4750, "prelaunch_gate_mib": 24000},
+        "duet-r2r": {"production_cap": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "prelaunch_gate_mib": 24000},
+        "hamt-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "prelaunch_gate_mib": 24000},
         "goat-r2r": {"calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "prelaunch_gate_mib": 24500},
         "seven_workers_forbidden": true
       },

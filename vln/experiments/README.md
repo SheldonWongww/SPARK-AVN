@@ -100,12 +100,15 @@ enforces strict model and method barriers. The spec is launchable only with the
 explicit `--confirm-reviewed` acknowledgement; `max_per_model` alone still does
 not enforce the barrier.
 
-Use a separate plan-only batch for the required GPU calibration.  The helper
-clones jobs into isolated calibration paths and ramps only one phase. A fixed
-launch stagger is not evidence that a model has loaded: after adding worker
-`k`, the helper requires VRAM to rise by at least 512 MiB over level `k-1`'s
-confirmed steady VRAM and remain within 2% for a 20-second/three-sample window
-before adding worker `k+1`. Each level has a 300-second load timeout. It also
+Use a separate plan-only batch for the required GPU calibration. The current
+policy clones jobs into isolated calibration paths and starts with one fresh
+five-worker group over the canonical 100-episode prefix. A later worker count
+may be chosen from the measured per-worker VRAM only when its linear projection
+stays at or below 28,500 MiB, and that larger count is then launched as a new,
+independent grouped calibration. A process count alone is not loading evidence:
+each tested group must raise VRAM by at least 512 MiB per worker over idle and
+remain within 2% for a 20-second/three-sample window. Each group has a
+300-second load timeout. The helper also
 stops adding workers at 29,000 MiB, aborts its own process groups at 30,000 MiB,
 and writes `CALIBRATION.json` plus `resource.csv` without changing formal job
 evidence:
@@ -116,10 +119,21 @@ python3 vln/scripts/run_r2r_local_refinement.py \
   --batch-id "$CAL_BATCH" --plan-only
 python3 vln/scripts/calibrate_r2r_local_refinement.py \
   --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
-  --target-workers 14
+  --target-workers 5 --initial-workers 5 --episode-limit 100 \
+  --stagger-seconds 0 --calibration-id duet-fstta-baseline5
+
+PARENT="$PWD/vln/results/logs/r2r/hparam_search/$CAL_BATCH/calibration/\
+02-duet-r2r-fstta/duet-fstta-baseline5/CALIBRATION.json"
+# Choose N from the phase's declared counts after inspecting the baseline.
+N=10
+python3 vln/scripts/calibrate_r2r_local_refinement.py \
+  --batch-id "$CAL_BATCH" --phase-id 02-duet-r2r-fstta \
+  --target-workers "$N" --initial-workers "$N" --episode-limit 100 \
+  --sizing-parent "$PARENT" --stagger-seconds 0 \
+  --calibration-id "duet-fstta-verify${N}"
 ```
 
-The adaptive defaults can be made more conservative with
+The grouped stability defaults can be made more conservative with
 `--steady-seconds`, `--steady-samples`, `--load-timeout-seconds`,
 `--min-loaded-memory-mib`, and `--steady-relative-tolerance`. Do not reduce
 them merely to make a slow-loading model advance. `CALIBRATION.json` records
@@ -127,48 +141,19 @@ the previous steady VRAM, confirmed current steady VRAM, and load wait for
 every level; only levels with `steady_confirmed: true` can contribute to
 `recommended_cap`.
 
-If a long-running worker finishes before the next adaptive level settles, use
-strict prior-evidence continuation instead of treating an unconfirmed level as
-safe. `--initial-workers` must equal the prior `recommended_cap`; the helper
-also verifies the phase, candidate/config prefix, formal source identity, spec
-digest, and GPU, plus continuous steady-confirmed levels `1..N`. The prior may
-come from an older batch under the same hparam-search log root, but every source
-job execution config must match after excluding only batch/run-tag identity. It
-restarts that proven prefix with the normal 15-second stagger, then requires the
-whole initial group
-to recover to at least `max(98% * prior_level_N_steady, idle + N * 512 MiB)` and
-remain stable before trying `N+1`:
-
-```bash
-PRIOR=/absolute/path/to/prior/CALIBRATION.json
-python3 vln/scripts/calibrate_r2r_local_refinement.py \
-  --batch-id "$CAL_BATCH" --phase-id 01-duet-r2r-tent \
-  --target-workers 10 --initial-workers 6 \
-  --prior-calibration "$PRIOR" --calibration-id duet-tent-continue-cap6
-```
-
-An initial-group timeout or any worker exit before recovery is a failed
-continuation and reports cap zero; the prior cap is not carried forward until
-the restarted group is explicitly steady again.
-
-Continuation summaries preserve a chainable level table: levels `1..N-1` are
-copied from the validated prior with `evidence_origin: prior`, the prior file
-digest, an exact source-level snapshot, and a level digest; level `N` is marked
-`current_initial_group_revalidation`; levels above `N` are `current`. The next
-continuation recursively verifies those bindings, upstream summary/plan
-digests, and rejects cycles or changed bound metrics. The validator can also
-resolve summaries produced by the first continuation-helper version, whose
-transient replay rows omitted inherited `1..N-1`, directly from their already
-digest-pinned upstream evidence; the next newly written summary materializes
-the complete chain.
-
-Installing continuation support necessarily changes the helper's Git blob.
-For continuation only, the commit audit permits differences from the pinned
-source commit in exactly the calibration helper, its unit test, and this README;
-any runner, spec, model, or other source change is rejected. The summary records
-`plan_git_commit`, `prior_execution_git_commit`, `execution_git_commit`, and the
-exact `allowed_helper_only_diff_files` so this exception is explicit rather
-than silently weakening experiment provenance.
+The 100-episode prefix is mandatory for resource sizing and never replaces the
+complete 1,021-episode formal run. The helper binds it in the plan, cloned
+configs, commands, summary, and parent identity checks. A parentless run is
+accepted only for exactly five workers. Any larger declared count requires
+`--sizing-parent` pointing to that same phase's completely successful fresh
+five-worker run. The authorization projection is
+`parent_idle + N * max(spec_estimate, 1.05 * measured_peak_increment_per_worker)`;
+it must not exceed 28,500 MiB. The helper repeats the projection with current
+idle VRAM before launching anything, then independently requires the selected
+N-worker group to load and remain steady below 29,000 MiB. Parent summary and
+plan SHA256 digests are recorded, and the summary binds the raw resource CSV
+digest. Counts observed while a group is launching are transient and never
+approved as formal concurrency.
 
 Repeat the helper for every enabled TTA model/method phase.  Do not run the
 formal scheduler for `CAL_BATCH`; use the reported per-phase recommended caps
@@ -193,7 +178,7 @@ python3 vln/scripts/run_r2r_local_refinement.py \
 
 `--phase-max-workers PHASE_ID=N` is repeatable and may select only a worker
 count declared for that exact phase in the spec. For example, after the
-required stepwise calibration, create the formal plan with the approved
+required grouped calibration, create the formal plan with the approved
 arguments and repeat them unchanged on resume:
 
 ```bash
@@ -201,21 +186,33 @@ PHASE_ARGS=(
   --phase-max-workers 02-duet-r2r-fstta=10
   --phase-max-workers 15-goat-r2r-atena=5
 )
+CALIBRATION_ARGS=(
+  --phase-calibration 02-duet-r2r-fstta=/absolute/path/to/CALIBRATION.json
+)
 python3 vln/scripts/run_r2r_local_refinement.py \
-  --batch-id "$BATCH" --plan-only "${PHASE_ARGS[@]}"
+  --batch-id "$BATCH" --plan-only \
+  "${PHASE_ARGS[@]}" "${CALIBRATION_ARGS[@]}"
 python3 vln/scripts/run_r2r_local_refinement.py \
   --batch-id "$BATCH" --resume --confirm-reviewed --gpu 0 \
-  "${PHASE_ARGS[@]}"
+  "${PHASE_ARGS[@]}" "${CALIBRATION_ARGS[@]}"
 ```
+
+Any phase override above its default safe cap is rejected unless
+`--phase-calibration PHASE_ID=CALIBRATION.json` names a completely successful
+100-episode grouped run for that exact model, method, GPU, commit, spec, worker
+count, and candidate-config prefix. The formal `PLAN.json` and `PHASE.json`
+pin the calibration summary, sibling plan, and resource evidence digests; the
+same arguments must be repeated on every resume.
 
 `--max-workers` is only a global downward cap; it cannot raise a phase above a
 declared value. Worker overrides and the other runtime limits are pinned in
 `PLAN.json`; changing them requires a new batch ID. Failed jobs require
 `--resume --retry-failed` with the same pinned runtime arguments.
 
-Concurrency is calibrated separately for every enabled method/model. Raise it
-one worker at a time only after the adaptive per-level load and steady-VRAM
-gate confirms all children; the 15-second stagger alone is never sufficient.
+Concurrency is calibrated separately for every enabled method/model. Start at
+five, project a declared larger count conservatively from measured VRAM, and
+accept that count only after a separate grouped load and steady-VRAM test
+confirms every child; a launch stagger alone is never sufficient.
 ATENA is enabled
 only for GOAT and fixed at the observed-safe five workers; the remaining
 conditional caps require pure-model measurement. Production plans must

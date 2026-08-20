@@ -1,4 +1,5 @@
 import copy
+import csv
 import importlib.util
 import io
 import json
@@ -19,6 +20,20 @@ SPEC.loader.exec_module(MODULE)
 
 
 PHASE_ID = "01-duet-r2r-tent"
+
+
+def calibration_policy(**overrides):
+    value = {
+        "initial_group_workers": 5,
+        "episode_limit": 100,
+        "projection_max_mib": 27_000,
+        "projection_safety_factor": 1.05,
+        "estimated_mib_per_job": 1_900,
+        "allowed_worker_counts": list(range(5, 15)),
+        "independent_steady_validation": True,
+    }
+    value.update(overrides)
+    return value
 
 
 def write_json(path, value):
@@ -53,6 +68,7 @@ def make_campaign(root, count=3):
         "git_commit": plan["git_commit"],
         "spec_sha256": plan["spec_sha256"],
         "gpu": plan["gpu"],
+        "calibration_policy": calibration_policy(),
         **phase,
     })
     jobs = []
@@ -105,18 +121,29 @@ def make_campaign(root, count=3):
     return plan, phase, jobs
 
 
-def make_prior_calibration(campaign, plan, phase, jobs, cap=2):
+def make_prior_calibration(
+    campaign, plan, phase, jobs, cap=2, episode_limit=None
+):
     root = Path(campaign) / "calibration" / PHASE_ID / "prior-evidence"
     prior_jobs = []
     for index, job in enumerate(jobs):
         config = json.loads(Path(job["config_path"]).read_text())
         config["batch_id"] = f"{plan['batch_id']}-calibration"
         config["run_tag"] = f"prior-clone-{index}"
+        if episode_limit is not None:
+            config["episodes"] = episode_limit
         config_path = root / "jobs" / f"prior-{index}" / "parameters.json"
         write_json(config_path, config)
         prior_jobs.append({
             "source_run_tag": job["run_tag"],
             "config_path": str(config_path),
+            "command": (
+                list(job["command"])
+                + (
+                    ["--episode-limit", str(episode_limit)]
+                    if episode_limit is not None else []
+                )
+            ),
         })
     prior_plan = {
         "schema": MODULE.CALIBRATION_PLAN_SCHEMA,
@@ -129,6 +156,11 @@ def make_prior_calibration(campaign, plan, phase, jobs, cap=2):
         "source_git_commit": plan["git_commit"],
         "source_spec_sha256": plan["spec_sha256"],
         "gpu": plan["gpu"],
+        "episode_limit": episode_limit,
+        "episode_budget_per_worker": (
+            episode_limit
+            if episode_limit is not None else plan["episode_count"]
+        ),
         "jobs": prior_jobs,
     }
     prior = {
@@ -140,6 +172,7 @@ def make_prior_calibration(campaign, plan, phase, jobs, cap=2):
         "model": phase["model"],
         "method": phase["method"],
         "status": "inconclusive",
+        "episode_limit": episode_limit,
         "recommended_cap": cap,
         "levels": [
             {
@@ -160,6 +193,144 @@ def make_prior_calibration(campaign, plan, phase, jobs, cap=2):
     }
     write_json(root / "CALIBRATION_PLAN.json", prior_plan)
     write_json(root / "CALIBRATION.json", prior)
+    return root / "CALIBRATION.json"
+
+
+def make_sizing_parent_calibration(
+    campaign,
+    plan,
+    phase,
+    jobs,
+    *,
+    baseline_gpu_memory_mib=1000.0,
+    steady_gpu_memory_mib=5800.0,
+    peak_gpu_memory_mib=6000,
+    observed_peak_gpu_memory_mib=None,
+    parent_policy=None,
+):
+    """Create complete five-worker/100-episode sizing evidence."""
+    parent_policy = copy.deepcopy(parent_policy or calibration_policy())
+    observed_peak_gpu_memory_mib = (
+        peak_gpu_memory_mib
+        if observed_peak_gpu_memory_mib is None
+        else observed_peak_gpu_memory_mib
+    )
+    root = Path(campaign) / "calibration" / PHASE_ID / "sizing-parent"
+    parent_jobs = []
+    for index, job in enumerate(jobs[:5]):
+        config = json.loads(Path(job["config_path"]).read_text())
+        config["batch_id"] = f"{plan['batch_id']}-calibration"
+        config["run_tag"] = f"sizing-parent-{index}"
+        config["episodes"] = 100
+        config_path = root / "jobs" / str(index) / "parameters.json"
+        write_json(config_path, config)
+        (config_path.parent / "exitcode").write_text("0\n", encoding="utf-8")
+        parent_jobs.append({
+            "run_tag": config["run_tag"],
+            "source_run_tag": job["run_tag"],
+            "job_dir": str(config_path.parent),
+            "config_path": str(config_path),
+            "command": list(job["command"]) + ["--episode-limit", "100"],
+        })
+
+    write_json(root / "CALIBRATION_PLAN.json", {
+        "schema": MODULE.CALIBRATION_PLAN_SCHEMA,
+        "calibration_id": "sizing-parent",
+        "batch_id": plan["batch_id"],
+        "source_git_commit": plan["git_commit"],
+        "source_spec_sha256": plan["spec_sha256"],
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+        "gpu": plan["gpu"],
+        "target_workers": 5,
+        "initial_workers": 5,
+        "episode_limit": 100,
+        "episode_budget_per_worker": 100,
+        "calibration_policy": parent_policy,
+        "jobs": parent_jobs,
+    })
+    resource_path = root / "resource.csv"
+    with resource_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=MODULE.RESOURCE_FIELDS)
+        writer.writeheader()
+        for active_count, memory_mib in (
+            (0, baseline_gpu_memory_mib),
+            (5, observed_peak_gpu_memory_mib),
+        ):
+            writer.writerow({
+                "observed_at": "2026-08-20T00:00:00+0800",
+                "elapsed_seconds": active_count,
+                "phase_id": phase["phase_id"],
+                "setting": phase["setting"],
+                "method": phase["method"],
+                "launched_count": active_count,
+                "active_count": active_count,
+                "completed_count": 0,
+                "gpu_memory_mib": memory_mib,
+                "gpu_utilization_pct": 90 if active_count else 0,
+                "cgroup_memory_gib": 4.0,
+                "action": "sample",
+            })
+
+    write_json(root / "CALIBRATION.json", {
+        "schema": MODULE.CALIBRATION_SCHEMA,
+        "level_evidence_schema": MODULE.LEVEL_EVIDENCE_SCHEMA,
+        "calibration_id": "sizing-parent",
+        "batch_id": plan["batch_id"],
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+        "source_git_commit": plan["git_commit"],
+        "source_spec_sha256": plan["spec_sha256"],
+        "gpu": plan["gpu"],
+        "status": "completed",
+        "stop_reason": "target_completed",
+        "target_workers": 5,
+        "initial_workers": 5,
+        "initial_group_mode": "fresh_bootstrap",
+        "initial_group": {"steady_confirmed": True},
+        "episode_limit": 100,
+        "episode_budget_per_worker": 100,
+        "calibration_policy": parent_policy,
+        "launched_workers": 5,
+        "unlaunched_workers": 0,
+        "successful_workers": 5,
+        "failed_workers": 0,
+        "recommended_cap": 5,
+        "baseline_gpu_memory_mib": baseline_gpu_memory_mib,
+        "peak_observed_gpu_memory_mib": observed_peak_gpu_memory_mib,
+        "resource_csv": "resource.csv",
+        "resource_csv_sha256": MODULE._sha256(resource_path),
+        "levels": [
+            {
+                "active_count": count,
+                "steady_confirmed": count == 5,
+                "steady_gpu_memory_mib": (
+                    steady_gpu_memory_mib if count == 5 else None
+                ),
+                "peak_gpu_memory_mib": (
+                    peak_gpu_memory_mib if count == 5 else 1000 + count * 500
+                ),
+                "evidence_origin": (
+                    "current_bootstrap_group"
+                    if count == 5 else "current_bootstrap_transient"
+                ),
+            }
+            for count in range(1, 6)
+        ],
+        "jobs": [
+            {
+                "worker_index": index + 1,
+                "source_run_tag": jobs[index]["run_tag"],
+                "exit_code": 0,
+                "episode_budget": 100,
+            }
+            for index in range(5)
+        ],
+    })
     return root / "CALIBRATION.json"
 
 
@@ -198,13 +369,15 @@ class FakeProcess:
 
 
 class CalibrationHelperTests(unittest.TestCase):
-    def test_cli_defaults_include_adaptive_steady_gate(self):
+    def test_cli_defaults_include_grouped_steady_gate(self):
         args = MODULE.parse_args([
             "--batch-id", "calibration-test",
             "--phase-id", PHASE_ID,
-            "--target-workers", "3",
+            "--target-workers", "5",
+            "--initial-workers", "5",
+            "--episode-limit", "100",
         ])
-        self.assertIsNone(args.episode_limit)
+        self.assertEqual(args.episode_limit, 100)
         self.assertEqual(args.stagger_seconds, 15.0)
         self.assertEqual(args.sample_interval_seconds, 3.0)
         self.assertEqual(args.steady_seconds, 20.0)
@@ -212,8 +385,74 @@ class CalibrationHelperTests(unittest.TestCase):
         self.assertEqual(args.load_timeout_seconds, 300.0)
         self.assertEqual(args.min_loaded_memory_mib, 512)
         self.assertEqual(args.steady_relative_tolerance, 0.02)
-        self.assertEqual(args.initial_workers, 0)
+        self.assertEqual(args.initial_workers, 5)
         self.assertIsNone(args.prior_calibration)
+        self.assertIsNone(args.sizing_parent)
+
+    def test_cli_requires_fresh_five_then_sizing_parent_for_larger_group(self):
+        args = MODULE.parse_args([
+            "--batch-id", "calibration-test",
+            "--phase-id", PHASE_ID,
+            "--target-workers", "5",
+            "--initial-workers", "5",
+            "--episode-limit", "100",
+            "--stagger-seconds", "0",
+        ])
+        self.assertEqual(args.initial_workers, 5)
+        self.assertEqual(args.episode_limit, 100)
+        self.assertIsNone(args.prior_calibration)
+        self.assertIsNone(args.sizing_parent)
+
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args([
+                "--batch-id", "calibration-test",
+                "--phase-id", PHASE_ID,
+                "--target-workers", "8",
+                "--initial-workers", "8",
+                "--episode-limit", "100",
+            ])
+
+        jump = MODULE.parse_args([
+            "--batch-id", "calibration-test",
+            "--phase-id", PHASE_ID,
+            "--target-workers", "8",
+            "--initial-workers", "8",
+            "--episode-limit", "100",
+            "--sizing-parent", "/tmp/sizing-parent/CALIBRATION.json",
+        ])
+        self.assertEqual(jump.initial_workers, 8)
+        self.assertEqual(
+            jump.sizing_parent, "/tmp/sizing-parent/CALIBRATION.json"
+        )
+
+        for invalid in (
+            ["--target-workers", "5", "--initial-workers", "5"],
+            [
+                "--target-workers", "5", "--initial-workers", "5",
+                "--episode-limit", "99",
+            ],
+            [
+                "--target-workers", "5", "--initial-workers", "5",
+                "--episode-limit", "100", "--sizing-parent", "/tmp/parent",
+            ],
+        ):
+            with self.subTest(arguments=invalid), self.assertRaises(SystemExit):
+                MODULE.parse_args([
+                    "--batch-id", "calibration-test",
+                    "--phase-id", PHASE_ID,
+                    *invalid,
+                ])
+
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args([
+                "--batch-id", "calibration-test",
+                "--phase-id", PHASE_ID,
+                "--target-workers", "5",
+                "--initial-workers", "5",
+                "--episode-limit", "100",
+                "--prior-calibration", "/tmp/prior.json",
+                "--sizing-parent", "/tmp/sizing-parent.json",
+            ])
 
     def test_plan_revision_allows_only_audited_helper_drift_for_continuation(self):
         plan = {"git_commit": "a" * 40}
@@ -349,6 +588,198 @@ class CalibrationHelperTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.UserError, "config identity"):
                 MODULE._load_prior_evidence(
                     prior_path, campaign, plan, phase, jobs, 2, 0
+                )
+
+    def test_prior_evidence_binds_identical_episode_limit_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=3)
+            prior_path = make_prior_calibration(
+                campaign, plan, phase, jobs, cap=1, episode_limit=100
+            )
+
+            evidence = MODULE._load_prior_evidence(
+                prior_path, campaign, plan, phase, jobs, 1, 0,
+                episode_limit=100,
+            )
+            self.assertEqual(evidence["episode_limit"], 100)
+            self.assertEqual(
+                evidence["_validated_level_prefix"][0]["active_count"], 1
+            )
+
+            with self.assertRaisesRegex(MODULE.UserError, "episode_limit"):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 1, 0,
+                    episode_limit=99,
+                )
+
+            prior_plan_path = prior_path.parent / "CALIBRATION_PLAN.json"
+            prior_plan = json.loads(prior_plan_path.read_text())
+            original_budget = prior_plan["episode_budget_per_worker"]
+            prior_plan["episode_budget_per_worker"] = 99
+            write_json(prior_plan_path, prior_plan)
+            with self.assertRaisesRegex(
+                MODULE.UserError, "episode_budget_per_worker|episode budget"
+            ):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 1, 0,
+                    episode_limit=100,
+                )
+            prior_plan["episode_budget_per_worker"] = original_budget
+            write_json(prior_plan_path, prior_plan)
+
+            prior_config_path = Path(prior_plan["jobs"][0]["config_path"])
+            prior_config = json.loads(prior_config_path.read_text())
+            prior_config["episodes"] = 101
+            write_json(prior_config_path, prior_config)
+            with self.assertRaisesRegex(
+                MODULE.UserError, "episodes changed|config identity"
+            ):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 1, 0,
+                    episode_limit=100,
+                )
+
+    def test_sizing_parent_accepts_complete_five_worker_boundary_projection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=8)
+            policy = calibration_policy(
+                projection_max_mib=9400,
+                estimated_mib_per_job=1000,
+                allowed_worker_counts=[5, 8],
+            )
+            parent_path = make_sizing_parent_calibration(
+                campaign, plan, phase, jobs,
+                baseline_gpu_memory_mib=1000.0,
+                steady_gpu_memory_mib=5800.0,
+                peak_gpu_memory_mib=6000,
+                parent_policy=policy,
+            )
+
+            evidence = MODULE._load_sizing_parent_evidence(
+                parent_path, campaign, plan, phase, jobs, 0, policy
+            )
+
+            self.assertEqual(evidence["calibration_id"], "sizing-parent")
+            self.assertEqual(evidence["baseline_workers"], 5)
+            self.assertEqual(evidence["target_workers"], 8)
+            self.assertEqual(
+                evidence["effective_projected_mib_per_worker"], 1050.0
+            )
+            self.assertEqual(
+                evidence["parent_idle_projected_gpu_memory_mib"], 9400.0
+            )
+            self.assertEqual(evidence["projection_max_mib"], 9400)
+            self.assertRegex(evidence["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(evidence["plan_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_sizing_parent_rejects_projection_over_ceiling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=8)
+            policy = calibration_policy(
+                projection_max_mib=9400,
+                estimated_mib_per_job=1000,
+                allowed_worker_counts=[5, 8],
+            )
+            parent_path = make_sizing_parent_calibration(
+                campaign, plan, phase, jobs,
+                baseline_gpu_memory_mib=1000.0,
+                steady_gpu_memory_mib=5800.0,
+                peak_gpu_memory_mib=6001,
+                parent_policy=policy,
+            )
+
+            with self.assertRaisesRegex(MODULE.UserError, "projection.*ceiling"):
+                MODULE._load_sizing_parent_evidence(
+                    parent_path, campaign, plan, phase, jobs, 0, policy
+                )
+
+    def test_sizing_projection_uses_whole_run_peak_not_only_level_peak(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=8)
+            policy = calibration_policy(
+                projection_max_mib=10000,
+                estimated_mib_per_job=1000,
+                allowed_worker_counts=[5, 8],
+            )
+            parent_path = make_sizing_parent_calibration(
+                campaign, plan, phase, jobs,
+                baseline_gpu_memory_mib=1000.0,
+                steady_gpu_memory_mib=5800.0,
+                peak_gpu_memory_mib=6000,
+                observed_peak_gpu_memory_mib=7000,
+                parent_policy=policy,
+            )
+
+            with self.assertRaisesRegex(MODULE.UserError, "projection.*ceiling"):
+                MODULE._load_sizing_parent_evidence(
+                    parent_path, campaign, plan, phase, jobs, 0, policy
+                )
+
+    def test_sizing_parent_rejects_incomplete_and_tampered_evidence(self):
+        mutators = {
+            "incomplete summary": lambda summary, _plan: summary.update(
+                successful_workers=4
+            ),
+            "episode plan": lambda _summary, parent_plan: parent_plan.update(
+                episode_limit=99
+            ),
+            "wrong phase": lambda summary, _plan: summary.update(
+                phase_id="99-goat-r2r-atena"
+            ),
+        }
+        for label, mutate in mutators.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                campaign = Path(directory) / "calibration-test"
+                plan, phase, jobs = make_campaign(campaign, count=8)
+                policy = calibration_policy(allowed_worker_counts=[5, 8])
+                parent_path = make_sizing_parent_calibration(
+                    campaign, plan, phase, jobs, parent_policy=policy
+                )
+                parent_plan_path = parent_path.parent / "CALIBRATION_PLAN.json"
+                summary = json.loads(parent_path.read_text())
+                parent_plan = json.loads(parent_plan_path.read_text())
+                mutate(summary, parent_plan)
+                write_json(parent_path, summary)
+                write_json(parent_plan_path, parent_plan)
+
+                with self.assertRaises(MODULE.UserError):
+                    MODULE._load_sizing_parent_evidence(
+                        parent_path,
+                        campaign,
+                        plan,
+                        phase,
+                        jobs,
+                        0,
+                        policy,
+                    )
+
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=8)
+            policy = calibration_policy(allowed_worker_counts=[5, 8])
+            parent_path = make_sizing_parent_calibration(
+                campaign, plan, phase, jobs, parent_policy=policy
+            )
+            parent_plan = json.loads(
+                (parent_path.parent / "CALIBRATION_PLAN.json").read_text()
+            )
+            config_path = Path(parent_plan["jobs"][0]["config_path"])
+            config = json.loads(config_path.read_text())
+            config["episodes"] = 101
+            write_json(config_path, config)
+            with self.assertRaisesRegex(MODULE.UserError, "config.*episode"):
+                MODULE._load_sizing_parent_evidence(
+                    parent_path,
+                    campaign,
+                    plan,
+                    phase,
+                    jobs,
+                    0,
+                    policy,
                 )
 
     def test_two_segment_chain_cap3_to_cap5_can_seed_initial5(self):
@@ -576,6 +1007,168 @@ class CalibrationHelperTests(unittest.TestCase):
             self.assertTrue((root / "resource.csv").is_file())
             persisted = json.loads((root / "CALIBRATION.json").read_text())
             self.assertEqual(persisted["recommended_cap"], 3)
+            self.assertEqual(persisted["episode_limit"], 128)
+            self.assertEqual(persisted["episode_budget_per_worker"], 128)
+
+    def test_fresh_grouped_start_proves_bootstrap_level_without_prior(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=3)
+            plan["initial_workers"] = 3
+            clock = FakeClock()
+            launched_at = []
+            processes = []
+
+            def launch(_job):
+                launched_at.append(clock.now)
+                process = FakeProcess(clock, lifetime=20.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 90
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(
+                        MODULE, "_cgroup_memory_gib", return_value=4.0
+                    ):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                    prior_evidence=None, initial_workers=3,
+                )
+
+            self.assertEqual(launched_at, [0.0, 2.0, 4.0])
+            self.assertEqual(summary["status"], "completed")
+            self.assertEqual(summary["recommended_cap"], 3)
+            self.assertEqual(summary["initial_group_mode"], "fresh_bootstrap")
+            levels = {item["active_count"]: item for item in summary["levels"]}
+            self.assertEqual(
+                levels[1]["evidence_origin"],
+                "current_bootstrap_transient",
+            )
+            self.assertEqual(
+                levels[3]["evidence_origin"], "current_bootstrap_group"
+            )
+            self.assertTrue(levels[3]["steady_confirmed"])
+
+    def test_sizing_jump_current_idle_projection_stops_before_any_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=8)
+            sizing_evidence = {
+                "effective_projected_mib_per_worker": 3000.0,
+                "projection_max_mib": 27_000,
+                "steady_gpu_memory_mib": 16_000.0,
+                "measured_steady_increment_per_worker_mib": 3000.0,
+            }
+            plan.update({
+                "initial_workers": 8,
+                "sizing_parent": copy.deepcopy(sizing_evidence),
+            })
+            launch = mock.Mock()
+
+            with mock.patch.object(MODULE, "_launch", launch), \
+                    mock.patch.object(
+                        MODULE, "_gpu_stats", return_value=(4000, 0)
+                    ), \
+                    mock.patch.object(
+                        MODULE, "_cgroup_memory_gib", return_value=4.0
+                    ):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                    sizing_evidence=sizing_evidence,
+                    initial_workers=8,
+                )
+
+            launch.assert_not_called()
+            self.assertEqual(summary["status"], "safety_stop")
+            self.assertEqual(summary["stop_reason"], "sizing_projection_threshold")
+            self.assertEqual(summary["launched_workers"], 0)
+            self.assertEqual(summary["recommended_cap"], 0)
+            self.assertEqual(summary["initial_group_mode"], "sizing_jump")
+            self.assertFalse(summary["sizing_projection"]["accepted"])
+            self.assertEqual(
+                summary["sizing_projection"]["projected_gpu_memory_mib"],
+                28_000.0,
+            )
+            persisted = json.loads((root / "CALIBRATION.json").read_text())
+            self.assertFalse(persisted["sizing_projection"]["accepted"])
+
+    def test_successful_sizing_jump_proves_only_target_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=6)
+            sizing_evidence = {
+                "effective_projected_mib_per_worker": 1000.0,
+                "projection_max_mib": 27_000,
+                "steady_gpu_memory_mib": 6000.0,
+                "measured_steady_increment_per_worker_mib": 1000.0,
+            }
+            plan.update({
+                "initial_workers": 6,
+                "sizing_parent": copy.deepcopy(sizing_evidence),
+            })
+            clock = FakeClock()
+            processes = []
+
+            def launch(_job):
+                process = FakeProcess(clock, lifetime=30.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 90
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(
+                        MODULE, "_cgroup_memory_gib", return_value=4.0
+                    ):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=0.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                    sizing_evidence=sizing_evidence,
+                    initial_workers=6,
+                )
+
+            self.assertEqual(len(processes), 6)
+            self.assertEqual(summary["status"], "completed")
+            self.assertEqual(summary["initial_group_mode"], "sizing_jump")
+            self.assertEqual(summary["recommended_cap"], 6)
+            self.assertTrue(summary["sizing_projection"]["accepted"])
+            levels = {item["active_count"]: item for item in summary["levels"]}
+            for count in range(1, 6):
+                self.assertEqual(
+                    levels[count]["evidence_origin"],
+                    "current_bootstrap_transient",
+                )
+                self.assertFalse(levels[count]["steady_confirmed"])
+            self.assertEqual(
+                levels[6]["evidence_origin"], "current_sizing_jump_group"
+            )
+            self.assertTrue(levels[6]["steady_confirmed"])
 
     def test_thirty_second_cold_start_never_releases_second_worker_early(self):
         with tempfile.TemporaryDirectory() as directory:

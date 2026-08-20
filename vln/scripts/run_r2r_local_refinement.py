@@ -46,6 +46,8 @@ RESULT_LAYOUT = "r2r_benchmark_model_method_local_refinement_v1"
 SPEC_SCHEMA = "navtta.vln_r2r_five_method_local_refinement_plan.v1"
 PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_campaign_plan.v1"
 PHASE_SCHEMA = "navtta.vln_r2r_local_refinement_phase.v1"
+CALIBRATION_SCHEMA = "navtta.vln_r2r_local_refinement_calibration.v1"
+CALIBRATION_PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_calibration_plan.v1"
 STAGE = "local_refinement"
 
 SETTINGS = ("duet-r2r", "hamt-r2r", "goat-r2r")
@@ -69,6 +71,11 @@ CONTROL_METHODS = ("source", "feedtta_control")
 DEFAULT_MAX_MEMORY_GIB = 75.0
 DEFAULT_LAUNCH_STAGGER_SECONDS = 15.0
 DEFAULT_RESOURCE_WAIT_TIMEOUT_SECONDS = 900.0
+CALIBRATION_RESOURCE_FIELDS = (
+    "observed_at", "elapsed_seconds", "phase_id", "setting", "method",
+    "launched_count", "active_count", "completed_count", "gpu_memory_mib",
+    "gpu_utilization_pct", "cgroup_memory_gib", "action",
+)
 
 
 class UserError(RuntimeError):
@@ -453,6 +460,36 @@ def _validate_spec(document):
     )
     if planned_mib >= emergency_mib:
         raise UserError("planned GPU memory must be below the emergency abort line")
+    if gpu_safety.get("raise_concurrency_one_worker_at_a_time") is not False:
+        raise UserError("grouped calibration policy must disable one-step ramps")
+    if gpu_safety.get("calibration_initial_group_workers") != 5:
+        raise UserError("calibration must start from a five-worker group")
+    if gpu_safety.get("calibration_episode_limit") != 100:
+        raise UserError("calibration must use the 100-episode prefix")
+    if gpu_safety.get("grouped_jump_after_measured_baseline") is not True:
+        raise UserError("grouped calibration jumps must require a baseline")
+    if (
+        gpu_safety.get("grouped_jump_requires_independent_steady_validation")
+        is not True
+    ):
+        raise UserError("each grouped calibration jump must be revalidated")
+    projection_mib = _positive_int(
+        gpu_safety.get("grouped_jump_projection_max_mib"),
+        "execution.gpu_safety.grouped_jump_projection_max_mib",
+    )
+    if projection_mib >= planned_mib:
+        raise UserError("grouped jump projection must stay below the plan line")
+    projection_margin = gpu_safety.get(
+        "grouped_jump_per_worker_margin_factor"
+    )
+    if (
+        isinstance(projection_margin, bool)
+        or not isinstance(projection_margin, (int, float))
+        or not 1.0 <= float(projection_margin) <= 1.5
+    ):
+        raise UserError(
+            "execution.gpu_safety grouped jump margin must be in [1, 1.5]"
+        )
     gate_range = gpu_safety.get("scheduler_prelaunch_gate_mib_range")
     if (
         not isinstance(gate_range, list)
@@ -493,6 +530,8 @@ def _validate_spec(document):
             _positive_int(limit, f"{method}/{setting} safe worker limit")
             _positive_int(value.get("prelaunch_gate_mib"),
                           f"{method}/{setting} prelaunch gate")
+            _positive_int(value.get("estimated_mib_per_job"),
+                          f"{method}/{setting} estimated MiB per job")
             steps = value.get("conditional_test_steps", [])
             if not isinstance(steps, list):
                 raise UserError(
@@ -720,6 +759,316 @@ def _configured_prelaunch_gate(cli, phase, spec):
     return min(gate, global_cap) if global_cap is not None else gate
 
 
+def _calibration_policy(phase, spec):
+    """Persist the complete resource-sizing policy used by the helper."""
+    if phase["method"] in CONTROL_METHODS:
+        return None
+    safety = spec["execution"]["gpu_safety"]
+    method_policy = spec["execution"]["concurrency_calibration"][
+        phase["method"]
+    ][phase["setting"]]
+    return {
+        "mode": "measured_grouped_jump_v1",
+        "initial_group_workers": int(
+            safety["calibration_initial_group_workers"]
+        ),
+        "episode_limit": int(safety["calibration_episode_limit"]),
+        "projection_max_mib": int(
+            safety["grouped_jump_projection_max_mib"]
+        ),
+        "projection_safety_factor": float(
+            safety["grouped_jump_per_worker_margin_factor"]
+        ),
+        "estimated_mib_per_job": int(method_policy["estimated_mib_per_job"]),
+        "allowed_worker_counts": sorted(_declared_worker_limits(phase, spec)),
+        "independent_steady_validation": bool(
+            safety["grouped_jump_requires_independent_steady_validation"]
+        ),
+        "steady_used_mib_stop": int(
+            safety["production_planned_steady_used_mib_max"]
+        ),
+        "observed_used_mib_abort": int(
+            safety["emergency_abort_observed_used_mib"]
+        ),
+    }
+
+
+def _is_relative_to(path, parent):
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _read_json_object(path, label):
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError(f"invalid {label} {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise UserError(f"{label} must be a JSON object: {path}")
+    return value
+
+
+def _calibration_config_identity(document):
+    return {
+        key: value for key, value in document.items()
+        if key not in ("batch_id", "run_tag")
+    }
+
+
+def _validated_worker_calibration(path, phase, jobs, requested, spec, cli):
+    """Bind a raised formal worker limit to a completed grouped calibration."""
+    path = Path(path).expanduser().resolve()
+    if path.name != "CALIBRATION.json" or not _is_relative_to(path, LOG_ROOT):
+        raise UserError(
+            "phase calibration must be a CALIBRATION.json below the R2R log root"
+        )
+    summary = _read_json_object(path, "phase calibration summary")
+    plan_path = path.parent / "CALIBRATION_PLAN.json"
+    calibration_plan = _read_json_object(
+        plan_path, "phase calibration plan"
+    )
+    if summary.get("schema") != CALIBRATION_SCHEMA:
+        raise UserError("phase calibration summary schema is unsupported")
+    if calibration_plan.get("schema") != CALIBRATION_PLAN_SCHEMA:
+        raise UserError("phase calibration plan schema is unsupported")
+    resource_path = (path.parent / str(summary.get("resource_csv", ""))).resolve()
+    if (
+        summary.get("resource_csv") != "resource.csv"
+        or resource_path.parent != path.parent
+        or not resource_path.is_file()
+        or sha256(resource_path) != summary.get("resource_csv_sha256")
+    ):
+        raise UserError("phase calibration resource CSV digest mismatch")
+    try:
+        with resource_path.open("r", encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if tuple(reader.fieldnames or ()) != CALIBRATION_RESOURCE_FIELDS:
+                raise UserError("phase calibration resource CSV header mismatch")
+            resource_rows = list(reader)
+        resource_peak_mib = max(
+            float(row["gpu_memory_mib"]) for row in resource_rows
+        )
+        resource_max_active = max(
+            int(row["active_count"]) for row in resource_rows
+        )
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise UserError("phase calibration resource CSV is invalid") from error
+    if not resource_rows or any(
+        row.get("phase_id") != phase["phase_id"]
+        or row.get("setting") != phase["setting"]
+        or row.get("method") != phase["method"]
+        for row in resource_rows
+    ):
+        raise UserError("phase calibration resource CSV identity mismatch")
+    identity = {
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+    }
+    for key, expected in identity.items():
+        if summary.get(key) != expected or calibration_plan.get(key) != expected:
+            raise UserError(f"phase calibration identity mismatch for {key}")
+    if summary.get("calibration_id") != calibration_plan.get("calibration_id"):
+        raise UserError("phase calibration id does not match its plan")
+
+    policy = _calibration_policy(phase, spec)
+    expected_commit = git("rev-parse", "HEAD")
+    for document, label in ((summary, "summary"), (calibration_plan, "plan")):
+        if document.get("source_git_commit") != expected_commit:
+            raise UserError(f"phase calibration {label} Git commit mismatch")
+        if document.get("source_spec_sha256") != spec["_sha256"]:
+            raise UserError(f"phase calibration {label} spec digest mismatch")
+        if document.get("gpu") != cli.gpu:
+            raise UserError(f"phase calibration {label} GPU mismatch")
+        if document.get("calibration_policy") != policy:
+            raise UserError(f"phase calibration {label} policy mismatch")
+        if document.get("episode_limit") != policy["episode_limit"] or (
+            document.get("episode_budget_per_worker")
+            != policy["episode_limit"]
+        ):
+            raise UserError(f"phase calibration {label} episode budget mismatch")
+        if document.get("target_workers") != requested or (
+            document.get("initial_workers") != requested
+        ):
+            raise UserError(f"phase calibration {label} worker count mismatch")
+
+    if (
+        summary.get("status") != "completed"
+        or summary.get("stop_reason") != "target_completed"
+        or summary.get("recommended_cap") != requested
+        or summary.get("launched_workers") != requested
+        or summary.get("successful_workers") != requested
+        or summary.get("failed_workers") != 0
+        or summary.get("unlaunched_workers") != 0
+    ):
+        raise UserError("phase calibration did not completely validate the limit")
+    try:
+        peak_mib = float(summary["peak_observed_gpu_memory_mib"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise UserError("phase calibration lacks valid peak VRAM") from error
+    if (
+        not math.isfinite(peak_mib)
+        or not 0 < peak_mib < 29_000
+        or resource_peak_mib != peak_mib
+        or resource_max_active < requested
+    ):
+        raise UserError("phase calibration peak VRAM is outside the safe line")
+    initial_group = summary.get("initial_group")
+    if not isinstance(initial_group, dict) or initial_group.get(
+        "steady_confirmed"
+    ) is not True:
+        raise UserError("phase calibration group was not steady-confirmed")
+
+    levels = [
+        value for value in summary.get("levels", [])
+        if isinstance(value, dict) and value.get("active_count") == requested
+    ]
+    if len(levels) != 1 or levels[0].get("steady_confirmed") is not True:
+        raise UserError("phase calibration lacks one confirmed target level")
+    baseline = int(policy["initial_group_workers"])
+    expected_mode = "fresh_bootstrap" if requested == baseline else "sizing_jump"
+    expected_origin = (
+        "current_bootstrap_group"
+        if requested == baseline else "current_sizing_jump_group"
+    )
+    if summary.get("initial_group_mode") != expected_mode or (
+        levels[0].get("evidence_origin") != expected_origin
+    ):
+        raise UserError("phase calibration is not independent grouped evidence")
+    if requested > baseline:
+        parent = summary.get("sizing_parent")
+        projection = summary.get("sizing_projection")
+        if not isinstance(parent, dict) or not isinstance(projection, dict):
+            raise UserError("raised phase calibration lacks sizing evidence")
+        if projection.get("accepted") is not True:
+            raise UserError("raised phase calibration projection was not accepted")
+        for parent_key, digest_key in (
+            ("path", "sha256"), ("plan_path", "plan_sha256")
+        ):
+            parent_path = Path(str(parent.get(parent_key, ""))).resolve()
+            if not _is_relative_to(parent_path, LOG_ROOT) or not parent_path.is_file():
+                raise UserError("phase calibration sizing parent path is invalid")
+            if sha256(parent_path) != parent.get(digest_key):
+                raise UserError("phase calibration sizing parent digest mismatch")
+
+    planned_jobs = calibration_plan.get("jobs")
+    summary_jobs = summary.get("jobs")
+    if (
+        not isinstance(planned_jobs, list)
+        or len(planned_jobs) != requested
+        or not isinstance(summary_jobs, list)
+        or len(summary_jobs) != requested
+        or len(jobs) < requested
+    ):
+        raise UserError("phase calibration job count mismatch")
+    ordered_summary_jobs = sorted(
+        summary_jobs, key=lambda item: item.get("worker_index", -1)
+    )
+    if [item.get("worker_index") for item in ordered_summary_jobs] != list(
+        range(1, requested + 1)
+    ) or any(
+        item.get("exit_code") != 0
+        or item.get("episode_budget") != policy["episode_limit"]
+        for item in ordered_summary_jobs
+    ):
+        raise UserError("phase calibration contains an incomplete worker")
+    if [item.get("source_run_tag") for item in ordered_summary_jobs] != [
+        item.get("source_run_tag") for item in planned_jobs
+    ]:
+        raise UserError("phase calibration summary/plan job prefix mismatch")
+
+    formal_identities = []
+    for index in range(requested):
+        formal_config = staged._job_config(jobs[index])
+        if formal_config.get("episodes") != -1:
+            raise UserError("formal refinement config must retain episodes=-1")
+        formal_config["episodes"] = policy["episode_limit"]
+        formal_identity = _calibration_config_identity(formal_config)
+        formal_identities.append(formal_identity)
+
+        planned_job = planned_jobs[index]
+        planned_job_dir = Path(str(planned_job.get("job_dir", ""))).resolve()
+        if not _is_relative_to(planned_job_dir, path.parent / "jobs"):
+            raise UserError("phase calibration job directory escapes its artifact")
+        try:
+            exit_code = int(
+                (planned_job_dir / "exitcode")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+        except (OSError, ValueError) as error:
+            raise UserError("phase calibration job exitcode is invalid") from error
+        if exit_code != 0:
+            raise UserError("phase calibration job did not exit successfully")
+        command = planned_job.get("command")
+        if not isinstance(command, list) or command.count("--episode-limit") != 1:
+            raise UserError("phase calibration command lacks one episode limit")
+        option_index = command.index("--episode-limit")
+        if (
+            option_index + 1 >= len(command)
+            or command[option_index + 1] != str(policy["episode_limit"])
+        ):
+            raise UserError("phase calibration command episode limit mismatch")
+        calibration_config = _read_json_object(
+            planned_job.get("config_path"), "phase calibration config"
+        )
+        if calibration_config.get("episodes") != policy["episode_limit"]:
+            raise UserError("phase calibration config episode limit mismatch")
+        calibration_identity = _calibration_config_identity(calibration_config)
+        if calibration_identity != formal_identity:
+            raise UserError(
+                f"phase calibration candidate {index + 1} config mismatch"
+            )
+    identity_sha256 = hashlib.sha256(
+        canonical(formal_identities).encode("utf-8")
+    ).hexdigest()
+    return {
+        "path": str(path),
+        "sha256": sha256(path),
+        "plan_path": str(plan_path),
+        "plan_sha256": sha256(plan_path),
+        "calibration_id": summary["calibration_id"],
+        "target_workers": requested,
+        "peak_observed_gpu_memory_mib": peak_mib,
+        "source_job_config_identity_sha256": identity_sha256,
+    }
+
+
+def _validate_worker_calibration_overrides(cli, phases, spec):
+    phase_by_id = {phase["phase_id"]: phase for phase in phases}
+    overrides = getattr(cli, "phase_max_workers", {}) or {}
+    evidence_paths = getattr(cli, "phase_calibrations", {}) or {}
+    unknown = set(evidence_paths).difference(phase_by_id)
+    if unknown:
+        raise UserError(f"unknown phase calibration evidence: {sorted(unknown)}")
+    extraneous = set(evidence_paths).difference(overrides)
+    if extraneous:
+        raise UserError(
+            "phase calibration evidence requires matching worker overrides: "
+            f"{sorted(extraneous)}"
+        )
+    bindings = {}
+    for phase_id, requested in overrides.items():
+        phase = phase_by_id[phase_id]
+        safe_default = _safe_worker_limit(phase, spec)
+        evidence_path = evidence_paths.get(phase_id)
+        if requested > safe_default and evidence_path is None:
+            raise UserError(
+                f"raised worker limit {phase_id}={requested} requires "
+                "--phase-calibration"
+            )
+        if evidence_path is not None:
+            jobs = build_phase_jobs(phase, cli.batch_id, spec, gpu=cli.gpu)
+            bindings[phase_id] = _validated_worker_calibration(
+                evidence_path, phase, jobs, requested, spec, cli
+            )
+    return bindings
+
+
 def phase_manifest(phase, batch_id, jobs, spec, cli):
     return {
         "schema": PHASE_SCHEMA,
@@ -737,6 +1086,11 @@ def phase_manifest(phase, batch_id, jobs, spec, cli):
         "result_layout": RESULT_LAYOUT,
         "safe_worker_limit": _safe_worker_limit(phase, spec),
         "effective_worker_limit": _configured_worker_limit(cli, phase, spec),
+        "declared_worker_limits": sorted(_declared_worker_limits(phase, spec)),
+        "calibration_policy": _calibration_policy(phase, spec),
+        "worker_calibration": (
+            getattr(cli, "worker_calibration_bindings", {}) or {}
+        ).get(phase["phase_id"]),
         "prelaunch_gate_mib": _prelaunch_gate(phase, spec),
         "effective_prelaunch_gate_mib": _configured_prelaunch_gate(
             cli, phase, spec
@@ -766,6 +1120,9 @@ def campaign_manifest(batch_id, phases, spec, cli):
         "runtime": {
             "phase_max_workers": dict(sorted(
                 (getattr(cli, "phase_max_workers", {}) or {}).items()
+            )),
+            "phase_calibrations": dict(sorted(
+                (getattr(cli, "worker_calibration_bindings", {}) or {}).items()
             )),
             "global_max_workers": cli.max_workers,
             "global_max_gpu_memory_mib": cli.max_gpu_memory_mib,
@@ -888,6 +1245,9 @@ def ensure_campaign_plan(cli, spec):
         raise UserError(
             f"unknown phase worker overrides: {sorted(unknown_overrides)}"
         )
+    cli.worker_calibration_bindings = _validate_worker_calibration_overrides(
+        cli, phases, spec
+    )
     root = campaign_root(cli.batch_id)
     manifest_path = root / "PLAN.json"
     expected = campaign_manifest(cli.batch_id, phases, spec, cli)
@@ -1529,6 +1889,17 @@ def _parse_phase_worker_override(value):
     return phase_id, limit
 
 
+def _parse_phase_calibration_override(value):
+    phase_id, separator, raw_path = value.partition("=")
+    if not separator or not raw_path:
+        raise argparse.ArgumentTypeError("expected PHASE_ID=CALIBRATION.json")
+    try:
+        safe_component("phase_id", phase_id)
+    except UserError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    return phase_id, str(Path(raw_path).expanduser().resolve())
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-id", required=True)
@@ -1544,6 +1915,15 @@ def parse_args(argv=None):
         help=(
             "set one phase to a worker count explicitly declared by its "
             "calibration baseline/steps/production cap; repeatable"
+        ),
+    )
+    parser.add_argument(
+        "--phase-calibration", action="append", default=[],
+        type=_parse_phase_calibration_override,
+        metavar="PHASE_ID=CALIBRATION.json",
+        help=(
+            "bind a phase worker override to completed grouped calibration "
+            "evidence; required when raising the spec default"
         ),
     )
     parser.add_argument(
@@ -1592,6 +1972,12 @@ def parse_args(argv=None):
             parser.error(f"duplicate --phase-max-workers for {phase_id}")
         phase_limits[phase_id] = limit
     args.phase_max_workers = phase_limits
+    phase_calibrations = {}
+    for phase_id, path in args.phase_calibration:
+        if phase_id in phase_calibrations:
+            parser.error(f"duplicate --phase-calibration for {phase_id}")
+        phase_calibrations[phase_id] = path
+    args.phase_calibrations = phase_calibrations
     if args.watch:
         args.status = True
     return args

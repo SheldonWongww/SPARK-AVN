@@ -4,11 +4,13 @@
 This helper consumes a campaign already materialized by
 ``run_r2r_local_refinement.py --plan-only``.  It never executes a persisted
 formal job in place.  Instead, it clones a prefix of one phase into an
-isolated calibration namespace, rewrites every run/config/result path, and
-then ramps up one worker at a time while sampling GPU and cgroup memory.  The
-next worker is blocked until the current level rises above the previous
-level's steady VRAM and remains stable for a measured window; the fixed
-stagger is only a minimum delay, never loading evidence.
+isolated calibration namespace and rewrites every run/config/result path. The
+current campaign first measures a fresh five-worker/100-episode group. A
+larger declared count is allowed only when that digest-bound baseline projects
+below the sizing ceiling, and is then validated as a separate complete group.
+Transient lower counts observed during group launch are not treated as safe
+levels. Every accepted group must remain at steady VRAM for a measured window;
+the fixed stagger is only a launch delay, never loading evidence.
 
 The two memory lines are deliberately fixed here: stop adding workers once
 29,000 MiB is observed and terminate only this helper's process groups once
@@ -324,6 +326,60 @@ def _select_distinct_jobs(jobs, target_workers):
     return selected
 
 
+def _validated_grouped_policy(phase_manifest):
+    """Return the immutable per-phase grouped sizing policy."""
+    policy = phase_manifest.get("calibration_policy")
+    if not isinstance(policy, dict):
+        raise UserError("phase does not declare a grouped calibration policy")
+    if policy.get("mode") != "measured_grouped_jump_v1":
+        raise UserError("phase grouped calibration mode is unsupported")
+    initial = policy.get("initial_group_workers")
+    episode_limit = policy.get("episode_limit")
+    projection_max = policy.get("projection_max_mib")
+    estimate = policy.get("estimated_mib_per_job")
+    factor = policy.get("projection_safety_factor")
+    allowed = policy.get("allowed_worker_counts")
+    for label, value in (
+        ("initial_group_workers", initial),
+        ("episode_limit", episode_limit),
+        ("projection_max_mib", projection_max),
+        ("estimated_mib_per_job", estimate),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise UserError(f"invalid grouped calibration policy {label}")
+    if initial != 5 or episode_limit != 100:
+        raise UserError("grouped calibration policy must start at 5 for 100 episodes")
+    if projection_max >= PLANNED_MEMORY_MIB:
+        raise UserError("grouped calibration projection reaches the 29,000 MiB line")
+    if (
+        isinstance(factor, bool)
+        or not isinstance(factor, (int, float))
+        or not 1.0 <= float(factor) <= 1.5
+    ):
+        raise UserError("invalid grouped calibration projection safety factor")
+    if (
+        not isinstance(allowed, list)
+        or not allowed
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+            for value in allowed
+        )
+        or allowed != sorted(set(allowed))
+        or initial not in allowed
+    ):
+        raise UserError("invalid grouped calibration allowed worker counts")
+    if policy.get("independent_steady_validation") is not True:
+        raise UserError("grouped jumps must require independent steady validation")
+    if policy.get("steady_used_mib_stop") != PLANNED_MEMORY_MIB:
+        raise UserError("phase grouped calibration stop line changed")
+    if policy.get("observed_used_mib_abort") != EMERGENCY_MEMORY_MIB:
+        raise UserError("phase grouped calibration emergency line changed")
+    declared = phase_manifest.get("declared_worker_limits")
+    if declared != allowed:
+        raise UserError("phase declared worker limits disagree with calibration policy")
+    return copy.deepcopy(policy)
+
+
 def _execution_config_identity(document):
     return {
         key: value for key, value in document.items()
@@ -335,7 +391,11 @@ def _level_evidence_sha256(level):
     return hashlib.sha256(_canonical(level).encode("utf-8")).hexdigest()
 
 
-def _validated_level_chain(summary, summary_path, log_root, visited=None):
+def _validated_level_chain(
+    summary, summary_path, log_root, visited=None,
+    expected_episode_limit=None, expected_episode_budget=None,
+    enforce_episode_budget=False,
+):
     """Resolve and authenticate the continuous level chain in ``summary``."""
     summary_path = Path(summary_path).resolve()
     visited = set() if visited is None else set(visited)
@@ -344,6 +404,42 @@ def _validated_level_chain(summary, summary_path, log_root, visited=None):
     visited.add(summary_path)
     if summary.get("schema") != CALIBRATION_SCHEMA:
         raise UserError("prior calibration chain has an unsupported schema")
+    if enforce_episode_budget:
+        chain_plan_path = summary_path.parent / "CALIBRATION_PLAN.json"
+        chain_plan = _read_json(
+            chain_plan_path, "prior chain CALIBRATION_PLAN.json"
+        )
+        if chain_plan.get("schema") != CALIBRATION_PLAN_SCHEMA:
+            raise UserError(
+                "prior calibration chain plan has an unsupported schema"
+            )
+        if chain_plan.get("episode_limit") != expected_episode_limit:
+            raise UserError(
+                "prior calibration chain episode_limit mismatch"
+            )
+        chain_budget = chain_plan.get("episode_budget_per_worker")
+        if (
+            expected_episode_limit is not None
+            and chain_budget is None
+        ):
+            raise UserError(
+                "prefix calibration chain lacks episode budget provenance"
+            )
+        if (
+            chain_budget is not None
+            and chain_budget != expected_episode_budget
+        ):
+            raise UserError(
+                "prior calibration chain episode budget mismatch"
+            )
+        for key, expected in (
+            ("episode_limit", expected_episode_limit),
+            ("episode_budget_per_worker", expected_episode_budget),
+        ):
+            if key in summary and summary.get(key) != expected:
+                raise UserError(
+                    f"prior calibration chain {key} mismatch"
+                )
     cap = summary.get("recommended_cap")
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
         raise UserError("prior calibration chain has an invalid recommended_cap")
@@ -391,7 +487,10 @@ def _validated_level_chain(summary, summary_path, log_root, visited=None):
         if upstream.get("recommended_cap") != initial_workers:
             raise UserError("upstream cap does not match continuation prefix")
         upstream_levels = _validated_level_chain(
-            upstream, upstream_path, log_root, visited=visited
+            upstream, upstream_path, log_root, visited=visited,
+            expected_episode_limit=expected_episode_limit,
+            expected_episode_budget=expected_episode_budget,
+            enforce_episode_budget=enforce_episode_budget,
         )
         for count in range(1, initial_workers):
             level = levels.get(count)
@@ -466,9 +565,27 @@ def _validated_level_chain(summary, summary_path, log_root, visited=None):
 
 
 def _load_prior_evidence(
-    path, campaign_root, plan, phase, selected_jobs, initial_workers, gpu
+    path, campaign_root, plan, phase, selected_jobs, initial_workers, gpu,
+    episode_limit=None,
 ):
     """Validate one prior calibration before allowing a continuation ramp."""
+    if (
+        episode_limit is not None
+        and (
+            isinstance(episode_limit, bool)
+            or not isinstance(episode_limit, int)
+            or episode_limit < 1
+        )
+    ):
+        raise UserError("episode_limit must be a positive integer or null")
+    expected_config_episodes = (
+        episode_limit if episode_limit is not None else -1
+    )
+    expected_episode_budget = (
+        episode_limit
+        if episode_limit is not None
+        else int(plan.get("episode_count", FULL_VAL_EPISODES))
+    )
     path = Path(path).resolve()
     campaign_parent = Path(campaign_root).resolve().parent
     if not _is_relative_to(path, campaign_parent):
@@ -500,6 +617,23 @@ def _load_prior_evidence(
         raise UserError("prior calibration provenance mismatch for source_spec_sha256")
     if prior_plan.get("gpu") != gpu:
         raise UserError("prior calibration provenance mismatch for gpu")
+    if prior_plan.get("episode_limit") != episode_limit:
+        raise UserError(
+            "prior calibration provenance mismatch for episode_limit"
+        )
+    prior_budget = prior_plan.get("episode_budget_per_worker")
+    if episode_limit is not None and prior_budget is None:
+        raise UserError(
+            "prefix prior calibration lacks episode budget provenance"
+        )
+    if (
+        prior_budget is not None
+        and prior_budget != expected_episode_budget
+    ):
+        raise UserError(
+            "prior calibration provenance mismatch for "
+            "episode_budget_per_worker"
+        )
     prior_execution_commit = prior.get(
         "execution_git_commit", prior_source_commit
     )
@@ -513,6 +647,8 @@ def _load_prior_evidence(
         "source_git_commit": prior_source_commit,
         "source_spec_sha256": prior_spec_sha256,
         "gpu": gpu,
+        "episode_limit": episode_limit,
+        "episode_budget_per_worker": expected_episode_budget,
     }
     for key, expected in provenance.items():
         # New summaries carry these fields directly.  Older evidence from the
@@ -534,7 +670,10 @@ def _load_prior_evidence(
             "or partially replaying the proven prefix is forbidden"
         )
     by_count = _validated_level_chain(
-        prior, path, campaign_parent, visited=set()
+        prior, path, campaign_parent, visited=set(),
+        expected_episode_limit=episode_limit,
+        expected_episode_budget=expected_episode_budget,
+        enforce_episode_budget=True,
     )
     for count in range(1, initial_workers + 1):
         level = by_count.get(count)
@@ -568,7 +707,17 @@ def _load_prior_evidence(
         current_config = _read_json(
             current_job.get("config_path"), "current formal job config"
         )
+        if current_config.get("episodes") != -1:
+            raise UserError(
+                "current formal source config must keep episodes=-1"
+            )
         current_identity = _execution_config_identity(current_config)
+        if episode_limit is not None:
+            # The formal template deliberately carries episodes=-1.  A
+            # calibration prefix rewrites only this execution-budget field;
+            # normalize the current source identity to the exact prefix that
+            # the digest-pinned prior plan and cloned config must still carry.
+            current_identity["episodes"] = expected_config_episodes
         config_identities.append(current_identity)
         if index >= compared_count:
             continue
@@ -578,6 +727,27 @@ def _load_prior_evidence(
         prior_config = _read_json(
             prior_job.get("config_path"), "prior calibration job config"
         )
+        if prior_config.get("episodes") != expected_config_episodes:
+            raise UserError(
+                f"prior calibration episodes changed at candidate {index + 1}"
+            )
+        if episode_limit is not None:
+            prior_command = prior_job.get("command")
+            if not isinstance(prior_command, list) or (
+                prior_command.count("--episode-limit") != 1
+            ):
+                raise UserError(
+                    "prefix prior calibration command must contain "
+                    "--episode-limit exactly once"
+                )
+            option_index = prior_command.index("--episode-limit")
+            if (
+                option_index + 1 >= len(prior_command)
+                or prior_command[option_index + 1] != str(episode_limit)
+            ):
+                raise UserError(
+                    "prefix prior calibration command episode limit mismatch"
+                )
         prior_identity = _execution_config_identity(prior_config)
         if prior_identity != current_identity:
             raise UserError(
@@ -632,6 +802,288 @@ def _load_prior_evidence(
             for count in range(1, initial_workers + 1)
         ],
         **provenance,
+    }
+
+
+def _load_sizing_parent_evidence(
+    path, campaign_root, plan, phase, selected_jobs, gpu, policy
+):
+    """Authenticate the fresh five-worker measurement authorizing one jump."""
+    campaign_root = Path(campaign_root).resolve()
+    path = Path(path).resolve()
+    phase_calibration_root = (
+        campaign_root / "calibration" / phase["phase_id"]
+    ).resolve()
+    if path.name != "CALIBRATION.json" or not _is_relative_to(
+        path, phase_calibration_root
+    ):
+        raise UserError(
+            "sizing parent must be a CALIBRATION.json in this campaign phase"
+        )
+    parent = _read_json(path, "sizing parent CALIBRATION.json")
+    parent_plan_path = path.parent / "CALIBRATION_PLAN.json"
+    parent_plan = _read_json(
+        parent_plan_path, "sizing parent CALIBRATION_PLAN.json"
+    )
+    if parent.get("schema") != CALIBRATION_SCHEMA:
+        raise UserError("sizing parent has an unsupported schema")
+    if parent_plan.get("schema") != CALIBRATION_PLAN_SCHEMA:
+        raise UserError("sizing parent plan has an unsupported schema")
+
+    resource_name = parent.get("resource_csv")
+    resource_path = (path.parent / str(resource_name or "")).resolve()
+    if resource_name != "resource.csv" or resource_path.parent != path.parent:
+        raise UserError("sizing parent resource CSV path is invalid")
+    if not resource_path.is_file() or _sha256(resource_path) != parent.get(
+        "resource_csv_sha256"
+    ):
+        raise UserError("sizing parent resource CSV digest mismatch")
+    try:
+        with resource_path.open("r", encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if tuple(reader.fieldnames or ()) != RESOURCE_FIELDS:
+                raise UserError("sizing parent resource CSV header mismatch")
+            resource_rows = list(reader)
+        resource_peak_mib = max(
+            float(row["gpu_memory_mib"]) for row in resource_rows
+        )
+        resource_max_active = max(
+            int(row["active_count"]) for row in resource_rows
+        )
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise UserError("sizing parent resource CSV is invalid") from error
+    if not resource_rows or any(
+        row.get("phase_id") != phase["phase_id"]
+        or row.get("setting") != phase["setting"]
+        or row.get("method") != phase["method"]
+        for row in resource_rows
+    ):
+        raise UserError("sizing parent resource CSV identity mismatch")
+
+    identity = {
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+    }
+    for key, expected in identity.items():
+        if parent.get(key) != expected or parent_plan.get(key) != expected:
+            raise UserError(f"sizing parent identity mismatch for {key}")
+    if parent.get("calibration_id") != parent_plan.get("calibration_id"):
+        raise UserError("sizing parent id does not match its plan")
+    if parent.get("batch_id") != plan.get("batch_id") or (
+        parent_plan.get("batch_id") != plan.get("batch_id")
+    ):
+        raise UserError("sizing parent must come from the current campaign")
+    for document, label in ((parent, "summary"), (parent_plan, "plan")):
+        if document.get("source_spec_sha256") != plan.get("spec_sha256"):
+            raise UserError(f"sizing parent {label} spec digest mismatch")
+        if document.get("source_git_commit") != plan.get("git_commit"):
+            raise UserError(f"sizing parent {label} source commit mismatch")
+        if document.get("gpu") != gpu:
+            raise UserError(f"sizing parent {label} GPU mismatch")
+        if document.get("calibration_policy") != policy:
+            raise UserError(f"sizing parent {label} calibration policy mismatch")
+
+    baseline_workers = int(policy["initial_group_workers"])
+    episode_limit = int(policy["episode_limit"])
+    if len(selected_jobs) <= baseline_workers:
+        raise UserError("a sizing jump must target more than five workers")
+    target_workers = len(selected_jobs)
+    if target_workers not in policy["allowed_worker_counts"]:
+        raise UserError("sizing jump worker count is not declared by the phase")
+    for document, label in ((parent, "summary"), (parent_plan, "plan")):
+        if document.get("episode_limit") != episode_limit:
+            raise UserError(f"sizing parent {label} episode_limit mismatch")
+        if document.get("episode_budget_per_worker") != episode_limit:
+            raise UserError(f"sizing parent {label} episode budget mismatch")
+        if document.get("initial_workers") != baseline_workers:
+            raise UserError(f"sizing parent {label} did not start at five")
+        if document.get("target_workers") != baseline_workers:
+            raise UserError(f"sizing parent {label} did not target five")
+    if parent.get("initial_group_mode") != "fresh_bootstrap":
+        raise UserError("sizing parent is not a fresh five-worker baseline")
+    if parent.get("sizing_parent") is not None or parent_plan.get(
+        "sizing_parent"
+    ) is not None:
+        raise UserError("a sizing jump cannot serve as the five-worker parent")
+    if (
+        parent.get("status") != "completed"
+        or parent.get("stop_reason") != "target_completed"
+        or parent.get("recommended_cap") != baseline_workers
+        or parent.get("launched_workers") != baseline_workers
+        or parent.get("successful_workers") != baseline_workers
+        or parent.get("failed_workers") != 0
+        or parent.get("unlaunched_workers") != 0
+    ):
+        raise UserError("sizing parent five-worker run was not completely successful")
+    initial_group = parent.get("initial_group")
+    if not isinstance(initial_group, dict) or initial_group.get(
+        "steady_confirmed"
+    ) is not True:
+        raise UserError("sizing parent initial group was not steady-confirmed")
+
+    matching_levels = [
+        item for item in parent.get("levels", [])
+        if isinstance(item, dict)
+        and item.get("active_count") == baseline_workers
+    ]
+    if len(matching_levels) != 1:
+        raise UserError("sizing parent lacks exactly one five-worker level")
+    level = matching_levels[0]
+    if (
+        level.get("steady_confirmed") is not True
+        or level.get("evidence_origin") != "current_bootstrap_group"
+    ):
+        raise UserError("sizing parent five-worker level is not fresh evidence")
+    try:
+        idle_mib = float(parent["baseline_gpu_memory_mib"])
+        steady_mib = float(level["steady_gpu_memory_mib"])
+        peak_mib = float(level["peak_gpu_memory_mib"])
+        observed_peak_mib = float(parent["peak_observed_gpu_memory_mib"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise UserError("sizing parent has invalid VRAM evidence") from error
+    if (
+        not all(
+            math.isfinite(value)
+            for value in (idle_mib, steady_mib, peak_mib, observed_peak_mib)
+        )
+        or idle_mib < 0
+        or steady_mib <= idle_mib
+        or peak_mib < steady_mib
+        or peak_mib >= PLANNED_MEMORY_MIB
+        or observed_peak_mib < peak_mib
+        or observed_peak_mib >= PLANNED_MEMORY_MIB
+        or resource_peak_mib != observed_peak_mib
+        or resource_max_active < baseline_workers
+    ):
+        raise UserError("sizing parent VRAM evidence is outside the safe line")
+
+    parent_plan_jobs = parent_plan.get("jobs")
+    parent_jobs = parent.get("jobs")
+    if (
+        not isinstance(parent_plan_jobs, list)
+        or len(parent_plan_jobs) != baseline_workers
+        or not isinstance(parent_jobs, list)
+        or len(parent_jobs) != baseline_workers
+    ):
+        raise UserError("sizing parent lacks exactly five job records")
+    expected_tags = [job.get("run_tag") for job in selected_jobs[:baseline_workers]]
+    if [job.get("source_run_tag") for job in parent_plan_jobs] != expected_tags:
+        raise UserError("sizing parent candidate prefix differs from this phase")
+    ordered_parent_jobs = sorted(
+        parent_jobs, key=lambda item: item.get("worker_index", -1)
+    )
+    if [job.get("worker_index") for job in ordered_parent_jobs] != list(
+        range(1, baseline_workers + 1)
+    ) or [job.get("source_run_tag") for job in ordered_parent_jobs] != expected_tags:
+        raise UserError("sizing parent summary candidate prefix is invalid")
+    if any(
+        job.get("exit_code") != 0
+        or job.get("episode_budget") != episode_limit
+        for job in ordered_parent_jobs
+    ):
+        raise UserError("sizing parent contains an incomplete job")
+
+    current_identities = []
+    for index in range(baseline_workers):
+        current_config = _read_json(
+            selected_jobs[index].get("config_path"), "current formal job config"
+        )
+        if current_config.get("episodes") != -1:
+            raise UserError("current formal source config must keep episodes=-1")
+        current_identity = _execution_config_identity(current_config)
+        current_identity["episodes"] = episode_limit
+        current_identities.append(current_identity)
+
+        parent_job = parent_plan_jobs[index]
+        parent_job_dir = Path(str(parent_job.get("job_dir", ""))).resolve()
+        if not _is_relative_to(parent_job_dir, path.parent / "jobs"):
+            raise UserError("sizing parent job directory escapes its artifact")
+        try:
+            exit_code = int(
+                (parent_job_dir / "exitcode").read_text(encoding="utf-8").strip()
+            )
+        except (OSError, ValueError) as error:
+            raise UserError("sizing parent job exitcode is invalid") from error
+        if exit_code != 0:
+            raise UserError("sizing parent job did not exit successfully")
+        command = parent_job.get("command")
+        if not isinstance(command, list) or command.count("--episode-limit") != 1:
+            raise UserError("sizing parent command must bind one episode limit")
+        option_index = command.index("--episode-limit")
+        if (
+            option_index + 1 >= len(command)
+            or command[option_index + 1] != str(episode_limit)
+        ):
+            raise UserError("sizing parent command episode limit mismatch")
+        parent_config = _read_json(
+            parent_job.get("config_path"), "sizing parent cloned config"
+        )
+        if parent_config.get("episodes") != episode_limit:
+            raise UserError("sizing parent cloned config episode limit mismatch")
+        parent_identity = _execution_config_identity(parent_config)
+        if parent_identity != current_identity:
+            raise UserError(
+                f"sizing parent config identity changed at candidate {index + 1}"
+            )
+
+    safety_factor = float(policy["projection_safety_factor"])
+    # The whole-run peak includes launch/load transients that the level's
+    # steady-window row may miss. Size from the larger observed value so a
+    # brief allocation spike cannot authorize an unsafe jump.
+    projection_peak_mib = max(peak_mib, observed_peak_mib)
+    measured_peak_per_worker = (
+        projection_peak_mib - idle_mib
+    ) / baseline_workers
+    measured_steady_per_worker = (steady_mib - idle_mib) / baseline_workers
+    effective_per_worker = max(
+        float(policy["estimated_mib_per_job"]),
+        measured_peak_per_worker * safety_factor,
+    )
+    projected_mib = idle_mib + target_workers * effective_per_worker
+    ceiling_mib = float(policy["projection_max_mib"])
+    if projected_mib > ceiling_mib:
+        raise UserError(
+            "sizing jump projection exceeds the declared ceiling: "
+            f"{projected_mib:.1f} > {ceiling_mib:.1f} MiB"
+        )
+    identities_sha256 = hashlib.sha256(
+        _canonical(current_identities).encode("utf-8")
+    ).hexdigest()
+    return {
+        "path": str(path),
+        "sha256": _sha256(path),
+        "plan_path": str(parent_plan_path),
+        "plan_sha256": _sha256(parent_plan_path),
+        "calibration_id": parent["calibration_id"],
+        "baseline_workers": baseline_workers,
+        "target_workers": target_workers,
+        "episode_limit": episode_limit,
+        "gpu": gpu,
+        "source_git_commit": plan.get("git_commit"),
+        "source_spec_sha256": plan.get("spec_sha256"),
+        "baseline_gpu_memory_mib": round(idle_mib, 3),
+        "steady_gpu_memory_mib": round(steady_mib, 3),
+        "peak_gpu_memory_mib": round(peak_mib, 3),
+        "peak_observed_gpu_memory_mib": round(observed_peak_mib, 3),
+        "projection_peak_gpu_memory_mib": round(projection_peak_mib, 3),
+        "measured_peak_increment_per_worker_mib": round(
+            measured_peak_per_worker, 6
+        ),
+        "measured_steady_increment_per_worker_mib": round(
+            measured_steady_per_worker, 6
+        ),
+        "declared_estimated_mib_per_job": int(
+            policy["estimated_mib_per_job"]
+        ),
+        "projection_safety_factor": safety_factor,
+        "effective_projected_mib_per_worker": round(
+            effective_per_worker, 6
+        ),
+        "parent_idle_projected_gpu_memory_mib": round(projected_mib, 3),
+        "projection_max_mib": int(policy["projection_max_mib"]),
+        "source_job_config_identity_sha256": identities_sha256,
     }
 
 
@@ -1049,7 +1501,9 @@ def _level_summaries(samples, records, gate_levels):
     return output
 
 
-def _merge_level_evidence(current_levels, prior_evidence, initial_workers):
+def _merge_level_evidence(
+    current_levels, prior_evidence, initial_workers, sizing_evidence=None
+):
     """Merge a prior continuous prefix without presenting it as a current run."""
     current = {
         level["active_count"]: copy.deepcopy(level) for level in current_levels
@@ -1057,6 +1511,23 @@ def _merge_level_evidence(current_levels, prior_evidence, initial_workers):
     if not initial_workers:
         for level in current.values():
             level["evidence_origin"] = "current"
+        return [current[count] for count in sorted(current)]
+
+    if prior_evidence is None:
+        # A fresh grouped start proves the whole concurrent level directly;
+        # samples while that group is still launching are observations, not
+        # separate proofs for every lower cardinality.
+        for count, level in current.items():
+            if count < initial_workers:
+                level["evidence_origin"] = "current_bootstrap_transient"
+            elif count == initial_workers:
+                level["evidence_origin"] = (
+                    "current_sizing_jump_group"
+                    if sizing_evidence is not None
+                    else "current_bootstrap_group"
+                )
+            else:
+                level["evidence_origin"] = "current"
         return [current[count] for count in sorted(current)]
 
     prior_prefix = prior_evidence.get("_validated_level_prefix", [])
@@ -1160,13 +1631,15 @@ def _recommended_cap(
 def _build_summary(
     calibration_plan, samples, records, gate_levels, started_monotonic, stop_reason,
     emergency_observed_mib=None, telemetry_error=None, initial_group=None,
-    runtime_prior_evidence=None,
+    runtime_prior_evidence=None, runtime_sizing_evidence=None,
+    runtime_sizing_projection=None, resource_path=None,
 ):
     initial_workers = int(calibration_plan.get("initial_workers") or 0)
     levels = _merge_level_evidence(
         _level_summaries(samples, records, gate_levels),
         runtime_prior_evidence,
         initial_workers,
+        sizing_evidence=runtime_sizing_evidence,
     )
     initial_group_confirmed = bool(
         initial_group is not None
@@ -1187,6 +1660,10 @@ def _build_summary(
     )
     if stop_reason == "emergency_memory_threshold":
         status = "emergency_abort"
+    elif stop_reason == "sizing_projection_threshold":
+        status = "safety_stop"
+    elif stop_reason == "planned_memory_threshold":
+        status = "safety_stop"
     elif initial_workers and not initial_group_confirmed:
         status = "failed"
     elif stop_reason == "worker_exited_before_steady":
@@ -1195,8 +1672,6 @@ def _build_summary(
         "telemetry_failure", "launch_error", "worker_failure", "load_timeout"
     ):
         status = "failed"
-    elif stop_reason == "planned_memory_threshold":
-        status = "safety_stop"
     elif pending or cap < int(calibration_plan["target_workers"]):
         status = "inconclusive"
     elif launched and successful == launched:
@@ -1258,8 +1733,24 @@ def _build_summary(
             "allowed_helper_only_diff_files", []
         ),
         "gpu": calibration_plan.get("gpu"),
+        "episode_limit": calibration_plan.get("episode_limit"),
+        "episode_budget_per_worker": calibration_plan.get(
+            "episode_budget_per_worker"
+        ),
+        "calibration_policy": calibration_plan.get("calibration_policy"),
         "prior_evidence": calibration_plan.get("prior_evidence"),
+        "sizing_parent": calibration_plan.get("sizing_parent"),
+        "sizing_projection": runtime_sizing_projection,
         "initial_workers": initial_workers,
+        "initial_group_mode": (
+            "prior_revalidation"
+            if initial_workers and runtime_prior_evidence is not None
+            else "sizing_jump"
+            if initial_workers and runtime_sizing_evidence is not None
+            else "fresh_bootstrap"
+            if initial_workers
+            else "adaptive"
+        ),
         "initial_group": (
             {
                 "steady_confirmed": initial_group_confirmed,
@@ -1298,6 +1789,7 @@ def _build_summary(
         "levels": levels,
         "jobs": job_records,
         "resource_csv": "resource.csv",
+        "resource_csv_sha256": _sha256(resource_path),
         "elapsed_seconds": round(time.monotonic() - started_monotonic, 6),
         "finished_at": _timestamp(),
     }
@@ -1318,14 +1810,10 @@ def _run_calibration(
     steady_relative_tolerance=DEFAULT_STEADY_RELATIVE_TOLERANCE,
     steady_samples=DEFAULT_STEADY_SAMPLES,
     prior_evidence=None,
+    sizing_evidence=None,
     initial_workers=0,
 ):
-    """Run a cloned single-phase adaptive ramp and emit CALIBRATION.json.
-
-    A fixed launch delay is only a lower bound.  Worker ``k + 1`` remains
-    blocked until level ``k`` has both loaded relative to level ``k - 1``'s
-    confirmed steady VRAM and stayed within the configured stability window.
-    """
+    """Run one isolated calibration group and emit CALIBRATION.json."""
     started = time.monotonic()
     active = {}
     records = []
@@ -1341,9 +1829,12 @@ def _run_calibration(
     telemetry_error = None
     launch_error = None
     resource_path = Path(calibration_root) / "resource.csv"
-    continuation = initial_workers > 0
-    if continuation and prior_evidence is None:
-        raise UserError("initial_workers requires validated prior evidence")
+    grouped_start = initial_workers > 0
+    continuation = grouped_start and prior_evidence is not None
+    sizing_jump = grouped_start and sizing_evidence is not None
+    if continuation and sizing_jump:
+        raise UserError("prior and sizing evidence cannot be used together")
+    runtime_sizing_projection = None
 
     with resource_path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=RESOURCE_FIELDS)
@@ -1357,7 +1848,7 @@ def _run_calibration(
                 worker_exited = len(active) < active_before_reap
                 if (
                     worker_exited
-                    and continuation
+                    and grouped_start
                     and initial_group is not None
                     and initial_group.get("steady_confirmed") is not True
                     and stop_reason is None
@@ -1459,7 +1950,7 @@ def _run_calibration(
                 launch_kind = None
                 if (
                     stop_reason is None
-                    and continuation
+                    and grouped_start
                     and (
                         initial_group is None
                         or initial_group.get("steady_confirmed") is not True
@@ -1467,18 +1958,86 @@ def _run_calibration(
                 ):
                     if initial_group is None:
                         previous_steady_memory = float(gpu_memory)
-                        prior_steady = float(
-                            prior_evidence["level_n_steady_gpu_memory_mib"]
-                        )
-                        recovery_floor = max(
-                            prior_steady
-                            * (1.0 - PRIOR_RECOVERY_RELATIVE_TOLERANCE),
-                            previous_steady_memory
-                            + initial_workers * int(min_loaded_memory_mib),
-                        )
+                        if sizing_jump:
+                            effective_per_worker = float(
+                                sizing_evidence[
+                                    "effective_projected_mib_per_worker"
+                                ]
+                            )
+                            projection_ceiling = float(
+                                sizing_evidence["projection_max_mib"]
+                            )
+                            current_projection = (
+                                previous_steady_memory
+                                + initial_workers * effective_per_worker
+                            )
+                            runtime_sizing_projection = {
+                                "formula": (
+                                    "current_idle_mib + target_workers * "
+                                    "effective_projected_mib_per_worker"
+                                ),
+                                "current_idle_gpu_memory_mib": round(
+                                    previous_steady_memory, 3
+                                ),
+                                "target_workers": initial_workers,
+                                "effective_projected_mib_per_worker": round(
+                                    effective_per_worker, 6
+                                ),
+                                "projected_gpu_memory_mib": round(
+                                    current_projection, 3
+                                ),
+                                "projection_max_mib": round(
+                                    projection_ceiling, 3
+                                ),
+                                "accepted": current_projection
+                                <= projection_ceiling,
+                            }
+                            if current_projection > projection_ceiling:
+                                stop_reason = "sizing_projection_threshold"
+                                break
+                        if continuation:
+                            prior_steady = float(
+                                prior_evidence[
+                                    "level_n_steady_gpu_memory_mib"
+                                ]
+                            )
+                            recovery_floor = max(
+                                prior_steady * (
+                                    1.0 - PRIOR_RECOVERY_RELATIVE_TOLERANCE
+                                ),
+                                previous_steady_memory
+                                + initial_workers * int(min_loaded_memory_mib),
+                            )
+                            level_kind = (
+                                "prior_safe_initial_group_recovery"
+                            )
+                        elif sizing_jump:
+                            prior_steady = float(
+                                sizing_evidence["steady_gpu_memory_mib"]
+                            )
+                            steady_per_worker = float(
+                                sizing_evidence[
+                                    "measured_steady_increment_per_worker_mib"
+                                ]
+                            )
+                            recovery_floor = previous_steady_memory + (
+                                initial_workers * max(
+                                    float(min_loaded_memory_mib),
+                                    steady_per_worker
+                                    * (1.0 - PRIOR_RECOVERY_RELATIVE_TOLERANCE),
+                                )
+                            )
+                            level_kind = "sizing_jump_initial_group"
+                        else:
+                            prior_steady = None
+                            recovery_floor = (
+                                previous_steady_memory
+                                + initial_workers * int(min_loaded_memory_mib)
+                            )
+                            level_kind = "fresh_initial_group_bootstrap"
                         initial_group = {
                             "active_count": initial_workers,
-                            "level_kind": "prior_safe_initial_group_recovery",
+                            "level_kind": level_kind,
                             "status": "launching_initial_group",
                             "steady_confirmed": False,
                             "previous_steady_gpu_memory_mib": round(
@@ -1486,7 +2045,7 @@ def _run_calibration(
                             ),
                             "prior_steady_gpu_memory_mib": round(
                                 prior_steady, 3
-                            ),
+                            ) if prior_steady is not None else None,
                             "required_loaded_gpu_memory_mib": round(
                                 recovery_floor, 3
                             ),
@@ -1755,6 +2314,9 @@ def _run_calibration(
         telemetry_error=telemetry_error,
         initial_group=initial_group,
         runtime_prior_evidence=prior_evidence,
+        runtime_sizing_evidence=sizing_evidence,
+        runtime_sizing_projection=runtime_sizing_projection,
+        resource_path=resource_path,
     )
     _atomic_json(Path(calibration_root) / "CALIBRATION.json", summary)
     return summary
@@ -1839,7 +2401,9 @@ def execute(args):
     _assert_no_other_work(campaign_root)
     with _campaign_calibration_lock(campaign_root):
         _assert_no_other_work(campaign_root)
-        plan, phase, _, jobs = _load_phase(campaign_root, args.phase_id)
+        plan, phase, phase_manifest, jobs = _load_phase(
+            campaign_root, args.phase_id
+        )
         if plan.get("batch_id") != args.batch_id:
             raise UserError(
                 f"batch id mismatch: CLI={args.batch_id}, PLAN={plan.get('batch_id')}"
@@ -1848,15 +2412,41 @@ def execute(args):
             raise UserError(
                 f"GPU mismatch: CLI={args.gpu}, PLAN={plan.get('gpu')}"
             )
+        grouped_policy = _validated_grouped_policy(phase_manifest)
+        if args.prior_calibration is not None:
+            raise UserError(
+                "this phase uses independent grouped sizing; "
+                "--prior-calibration is not permitted"
+            )
+        if args.episode_limit != grouped_policy["episode_limit"]:
+            raise UserError(
+                "grouped calibration must use the phase's 100-episode prefix"
+            )
+        if args.initial_workers != args.target_workers:
+            raise UserError(
+                "grouped calibration requires initial_workers == target_workers"
+            )
+        if args.target_workers not in grouped_policy["allowed_worker_counts"]:
+            raise UserError(
+                "grouped calibration worker count is not declared by the phase"
+            )
+        baseline_workers = grouped_policy["initial_group_workers"]
+        if args.target_workers == baseline_workers and args.sizing_parent:
+            raise UserError("the five-worker baseline must not have a sizing parent")
+        if args.target_workers > baseline_workers and not args.sizing_parent:
+            raise UserError(
+                "worker counts above five require --sizing-parent evidence"
+            )
         revision_audit = _assert_plan_revision(
-            plan, allow_helper_only_drift=args.prior_calibration is not None
+            plan, allow_helper_only_drift=False
         )
         selected = _select_distinct_jobs(jobs, args.target_workers)
         prior_evidence = None
-        if args.prior_calibration is not None:
-            prior_evidence = _load_prior_evidence(
-                args.prior_calibration, campaign_root, plan, phase, selected,
-                args.initial_workers, args.gpu,
+        sizing_evidence = None
+        if args.sizing_parent is not None:
+            sizing_evidence = _load_sizing_parent_evidence(
+                args.sizing_parent, campaign_root, plan, phase, selected,
+                args.gpu, grouped_policy,
             )
         public_prior_evidence = (
             {
@@ -1864,6 +2454,10 @@ def execute(args):
                 if not key.startswith("_")
             }
             if prior_evidence is not None else None
+        )
+        public_sizing_evidence = (
+            copy.deepcopy(sizing_evidence)
+            if sizing_evidence is not None else None
         )
         calibration_root, clones, calibration_plan = _clone_jobs(
             campaign_root, plan, phase, selected, args.calibration_id,
@@ -1896,10 +2490,12 @@ def execute(args):
             "min_loaded_memory_mib": args.min_loaded_memory_mib,
             "steady_relative_tolerance": args.steady_relative_tolerance,
             "initial_workers": args.initial_workers,
+            "calibration_policy": grouped_policy,
             "prior_recovery_relative_tolerance": (
                 PRIOR_RECOVERY_RELATIVE_TOLERANCE
             ),
             "prior_evidence": public_prior_evidence,
+            "sizing_parent": public_sizing_evidence,
         })
         _atomic_json(
             calibration_root / "CALIBRATION_PLAN.json", calibration_plan
@@ -1916,6 +2512,7 @@ def execute(args):
             min_loaded_memory_mib=args.min_loaded_memory_mib,
             steady_relative_tolerance=args.steady_relative_tolerance,
             prior_evidence=prior_evidence,
+            sizing_evidence=sizing_evidence,
             initial_workers=args.initial_workers,
         )
 
@@ -1926,7 +2523,7 @@ def _default_calibration_id():
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Safely ramp concurrency for exactly one planned phase."
+        description="Safely validate grouped concurrency for one planned phase."
     )
     parser.add_argument("--batch-id", required=True)
     parser.add_argument("--phase-id", required=True)
@@ -1939,8 +2536,19 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument(
+        "--sizing-parent",
+        help=(
+            "fresh five-worker CALIBRATION.json whose measured peak VRAM "
+            "authorizes one independently validated larger group"
+        ),
+    )
+    parser.add_argument(
         "--initial-workers", type=int, default=0,
-        help="restart this prior-proven prefix before adaptively adding workers",
+        help=(
+            "launch this many workers as one measured initial group; with "
+            "--prior-calibration it revalidates that proven prefix, otherwise "
+            "it is a fresh bootstrap level"
+        ),
     )
     parser.add_argument("--calibration-id", default=_default_calibration_id())
     parser.add_argument(
@@ -2003,15 +2611,38 @@ def parse_args(argv=None):
         parser.error(str(error))
     if args.target_workers < 1:
         parser.error("--target-workers must be positive")
-    if (args.prior_calibration is None) != (args.initial_workers == 0):
+    if args.prior_calibration is not None and args.sizing_parent is not None:
+        parser.error("--prior-calibration and --sizing-parent are mutually exclusive")
+    if args.prior_calibration is not None and args.initial_workers == 0:
         parser.error(
-            "--prior-calibration and a positive --initial-workers are required "
-            "together"
+            "--prior-calibration requires a positive --initial-workers"
         )
     if args.initial_workers < 0:
         parser.error("--initial-workers must be non-negative")
-    if args.initial_workers >= args.target_workers:
-        parser.error("--initial-workers must be below --target-workers")
+    if args.initial_workers > args.target_workers:
+        parser.error("--initial-workers cannot exceed --target-workers")
+    if (
+        args.prior_calibration is not None
+        and args.initial_workers >= args.target_workers
+    ):
+        parser.error(
+            "a prior continuation requires --initial-workers below "
+            "--target-workers"
+        )
+    if args.prior_calibration is None:
+        if args.initial_workers != args.target_workers:
+            parser.error(
+                "grouped sizing requires --initial-workers equal to "
+                "--target-workers"
+            )
+        if args.episode_limit != 100:
+            parser.error("grouped sizing requires --episode-limit 100")
+        if args.target_workers < 5:
+            parser.error("grouped sizing starts at five workers, never one")
+        if args.target_workers == 5 and args.sizing_parent is not None:
+            parser.error("the five-worker baseline cannot have --sizing-parent")
+        if args.target_workers > 5 and args.sizing_parent is None:
+            parser.error("worker counts above five require --sizing-parent")
     if args.gpu < 0:
         parser.error("--gpu must be non-negative")
     if args.episode_limit is not None and args.episode_limit < 1:
@@ -2051,7 +2682,9 @@ def main(argv=None):
             "peak_observed_gpu_memory_mib"
         ],
     }, indent=2, sort_keys=True))
-    if summary["status"] in ("emergency_abort", "failed", "inconclusive"):
+    if summary["status"] in (
+        "emergency_abort", "failed", "inconclusive", "safety_stop"
+    ):
         raise SystemExit(1)
 
 

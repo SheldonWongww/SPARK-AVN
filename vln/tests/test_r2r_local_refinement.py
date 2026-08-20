@@ -37,9 +37,139 @@ def cli(**overrides):
         "max_memory_gib": 75.0,
         "launch_stagger": 0.0,
         "resource_wait_timeout": 10.0,
+        "phase_max_workers": {},
+        "phase_calibrations": {},
     }
     values.update(overrides)
     return type("Args", (), values)()
+
+
+def write_json(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def make_worker_calibration(root, spec, phase, requested, args):
+    jobs = MODULE.build_phase_jobs(
+        phase, args.batch_id, spec, gpu=args.gpu
+    )
+    policy = MODULE._calibration_policy(phase, spec)
+    calibration_root = (
+        Path(root) / "calibration" / phase["phase_id"] / f"verify-{requested}"
+    )
+    parent_root = (
+        Path(root) / "calibration" / phase["phase_id"] / "baseline-five"
+    )
+    parent_summary_path = parent_root / "CALIBRATION.json"
+    parent_plan_path = parent_root / "CALIBRATION_PLAN.json"
+    write_json(parent_summary_path, {"calibration_id": "baseline-five"})
+    write_json(parent_plan_path, {"calibration_id": "baseline-five"})
+
+    planned_jobs = []
+    summary_jobs = []
+    for index, job in enumerate(jobs[:requested], start=1):
+        config = MODULE.staged._job_config(job)
+        config.update({
+            "batch_id": f"{args.batch_id}-calibration",
+            "run_tag": f"calibration-worker-{index}",
+            "episodes": policy["episode_limit"],
+        })
+        job_dir = calibration_root / "jobs" / str(index)
+        config_path = job_dir / "parameters.json"
+        write_json(config_path, config)
+        (job_dir / "exitcode").write_text("0\n", encoding="utf-8")
+        planned_jobs.append({
+            "job_dir": str(job_dir),
+            "config_path": str(config_path),
+            "source_run_tag": job["run_tag"],
+            "command": list(job["command"]) + [
+                "--episode-limit", str(policy["episode_limit"])
+            ],
+        })
+        summary_jobs.append({
+            "worker_index": index,
+            "source_run_tag": job["run_tag"],
+            "exit_code": 0,
+            "episode_budget": policy["episode_limit"],
+        })
+
+    resource_path = calibration_root / "resource.csv"
+    resource_path.parent.mkdir(parents=True, exist_ok=True)
+    with resource_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=MODULE.CALIBRATION_RESOURCE_FIELDS
+        )
+        writer.writeheader()
+        writer.writerow({
+            "observed_at": "2026-08-20T00:00:00+0800",
+            "elapsed_seconds": "30",
+            "phase_id": phase["phase_id"],
+            "setting": phase["setting"],
+            "method": phase["method"],
+            "launched_count": str(requested),
+            "active_count": str(requested),
+            "completed_count": "0",
+            "gpu_memory_mib": "24000",
+            "gpu_utilization_pct": "95",
+            "cgroup_memory_gib": "20",
+            "action": "sample",
+        })
+
+    common = {
+        "calibration_id": f"verify-{requested}",
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+        "source_git_commit": MODULE.git("rev-parse", "HEAD"),
+        "source_spec_sha256": spec["_sha256"],
+        "gpu": args.gpu,
+        "calibration_policy": policy,
+        "episode_limit": policy["episode_limit"],
+        "episode_budget_per_worker": policy["episode_limit"],
+        "target_workers": requested,
+        "initial_workers": requested,
+    }
+    calibration_plan = {
+        "schema": MODULE.CALIBRATION_PLAN_SCHEMA,
+        **common,
+        "jobs": planned_jobs,
+    }
+    summary = {
+        "schema": MODULE.CALIBRATION_SCHEMA,
+        **common,
+        "status": "completed",
+        "stop_reason": "target_completed",
+        "recommended_cap": requested,
+        "launched_workers": requested,
+        "successful_workers": requested,
+        "failed_workers": 0,
+        "unlaunched_workers": 0,
+        "peak_observed_gpu_memory_mib": 24_000,
+        "resource_csv": "resource.csv",
+        "resource_csv_sha256": MODULE.sha256(resource_path),
+        "initial_group": {"steady_confirmed": True},
+        "initial_group_mode": "sizing_jump",
+        "levels": [{
+            "active_count": requested,
+            "steady_confirmed": True,
+            "evidence_origin": "current_sizing_jump_group",
+        }],
+        "sizing_parent": {
+            "path": str(parent_summary_path),
+            "sha256": MODULE.sha256(parent_summary_path),
+            "plan_path": str(parent_plan_path),
+            "plan_sha256": MODULE.sha256(parent_plan_path),
+        },
+        "sizing_projection": {"accepted": True},
+        "jobs": summary_jobs,
+    }
+    plan_path = calibration_root / "CALIBRATION_PLAN.json"
+    summary_path = calibration_root / "CALIBRATION.json"
+    write_json(plan_path, calibration_plan)
+    write_json(summary_path, summary)
+    return jobs, summary_path, plan_path, summary, calibration_plan
 
 
 class R2RLocalRefinementTests(unittest.TestCase):
@@ -215,6 +345,23 @@ class R2RLocalRefinementTests(unittest.TestCase):
             phase, "worker-override", [], self.spec, args
         )
         self.assertEqual(phase_doc["effective_worker_limit"], value)
+        self.assertIn(value, phase_doc["declared_worker_limits"])
+        self.assertIn(
+            self.spec["execution"]["gpu_safety"][
+                "calibration_initial_group_workers"
+            ],
+            phase_doc["declared_worker_limits"],
+        )
+        calibration_policy = phase_doc["calibration_policy"]
+        self.assertEqual(calibration_policy["initial_group_workers"], 5)
+        self.assertEqual(calibration_policy["episode_limit"], 100)
+        self.assertEqual(calibration_policy["projection_max_mib"], 28500)
+        self.assertEqual(calibration_policy["projection_safety_factor"], 1.05)
+        self.assertEqual(
+            calibration_policy["allowed_worker_counts"],
+            phase_doc["declared_worker_limits"],
+        )
+        self.assertTrue(calibration_policy["independent_steady_validation"])
         invalid = cli(phase_max_workers={phase["phase_id"]: 999})
         with self.assertRaisesRegex(MODULE.UserError, "not declared"):
             MODULE._configured_worker_limit(invalid, phase, self.spec)
@@ -225,6 +372,130 @@ class R2RLocalRefinementTests(unittest.TestCase):
             "--plan-only",
         ])
         self.assertEqual(parsed.phase_max_workers, {phase["phase_id"]: value})
+
+    def test_raised_worker_override_requires_calibration_evidence(self):
+        phases = MODULE.phase_sequence(self.spec)
+        phase = next(
+            item for item in phases
+            if item["method"] not in MODULE.CONTROL_METHODS
+            and self.spec["execution"]["concurrency_calibration"]
+            [item["method"]][item["setting"]].get("conditional_test_steps")
+        )
+        requested = self.spec["execution"]["concurrency_calibration"][
+            phase["method"]
+        ][phase["setting"]]["conditional_test_steps"][0]
+        args = cli(
+            phase_max_workers={phase["phase_id"]: requested},
+            phase_calibrations={},
+        )
+
+        with self.assertRaisesRegex(MODULE.UserError, "requires.*calibration"):
+            MODULE._validate_worker_calibration_overrides(
+                args, phases, self.spec
+            )
+
+    def test_phase_calibration_cli_parses_and_rejects_duplicate(self):
+        phase = next(
+            item for item in MODULE.phase_sequence(self.spec)
+            if item["method"] not in MODULE.CONTROL_METHODS
+        )
+        path = Path("/tmp/calibration-evidence/CALIBRATION.json")
+        option = f"{phase['phase_id']}={path}"
+        parsed = MODULE.parse_args([
+            "--batch-id", "calibration-cli-test",
+            "--phase-calibration", option,
+            "--plan-only",
+        ])
+        self.assertEqual(
+            parsed.phase_calibrations,
+            {phase["phase_id"]: str(path.resolve())},
+        )
+
+        with self.assertRaises(SystemExit):
+            MODULE.parse_args([
+                "--batch-id", "calibration-cli-test",
+                "--phase-calibration", option,
+                "--phase-calibration", option,
+                "--plan-only",
+            ])
+
+    def test_grouped_worker_calibration_validates_and_binds_digests(self):
+        phase = next(
+            item for item in MODULE.phase_sequence(self.spec)
+            if item["method"] not in MODULE.CONTROL_METHODS
+            and self.spec["execution"]["concurrency_calibration"]
+            [item["method"]][item["setting"]].get("conditional_test_steps")
+        )
+        requested = self.spec["execution"]["concurrency_calibration"][
+            phase["method"]
+        ][phase["setting"]]["conditional_test_steps"][0]
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory) / "logs"
+            stack.enter_context(mock.patch.object(MODULE, "LOG_ROOT", root))
+            stack.enter_context(mock.patch.object(
+                MODULE, "TUNING_ROOT", Path(directory) / "tuning"
+            ))
+            args = cli(batch_id="calibration-binding-test")
+            jobs, summary_path, plan_path, _, _ = make_worker_calibration(
+                root, self.spec, phase, requested, args
+            )
+
+            binding = MODULE._validated_worker_calibration(
+                summary_path, phase, jobs, requested, self.spec, args
+            )
+
+            self.assertEqual(binding["sha256"], MODULE.sha256(summary_path))
+            self.assertEqual(binding["plan_sha256"], MODULE.sha256(plan_path))
+            self.assertRegex(binding["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(binding["plan_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_grouped_worker_calibration_rejects_tampering(self):
+        phase = next(
+            item for item in MODULE.phase_sequence(self.spec)
+            if item["method"] not in MODULE.CONTROL_METHODS
+            and self.spec["execution"]["concurrency_calibration"]
+            [item["method"]][item["setting"]].get("conditional_test_steps")
+        )
+        requested = self.spec["execution"]["concurrency_calibration"][
+            phase["method"]
+        ][phase["setting"]]["conditional_test_steps"][0]
+        for tamper in ("status", "cap", "spec", "config", "parent_digest"):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                root = Path(directory) / "logs"
+                stack.enter_context(mock.patch.object(MODULE, "LOG_ROOT", root))
+                stack.enter_context(mock.patch.object(
+                    MODULE, "TUNING_ROOT", Path(directory) / "tuning"
+                ))
+                args = cli(batch_id=f"tamper-{tamper}")
+                jobs, summary_path, _, summary, calibration_plan = (
+                    make_worker_calibration(
+                        root, self.spec, phase, requested, args
+                    )
+                )
+                if tamper == "status":
+                    summary["status"] = "failed"
+                    write_json(summary_path, summary)
+                elif tamper == "cap":
+                    summary["recommended_cap"] = requested - 1
+                    write_json(summary_path, summary)
+                elif tamper == "spec":
+                    summary["source_spec_sha256"] = "0" * 64
+                    write_json(summary_path, summary)
+                elif tamper == "config":
+                    config_path = Path(
+                        calibration_plan["jobs"][0]["config_path"]
+                    )
+                    config = json.loads(config_path.read_text(encoding="utf-8"))
+                    config["parameters"] = {"lr": 99}
+                    write_json(config_path, config)
+                else:
+                    summary["sizing_parent"]["sha256"] = "0" * 64
+                    write_json(summary_path, summary)
+
+                with self.assertRaises(MODULE.UserError):
+                    MODULE._validated_worker_calibration(
+                        summary_path, phase, jobs, requested, self.spec, args
+                    )
 
     def test_execute_campaign_calls_run_batch_in_exact_phase_order(self):
         enabled = copy.deepcopy(self.spec)
