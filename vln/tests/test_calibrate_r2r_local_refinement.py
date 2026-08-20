@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import io
 import json
@@ -350,6 +351,160 @@ class CalibrationHelperTests(unittest.TestCase):
                     prior_path, campaign, plan, phase, jobs, 2, 0
                 )
 
+    def test_two_segment_chain_cap3_to_cap5_can_seed_initial5(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=7)
+            cap3_path = make_prior_calibration(
+                campaign, plan, phase, jobs, cap=3
+            )
+            cap3 = MODULE._load_prior_evidence(
+                cap3_path, campaign, plan, phase, jobs[:5], 3, 0
+            )
+            current_levels = [
+                {
+                    "active_count": count,
+                    "steady_confirmed": count >= 3,
+                    "steady_gpu_memory_mib": 1000.0 + count * 1000.0,
+                    "peak_gpu_memory_mib": 1100.0 + count * 1000.0,
+                }
+                for count in range(1, 6)
+            ]
+            merged = MODULE._merge_level_evidence(current_levels, cap3, 3)
+            cap5_root = campaign / "calibration" / PHASE_ID / "cap5"
+            cap5_plan_jobs = []
+            for index, job in enumerate(jobs[:5]):
+                config = json.loads(Path(job["config_path"]).read_text())
+                config["batch_id"] = "calibration-test-calibration"
+                config["run_tag"] = f"cap5-clone-{index}"
+                config_path = cap5_root / "jobs" / str(index) / "parameters.json"
+                write_json(config_path, config)
+                cap5_plan_jobs.append({
+                    "source_run_tag": job["run_tag"],
+                    "config_path": str(config_path),
+                })
+            public_cap3 = {
+                key: value for key, value in cap3.items()
+                if not key.startswith("_")
+            }
+            write_json(cap5_root / "CALIBRATION_PLAN.json", {
+                "schema": MODULE.CALIBRATION_PLAN_SCHEMA,
+                "calibration_id": "cap5",
+                "batch_id": plan["batch_id"],
+                "phase_id": phase["phase_id"],
+                "setting": phase["setting"],
+                "model": phase["model"],
+                "method": phase["method"],
+                "source_git_commit": plan["git_commit"],
+                "source_spec_sha256": plan["spec_sha256"],
+                "gpu": 0,
+                "jobs": cap5_plan_jobs,
+            })
+            write_json(cap5_root / "CALIBRATION.json", {
+                "schema": MODULE.CALIBRATION_SCHEMA,
+                "level_evidence_schema": MODULE.LEVEL_EVIDENCE_SCHEMA,
+                "calibration_id": "cap5",
+                "batch_id": plan["batch_id"],
+                "phase_id": phase["phase_id"],
+                "setting": phase["setting"],
+                "model": phase["model"],
+                "method": phase["method"],
+                "status": "completed",
+                "recommended_cap": 5,
+                "initial_workers": 3,
+                "initial_group": {"steady_confirmed": True},
+                "prior_evidence": public_cap3,
+                "levels": merged,
+                "jobs": [
+                    {
+                        "worker_index": index + 1,
+                        "source_run_tag": jobs[index]["run_tag"],
+                    }
+                    for index in range(5)
+                ],
+                "source_git_commit": plan["git_commit"],
+                "source_spec_sha256": plan["spec_sha256"],
+                "gpu": 0,
+                "execution_git_commit": plan["git_commit"],
+            })
+
+            cap5 = MODULE._load_prior_evidence(
+                cap5_root / "CALIBRATION.json", campaign, plan, phase,
+                jobs[:7], 5, 0,
+            )
+            self.assertEqual(cap5["recommended_cap"], 5)
+            prefix = cap5["_validated_level_prefix"]
+            self.assertEqual(
+                [level["active_count"] for level in prefix], [1, 2, 3, 4, 5]
+            )
+            self.assertEqual(prefix[0]["evidence_origin"], "prior")
+            cap5_path = cap5_root / "CALIBRATION.json"
+            strict_document = json.loads(cap5_path.read_text())
+            legacy_document = copy.deepcopy(strict_document)
+            legacy_document.pop("level_evidence_schema")
+            for level in legacy_document["levels"]:
+                if level["active_count"] < 3:
+                    level.clear()
+                    level.update({
+                        "active_count": len([
+                            item for item in legacy_document["levels"]
+                            if item.get("active_count", 99) < 3
+                        ]),
+                        "steady_confirmed": False,
+                        "steady_gpu_memory_mib": None,
+                        "peak_gpu_memory_mib": 1,
+                    })
+            # Preserve exact active-count identities after simulating the old
+            # transient replay rows.
+            legacy_document["levels"][0]["active_count"] = 1
+            legacy_document["levels"][1]["active_count"] = 2
+            write_json(cap5_path, legacy_document)
+            legacy_cap5 = MODULE._load_prior_evidence(
+                cap5_path, campaign, plan, phase, jobs[:7], 5, 0
+            )
+            self.assertEqual(
+                legacy_cap5["_validated_level_prefix"][0]["evidence_origin"],
+                "prior_legacy_resolved",
+            )
+            write_json(cap5_path, strict_document)
+
+            next_levels = MODULE._merge_level_evidence(
+                [
+                    {
+                        "active_count": count,
+                        "steady_confirmed": count >= 5,
+                        "steady_gpu_memory_mib": 1000.0 + count * 1000.0,
+                        "peak_gpu_memory_mib": 1100.0 + count * 1000.0,
+                    }
+                    for count in range(1, 8)
+                ],
+                cap5,
+                5,
+            )
+            by_count = {level["active_count"]: level for level in next_levels}
+            self.assertEqual(by_count[1]["evidence_origin"], "prior")
+            self.assertEqual(
+                by_count[5]["evidence_origin"],
+                "current_initial_group_revalidation",
+            )
+            tampered = json.loads(cap5_path.read_text())
+            inherited = next(
+                level for level in tampered["levels"]
+                if level["active_count"] == 1
+            )
+            inherited["steady_gpu_memory_mib"] += 1
+            write_json(cap5_path, tampered)
+            with self.assertRaisesRegex(MODULE.UserError, "binding|bound field"):
+                MODULE._load_prior_evidence(
+                    cap5_path, campaign, plan, phase, jobs[:7], 5, 0
+                )
+
+            with self.assertRaisesRegex(MODULE.UserError, "cycle"):
+                MODULE._validated_level_chain(
+                    json.loads(cap3_path.read_text()), cap3_path,
+                    campaign.parent, visited={cap3_path.resolve()},
+                )
+
     def _prepared_clones(self, temp, count=3):
         campaign = temp / "logs" / "calibration-test"
         make_campaign(campaign, count=count)
@@ -556,9 +711,20 @@ class CalibrationHelperTests(unittest.TestCase):
             processes = []
             evidence = {
                 "calibration_id": "prior",
+                "path": "/tmp/prior/CALIBRATION.json",
+                "sha256": "a" * 64,
                 "recommended_cap": 2,
                 "initial_workers": 2,
                 "level_n_steady_gpu_memory_mib": 3000.0,
+                "_validated_level_prefix": [
+                    {
+                        "active_count": count,
+                        "steady_confirmed": True,
+                        "steady_gpu_memory_mib": 1000.0 + count * 1000.0,
+                        "peak_gpu_memory_mib": 1100.0 + count * 1000.0,
+                    }
+                    for count in (1, 2)
+                ],
             }
             plan["initial_workers"] = 2
             plan["prior_evidence"] = evidence
@@ -615,9 +781,20 @@ class CalibrationHelperTests(unittest.TestCase):
             processes = []
             evidence = {
                 "calibration_id": "prior",
+                "path": "/tmp/prior/CALIBRATION.json",
+                "sha256": "a" * 64,
                 "recommended_cap": 2,
                 "initial_workers": 2,
                 "level_n_steady_gpu_memory_mib": 3000.0,
+                "_validated_level_prefix": [
+                    {
+                        "active_count": count,
+                        "steady_confirmed": True,
+                        "steady_gpu_memory_mib": 1000.0 + count * 1000.0,
+                        "peak_gpu_memory_mib": 1100.0 + count * 1000.0,
+                    }
+                    for count in (1, 2)
+                ],
             }
             plan["initial_workers"] = 2
             plan["prior_evidence"] = evidence

@@ -151,6 +151,17 @@ An initial-group timeout or any worker exit before recovery is a failed
 continuation and reports cap zero; the prior cap is not carried forward until
 the restarted group is explicitly steady again.
 
+Continuation summaries preserve a chainable level table: levels `1..N-1` are
+copied from the validated prior with `evidence_origin: prior`, the prior file
+digest, an exact source-level snapshot, and a level digest; level `N` is marked
+`current_initial_group_revalidation`; levels above `N` are `current`. The next
+continuation recursively verifies those bindings, upstream summary/plan
+digests, and rejects cycles or changed bound metrics. The validator can also
+resolve summaries produced by the first continuation-helper version, whose
+transient replay rows omitted inherited `1..N-1`, directly from their already
+digest-pinned upstream evidence; the next newly written summary materializes
+the complete chain.
+
 Installing continuation support necessarily changes the helper's Git blob.
 For continuation only, the commit audit permits differences from the pinned
 source commit in exactly the calibration helper, its unit test, and this README;

@@ -19,6 +19,7 @@ phase and a campaign-wide lock prevents two calibrations from overlapping.
 from __future__ import annotations
 
 import argparse
+import copy
 from contextlib import contextmanager
 import csv
 import hashlib
@@ -44,6 +45,7 @@ CALIBRATION_SCHEMA = "navtta.vln_r2r_local_refinement_calibration.v1"
 CALIBRATION_PLAN_SCHEMA = (
     "navtta.vln_r2r_local_refinement_calibration_plan.v1"
 )
+LEVEL_EVIDENCE_SCHEMA = "navtta.vln_r2r_calibration_level_evidence.v1"
 
 PLANNED_MEMORY_MIB = 29_000
 EMERGENCY_MEMORY_MIB = 30_000
@@ -329,6 +331,140 @@ def _execution_config_identity(document):
     }
 
 
+def _level_evidence_sha256(level):
+    return hashlib.sha256(_canonical(level).encode("utf-8")).hexdigest()
+
+
+def _validated_level_chain(summary, summary_path, log_root, visited=None):
+    """Resolve and authenticate the continuous level chain in ``summary``."""
+    summary_path = Path(summary_path).resolve()
+    visited = set() if visited is None else set(visited)
+    if summary_path in visited:
+        raise UserError("prior calibration evidence chain contains a cycle")
+    visited.add(summary_path)
+    if summary.get("schema") != CALIBRATION_SCHEMA:
+        raise UserError("prior calibration chain has an unsupported schema")
+    cap = summary.get("recommended_cap")
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+        raise UserError("prior calibration chain has an invalid recommended_cap")
+    initial_workers = summary.get("initial_workers", 0) or 0
+    if (
+        isinstance(initial_workers, bool)
+        or not isinstance(initial_workers, int)
+        or initial_workers < 0
+        or initial_workers > cap
+    ):
+        raise UserError("prior calibration chain has invalid initial_workers")
+    levels = {
+        level.get("active_count"): level
+        for level in summary.get("levels", []) if isinstance(level, dict)
+    }
+    resolved = {}
+    strict_level_evidence = summary.get("level_evidence_schema") == (
+        LEVEL_EVIDENCE_SCHEMA
+    )
+    if initial_workers:
+        initial_group = summary.get("initial_group")
+        if not isinstance(initial_group, dict) or initial_group.get(
+            "steady_confirmed"
+        ) is not True:
+            raise UserError("prior continuation initial group was not confirmed")
+        evidence = summary.get("prior_evidence")
+        if not isinstance(evidence, dict):
+            raise UserError("prior continuation lacks upstream evidence")
+        upstream_path = Path(str(evidence.get("path", ""))).resolve()
+        if not _is_relative_to(upstream_path, log_root):
+            raise UserError("upstream calibration escapes the hparam log root")
+        if upstream_path in visited:
+            raise UserError("prior calibration evidence chain contains a cycle")
+        if _sha256(upstream_path) != evidence.get("sha256"):
+            raise UserError("upstream calibration digest mismatch")
+        upstream_plan_path = Path(str(evidence.get("plan_path", ""))).resolve()
+        if (
+            not _is_relative_to(upstream_plan_path, log_root)
+            or _sha256(upstream_plan_path) != evidence.get("plan_sha256")
+        ):
+            raise UserError("upstream calibration plan digest mismatch")
+        upstream = _read_json(upstream_path, "upstream CALIBRATION.json")
+        if upstream.get("calibration_id") != evidence.get("calibration_id"):
+            raise UserError("upstream calibration id mismatch")
+        if upstream.get("recommended_cap") != initial_workers:
+            raise UserError("upstream cap does not match continuation prefix")
+        upstream_levels = _validated_level_chain(
+            upstream, upstream_path, log_root, visited=visited
+        )
+        for count in range(1, initial_workers):
+            level = levels.get(count)
+            source = upstream_levels.get(count)
+            if source is None:
+                raise UserError(f"upstream evidence is missing level {count}")
+            if strict_level_evidence:
+                if level is None or level.get("evidence_origin") != "prior":
+                    raise UserError(
+                        f"inherited level {count} lacks prior provenance"
+                    )
+                if (
+                    level.get("evidence_calibration_sha256")
+                    != evidence.get("sha256")
+                    or level.get("evidence_calibration_id")
+                    != evidence.get("calibration_id")
+                    or level.get("evidence_level_sha256")
+                    != _level_evidence_sha256(source)
+                    or level.get("evidence_level_snapshot") != source
+                ):
+                    raise UserError(
+                        f"inherited level {count} evidence binding mismatch"
+                    )
+                for key in (
+                    "active_count", "steady_confirmed", "steady_gpu_memory_mib",
+                    "peak_gpu_memory_mib",
+                ):
+                    if level.get(key) != source.get(key):
+                        raise UserError(
+                            f"inherited level {count} changed bound field {key}"
+                        )
+                resolved[count] = copy.deepcopy(level)
+            else:
+                # Continuation summaries written before level-chain support
+                # contained transient replay rows for 1..N-1. Resolve those
+                # rows recursively from the already digest-pinned upstream.
+                inherited = copy.deepcopy(source)
+                inherited.update({
+                    "evidence_origin": "prior_legacy_resolved",
+                    "evidence_calibration_path": str(upstream_path),
+                    "evidence_calibration_id": evidence.get("calibration_id"),
+                    "evidence_calibration_sha256": evidence.get("sha256"),
+                    "evidence_level_sha256": _level_evidence_sha256(source),
+                    "evidence_level_snapshot": copy.deepcopy(source),
+                    "legacy_resolution_summary_sha256": _sha256(summary_path),
+                })
+                resolved[count] = inherited
+        level_n = levels.get(initial_workers)
+        if level_n is None or (
+            strict_level_evidence
+            and level_n.get("evidence_origin")
+            != "current_initial_group_revalidation"
+        ):
+            raise UserError("continuation level N lacks current revalidation")
+
+    start = initial_workers if initial_workers else 1
+    for count in range(start, cap + 1):
+        level = levels.get(count)
+        if level is None or level.get("steady_confirmed") is not True:
+            raise UserError(f"prior level {count} is not continuously confirmed")
+        if (
+            strict_level_evidence
+            and count > initial_workers
+            and initial_workers
+            and level.get("evidence_origin") != "current"
+        ):
+            raise UserError(f"extension level {count} is not current evidence")
+        resolved[count] = copy.deepcopy(level)
+    if set(resolved) != set(range(1, cap + 1)):
+        raise UserError("prior calibration level chain is not continuous")
+    return resolved
+
+
 def _load_prior_evidence(
     path, campaign_root, plan, phase, selected_jobs, initial_workers, gpu
 ):
@@ -397,10 +533,9 @@ def _load_prior_evidence(
             "initial_workers must equal the prior recommended_cap; skipping "
             "or partially replaying the proven prefix is forbidden"
         )
-    by_count = {
-        level.get("active_count"): level
-        for level in prior.get("levels", []) if isinstance(level, dict)
-    }
+    by_count = _validated_level_chain(
+        prior, path, campaign_parent, visited=set()
+    )
     for count in range(1, initial_workers + 1):
         level = by_count.get(count)
         if level is None or level.get("steady_confirmed") is not True:
@@ -422,28 +557,32 @@ def _load_prior_evidence(
             raise UserError(f"prior level {count} is outside the safe VRAM line")
 
     prior_plan_jobs = prior_plan.get("jobs")
-    if not isinstance(prior_plan_jobs, list) or len(prior_plan_jobs) < len(
-        selected_jobs
+    if (
+        not isinstance(prior_plan_jobs, list)
+        or len(prior_plan_jobs) < initial_workers
     ):
-        raise UserError("prior calibration plan lacks the current candidate prefix")
+        raise UserError("prior calibration plan lacks the proven candidate prefix")
     config_identities = []
+    compared_count = min(len(prior_plan_jobs), len(selected_jobs))
     for index, current_job in enumerate(selected_jobs):
+        current_config = _read_json(
+            current_job.get("config_path"), "current formal job config"
+        )
+        current_identity = _execution_config_identity(current_config)
+        config_identities.append(current_identity)
+        if index >= compared_count:
+            continue
         prior_job = prior_plan_jobs[index]
         if not isinstance(prior_job, dict):
             raise UserError("prior calibration plan has an invalid job entry")
         prior_config = _read_json(
             prior_job.get("config_path"), "prior calibration job config"
         )
-        current_config = _read_json(
-            current_job.get("config_path"), "current formal job config"
-        )
         prior_identity = _execution_config_identity(prior_config)
-        current_identity = _execution_config_identity(current_config)
         if prior_identity != current_identity:
             raise UserError(
                 f"source job config identity changed at candidate {index + 1}"
             )
-        config_identities.append(current_identity)
 
     prior_jobs = sorted(
         (
@@ -482,10 +621,16 @@ def _load_prior_evidence(
         "source_job_config_identity_sha256": hashlib.sha256(
             _canonical(config_identities).encode("utf-8")
         ).hexdigest(),
+        "source_job_configs_compared_to_prior": compared_count,
+        "source_job_configs_from_current_plan": len(selected_jobs),
         "plan_git_commit": plan.get("git_commit"),
         "prior_execution_git_commit": prior_execution_commit,
         "execution_git_commit": current_execution_commit,
         "allowed_helper_only_diff_files": allowed_diff,
+        "_validated_level_prefix": [
+            copy.deepcopy(by_count[count])
+            for count in range(1, initial_workers + 1)
+        ],
         **provenance,
     }
 
@@ -904,6 +1049,69 @@ def _level_summaries(samples, records, gate_levels):
     return output
 
 
+def _merge_level_evidence(current_levels, prior_evidence, initial_workers):
+    """Merge a prior continuous prefix without presenting it as a current run."""
+    current = {
+        level["active_count"]: copy.deepcopy(level) for level in current_levels
+    }
+    if not initial_workers:
+        for level in current.values():
+            level["evidence_origin"] = "current"
+        return [current[count] for count in sorted(current)]
+
+    prior_prefix = prior_evidence.get("_validated_level_prefix", [])
+    prior_by_count = {level.get("active_count"): level for level in prior_prefix}
+    for count in range(1, initial_workers):
+        source = prior_by_count.get(count)
+        if source is None:
+            raise UserError(f"validated prior prefix is missing level {count}")
+        inherited = copy.deepcopy(source)
+        replay = current.get(count)
+        inherited.update({
+            "evidence_origin": "prior",
+            "evidence_calibration_path": prior_evidence["path"],
+            "evidence_calibration_id": prior_evidence["calibration_id"],
+            "evidence_calibration_sha256": prior_evidence["sha256"],
+            "evidence_level_sha256": _level_evidence_sha256(source),
+            "evidence_level_snapshot": copy.deepcopy(source),
+            "current_replay_observation": (
+                {
+                    "sample_count": replay.get("sample_count"),
+                    "peak_gpu_memory_mib": replay.get("peak_gpu_memory_mib"),
+                    "tail_median_gpu_memory_mib": replay.get(
+                        "tail_median_gpu_memory_mib"
+                    ),
+                }
+                if replay is not None else None
+            ),
+        })
+        current[count] = inherited
+
+    level_n = current.get(initial_workers)
+    source_n = prior_by_count.get(initial_workers)
+    if source_n is None:
+        raise UserError("validated prior prefix lacks level N")
+    if level_n is None:
+        level_n = {
+            "active_count": initial_workers,
+            "steady_confirmed": False,
+            "level_status": "initial_group_not_started",
+            "peak_gpu_memory_mib": None,
+            "steady_gpu_memory_mib": None,
+        }
+        current[initial_workers] = level_n
+    level_n.update({
+        "evidence_origin": "current_initial_group_revalidation",
+        "prior_calibration_id": prior_evidence["calibration_id"],
+        "prior_calibration_sha256": prior_evidence["sha256"],
+        "prior_level_evidence_sha256": _level_evidence_sha256(source_n),
+    })
+    for count, level in current.items():
+        if count > initial_workers:
+            level["evidence_origin"] = "current"
+    return [current[count] for count in sorted(current)]
+
+
 def _recommended_cap(
     levels, stop_reason, initial_workers=0, initial_group_confirmed=False
 ):
@@ -952,9 +1160,14 @@ def _recommended_cap(
 def _build_summary(
     calibration_plan, samples, records, gate_levels, started_monotonic, stop_reason,
     emergency_observed_mib=None, telemetry_error=None, initial_group=None,
+    runtime_prior_evidence=None,
 ):
-    levels = _level_summaries(samples, records, gate_levels)
     initial_workers = int(calibration_plan.get("initial_workers") or 0)
+    levels = _merge_level_evidence(
+        _level_summaries(samples, records, gate_levels),
+        runtime_prior_evidence,
+        initial_workers,
+    )
     initial_group_confirmed = bool(
         initial_group is not None
         and initial_group.get("steady_confirmed") is True
@@ -1016,6 +1229,7 @@ def _build_summary(
         })
     return {
         "schema": CALIBRATION_SCHEMA,
+        "level_evidence_schema": LEVEL_EVIDENCE_SCHEMA,
         "calibration_id": calibration_plan["calibration_id"],
         "batch_id": calibration_plan["batch_id"],
         "phase_id": calibration_plan["phase_id"],
@@ -1540,6 +1754,7 @@ def _run_calibration(
         emergency_observed_mib=emergency_observed,
         telemetry_error=telemetry_error,
         initial_group=initial_group,
+        runtime_prior_evidence=prior_evidence,
     )
     _atomic_json(Path(calibration_root) / "CALIBRATION.json", summary)
     return summary
@@ -1643,6 +1858,13 @@ def execute(args):
                 args.prior_calibration, campaign_root, plan, phase, selected,
                 args.initial_workers, args.gpu,
             )
+        public_prior_evidence = (
+            {
+                key: value for key, value in prior_evidence.items()
+                if not key.startswith("_")
+            }
+            if prior_evidence is not None else None
+        )
         calibration_root, clones, calibration_plan = _clone_jobs(
             campaign_root, plan, phase, selected, args.calibration_id,
             episode_limit=args.episode_limit,
@@ -1677,7 +1899,7 @@ def execute(args):
             "prior_recovery_relative_tolerance": (
                 PRIOR_RECOVERY_RELATIVE_TOLERANCE
             ),
-            "prior_evidence": prior_evidence,
+            "prior_evidence": public_prior_evidence,
         })
         _atomic_json(
             calibration_root / "CALIBRATION_PLAN.json", calibration_plan
