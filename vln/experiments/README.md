@@ -127,6 +127,38 @@ the previous steady VRAM, confirmed current steady VRAM, and load wait for
 every level; only levels with `steady_confirmed: true` can contribute to
 `recommended_cap`.
 
+If a long-running worker finishes before the next adaptive level settles, use
+strict prior-evidence continuation instead of treating an unconfirmed level as
+safe. `--initial-workers` must equal the prior `recommended_cap`; the helper
+also verifies the phase, candidate/config prefix, formal source identity, spec
+digest, and GPU, plus continuous steady-confirmed levels `1..N`. The prior may
+come from an older batch under the same hparam-search log root, but every source
+job execution config must match after excluding only batch/run-tag identity. It
+restarts that proven prefix with the normal 15-second stagger, then requires the
+whole initial group
+to recover to at least `max(98% * prior_level_N_steady, idle + N * 512 MiB)` and
+remain stable before trying `N+1`:
+
+```bash
+PRIOR=/absolute/path/to/prior/CALIBRATION.json
+python3 vln/scripts/calibrate_r2r_local_refinement.py \
+  --batch-id "$CAL_BATCH" --phase-id 01-duet-r2r-tent \
+  --target-workers 10 --initial-workers 6 \
+  --prior-calibration "$PRIOR" --calibration-id duet-tent-continue-cap6
+```
+
+An initial-group timeout or any worker exit before recovery is a failed
+continuation and reports cap zero; the prior cap is not carried forward until
+the restarted group is explicitly steady again.
+
+Installing continuation support necessarily changes the helper's Git blob.
+For continuation only, the commit audit permits differences from the pinned
+source commit in exactly the calibration helper, its unit test, and this README;
+any runner, spec, model, or other source change is rejected. The summary records
+`plan_git_commit`, `prior_execution_git_commit`, `execution_git_commit`, and the
+exact `allowed_helper_only_diff_files` so this exception is explicit rather
+than silently weakening experiment provenance.
+
 Repeat the helper for every enabled TTA model/method phase.  Do not run the
 formal scheduler for `CAL_BATCH`; use the reported per-phase recommended caps
 to create a different formal batch.

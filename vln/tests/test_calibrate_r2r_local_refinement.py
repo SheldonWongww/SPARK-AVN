@@ -39,7 +39,7 @@ def make_campaign(root, count=3):
     plan = {
         "schema": MODULE.PLAN_SCHEMA,
         "batch_id": "calibration-test",
-        "git_commit": "a" * 40,
+        "git_commit": MODULE._git("rev-parse", "--verify", "HEAD"),
         "spec_sha256": "b" * 64,
         "episode_count": 1021,
         "gpu": 0,
@@ -104,6 +104,64 @@ def make_campaign(root, count=3):
     return plan, phase, jobs
 
 
+def make_prior_calibration(campaign, plan, phase, jobs, cap=2):
+    root = Path(campaign) / "calibration" / PHASE_ID / "prior-evidence"
+    prior_jobs = []
+    for index, job in enumerate(jobs):
+        config = json.loads(Path(job["config_path"]).read_text())
+        config["batch_id"] = f"{plan['batch_id']}-calibration"
+        config["run_tag"] = f"prior-clone-{index}"
+        config_path = root / "jobs" / f"prior-{index}" / "parameters.json"
+        write_json(config_path, config)
+        prior_jobs.append({
+            "source_run_tag": job["run_tag"],
+            "config_path": str(config_path),
+        })
+    prior_plan = {
+        "schema": MODULE.CALIBRATION_PLAN_SCHEMA,
+        "calibration_id": "prior-evidence",
+        "batch_id": plan["batch_id"],
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+        "source_git_commit": plan["git_commit"],
+        "source_spec_sha256": plan["spec_sha256"],
+        "gpu": plan["gpu"],
+        "jobs": prior_jobs,
+    }
+    prior = {
+        "schema": MODULE.CALIBRATION_SCHEMA,
+        "calibration_id": "prior-evidence",
+        "batch_id": plan["batch_id"],
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+        "status": "inconclusive",
+        "recommended_cap": cap,
+        "levels": [
+            {
+                "active_count": count,
+                "steady_confirmed": True,
+                "steady_gpu_memory_mib": 1000.0 + count * 1000.0,
+                "peak_gpu_memory_mib": 1100.0 + count * 1000.0,
+            }
+            for count in range(1, cap + 1)
+        ],
+        "jobs": [
+            {
+                "worker_index": index + 1,
+                "source_run_tag": jobs[index]["run_tag"],
+            }
+            for index in range(cap)
+        ],
+    }
+    write_json(root / "CALIBRATION_PLAN.json", prior_plan)
+    write_json(root / "CALIBRATION.json", prior)
+    return root / "CALIBRATION.json"
+
+
 class FakeClock:
     def __init__(self):
         self.now = 0.0
@@ -153,6 +211,43 @@ class CalibrationHelperTests(unittest.TestCase):
         self.assertEqual(args.load_timeout_seconds, 300.0)
         self.assertEqual(args.min_loaded_memory_mib, 512)
         self.assertEqual(args.steady_relative_tolerance, 0.02)
+        self.assertEqual(args.initial_workers, 0)
+        self.assertIsNone(args.prior_calibration)
+
+    def test_plan_revision_allows_only_audited_helper_drift_for_continuation(self):
+        plan = {"git_commit": "a" * 40}
+
+        def git(*args):
+            if args[:2] == ("rev-parse", "--verify"):
+                return "b" * 40
+            if args[:2] == ("status", "--porcelain"):
+                return ""
+            raise AssertionError(args)
+
+        with mock.patch.object(MODULE, "_git", side_effect=git), \
+                mock.patch.object(
+                    MODULE, "_helper_only_commit_diff",
+                    return_value=["vln/scripts/calibrate_r2r_local_refinement.py"],
+                ):
+            audit = MODULE._assert_plan_revision(
+                plan, allow_helper_only_drift=True
+            )
+        self.assertEqual(audit["plan_git_commit"], "a" * 40)
+        self.assertEqual(audit["execution_git_commit"], "b" * 40)
+        with mock.patch.object(MODULE, "_git", side_effect=git):
+            with self.assertRaisesRegex(MODULE.UserError, "commit mismatch"):
+                MODULE._assert_plan_revision(plan, allow_helper_only_drift=False)
+
+        def forbidden_git(*args):
+            if args[0] == "cat-file":
+                return ""
+            if args[0] == "diff":
+                return "vln/scripts/run_source_eval.sh"
+            raise AssertionError(args)
+
+        with mock.patch.object(MODULE, "_git", side_effect=forbidden_git):
+            with self.assertRaisesRegex(MODULE.UserError, "outside.*allowlist"):
+                MODULE._helper_only_commit_diff("a" * 40, "b" * 40)
 
     def test_clone_isolates_job_config_result_and_exit_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -215,6 +310,45 @@ class CalibrationHelperTests(unittest.TestCase):
             write_json(path, value)
             with self.assertRaisesRegex(MODULE.UserError, "cross-phase job"):
                 MODULE._load_phase(campaign, PHASE_ID)
+
+    def test_prior_evidence_requires_exact_continuous_recommended_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = Path(directory) / "calibration-test"
+            plan, phase, jobs = make_campaign(campaign, count=4)
+            prior_path = make_prior_calibration(
+                campaign, plan, phase, jobs, cap=2
+            )
+            evidence = MODULE._load_prior_evidence(
+                prior_path, campaign, plan, phase, jobs, 2, 0
+            )
+            self.assertEqual(evidence["recommended_cap"], 2)
+            self.assertTrue(evidence["continuous_steady_levels_verified"])
+            self.assertEqual(evidence["level_n_steady_gpu_memory_mib"], 3000.0)
+
+            prior = json.loads(prior_path.read_text())
+            prior["recommended_cap"] = 3
+            write_json(prior_path, prior)
+            with self.assertRaisesRegex(MODULE.UserError, "must equal"):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 2, 0
+                )
+            prior["recommended_cap"] = 2
+            prior["levels"][0]["steady_confirmed"] = False
+            write_json(prior_path, prior)
+            with self.assertRaisesRegex(MODULE.UserError, "not continuously"):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 2, 0
+                )
+            prior["levels"][0]["steady_confirmed"] = True
+            write_json(prior_path, prior)
+            current_config_path = Path(jobs[0]["config_path"])
+            current_config = json.loads(current_config_path.read_text())
+            current_config["parameters"]["lr"] = 0.5
+            write_json(current_config_path, current_config)
+            with self.assertRaisesRegex(MODULE.UserError, "config identity"):
+                MODULE._load_prior_evidence(
+                    prior_path, campaign, plan, phase, jobs, 2, 0
+                )
 
     def _prepared_clones(self, temp, count=3):
         campaign = temp / "logs" / "calibration-test"
@@ -412,6 +546,116 @@ class CalibrationHelperTests(unittest.TestCase):
             levels = {item["active_count"]: item for item in summary["levels"]}
             self.assertTrue(levels[1]["steady_confirmed"])
             self.assertFalse(levels[2]["steady_confirmed"])
+
+    def test_prior_safe_initial_group_revalidates_before_extension(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=4)
+            clock = FakeClock()
+            launched_at = []
+            processes = []
+            evidence = {
+                "calibration_id": "prior",
+                "recommended_cap": 2,
+                "initial_workers": 2,
+                "level_n_steady_gpu_memory_mib": 3000.0,
+            }
+            plan["initial_workers"] = 2
+            plan["prior_evidence"] = evidence
+
+            def launch(_job):
+                launched_at.append(clock.now)
+                process = FakeProcess(clock, lifetime=30.0)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 90
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=2.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                    prior_evidence=evidence, initial_workers=2,
+                )
+
+            self.assertEqual(launched_at, [0.0, 2.0, 6.0, 10.0])
+            self.assertEqual(summary["status"], "completed")
+            self.assertEqual(summary["recommended_cap"], 4)
+            self.assertEqual(summary["initial_workers"], 2)
+            self.assertEqual(summary["prior_evidence"], evidence)
+            self.assertTrue(summary["initial_group"]["steady_confirmed"])
+            self.assertEqual(
+                summary["initial_group"]["required_loaded_gpu_memory_mib"],
+                2940.0,
+            )
+            levels = {item["active_count"]: item for item in summary["levels"]}
+            self.assertEqual(
+                levels[2]["level_kind"], "prior_safe_initial_group_recovery"
+            )
+            self.assertTrue(levels[2]["steady_confirmed"])
+            self.assertEqual(
+                levels[3]["previous_steady_gpu_memory_mib"], 3000.0
+            )
+
+    def test_initial_group_worker_exit_before_recovery_is_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            root, phase, clones, plan = self._prepared_clones(temp, count=3)
+            clock = FakeClock()
+            processes = []
+            evidence = {
+                "calibration_id": "prior",
+                "recommended_cap": 2,
+                "initial_workers": 2,
+                "level_n_steady_gpu_memory_mib": 3000.0,
+            }
+            plan["initial_workers"] = 2
+            plan["prior_evidence"] = evidence
+
+            def launch(_job):
+                lifetime = 3.0 if not processes else 100.0
+                process = FakeProcess(clock, lifetime=lifetime)
+                processes.append(process)
+                return process, io.BytesIO()
+
+            def gpu(_gpu):
+                return 1000 + 1000 * len(processes), 90
+
+            def deliver(process, signum):
+                process.deliver(signum)
+
+            with mock.patch.object(MODULE.time, "monotonic", clock.monotonic), \
+                    mock.patch.object(MODULE.time, "sleep", clock.sleep), \
+                    mock.patch.object(MODULE, "_launch", side_effect=launch), \
+                    mock.patch.object(MODULE, "_gpu_stats", side_effect=gpu), \
+                    mock.patch.object(MODULE, "_cgroup_memory_gib", return_value=4.0), \
+                    mock.patch.object(MODULE, "_signal_process_group", side_effect=deliver):
+                summary = MODULE._run_calibration(
+                    root, phase, clones, plan, gpu=0,
+                    stagger_seconds=2.0, sample_interval_seconds=2.0,
+                    terminate_grace_seconds=0.0,
+                    steady_seconds=2.0, steady_samples=2,
+                    load_timeout_seconds=30.0,
+                    min_loaded_memory_mib=500,
+                    steady_relative_tolerance=0.01,
+                    prior_evidence=evidence, initial_workers=2,
+                )
+
+            self.assertEqual(len(processes), 2)
+            self.assertEqual(summary["stop_reason"], "initial_group_worker_exit")
+            self.assertEqual(summary["status"], "failed")
+            self.assertFalse(summary["initial_group"]["steady_confirmed"])
+            self.assertEqual(summary["recommended_cap"], 0)
 
     def test_29gb_gate_stops_before_next_worker(self):
         with tempfile.TemporaryDirectory() as directory:

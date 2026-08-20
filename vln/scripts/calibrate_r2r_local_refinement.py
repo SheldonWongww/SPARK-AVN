@@ -23,12 +23,14 @@ from contextlib import contextmanager
 import csv
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import signal
 import statistics
 import subprocess
+import sys
 import time
 
 
@@ -53,7 +55,13 @@ DEFAULT_LOAD_TIMEOUT_SECONDS = 300.0
 DEFAULT_MIN_LOADED_MEMORY_MIB = 512
 DEFAULT_STEADY_RELATIVE_TOLERANCE = 0.02
 DEFAULT_STEADY_SAMPLES = 3
+PRIOR_RECOVERY_RELATIVE_TOLERANCE = 0.02
 FULL_VAL_EPISODES = 1021
+ALLOWED_CONTINUATION_DIFF_FILES = {
+    "vln/scripts/calibrate_r2r_local_refinement.py",
+    "vln/tests/test_calibrate_r2r_local_refinement.py",
+    "vln/experiments/README.md",
+}
 
 
 class UserError(RuntimeError):
@@ -98,6 +106,14 @@ def _read_json(path, label):
     return value
 
 
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _git(*args):
     try:
         return subprocess.check_output(
@@ -109,17 +125,46 @@ def _git(*args):
         raise UserError(f"git {' '.join(args)} failed: {output or error}") from error
 
 
-def _assert_plan_revision(plan):
+def _helper_only_commit_diff(base_commit, target_commit):
+    for label, value in (("base", base_commit), ("target", target_commit)):
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+            raise UserError(f"invalid {label} commit for continuation audit")
+        _git("cat-file", "-e", f"{value}^{{commit}}")
+    if base_commit == target_commit:
+        return []
+    changed = [
+        item for item in _git(
+            "diff", "--name-only", base_commit, target_commit, "--"
+        ).splitlines() if item
+    ]
+    forbidden = sorted(set(changed).difference(ALLOWED_CONTINUATION_DIFF_FILES))
+    if forbidden:
+        raise UserError(
+            "continuation changes formal execution files outside the helper-only "
+            f"allowlist: {forbidden}"
+        )
+    return sorted(set(changed))
+
+
+def _assert_plan_revision(plan, allow_helper_only_drift=False):
     planned = plan.get("git_commit")
     if not isinstance(planned, str) or re.fullmatch(r"[0-9a-f]{40}", planned) is None:
         raise UserError("campaign PLAN.json has no valid pinned git_commit")
     current = _git("rev-parse", "--verify", "HEAD")
+    allowed_diff = []
     if current != planned:
-        raise UserError(
-            f"campaign commit mismatch: PLAN={planned}, current={current}"
-        )
+        if not allow_helper_only_drift:
+            raise UserError(
+                f"campaign commit mismatch: PLAN={planned}, current={current}"
+            )
+        allowed_diff = _helper_only_commit_diff(planned, current)
     if _git("status", "--porcelain", "--untracked-files=no"):
         raise UserError("tracked worktree must be clean before calibration")
+    return {
+        "plan_git_commit": planned,
+        "execution_git_commit": current,
+        "allowed_helper_only_diff_files": allowed_diff,
+    }
 
 
 def _safe_component(label, value, max_length=160):
@@ -275,6 +320,174 @@ def _select_distinct_jobs(jobs, target_workers):
             f"cannot calibrate {target_workers} workers"
         )
     return selected
+
+
+def _execution_config_identity(document):
+    return {
+        key: value for key, value in document.items()
+        if key not in ("batch_id", "run_tag")
+    }
+
+
+def _load_prior_evidence(
+    path, campaign_root, plan, phase, selected_jobs, initial_workers, gpu
+):
+    """Validate one prior calibration before allowing a continuation ramp."""
+    path = Path(path).resolve()
+    campaign_parent = Path(campaign_root).resolve().parent
+    if not _is_relative_to(path, campaign_parent):
+        raise UserError(
+            "prior calibration must stay inside the same hparam-search log root"
+        )
+    prior = _read_json(path, "prior CALIBRATION.json")
+    if prior.get("schema") != CALIBRATION_SCHEMA:
+        raise UserError("prior calibration has an unsupported schema")
+    prior_plan_path = path.parent / "CALIBRATION_PLAN.json"
+    prior_plan = _read_json(prior_plan_path, "prior CALIBRATION_PLAN.json")
+    if prior_plan.get("schema") != CALIBRATION_PLAN_SCHEMA:
+        raise UserError("prior calibration plan has an unsupported schema")
+
+    if prior.get("batch_id") != prior_plan.get("batch_id"):
+        raise UserError("prior calibration batch does not match its plan")
+    current_identity = {
+        "phase_id": phase["phase_id"],
+        "setting": phase["setting"],
+        "model": phase["model"],
+        "method": phase["method"],
+    }
+    for key, expected in current_identity.items():
+        if prior.get(key) != expected or prior_plan.get(key) != expected:
+            raise UserError(f"prior calibration identity mismatch for {key}")
+    prior_source_commit = prior_plan.get("source_git_commit")
+    prior_spec_sha256 = prior_plan.get("source_spec_sha256")
+    if prior_spec_sha256 != plan.get("spec_sha256"):
+        raise UserError("prior calibration provenance mismatch for source_spec_sha256")
+    if prior_plan.get("gpu") != gpu:
+        raise UserError("prior calibration provenance mismatch for gpu")
+    prior_execution_commit = prior.get(
+        "execution_git_commit", prior_source_commit
+    )
+    current_execution_commit = _git("rev-parse", "--verify", "HEAD")
+    allowed_diff = sorted(set(
+        _helper_only_commit_diff(prior_source_commit, prior_execution_commit)
+        + _helper_only_commit_diff(prior_execution_commit, current_execution_commit)
+        + _helper_only_commit_diff(plan.get("git_commit"), current_execution_commit)
+    ))
+    provenance = {
+        "source_git_commit": prior_source_commit,
+        "source_spec_sha256": prior_spec_sha256,
+        "gpu": gpu,
+    }
+    for key, expected in provenance.items():
+        # New summaries carry these fields directly.  Older evidence from the
+        # same helper is accepted only because its sibling immutable plan has
+        # the required pinned provenance.
+        if key in prior and prior.get(key) != expected:
+            raise UserError(f"prior CALIBRATION.json mismatch for {key}")
+    if prior.get("calibration_id") != prior_plan.get("calibration_id"):
+        raise UserError("prior calibration id does not match its plan")
+    if prior.get("status") not in ("completed", "inconclusive"):
+        raise UserError("prior calibration must be completed or inconclusive")
+
+    cap = prior.get("recommended_cap")
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < initial_workers:
+        raise UserError("prior recommended_cap is below initial_workers")
+    if cap != initial_workers:
+        raise UserError(
+            "initial_workers must equal the prior recommended_cap; skipping "
+            "or partially replaying the proven prefix is forbidden"
+        )
+    by_count = {
+        level.get("active_count"): level
+        for level in prior.get("levels", []) if isinstance(level, dict)
+    }
+    for count in range(1, initial_workers + 1):
+        level = by_count.get(count)
+        if level is None or level.get("steady_confirmed") is not True:
+            raise UserError(
+                f"prior level {count} is not continuously steady-confirmed"
+            )
+        try:
+            steady = float(level["steady_gpu_memory_mib"])
+            peak = float(level["peak_gpu_memory_mib"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise UserError(f"prior level {count} has invalid VRAM evidence") from error
+        if (
+            not math.isfinite(steady)
+            or not math.isfinite(peak)
+            or steady <= 0
+            or steady >= PLANNED_MEMORY_MIB
+            or peak >= PLANNED_MEMORY_MIB
+        ):
+            raise UserError(f"prior level {count} is outside the safe VRAM line")
+
+    prior_plan_jobs = prior_plan.get("jobs")
+    if not isinstance(prior_plan_jobs, list) or len(prior_plan_jobs) < len(
+        selected_jobs
+    ):
+        raise UserError("prior calibration plan lacks the current candidate prefix")
+    config_identities = []
+    for index, current_job in enumerate(selected_jobs):
+        prior_job = prior_plan_jobs[index]
+        if not isinstance(prior_job, dict):
+            raise UserError("prior calibration plan has an invalid job entry")
+        prior_config = _read_json(
+            prior_job.get("config_path"), "prior calibration job config"
+        )
+        current_config = _read_json(
+            current_job.get("config_path"), "current formal job config"
+        )
+        prior_identity = _execution_config_identity(prior_config)
+        current_identity = _execution_config_identity(current_config)
+        if prior_identity != current_identity:
+            raise UserError(
+                f"source job config identity changed at candidate {index + 1}"
+            )
+        config_identities.append(current_identity)
+
+    prior_jobs = sorted(
+        (
+            job for job in prior.get("jobs", [])
+            if isinstance(job, dict)
+            and isinstance(job.get("worker_index"), int)
+            and 1 <= job["worker_index"] <= initial_workers
+        ),
+        key=lambda job: job["worker_index"],
+    )
+    expected_tags = [
+        job.get("source_run_tag")
+        for job in prior_plan_jobs[:initial_workers]
+    ]
+    observed_tags = [job.get("source_run_tag") for job in prior_jobs]
+    if len(prior_jobs) != initial_workers or observed_tags != expected_tags:
+        raise UserError("prior calibration candidate prefix does not match this plan")
+
+    level_n = by_count[initial_workers]
+    return {
+        "path": str(path),
+        "sha256": _sha256(path),
+        "plan_path": str(prior_plan_path),
+        "plan_sha256": _sha256(prior_plan_path),
+        "calibration_id": prior["calibration_id"],
+        "prior_batch_id": prior["batch_id"],
+        "current_batch_id": plan["batch_id"],
+        "status": prior["status"],
+        "recommended_cap": cap,
+        "initial_workers": initial_workers,
+        "continuous_steady_levels_verified": True,
+        "level_n_steady_gpu_memory_mib": float(
+            level_n["steady_gpu_memory_mib"]
+        ),
+        "level_n_peak_gpu_memory_mib": float(level_n["peak_gpu_memory_mib"]),
+        "source_job_config_identity_sha256": hashlib.sha256(
+            _canonical(config_identities).encode("utf-8")
+        ).hexdigest(),
+        "plan_git_commit": plan.get("git_commit"),
+        "prior_execution_git_commit": prior_execution_commit,
+        "execution_git_commit": current_execution_commit,
+        "allowed_helper_only_diff_files": allowed_diff,
+        **provenance,
+    }
 
 
 def _replace_option(command, option, replacement):
@@ -645,8 +858,12 @@ def _level_summaries(samples, records, gate_levels):
                 gate is not None and gate.get("steady_confirmed") is True
             ),
             "level_status": gate.get("status") if gate else "not_a_ramp_level",
+            "level_kind": gate.get("level_kind") if gate else None,
             "previous_steady_gpu_memory_mib": (
                 gate.get("previous_steady_gpu_memory_mib") if gate else None
+            ),
+            "prior_steady_gpu_memory_mib": (
+                gate.get("prior_steady_gpu_memory_mib") if gate else None
             ),
             "required_loaded_gpu_memory_mib": (
                 gate.get("required_loaded_gpu_memory_mib") if gate else None
@@ -661,6 +878,14 @@ def _level_summaries(samples, records, gate_levels):
                 gate.get("first_loaded_elapsed_seconds") if gate else None
             ),
             "load_wait_seconds": gate.get("load_wait_seconds") if gate else None,
+            "initial_group_first_launch_elapsed_seconds": (
+                gate.get("initial_group_first_launch_elapsed_seconds")
+                if gate else None
+            ),
+            "initial_group_all_launched_elapsed_seconds": (
+                gate.get("initial_group_all_launched_elapsed_seconds")
+                if gate else None
+            ),
             "steady_window_seconds": (
                 gate.get("steady_window_seconds") if gate else None
             ),
@@ -679,10 +904,28 @@ def _level_summaries(samples, records, gate_levels):
     return output
 
 
-def _recommended_cap(levels, stop_reason):
+def _recommended_cap(
+    levels, stop_reason, initial_workers=0, initial_group_confirmed=False
+):
     by_count = {level["active_count"]: level for level in levels}
     safe = 0
-    for count in range(1, max(by_count, default=0) + 1):
+    start = 1
+    if initial_workers:
+        initial = by_count.get(initial_workers)
+        if (
+            initial_group_confirmed
+            and initial is not None
+            and initial.get("steady_confirmed") is True
+            and initial.get("peak_gpu_memory_mib") is not None
+            and initial.get("steady_gpu_memory_mib") is not None
+            and initial["peak_gpu_memory_mib"] < PLANNED_MEMORY_MIB
+            and initial["steady_gpu_memory_mib"] < PLANNED_MEMORY_MIB
+        ):
+            safe = initial_workers
+            start = initial_workers + 1
+        else:
+            return 0
+    for count in range(start, max(by_count, default=0) + 1):
         level = by_count.get(count)
         if level is None or level.get("steady_confirmed") is not True:
             break
@@ -708,10 +951,19 @@ def _recommended_cap(levels, stop_reason):
 
 def _build_summary(
     calibration_plan, samples, records, gate_levels, started_monotonic, stop_reason,
-    emergency_observed_mib=None, telemetry_error=None,
+    emergency_observed_mib=None, telemetry_error=None, initial_group=None,
 ):
     levels = _level_summaries(samples, records, gate_levels)
-    cap = _recommended_cap(levels, stop_reason)
+    initial_workers = int(calibration_plan.get("initial_workers") or 0)
+    initial_group_confirmed = bool(
+        initial_group is not None
+        and initial_group.get("steady_confirmed") is True
+    )
+    cap = _recommended_cap(
+        levels, stop_reason,
+        initial_workers=initial_workers,
+        initial_group_confirmed=initial_group_confirmed,
+    )
     exits = [record.get("exit_code") for record in records]
     launched = len(records)
     successful = sum(code == 0 for code in exits)
@@ -722,6 +974,8 @@ def _build_summary(
     )
     if stop_reason == "emergency_memory_threshold":
         status = "emergency_abort"
+    elif initial_workers and not initial_group_confirmed:
+        status = "failed"
     elif stop_reason == "worker_exited_before_steady":
         status = "inconclusive"
     elif failed or stop_reason in (
@@ -779,6 +1033,45 @@ def _build_summary(
         "emergency_memory_mib": EMERGENCY_MEMORY_MIB,
         "emergency_observed_gpu_memory_mib": emergency_observed_mib,
         "telemetry_error": telemetry_error,
+        "source_git_commit": calibration_plan.get("source_git_commit"),
+        "source_spec_sha256": calibration_plan.get("source_spec_sha256"),
+        "plan_git_commit": calibration_plan.get("plan_git_commit"),
+        "prior_execution_git_commit": calibration_plan.get(
+            "prior_execution_git_commit"
+        ),
+        "execution_git_commit": calibration_plan.get("execution_git_commit"),
+        "allowed_helper_only_diff_files": calibration_plan.get(
+            "allowed_helper_only_diff_files", []
+        ),
+        "gpu": calibration_plan.get("gpu"),
+        "prior_evidence": calibration_plan.get("prior_evidence"),
+        "initial_workers": initial_workers,
+        "initial_group": (
+            {
+                "steady_confirmed": initial_group_confirmed,
+                "status": initial_group.get("status"),
+                "required_loaded_gpu_memory_mib": initial_group.get(
+                    "required_loaded_gpu_memory_mib"
+                ),
+                "prior_steady_gpu_memory_mib": initial_group.get(
+                    "prior_steady_gpu_memory_mib"
+                ),
+                "steady_gpu_memory_mib": initial_group.get(
+                    "steady_gpu_memory_mib"
+                ),
+                "load_wait_seconds": initial_group.get("load_wait_seconds"),
+                "steady_window_seconds": initial_group.get(
+                    "steady_window_seconds"
+                ),
+                "steady_window_sample_count": initial_group.get(
+                    "steady_window_sample_count"
+                ),
+                "steady_relative_fluctuation": initial_group.get(
+                    "steady_relative_fluctuation"
+                ),
+            }
+            if initial_group is not None else None
+        ),
         "baseline_gpu_memory_mib": (
             gate_levels[0]["previous_steady_gpu_memory_mib"]
             if gate_levels else None
@@ -810,6 +1103,8 @@ def _run_calibration(
     min_loaded_memory_mib=DEFAULT_MIN_LOADED_MEMORY_MIB,
     steady_relative_tolerance=DEFAULT_STEADY_RELATIVE_TOLERANCE,
     steady_samples=DEFAULT_STEADY_SAMPLES,
+    prior_evidence=None,
+    initial_workers=0,
 ):
     """Run a cloned single-phase adaptive ramp and emit CALIBRATION.json.
 
@@ -823,6 +1118,8 @@ def _run_calibration(
     samples = []
     gate_levels = []
     current_level = None
+    initial_group = None
+    next_initial_launch = None
     previous_steady_memory = None
     launched = 0
     stop_reason = None
@@ -830,6 +1127,9 @@ def _run_calibration(
     telemetry_error = None
     launch_error = None
     resource_path = Path(calibration_root) / "resource.csv"
+    continuation = initial_workers > 0
+    if continuation and prior_evidence is None:
+        raise UserError("initial_workers requires validated prior evidence")
 
     with resource_path.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=RESOURCE_FIELDS)
@@ -841,6 +1141,25 @@ def _run_calibration(
                 active_before_reap = len(active)
                 worker_failed = _record_exits(active, records, now)
                 worker_exited = len(active) < active_before_reap
+                if (
+                    worker_exited
+                    and continuation
+                    and initial_group is not None
+                    and initial_group.get("steady_confirmed") is not True
+                    and stop_reason is None
+                ):
+                    stop_reason = "initial_group_worker_exit"
+                    initial_group["status"] = stop_reason
+                    wait_start = initial_group.get(
+                        "all_launched_monotonic",
+                        initial_group["first_launched_monotonic"],
+                    )
+                    initial_group["load_wait_seconds"] = round(
+                        now - wait_start, 6
+                    )
+                    _terminate_active(active, terminate_grace_seconds)
+                    _record_exits(active, records, time.monotonic())
+                    break
                 if worker_failed and stop_reason is None:
                     stop_reason = "worker_failure"
                     if current_level is not None:
@@ -872,6 +1191,10 @@ def _run_calibration(
                 except UserError as error:
                     telemetry_error = str(error)
                     stop_reason = "telemetry_failure"
+                    if initial_group is not None and not initial_group[
+                        "steady_confirmed"
+                    ]:
+                        initial_group["status"] = stop_reason
                     if current_level is not None:
                         current_level["status"] = stop_reason
                         current_level["load_wait_seconds"] = round(
@@ -893,6 +1216,10 @@ def _run_calibration(
                 if gpu_memory >= EMERGENCY_MEMORY_MIB:
                     emergency_observed = gpu_memory
                     stop_reason = "emergency_memory_threshold"
+                    if initial_group is not None and not initial_group[
+                        "steady_confirmed"
+                    ]:
+                        initial_group["status"] = stop_reason
                     if current_level is not None:
                         current_level["status"] = stop_reason
                         current_level["load_wait_seconds"] = round(
@@ -904,6 +1231,10 @@ def _run_calibration(
                     break
                 if gpu_memory >= PLANNED_MEMORY_MIB and stop_reason is None:
                     stop_reason = "planned_memory_threshold"
+                    if initial_group is not None and not initial_group[
+                        "steady_confirmed"
+                    ]:
+                        initial_group["status"] = stop_reason
                     if current_level is not None:
                         current_level["status"] = stop_reason
                         current_level["load_wait_seconds"] = round(
@@ -911,7 +1242,121 @@ def _run_calibration(
                         )
 
                 ready_to_launch = False
-                if stop_reason is None and current_level is not None:
+                launch_kind = None
+                if (
+                    stop_reason is None
+                    and continuation
+                    and (
+                        initial_group is None
+                        or initial_group.get("steady_confirmed") is not True
+                    )
+                ):
+                    if initial_group is None:
+                        previous_steady_memory = float(gpu_memory)
+                        prior_steady = float(
+                            prior_evidence["level_n_steady_gpu_memory_mib"]
+                        )
+                        recovery_floor = max(
+                            prior_steady
+                            * (1.0 - PRIOR_RECOVERY_RELATIVE_TOLERANCE),
+                            previous_steady_memory
+                            + initial_workers * int(min_loaded_memory_mib),
+                        )
+                        initial_group = {
+                            "active_count": initial_workers,
+                            "level_kind": "prior_safe_initial_group_recovery",
+                            "status": "launching_initial_group",
+                            "steady_confirmed": False,
+                            "previous_steady_gpu_memory_mib": round(
+                                previous_steady_memory, 3
+                            ),
+                            "prior_steady_gpu_memory_mib": round(
+                                prior_steady, 3
+                            ),
+                            "required_loaded_gpu_memory_mib": round(
+                                recovery_floor, 3
+                            ),
+                            "loaded_memory_increment_mib": None,
+                            "first_launched_monotonic": now,
+                            "all_launched_monotonic": None,
+                            "launched_monotonic": None,
+                            "launched_elapsed_seconds": None,
+                            "initial_group_first_launch_elapsed_seconds": round(
+                                now - started, 6
+                            ),
+                            "initial_group_all_launched_elapsed_seconds": None,
+                            "first_loaded_elapsed_seconds": None,
+                            "steady_confirmed_elapsed_seconds": None,
+                            "load_wait_seconds": None,
+                            "steady_gpu_memory_mib": None,
+                            "steady_window_seconds": None,
+                            "steady_window_sample_count": None,
+                            "steady_relative_fluctuation": None,
+                            "observed_sample_count": 0,
+                            "_loaded_samples": [],
+                        }
+                        gate_levels.append(initial_group)
+                        ready_to_launch = True
+                        launch_kind = "initial_group"
+                    elif launched < initial_workers:
+                        if now >= next_initial_launch:
+                            ready_to_launch = True
+                            launch_kind = "initial_group"
+                    else:
+                        initial_group["observed_sample_count"] += 1
+                        if gpu_memory >= initial_group[
+                            "required_loaded_gpu_memory_mib"
+                        ]:
+                            if initial_group[
+                                "first_loaded_elapsed_seconds"
+                            ] is None:
+                                initial_group[
+                                    "first_loaded_elapsed_seconds"
+                                ] = round(now - started, 6)
+                            initial_group["_loaded_samples"].append({
+                                "monotonic": now,
+                                "gpu_memory_mib": gpu_memory,
+                            })
+                        else:
+                            initial_group["_loaded_samples"].clear()
+                        stable = _steady_window(
+                            initial_group["_loaded_samples"], now,
+                            steady_seconds, steady_samples,
+                            steady_relative_tolerance,
+                        )
+                        wait_start = initial_group["all_launched_monotonic"]
+                        if stable is not None:
+                            initial_group.update(stable)
+                            initial_group["steady_confirmed"] = True
+                            initial_group["status"] = "steady_confirmed"
+                            initial_group["load_wait_seconds"] = round(
+                                now - wait_start, 6
+                            )
+                            initial_group[
+                                "steady_confirmed_elapsed_seconds"
+                            ] = round(now - started, 6)
+                            initial_group["loaded_memory_increment_mib"] = round(
+                                initial_group["steady_gpu_memory_mib"]
+                                - initial_group[
+                                    "previous_steady_gpu_memory_mib"
+                                ],
+                                3,
+                            )
+                            previous_steady_memory = initial_group[
+                                "steady_gpu_memory_mib"
+                            ]
+                            ready_to_launch = launched < len(jobs)
+                            launch_kind = "adaptive" if ready_to_launch else None
+                        elif now - wait_start >= load_timeout_seconds:
+                            stop_reason = "initial_group_load_timeout"
+                            initial_group["status"] = stop_reason
+                            initial_group["load_wait_seconds"] = round(
+                                now - wait_start, 6
+                            )
+                            _terminate_active(active, terminate_grace_seconds)
+                            _record_exits(active, records, time.monotonic())
+                            break
+                elif stop_reason is None and current_level is not None:
                     current_level["observed_sample_count"] += 1
                     if gpu_memory >= current_level[
                         "required_loaded_gpu_memory_mib"
@@ -977,6 +1422,7 @@ def _run_calibration(
                 ):
                     previous_steady_memory = float(gpu_memory)
                     ready_to_launch = True
+                    launch_kind = "adaptive"
 
                 if stop_reason is None and ready_to_launch:
                     job = jobs[launched]
@@ -985,6 +1431,10 @@ def _run_calibration(
                     except Exception as error:  # preserve partial evidence
                         launch_error = f"{type(error).__name__}: {error}"
                         stop_reason = "launch_error"
+                        if initial_group is not None and not initial_group[
+                            "steady_confirmed"
+                        ]:
+                            initial_group["status"] = stop_reason
                         _terminate_active(active, terminate_grace_seconds)
                         now = time.monotonic()
                         _record_exits(active, records, now)
@@ -1006,37 +1456,57 @@ def _run_calibration(
                     }
                     records.append(record)
                     active[process.pid] = record
-                    current_level = {
-                        "active_count": launched,
-                        "status": "waiting_for_load",
-                        "steady_confirmed": False,
-                        "previous_steady_gpu_memory_mib": round(
-                            float(previous_steady_memory), 3
-                        ),
-                        "required_loaded_gpu_memory_mib": round(
-                            float(previous_steady_memory)
-                            + int(min_loaded_memory_mib),
-                            3,
-                        ),
-                        "loaded_memory_increment_mib": None,
-                        "launched_monotonic": now,
-                        "launched_elapsed_seconds": round(now - started, 6),
-                        "first_loaded_elapsed_seconds": None,
-                        "steady_confirmed_elapsed_seconds": None,
-                        "load_wait_seconds": None,
-                        "steady_gpu_memory_mib": None,
-                        "steady_window_seconds": None,
-                        "steady_window_sample_count": None,
-                        "steady_relative_fluctuation": None,
-                        "observed_sample_count": 0,
-                        "_loaded_samples": [],
-                    }
-                    gate_levels.append(current_level)
+                    if launch_kind == "initial_group":
+                        next_initial_launch = now + stagger_seconds
+                        if launched == initial_workers:
+                            initial_group["status"] = (
+                                "waiting_for_initial_group_load"
+                            )
+                            initial_group["all_launched_monotonic"] = now
+                            initial_group["launched_monotonic"] = now
+                            initial_group["launched_elapsed_seconds"] = round(
+                                now - started, 6
+                            )
+                            initial_group[
+                                "initial_group_all_launched_elapsed_seconds"
+                            ] = round(now - started, 6)
+                    else:
+                        current_level = {
+                            "active_count": launched,
+                            "level_kind": "adaptive_extension_level",
+                            "status": "waiting_for_load",
+                            "steady_confirmed": False,
+                            "previous_steady_gpu_memory_mib": round(
+                                float(previous_steady_memory), 3
+                            ),
+                            "required_loaded_gpu_memory_mib": round(
+                                float(previous_steady_memory)
+                                + int(min_loaded_memory_mib),
+                                3,
+                            ),
+                            "loaded_memory_increment_mib": None,
+                            "launched_monotonic": now,
+                            "launched_elapsed_seconds": round(now - started, 6),
+                            "first_loaded_elapsed_seconds": None,
+                            "steady_confirmed_elapsed_seconds": None,
+                            "load_wait_seconds": None,
+                            "steady_gpu_memory_mib": None,
+                            "steady_window_seconds": None,
+                            "steady_window_sample_count": None,
+                            "steady_relative_fluctuation": None,
+                            "observed_sample_count": 0,
+                            "_loaded_samples": [],
+                        }
+                        gate_levels.append(current_level)
 
                 if active or (launched < len(jobs) and stop_reason is None):
                     time.sleep(sample_interval_seconds)
         except KeyboardInterrupt:
             stop_reason = "interrupted"
+            if initial_group is not None and not initial_group[
+                "steady_confirmed"
+            ]:
+                initial_group["status"] = stop_reason
             if current_level is not None:
                 current_level["status"] = stop_reason
                 current_level["load_wait_seconds"] = round(
@@ -1051,12 +1521,25 @@ def _run_calibration(
 
     if stop_reason is None:
         stop_reason = "target_completed"
+    if (
+        initial_group is not None
+        and not initial_group["steady_confirmed"]
+        and initial_group.get("load_wait_seconds") is None
+    ):
+        wait_start = initial_group.get(
+            "all_launched_monotonic",
+            initial_group["first_launched_monotonic"],
+        )
+        initial_group["load_wait_seconds"] = round(
+            time.monotonic() - wait_start, 6
+        )
     if launch_error is not None:
         telemetry_error = launch_error
     summary = _build_summary(
         calibration_plan, samples, records, gate_levels, started, stop_reason,
         emergency_observed_mib=emergency_observed,
         telemetry_error=telemetry_error,
+        initial_group=initial_group,
     )
     _atomic_json(Path(calibration_root) / "CALIBRATION.json", summary)
     return summary
@@ -1150,13 +1633,38 @@ def execute(args):
             raise UserError(
                 f"GPU mismatch: CLI={args.gpu}, PLAN={plan.get('gpu')}"
             )
-        _assert_plan_revision(plan)
+        revision_audit = _assert_plan_revision(
+            plan, allow_helper_only_drift=args.prior_calibration is not None
+        )
         selected = _select_distinct_jobs(jobs, args.target_workers)
+        prior_evidence = None
+        if args.prior_calibration is not None:
+            prior_evidence = _load_prior_evidence(
+                args.prior_calibration, campaign_root, plan, phase, selected,
+                args.initial_workers, args.gpu,
+            )
         calibration_root, clones, calibration_plan = _clone_jobs(
             campaign_root, plan, phase, selected, args.calibration_id,
             episode_limit=args.episode_limit,
         )
         calibration_plan.update({
+            "source_git_commit": (
+                prior_evidence["source_git_commit"]
+                if prior_evidence is not None else plan.get("git_commit")
+            ),
+            "plan_git_commit": revision_audit["plan_git_commit"],
+            "execution_git_commit": revision_audit["execution_git_commit"],
+            "prior_execution_git_commit": (
+                prior_evidence.get("prior_execution_git_commit")
+                if prior_evidence is not None else None
+            ),
+            "allowed_helper_only_diff_files": sorted(set(
+                revision_audit["allowed_helper_only_diff_files"]
+                + (
+                    prior_evidence["allowed_helper_only_diff_files"]
+                    if prior_evidence is not None else []
+                )
+            )),
             "gpu": args.gpu,
             "stagger_seconds": args.stagger_seconds,
             "sample_interval_seconds": args.sample_interval_seconds,
@@ -1165,6 +1673,11 @@ def execute(args):
             "load_timeout_seconds": args.load_timeout_seconds,
             "min_loaded_memory_mib": args.min_loaded_memory_mib,
             "steady_relative_tolerance": args.steady_relative_tolerance,
+            "initial_workers": args.initial_workers,
+            "prior_recovery_relative_tolerance": (
+                PRIOR_RECOVERY_RELATIVE_TOLERANCE
+            ),
+            "prior_evidence": prior_evidence,
         })
         _atomic_json(
             calibration_root / "CALIBRATION_PLAN.json", calibration_plan
@@ -1180,6 +1693,8 @@ def execute(args):
             load_timeout_seconds=args.load_timeout_seconds,
             min_loaded_memory_mib=args.min_loaded_memory_mib,
             steady_relative_tolerance=args.steady_relative_tolerance,
+            prior_evidence=prior_evidence,
+            initial_workers=args.initial_workers,
         )
 
 
@@ -1194,6 +1709,17 @@ def parse_args(argv=None):
     parser.add_argument("--batch-id", required=True)
     parser.add_argument("--phase-id", required=True)
     parser.add_argument("--target-workers", required=True, type=int)
+    parser.add_argument(
+        "--prior-calibration",
+        help=(
+            "prior CALIBRATION.json proving the exact continuous safe prefix "
+            "used by --initial-workers"
+        ),
+    )
+    parser.add_argument(
+        "--initial-workers", type=int, default=0,
+        help="restart this prior-proven prefix before adaptively adding workers",
+    )
     parser.add_argument("--calibration-id", default=_default_calibration_id())
     parser.add_argument(
         "--campaign-root",
@@ -1255,6 +1781,15 @@ def parse_args(argv=None):
         parser.error(str(error))
     if args.target_workers < 1:
         parser.error("--target-workers must be positive")
+    if (args.prior_calibration is None) != (args.initial_workers == 0):
+        parser.error(
+            "--prior-calibration and a positive --initial-workers are required "
+            "together"
+        )
+    if args.initial_workers < 0:
+        parser.error("--initial-workers must be non-negative")
+    if args.initial_workers >= args.target_workers:
+        parser.error("--initial-workers must be below --target-workers")
     if args.gpu < 0:
         parser.error("--gpu must be non-negative")
     if args.episode_limit is not None and args.episode_limit < 1:
