@@ -108,7 +108,15 @@ def _uses_search_priors(spec):
 
 
 def _enforces_corrected_result_contract(spec):
-    return spec.get("schema") in (SPEC_SCHEMA_V2, SPEC_SCHEMA_V3)
+    protocol = spec.get("protocol")
+    explicitly_required = (
+        isinstance(protocol, dict)
+        and protocol.get("enforce_corrected_result_contract") is True
+    )
+    return (
+        spec.get("schema") in (SPEC_SCHEMA_V2, SPEC_SCHEMA_V3)
+        or explicitly_required
+    )
 
 
 def canonical(value):
@@ -768,6 +776,11 @@ def _validate_spec(document):
     if document.get("schema") not in SPEC_SCHEMAS:
         raise UserError("unsupported local-refinement schema")
     protocol = _mapping(document.get("protocol"), "protocol")
+    corrected_contract = protocol.get("enforce_corrected_result_contract")
+    if corrected_contract is not None and type(corrected_contract) is not bool:
+        raise UserError(
+            "protocol.enforce_corrected_result_contract must be boolean"
+        )
     if protocol.get("benchmark") != "r2r" or protocol.get("split") != "val_seen":
         raise UserError("local refinement must be R2R val_seen")
     if protocol.get("episode_count") != 1021 or protocol.get("order_seed") != 0:
@@ -2045,12 +2058,31 @@ def _validate_postfix_result_contract(phase, result, spec):
         expected_episodes = int(spec["protocol"]["episode_count"])
         queries = int(adapter.get("queries", -1))
         observed = int(adapter.get("feedback_observed_episodes", -2))
+        self_labels = int(adapter.get("self_label_episodes", -1))
+        queried_successes = int(adapter.get("queried_feedback_successes", -1))
+        self_successes = int(adapter.get("self_feedback_successes", -1))
+        expected_rate = queries / float(expected_episodes)
+        query_rate = float(adapter.get("query_rate", math.nan))
+        observation_rate = float(
+            adapter.get("feedback_observation_rate", math.nan)
+        )
         if (
             queries < 0
             or queries > expected_episodes
             or observed != queries
             or int(adapter.get("query_gate_evaluations", -1))
             != expected_episodes
+            or self_labels != expected_episodes - queries
+            or queried_successes < 0
+            or queried_successes > queries
+            or self_successes < 0
+            or self_successes > self_labels
+            or not math.isclose(query_rate, expected_rate, abs_tol=1e-12)
+            or not math.isclose(observation_rate, expected_rate, abs_tol=1e-12)
+            or (
+                float(parameters.get("query_threshold", math.nan)) == 0.0
+                and queries != expected_episodes
+            )
         ):
             raise UserError(
                 f"{result['run_tag']} has an invalid lazy ATENA feedback budget"

@@ -1,0 +1,332 @@
+{
+  "schema": "navtta.vln_r2r_five_method_local_refinement_plan.v1",
+  "experiment_id": "vln-r2r-eam-atena-formal-confirmation-v1",
+  "status": "reviewed_launchable",
+  "purpose": "Five singleton full-val_seen reruns that preserve the frozen R2R EAM parameters and rerun the frozen DUET/HAMT ATENA parameters with corrected lazy submitted-trajectory evaluator feedback, producing contemporaneous formal manifests.",
+  "parent_evidence": {
+    "batch_id": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "git_commit": "a258ac5b1d604cbdaecd64fe0ac184241e8384c1",
+    "spec_sha256": "642558f1c72cfc5eea1e4d2d0b1eec5873696aad549eb87583e6f082f12e8417",
+    "winners_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/WINNERS.json",
+    "winners_sha256": "eefa44a79a3b8b3957cae4b8c0d82c745cb326515774a0f281ebaf6964ff9aac",
+    "frozen_hparameters_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/FROZEN_HPARAMETERS.json",
+    "frozen_hparameters_sha256": "7ab9c997ab3fbd4376cbcaaedcbf0dd3563e85d80c6e31ad12105b52649e6526",
+    "analysis": "vln/results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md",
+    "qualification": "EAM has compact job evidence but no formal manifests. Historical DUET/HAMT ATENA manifests predate lazy submitted-trajectory evaluator feedback and are not valid substitutes for these corrected reruns."
+  },
+  "parent_anchors": {
+    "eam": {
+      "duet-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0314-duet-r2r-57ab8b8bf5",
+        "candidate": {
+          "lr": 0.00001,
+          "confidence_scale": 0.5,
+          "memory_size": 64,
+          "batch_size": 8,
+          "update_interval": 8
+        }
+      },
+      "hamt-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0189-hamt-r2r-c88e328c7a",
+        "candidate": {
+          "lr": 0.000001,
+          "confidence_scale": 0.6,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 8
+        }
+      },
+      "goat-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0225-goat-r2r-01a184b229",
+        "candidate": {
+          "lr": 0.000003,
+          "confidence_scale": 0.3,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 4
+        }
+      }
+    },
+    "atena": {
+      "duet-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-atena-cartesian-0048-duet-r2r-8d3372dc24",
+        "candidate": {
+          "lr_query": 0.0000016,
+          "lr_self": 0.0000002,
+          "mix_lambda": 0.5,
+          "query_threshold": 0.0
+        }
+      },
+      "hamt-r2r": {
+        "parent_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-atena-cartesian-0065-hamt-r2r-8dfe151e97",
+        "candidate": {
+          "lr_query": 0.0000032,
+          "lr_self": 0.0000004,
+          "mix_lambda": 0.25,
+          "query_threshold": 0.1
+        }
+      }
+    }
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "requirements": [
+      "Commit this singleton spec, its tests, the corrected-contract runner guard, and the plan before launch.",
+      "Use batch vln-r2r-eam-atena-formal-confirm-v1-seed0 and inspect the immutable five-job expansion before passing --confirm-reviewed.",
+      "Reuse the pinned standard-argmax Source evidence; do not launch Source or sampled controls.",
+      "Run exactly DUET EAM, DUET ATENA, HAMT EAM, HAMT ATENA, and GOAT EAM with strict barriers and one worker."
+    ]
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "order_seed": 0,
+    "settings": [
+      "duet-r2r",
+      "hamt-r2r",
+      "goat-r2r"
+    ],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "source_protocol": "standard_argmax",
+    "selection": [
+      "higher_SR",
+      "higher_SPL",
+      "lower_parameter_drift",
+      "fewer_updates"
+    ],
+    "sr_quantum_pp": 0.0979431929480901,
+    "seed_variance_estimated": false,
+    "enforce_corrected_result_contract": true,
+    "supervision_groups": {
+      "unsupervised": [
+        "eam"
+      ],
+      "binary_feedback_supervised": [
+        "atena"
+      ]
+    }
+  },
+  "execution": {
+    "launchable": true,
+    "strict_model_barrier_required": true,
+    "strict_method_barrier_required": true,
+    "barrier_implementation_status": "implemented_validated",
+    "model_order": [
+      "duet-r2r",
+      "hamt-r2r",
+      "goat-r2r"
+    ],
+    "method_order_within_model": [
+      "eam",
+      "atena"
+    ],
+    "enabled_methods_by_setting": {
+      "duet-r2r": [
+        "eam",
+        "atena"
+      ],
+      "hamt-r2r": [
+        "eam",
+        "atena"
+      ],
+      "goat-r2r": [
+        "eam"
+      ]
+    },
+    "cross_model_overlap_forbidden": true,
+    "cross_method_overlap_forbidden": true,
+    "tail_policy": "Every phase contains one full-split job and must complete before the next model/method phase starts.",
+    "control_execution": {},
+    "gpu_safety": {
+      "production_planned_steady_used_mib_max": 29000,
+      "emergency_abort_observed_used_mib": 30000,
+      "minimum_production_headroom_mib": 3760,
+      "scheduler_prelaunch_gate_mib_range": [
+        23500,
+        25000
+      ],
+      "production_limit_is_not_a_scheduler_gate": true,
+      "launch_stagger_is_not_a_memory_guard": true,
+      "raise_concurrency_one_worker_at_a_time": false,
+      "require_all_children_at_steady_vram_before_next_raise": true,
+      "calibration_initial_group_workers": 5,
+      "calibration_episode_limit": 100,
+      "grouped_jump_after_measured_baseline": true,
+      "grouped_jump_projection_max_mib": 28500,
+      "grouped_jump_per_worker_margin_factor": 1.05,
+      "grouped_jump_requires_independent_steady_validation": true,
+      "formal_cap_policy": "All phases are forced to one worker; no concurrency calibration or worker-count override is permitted for this five-job confirmation."
+    },
+    "concurrency_calibration": {
+      "eam": {
+        "duet-r2r": {
+          "production_cap": 1,
+          "conditional_test_steps": [],
+          "estimated_mib_per_job": 5000,
+          "cap_basis": "forced_singleton_confirmation",
+          "prelaunch_gate_mib": 24000
+        },
+        "hamt-r2r": {
+          "production_cap": 1,
+          "conditional_test_steps": [],
+          "estimated_mib_per_job": 5000,
+          "cap_basis": "forced_singleton_confirmation",
+          "prelaunch_gate_mib": 24000
+        },
+        "goat-r2r": {
+          "production_cap": 1,
+          "conditional_test_steps": [],
+          "estimated_mib_per_job": 5000,
+          "cap_basis": "forced_singleton_confirmation",
+          "prelaunch_gate_mib": 24000
+        }
+      },
+      "atena": {
+        "duet-r2r": {
+          "production_cap": 1,
+          "conditional_test_steps": [],
+          "estimated_mib_per_job": 6000,
+          "cap_basis": "forced_singleton_confirmation",
+          "prelaunch_gate_mib": 23500
+        },
+        "hamt-r2r": {
+          "production_cap": 1,
+          "conditional_test_steps": [],
+          "estimated_mib_per_job": 6000,
+          "cap_basis": "forced_singleton_confirmation",
+          "prelaunch_gate_mib": 23500
+        }
+      }
+    }
+  },
+  "methods": {
+    "eam": {
+      "fixed": {
+        "optimizer": "Adam",
+        "max_grad_norm": 0.0,
+        "episodic": false
+      },
+      "settings": {
+        "duet-r2r": {
+          "grids": [],
+          "points": [
+            {
+              "lr": 0.00001,
+              "confidence_scale": 0.5,
+              "memory_size": 64,
+              "batch_size": 8,
+              "update_interval": 8,
+              "role": "frozen_cartesian_winner_formal_confirmation"
+            }
+          ],
+          "candidate_count": 1
+        },
+        "hamt-r2r": {
+          "grids": [],
+          "points": [
+            {
+              "lr": 0.000001,
+              "confidence_scale": 0.6,
+              "memory_size": 32,
+              "batch_size": 8,
+              "update_interval": 8,
+              "role": "frozen_cartesian_winner_formal_confirmation"
+            }
+          ],
+          "candidate_count": 1
+        },
+        "goat-r2r": {
+          "grids": [],
+          "points": [
+            {
+              "lr": 0.000003,
+              "confidence_scale": 0.3,
+              "memory_size": 32,
+              "batch_size": 8,
+              "update_interval": 4,
+              "role": "frozen_cartesian_winner_formal_confirmation"
+            }
+          ],
+          "candidate_count": 1
+        }
+      },
+      "candidate_count": 3
+    },
+    "atena": {
+      "fixed": {
+        "self_loss_weight": 0.1,
+        "optimizer": "AdamW",
+        "weight_decay": 0.01,
+        "max_grad_norm": 0.0,
+        "action_selection": "argmax",
+        "episodic": false
+      },
+      "settings": {
+        "duet-r2r": {
+          "grids": [],
+          "points": [
+            {
+              "lr_query": 0.0000016,
+              "lr_self": 0.0000002,
+              "mix_lambda": 0.5,
+              "query_threshold": 0.0,
+              "role": "corrected_lazy_evaluator_feedback_formal_confirmation"
+            }
+          ],
+          "candidate_count": 1
+        },
+        "hamt-r2r": {
+          "grids": [],
+          "points": [
+            {
+              "lr_query": 0.0000032,
+              "lr_self": 0.0000004,
+              "mix_lambda": 0.25,
+              "query_threshold": 0.1,
+              "role": "corrected_lazy_evaluator_feedback_formal_confirmation"
+            }
+          ],
+          "candidate_count": 1
+        }
+      },
+      "candidate_count": 2,
+      "secondary_feedback_efficiency_report": {
+        "enabled": false
+      }
+    }
+  },
+  "controls": {
+    "standard_argmax_source_per_setting": true,
+    "standard_argmax_source_execution": "reuse_completed_manifest",
+    "standard_argmax_source_manifest": "vln/manifests/r2r_reused_source_controls.json",
+    "feedtta_sampled_no_update_per_setting": true,
+    "candidate_count": 0
+  },
+  "budget": {
+    "search_candidates": {
+      "eam": 3,
+      "atena": 2
+    },
+    "search_total": 5,
+    "controls": 0,
+    "total_before_confirmation": 5,
+    "by_setting_before_controls": {
+      "duet-r2r": 2,
+      "hamt-r2r": 2,
+      "goat-r2r": 1
+    }
+  },
+  "confirmation": {
+    "configuration_is_frozen": true,
+    "hyperparameter_reselection_forbidden": true,
+    "historical_eam_metrics_are_regression_expectations_not_selection_inputs": true,
+    "historical_atena_metrics_use_invalid_feedback_and_must_not_be_copied": true,
+    "formal_manifest_required_per_job": true,
+    "corrected_atena_contract_required": true,
+    "publication_status_after_completion": "val_seen_seed0_selection_evidence_only"
+  }
+}
