@@ -85,6 +85,8 @@ zero failures on commit `a258ac5`.  Its compact analysis is tracked in
 It contains only FSTTA (12 candidates per model) and FeedTTA (14 per model),
 uses strict model/method barriers, and reuses the three pinned standard argmax
 Source results. It neither reruns Source nor creates sampled Source controls.
+The batch completed 78/78 validated jobs on commit `b2e37dd`; its result report
+is [`R2R_FSTTA_FEEDTTA_POSTFIX_V1.md`](../results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md).
 
 The implementation changes that define this batch are part of its scientific
 identity: FSTTA retains its FAST variance EMA for the complete test stream;
@@ -116,8 +118,9 @@ python3 vln/scripts/run_r2r_local_refinement.py \
 
 Prior grouped measurements plus the registered conservative GOAT projections
 remain the concurrency authority: FSTTA uses DUET/HAMT/GOAT caps `14/11/14`,
-and FeedTTA uses `6/5/6`. GOAT's two caps are projections from five-worker
-baselines, not completed full-cap measurements. The 29,000 MiB planning and
+and FeedTTA uses `6/5/6`. This batch directly observed GOAT FSTTA at 12 workers
+(all available candidates) and GOAT FeedTTA at its six-worker cap; the
+14-worker GOAT FSTTA ceiling remains a projection. The 29,000 MiB planning and
 30,000 MiB emergency lines remain unchanged.
 
 ## R2R four-method low-learning-rate refinement

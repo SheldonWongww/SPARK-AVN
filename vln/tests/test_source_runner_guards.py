@@ -156,6 +156,19 @@ class SourceRunnerGuardTest(unittest.TestCase):
         )
         self.assertIn("--require-immutable-identity", source)
 
+    def test_pre_env_guards_use_the_setting_environment_python(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'BOOTSTRAP_PYTHON="/root/autodl-tmp/conda/envs/'
+            '${BOOTSTRAP_ENV_NAME}/bin/python"',
+            source,
+        )
+        for environment in ("duet", "hamt", "goat", "vlnce017", "streamvln"):
+            self.assertIn("BOOTSTRAP_ENV_NAME={}".format(environment), source)
+        self.assertIn('missing bootstrap Python: ${BOOTSTRAP_PYTHON}', source)
+        self.assertNotRegex(source, r"(?m)^\s*python3\b")
+
     def test_base_test_inference_reads_annotations_without_ground_truth(self):
         for path in BASE_TRAINERS:
             with self.subTest(path=path):

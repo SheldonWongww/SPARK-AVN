@@ -1,7 +1,9 @@
 # R2R FSTTA / FeedTTA 论文对齐修正与补搜计划
 
-状态：实现与搜索计划，正式运行必须绑定实际 Git commit 和
-`r2r_fstta_feedtta_postfix_search_v1.json` 的 SHA256。
+状态：已完成。78/78 个任务在 commit `b2e37dd` 上通过验证；搜索 spec
+SHA256 为 `f979f7809265b9144a9ab75da1ede8871b5f93eefb1e87014a42a90011158490`。
+结果与解释见
+[`R2R_FSTTA_FEEDTTA_POSTFIX_V1.md`](../results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md)。
 
 ## 1. 原文复核结论
 

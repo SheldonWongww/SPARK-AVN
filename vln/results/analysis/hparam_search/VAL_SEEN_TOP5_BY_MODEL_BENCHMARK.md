@@ -7,6 +7,11 @@ object-grounding metrics. The original scheduler rank is shown because candidate
 promotion used the historical SPL/RGSPL objective; this is a post-hoc re-ranking
 of completed finalists, not a new exhaustive SR-driven search.
 
+> The R2R FSTTA and FeedTTA rows below predate the paper-alignment repair.
+> Current R2R results use target-native argmax FeedTTA, corrected feedback
+> endpoints/model-aware scopes, and test-stream FSTTA variance history; see
+> [`R2R_FSTTA_FEEDTTA_POSTFIX_V1.md`](R2R_FSTTA_FEEDTTA_POSTFIX_V1.md).
+
 - Every reported Source→TTA delta uses the standard argmax Source.
 - FeedTTA† still executes sampled actions; its sampled no-update control is retained
   in the CSV only as an internal adaptation-control diagnostic.

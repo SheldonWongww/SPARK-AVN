@@ -1,8 +1,8 @@
 # VLN Test-Time Adaptation 实验报告
 
-更新日期：2026-08-14
+更新日期：2026-08-21
 
-当前状态：**DUET、HAMT、GOAT、ETPNav、BEVBert 的 Source validation 与 test 轨迹已下载；HAMT-R2R 的论文最终 `vitbase-finetune-e2e` 替换评估也已跑完，但尚未补成可进入 formal Source 汇总的 run manifest。Tent、FSTTA、EAM、FeedTTA、ATENA 的固定顺序 `val_seen` 超参数搜索均已完成并下载，本文已按 SR 第一、SPL 第二的统一口径重排逐模型探索性最优与跨模型共享候选，并登记反馈预算和 late-collapse 审计。StreamVLN 因推理耗时暂缓。当前 TTA 数值仍属于调参证据，须通过零更新适配器一致性审计后才能进入正式主表。**
+当前状态：**DUET、HAMT、GOAT、ETPNav、BEVBert 的 Source validation 与 test 轨迹已下载；HAMT-R2R 的论文最终 `vitbase-finetune-e2e` 替换评估也已跑完，但尚未补成可进入 formal Source 汇总的 run manifest。Tent、FSTTA、EAM、FeedTTA、ATENA 的固定顺序 `val_seen` 超参数搜索均已完成并下载。R2R 上另已完成 78 个 FSTTA/FeedTTA 论文对齐修正任务：FeedTTA 恢复导航模型原生 argmax、修正反馈端点并采用 model-aware scope，FSTTA 修正 test-stream 方差历史。最新 R2R 结论见 §7.6；旧 sampled FeedTTA 行只保留为历史诊断。StreamVLN 因推理耗时暂缓。当前 TTA 数值仍属于调参证据，须通过多顺序 seed 与冻结参数的独立 split 确认后才能进入正式主表。**
 
 本文持续维护 R2R、REVERIE 和 R2R-CE 三个 benchmark 的 Source/TTA 对比、实验口径、论文参考值与后续小规模超参数方案。机器可读的本地结果见 [`results/source_baselines_20260810.json`](results/source_baselines_20260810.json)，论文 TTA 参考值见 [`results/legacy/published_tta_metrics.json`](results/legacy/published_tta_metrics.json)。
 
@@ -13,6 +13,7 @@
 - 前三种方法的 post-hoc late-collapse 结果位于 `results/audits/hparam_search/`；服务器生成归档 SHA256 为 `cb88d4aba2c6efefeced425f5cb41931185778b3d5d7d987077317c7fb9e0490`。连续环境使用逐 episode 证据和 block bootstrap，离散环境只有 256-prefix 与 remainder 的粗粒度分解。
 - FeedTTA 的日志、tuning evidence 与 late-collapse 审计另外同步了 3,743 个允许文件，传输归档 SHA256 为 `0a49a161928b0b60abaaa633dd7ba8eba1512754e436631cab2885680d1cd674`；使用与前三种方法相同的二进制和大产物排除规则。
 - ATENA 的日志、tuning evidence 与 late-collapse 审计同步了 2,608 个允许文件，传输归档 SHA256 为 `f0b4b471e9c48f6f568d7263ae010abf832894047ebf0ad97b48fa87531acbef`；已排除 checkpoints、predictions、videos、TensorBoard 以及常见模型/数组二进制。stage1 的两个首次 OOM 尝试作为 `attempt-00` provenance 保留，降至最多 4 路并发后重试成功；表中任务数只统计 logical jobs，不重复计入归档尝试。
+- R2R FSTTA/FeedTTA 论文对齐修正 batch `vln-r2r-fstta-feedtta-postfix-v1-seed0` 在 commit `b2e37dd` 完成 78/78 个 full-`val_seen` jobs。六个 phase 均 `complete=true`、`errors=[]`；78 份 compact results、78 份 formal manifest 已下载，manifest 声明的 234 个 result artifacts 均通过 size/SHA256 复核。spec SHA256 为 `f979f7809265b9144a9ab75da1ede8871b5f93eefb1e87014a42a90011158490`。
 - 本报告中的“本地 Source”只来自状态为 `completed` 的 validation manifest。每份 manifest 均绑定运行 commit `0c6e38b`、完整命令、seed、checkpoint SHA256、dataset/episode-order SHA256 和 NVIDIA vGPU-32GB 硬件信息。
 - “论文参考”不是本工作区复现结果，只用于核对趋势和规划超参数；不能与本地结果混称为同一协议下的结果。
 - test split 不提供本地 ground truth，因而只登记提交文件状态，不填写本地 test 指标。正式 test 指标必须来自相应榜单。
@@ -355,11 +356,31 @@ ATENA 300。15 个 `模型 × 方法` 的 SR-first winner、Top-5、batch 级
 其中 EAM 是三个模型上都同时提高 SR/SPL 的最稳定无监督方法；ATENA† 在
 DUET/HAMT 上分别达到 `ΔSR/ΔSPL=+1.57/+3.41` 和 `+1.86/+1.98`，但
 GOAT 仍只有 `+0.00/+0.08`。FeedTTA† 尚未在任何模型上同时超过标准
-argmax Source 的 SR/SPL。
+argmax Source 的 SR/SPL；这句话只描述该历史 sampled-action batch，当前
+R2R 协议见下一节。
+
+### 7.6 R2R FSTTA / FeedTTA 论文对齐修正补搜（已完成）
+
+§7.2 和 §7.5 的 R2R FeedTTA 行来自历史 sampled-action 实现；它们不再代表
+当前 VLN FeedTTA 协议。新 batch 在 commit `b2e37dd` 上完成 78/78 个任务，
+没有重跑 Source。修正后 SR-first 结果为：
+
+| 方法 | DUET | HAMT | GOAT |
+|---|---|---|---|
+| FSTTA | `79.24/72.34` (`+0.40/-0.54`) | `76.40/72.97` (`+0.79/+0.79`) | `84.92/80.21` (`+0.10/+0.16`) |
+| FeedTTA† | `79.33/73.88` (`+0.49/+1.00`) | `76.00/72.66` (`+0.39/+0.48`) | `84.82/80.06` (`+0.00/+0.01`) |
+
+DUET-FSTTA 另有同时提高两项指标的 `79.14/73.10`（`+0.30/+0.22`）
+Pareto 点。FeedTTA† 在 DUET/HAMT 上从旧 sampled 结果的明显退化变成双指标
+正增益，说明原生 argmax、反馈端点和更新 scope 是 VLN 适配的关键；GOAT
+仍只恢复到 Source parity，未达到持平 SR 时 `+0.10 SPL` 的晋级门槛。
+
+完整超参数、好坏区域、反馈预算、FSTTA scaler 诊断和 formal provenance 见
+[`R2R_FSTTA_FEEDTTA_POSTFIX_V1.md`](results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md)。
 
 ## 8. 后续更新流程
 
-1. 使用 `scripts/run_r2r_local_refinement.py` 执行 `experiments/r2r_five_method_local_refinement_v1.json`；DUET 全部完成后再启动 HAMT，最后启动 GOAT，并保留人工审核确认门槛。
+1. R2R FSTTA/FeedTTA 论文对齐补搜已完成；下一步只对通过门槛的配置运行 order seeds 1/2：FSTTA 三模型（DUET 使用双指标 Pareto 点）以及 FeedTTA† 的 DUET/HAMT。GOAT-FeedTTA 不晋级。
 2. 对逐模型 winner 运行 §6.3 的零更新适配器一致性审计；未通过的 method/setting 不解释性能增益。
 3. 参考 R2R 的响应面为 REVERIE 和 R2R-CE 缩小各自的 Cartesian 空间，但二者仍需独立 `val_seen` 搜索和独立 winner。
 4. 无监督方法与二值反馈方法继续分表；ATENA/FeedTTA 附加报告真实反馈预算和 performance/query-rate Pareto。
@@ -377,6 +398,8 @@ argmax Source 的 SR/SPL。
 - 当前 R2R Cartesian spec：[`experiments/r2r_modelwise_cartesian_hparam_v2.json`](experiments/r2r_modelwise_cartesian_hparam_v2.json)
 - 当前 R2R Cartesian runner：[`scripts/run_r2r_cartesian_hparam_search.py`](scripts/run_r2r_cartesian_hparam_search.py)
 - 当前 R2R Cartesian v2 分析：[`results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md`](results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md)
+- R2R FSTTA/FeedTTA 修正补搜结果：[`results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md`](results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md)
+- R2R FSTTA/FeedTTA 修正补搜 spec：[`experiments/r2r_fstta_feedtta_postfix_search_v1.json`](experiments/r2r_fstta_feedtta_postfix_search_v1.json)
 - 四方法低学习率补搜计划：[`experiments/r2r_five_method_local_refinement_v1.json`](experiments/r2r_five_method_local_refinement_v1.json)
 - Tent 调参日志：`results/logs/hparam_search/tent/vln-tta-hparam-final-20260810T182823Z/`
 - FSTTA 调参日志：`results/logs/hparam_search/fstta/vln-tta-hparam-final-20260810T182823Z/`

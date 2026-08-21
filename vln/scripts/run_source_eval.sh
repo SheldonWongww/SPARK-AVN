@@ -220,6 +220,21 @@ case "${REPO_ROOT}" in
     *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
 esac
 
+# Config translation and protocol guards run before select_env() amends PATH.
+# Resolve them through the setting's pinned environment instead of assuming a
+# login-shell `python3` exists (minimal AutoDL images do not provide one).
+case "${SETTING}" in
+    duet-r2r|duet-reverie) BOOTSTRAP_ENV_NAME=duet ;;
+    hamt-r2r|hamt-reverie) BOOTSTRAP_ENV_NAME=hamt ;;
+    goat-r2r|goat-reverie) BOOTSTRAP_ENV_NAME=goat ;;
+    etpnav-r2r-ce|bevbert-r2r-ce) BOOTSTRAP_ENV_NAME=vlnce017 ;;
+    streamvln-r2r-ce) BOOTSTRAP_ENV_NAME=streamvln ;;
+    *) die "invalid setting: ${SETTING}" ;;
+esac
+BOOTSTRAP_PYTHON="/root/autodl-tmp/conda/envs/${BOOTSTRAP_ENV_NAME}/bin/python"
+[[ -x "${BOOTSTRAP_PYTHON}" ]] || \
+    die "missing bootstrap Python: ${BOOTSTRAP_PYTHON}"
+
 TTA_METHOD=source
 TTA_NAMESPACE=tuning
 TTA_TRANSLATOR="${REPO_ROOT}/vln/scripts/tta_config_cli.py"
@@ -228,14 +243,14 @@ if [[ -n "${TTA_CONFIG}" ]]; then
     [[ -f "${TTA_CONFIG}" ]] || die "missing TTA config: ${TTA_CONFIG}"
     [[ -f "${TTA_TRANSLATOR}" ]] || die "missing TTA config translator"
     if ! TTA_METHOD="$(
-        python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+        "${BOOTSTRAP_PYTHON}" "${TTA_TRANSLATOR}" --setting "${SETTING}" \
             --config "${TTA_CONFIG}" --diagnostics /tmp/navtta-unused.json \
             --print-method
     )"; then
         die "invalid TTA config: ${TTA_CONFIG}"
     fi
     if ! TTA_NAMESPACE="$(
-        python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+        "${BOOTSTRAP_PYTHON}" "${TTA_TRANSLATOR}" --setting "${SETTING}" \
             --config "${TTA_CONFIG}" --diagnostics /tmp/navtta-unused.json \
             --print-namespace
     )"; then
@@ -261,7 +276,8 @@ if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
         die "--order-seed cannot be used for adapter-parity jobs"
 fi
 if [[ -n "${TTA_CONFIG}" ]]; then
-    if ! python3 - "${TTA_CONFIG}" "${ORDER_SEED_SET}" "${ORDER_SEED}" <<'PY'
+    if ! "${BOOTSTRAP_PYTHON}" - \
+        "${TTA_CONFIG}" "${ORDER_SEED_SET}" "${ORDER_SEED}" <<'PY'
 import json
 import sys
 
@@ -439,7 +455,8 @@ REVERIE_GOAT_MANIFEST="$(manifest_for_family reverie_goat)"
 R2R_CE_UNIFIED_MANIFEST="$(manifest_for_family r2r_ce_v1_3_unified)"
 if [[ "${ORDER_SEED_SET}" -eq 1 && "${ORDER_SEED}" != "0" ]]; then
     [[ -n "${ORDER_FAMILY}" ]] || die "cannot resolve order-manifest family"
-    python3 "${REPO_ROOT}/vln/scripts/build_order_seed_manifests.py" \
+    "${BOOTSTRAP_PYTHON}" \
+        "${REPO_ROOT}/vln/scripts/build_order_seed_manifests.py" \
         --check --family "${ORDER_FAMILY}" --order-seed "${ORDER_SEED}" || \
         die "tracked order-seed manifest failed deterministic verification"
 fi
@@ -747,7 +764,7 @@ run_in() {
     local -a tta_args=()
     if [[ -n "${TTA_CONFIG}" ]]; then
         mapfile -d '' -t tta_args < <(
-            python3 "${TTA_TRANSLATOR}" --setting "${SETTING}" \
+            "${PYTHON}" "${TTA_TRANSLATOR}" --setting "${SETTING}" \
                 --config "${TTA_CONFIG}" \
                 --diagnostics "${RESULT_ROOT}/tta_diagnostics.json" --nul
         )
