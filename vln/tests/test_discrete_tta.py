@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 try:
@@ -17,7 +18,9 @@ sys.path.insert(0, str(REPO_ROOT / "core"))
 sys.path.insert(0, str(REPO_ROOT / "vln"))
 
 from navtta_vln.discrete_tta import (  # noqa: E402
+    DiscreteTTAAgentMixin,
     DiscreteTTAController,
+    _feedtta_trainable_prefixes,
     add_discrete_tta_args,
     discrete_forward_policy,
 )
@@ -107,6 +110,68 @@ class DiscreteTTAControllerTest(unittest.TestCase):
         self.assertEqual(tuple(logits.shape), (1, 3))
         self.assertTrue(torch.isfinite(logits).all())
 
+    def test_feedtta_duet_scope_profiles_start_at_crossmodal_stacks(self):
+        class CrossmodalStack(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Module()
+                self.encoder.x_layers = nn.ModuleList([
+                    nn.Linear(2, 2), nn.Linear(2, 2), nn.Linear(2, 2)
+                ])
+
+        policy = nn.Module()
+        policy.vln_bert = nn.Module()
+        policy.vln_bert.global_encoder = CrossmodalStack()
+        policy.vln_bert.local_encoder = CrossmodalStack()
+        policy.vln_bert.global_sap_head = nn.Linear(2, 1)
+        policy.vln_bert.local_sap_head = nn.Linear(2, 1)
+        policy.vln_bert.sap_fuse_linear = nn.Linear(4, 1)
+        policy.vln_bert.gmap_pooler = nn.Linear(2, 2)
+
+        full = _feedtta_trainable_prefixes(policy, "paper_full")
+        local = _feedtta_trainable_prefixes(policy, "last_crossmodal")
+        heads = _feedtta_trainable_prefixes(policy, "action_head")
+        self.assertNotIn("vln_bert.gmap_pooler", full)
+        self.assertNotIn("vln_bert.global_encoder", full)
+        self.assertIn(
+            "vln_bert.global_encoder.encoder.x_layers", full
+        )
+        self.assertIn(
+            "vln_bert.global_encoder.encoder.x_layers.2", local
+        )
+        self.assertNotIn("vln_bert.global_encoder", heads)
+        self.assertEqual(len(heads), 3)
+
+    def test_feedtta_goat_scope_uses_crossattention_and_excludes_poolers(self):
+        class GoatCrossmodalStack(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Module()
+                self.encoder.crossattention = nn.ModuleList([
+                    nn.Linear(2, 2), nn.Linear(2, 2)
+                ])
+
+        policy = nn.Module()
+        policy.vln_bert = nn.Module()
+        policy.vln_bert.global_encoder = GoatCrossmodalStack()
+        policy.vln_bert.local_encoder = GoatCrossmodalStack()
+        policy.vln_bert.global_sap_head = nn.Linear(2, 1)
+        policy.vln_bert.local_sap_head = nn.Linear(2, 1)
+        policy.vln_bert.sap_fuse_linear = nn.Linear(4, 1)
+        policy.vln_bert.gmap_pooler = nn.Linear(2, 2)
+        policy.vln_bert.local_his_map = nn.Linear(6, 2)
+
+        full = _feedtta_trainable_prefixes(policy, "paper_full")
+        local = _feedtta_trainable_prefixes(policy, "last_crossmodal")
+        self.assertIn(
+            "vln_bert.global_encoder.encoder.crossattention", full
+        )
+        self.assertIn(
+            "vln_bert.local_encoder.encoder.crossattention.1", local
+        )
+        self.assertFalse(any("pooler" in prefix for prefix in full))
+        self.assertFalse(any("local_his" in prefix for prefix in full))
+
     def test_replay_callback_preserves_runner_level_action_mask(self):
         policy = _TinyGraphPolicy()
         _, logits = discrete_forward_policy(
@@ -179,6 +244,31 @@ class DiscreteTTAControllerTest(unittest.TestCase):
                 diagnostics = controller.adapter.diagnostics()
                 self.assertEqual(diagnostics["action_steps"], 1)
 
+    def test_feedtta_auto_preserves_target_native_argmax(self):
+        prefixes = (
+            "--tta_trainable_prefixes",
+            "vln_bert.global_encoder",
+            "vln_bert.local_encoder",
+            "vln_bert.global_sap_head",
+            "vln_bert.local_sap_head",
+            "vln_bert.sap_fuse_linear",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            policy = _TinyGraphPolicy()
+            controller = DiscreteTTAController(
+                _args(directory, "feedtta", *prefixes), policy, "val_unseen"
+            )
+            controller.begin_episode()
+            logits, action = self._step(
+                controller, policy, torch.randn(1, 6)
+            )
+            self.assertEqual(int(action.item()), int(logits.argmax(dim=-1).item()))
+            controller.end_episode(episode_stats={"success": 1.0})
+            self.assertEqual(
+                controller.diagnostics()["action_selection_protocol"],
+                "target_native_argmax",
+            )
+
     def test_source_sampling_is_seeded_and_never_updates(self):
         with tempfile.TemporaryDirectory() as directory:
             args = _args(
@@ -233,6 +323,7 @@ class DiscreteTTAControllerTest(unittest.TestCase):
                 _args(
                     directory,
                     "feedtta",
+                    "--tta_action_selection", "sample",
                     "--tta_action_seed", "31",
                     "--tta_feedtta_lr", "0",
                     *prefixes,
@@ -265,6 +356,29 @@ class DiscreteTTAControllerTest(unittest.TestCase):
                 matched.append(actions)
                 controller.end_episode(observations=[{"distance": 2.0}])
             self.assertEqual(matched[0], matched[1])
+
+    def test_r2r_feedback_uses_submitted_trajectory_endpoint(self):
+        class FakeEnvironment:
+            gt_trajs = {"instruction": ("scan", ["start", "goal"])}
+
+            @staticmethod
+            def _eval_item(scan, path, ground_truth):
+                self.assertEqual(scan, "scan")
+                self.assertEqual(ground_truth, ["start", "goal"])
+                self.assertEqual(path[-1][-1], "goal")
+                return {"success": 1.0}
+
+        agent = DiscreteTTAAgentMixin()
+        agent.tta_controller = SimpleNamespace(method="feedtta")
+        agent.env = FakeEnvironment()
+        stats = agent.tta_r2r_episode_stats(
+            [{
+                "instr_id": "instruction",
+                "path": [["start"], ["reranked", "goal"]],
+            }],
+            "nested_graph_path",
+        )
+        self.assertEqual(stats, {"success": 1.0})
 
 
 if __name__ == "__main__":

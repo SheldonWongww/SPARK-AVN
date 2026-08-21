@@ -1,0 +1,263 @@
+{
+  "schema": "navtta.vln_r2r_two_method_postfix_search_plan.v1",
+  "experiment_id": "vln-r2r-fstta-feedtta-paper-aligned-postfix-v1",
+  "status": "reviewed_launchable",
+  "purpose": "Focused R2R val_seen search after restoring target-native argmax FeedTTA, evaluator-endpoint feedback, model-aware FeedTTA scopes, and stream-lifetime FSTTA variance.",
+  "parent_evidence": {
+    "cartesian_batch_id": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "refinement_batch_id": "vln-r2r-low-lr-refine-prod-nosource-20260820",
+    "analysis": "vln/results/analysis/hparam_search/R2R_LOW_LR_REFINEMENT_20260821.md",
+    "paper_sources": [
+      "docs/literature/tta_embodied_navigation_cvpr2027/02_FSTTA.pdf",
+      "docs/literature/tta_embodied_navigation_cvpr2027/04_FeedTTA.pdf"
+    ]
+  },
+  "search_priors": {
+    "fstta": {
+      "duet-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0059-duet-r2r-1014c1b455",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/fstta/jobs/duet-r2r/vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0059-duet-r2r-1014c1b455/job.json",
+        "prior_job_sha256": "43e015801aa98091ac7a6c26b3f3e7f4981d08fe824b27ae3da1092e7ce3ae16",
+        "historical_parameters": {"a": 0.9, "b": 1.1, "beta1": 0.9, "beta2": 0.99, "episodic": false, "last_k_ln": 4, "lr_fast": 0.0018, "lr_slow": 0.0003, "m": 3, "max_grad_norm": 0.0, "n": 16, "norm_scope": "last_k_ln", "optimizer": "AdamW", "q": 0.1, "rho": 0.95, "tau": 0.7},
+        "transformed_candidate": {"lr_fast": 0.0018, "lr_slow": 0.0003, "m": 3, "n": 16},
+        "transfer_note": "Same numeric winner rerun after correcting FAST variance from episode lifetime to test-stream lifetime."
+      },
+      "hamt-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0029-hamt-r2r-fa2921d98b",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/fstta/jobs/hamt-r2r/vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0029-hamt-r2r-fa2921d98b/job.json",
+        "prior_job_sha256": "5a60923a3d4bf6a269fd444ee9b652d150895116f378ddfddca5d141533eb11c",
+        "historical_parameters": {"a": 0.9, "b": 1.1, "beta1": 0.9, "beta2": 0.99, "episodic": false, "last_k_ln": 4, "lr_fast": 0.0006, "lr_slow": 0.0003, "m": 1, "max_grad_norm": 0.0, "n": 16, "norm_scope": "last_k_ln", "optimizer": "AdamW", "q": 0.1, "rho": 0.95, "tau": 0.7},
+        "transformed_candidate": {"lr_fast": 0.0006, "lr_slow": 0.0003, "m": 1, "n": 16},
+        "transfer_note": "Same numeric winner rerun after correcting FAST variance from episode lifetime to test-stream lifetime."
+      },
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0067-goat-r2r-f437578332",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/fstta/jobs/goat-r2r/vln-r2r-modelwise-cartesian-v2-seed0-fstta-cartesian-0067-goat-r2r-f437578332/job.json",
+        "prior_job_sha256": "89b9e76fa30c47df6a1e563f23d3bfa282e62c8ae78d1009679a0dfb17be6995",
+        "historical_parameters": {"a": 0.9, "b": 1.1, "beta1": 0.9, "beta2": 0.99, "episodic": false, "last_k_ln": 4, "lr_fast": 0.0018, "lr_slow": 0.001, "m": 3, "max_grad_norm": 0.0, "n": 8, "norm_scope": "last_k_ln", "optimizer": "AdamW", "q": 0.1, "rho": 0.95, "tau": 0.7},
+        "transformed_candidate": {"lr_fast": 0.0018, "lr_slow": 0.001, "m": 3, "n": 8},
+        "transfer_note": "Same numeric winner rerun after correcting FAST variance from episode lifetime to test-stream lifetime."
+      }
+    },
+    "feedtta": {
+      "duet-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0064-duet-r2r-674fade414",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/feedtta/jobs/duet-r2r/vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0064-duet-r2r-674fade414/job.json",
+        "prior_job_sha256": "ba55159bc0d14530e87be47dff09e53cb02945878fac1c92e3d9159d4b75a31e",
+        "historical_parameters": {"action_seed": 0, "action_selection": "sample", "alpha": -0.05, "episodic": false, "gamma": 0.8, "lr": 0.000003, "max_grad_norm": 0.0, "optimizer": "Adam", "optimizer_eps": 0.00001, "p": 0.05, "sgr_seed": 0},
+        "historical_scope_protocol": "legacy_default_module_prefixes",
+        "transformed_candidate": {"lr": 0.000003, "gamma": 0.8, "p": 0.05, "alpha": -0.05, "scope_profile": "last_crossmodal"},
+        "transfer_note": "Transfers only the numerical LR/SGR prior; the new candidate uses argmax and a corrected smaller scope, so it is not an exact parent replay."
+      },
+      "hamt-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0118-hamt-r2r-9f1836e390",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/feedtta/jobs/hamt-r2r/vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0118-hamt-r2r-9f1836e390/job.json",
+        "prior_job_sha256": "d7e94f00cfe4e0292490194387cc0f117937bf1dbfa2d7b4bbbabfa4db03a92e",
+        "historical_parameters": {"action_seed": 0, "action_selection": "sample", "alpha": -0.2, "episodic": false, "gamma": 0.8, "lr": 0.000005, "max_grad_norm": 0.0, "optimizer": "Adam", "optimizer_eps": 0.00001, "p": 0.1, "sgr_seed": 0},
+        "historical_scope_protocol": "legacy_default_module_prefixes",
+        "transformed_candidate": {"lr": 0.000005, "gamma": 0.8, "p": 0.1, "alpha": -0.2, "scope_profile": "last_crossmodal"},
+        "transfer_note": "Transfers only the numerical LR/SGR prior; the new candidate uses argmax and a corrected smaller scope, so it is not an exact parent replay."
+      },
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0117-goat-r2r-28aeeba6e4",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-modelwise-cartesian-v2-seed0/feedtta/jobs/goat-r2r/vln-r2r-modelwise-cartesian-v2-seed0-feedtta-cartesian-0117-goat-r2r-28aeeba6e4/job.json",
+        "prior_job_sha256": "113506dfd39a09474100db7e60658c589b888eced0c67ec0df5332ab88bacb2c",
+        "historical_parameters": {"action_seed": 0, "action_selection": "sample", "alpha": -0.1, "episodic": false, "gamma": 0.8, "lr": 0.000005, "max_grad_norm": 0.0, "optimizer": "Adam", "optimizer_eps": 0.00001, "p": 0.1, "sgr_seed": 0},
+        "historical_scope_protocol": "legacy_default_module_prefixes",
+        "transformed_candidate": {"lr": 0.000005, "gamma": 0.8, "p": 0.1, "alpha": -0.1, "scope_profile": "last_crossmodal"},
+        "transfer_note": "Transfers only the numerical LR/SGR prior; the new candidate uses argmax and a corrected smaller scope, so it is not an exact parent replay."
+      }
+    }
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "requirements": [
+      "Use a new batch ID bound to the implementation commit and this plan digest.",
+      "Pass --confirm-reviewed after inspecting the immutable 78-job expansion.",
+      "Reuse the pinned argmax Source controls; do not rerun Source or sampled controls.",
+      "Run one navigation model and one method at a time with strict barriers."
+    ]
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "order_seed": 0,
+    "settings": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "source_protocol": "standard_argmax",
+    "selection": ["higher_SR", "higher_SPL", "lower_parameter_drift", "fewer_updates"],
+    "sr_quantum_pp": 0.0979431929480901,
+    "seed_variance_estimated": false,
+    "supervision_groups": {
+      "unsupervised": ["fstta"],
+      "binary_feedback_supervised": ["feedtta"]
+    }
+  },
+  "execution": {
+    "launchable": true,
+    "strict_model_barrier_required": true,
+    "strict_method_barrier_required": true,
+    "barrier_implementation_status": "implemented_validated",
+    "model_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "method_order_within_model": ["fstta", "feedtta"],
+    "enabled_methods_by_setting": {
+      "duet-r2r": ["fstta", "feedtta"],
+      "hamt-r2r": ["fstta", "feedtta"],
+      "goat-r2r": ["fstta", "feedtta"]
+    },
+    "cross_model_overlap_forbidden": true,
+    "cross_method_overlap_forbidden": true,
+    "tail_policy": "Finish the active model/method phase before launching the next phase.",
+    "control_execution": {},
+    "gpu_safety": {
+      "production_planned_steady_used_mib_max": 29000,
+      "emergency_abort_observed_used_mib": 30000,
+      "minimum_production_headroom_mib": 3760,
+      "scheduler_prelaunch_gate_mib_range": [23500, 25000],
+      "production_limit_is_not_a_scheduler_gate": true,
+      "launch_stagger_is_not_a_memory_guard": true,
+      "raise_concurrency_one_worker_at_a_time": false,
+      "require_all_children_at_steady_vram_before_next_raise": true,
+      "calibration_initial_group_workers": 5,
+      "calibration_episode_limit": 100,
+      "grouped_jump_after_measured_baseline": true,
+      "grouped_jump_projection_max_mib": 28500,
+      "grouped_jump_per_worker_margin_factor": 1.05,
+      "grouped_jump_requires_independent_steady_validation": true,
+      "formal_cap_policy": "Use completed grouped measurements where available and registered five-worker projection exceptions for GOAT; retain launch and emergency VRAM guards.",
+      "approved_projection_exceptions": ["fstta/goat-r2r", "feedtta/goat-r2r"]
+    },
+    "concurrency_calibration": {
+      "fstta": {
+        "duet-r2r": {"production_cap": 14, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1900, "observed_peak_mib": 25893, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "hamt-r2r": {"production_cap": 11, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11], "estimated_mib_per_job": 2350, "observed_peak_mib": 25450, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000},
+        "goat-r2r": {"production_cap": 14, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10, 11, 12, 13, 14], "estimated_mib_per_job": 1950, "projected_peak_mib": 28102, "cap_basis": "user_approved_five_worker_projection", "prelaunch_gate_mib": 25000}
+      },
+      "feedtta": {
+        "duet-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "observed_peak_mib": 24178, "cap_basis": "conservative_prior_full_scope_cap", "prelaunch_gate_mib": 24000},
+        "hamt-r2r": {"production_cap": 5, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4200, "observed_peak_mib": 23539, "cap_basis": "conservative_prior_full_scope_cap", "prelaunch_gate_mib": 24000},
+        "goat-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "projected_peak_mib": 26400, "cap_basis": "conservative_prior_full_scope_projection", "prelaunch_gate_mib": 24500},
+        "seven_workers_forbidden": true
+      }
+    }
+  },
+  "methods": {
+    "fstta": {
+      "fixed": {
+        "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1,
+        "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99,
+        "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4,
+        "max_grad_norm": 0.0, "episodic": false,
+        "fast_grad_mode": "concordant", "use_fast_lr_scaler": true,
+        "use_slow": true, "slow_optimizer": "AdamW",
+        "reset_slow_optimizer_each_window": false,
+        "reset_optimizer_each_episode": true, "eigen_eps": 0.000001
+      },
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr_fast": [0.0012, 0.0018, 0.0024], "lr_slow": [0.0002, 0.0003, 0.0005], "fixed": {"m": 3, "n": 16}},
+            {"lr_fast": [0.0018], "lr_slow": [0.0002, 0.0003], "fixed": {"m": 8, "n": 4}}
+          ],
+          "points": [
+            {"lr_fast": 0.0006, "lr_slow": 0.001, "m": 3, "n": 4, "role": "published_duet_anchor"}
+          ], "candidate_count": 12
+        },
+        "hamt-r2r": {
+          "grids": [
+            {"lr_fast": [0.0004, 0.0006, 0.0008], "lr_slow": [0.0002, 0.0003, 0.0005], "fixed": {"m": 1, "n": 16}},
+            {"lr_fast": [0.0004, 0.0006, 0.0008], "lr_slow": [0.001], "fixed": {"m": 3, "n": 4}}
+          ],
+          "points": [], "candidate_count": 12
+        },
+        "goat-r2r": {
+          "grids": [
+            {"lr_fast": [0.0012, 0.0018, 0.0024], "lr_slow": [0.0006, 0.001, 0.0014], "fixed": {"m": 3, "n": 8}}
+          ],
+          "points": [
+            {"lr_fast": 0.0018, "lr_slow": 0.0003, "m": 1, "n": 16, "role": "long_window_secondary_ridge"},
+            {"lr_fast": 0.0018, "lr_slow": 0.001, "m": 1, "n": 16, "role": "long_window_high_slow_lr"},
+            {"lr_fast": 0.0006, "lr_slow": 0.001, "m": 3, "n": 4, "role": "paper_discrete_anchor"}
+          ],
+          "candidate_count": 12
+        }
+      },
+      "candidate_count": 36
+    },
+    "feedtta": {
+      "fixed": {
+        "optimizer": "Adam", "optimizer_eps": 0.00001,
+        "weight_decay": 0.0, "max_grad_norm": 0.0,
+        "action_selection": "argmax", "sgr_seed": 0,
+        "normalize_gradient": false, "episodic": false
+      },
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr": [0.000001, 0.000003, 0.000005], "gamma": [0.8, 0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000001, 0.000003, 0.000005], "gamma": [0.8], "fixed": {"p": 0.05, "alpha": -0.05, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000001, 0.000003, 0.000005], "gamma": [0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}}
+          ],
+          "points": [
+            {"lr": 0.000005, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "scope_profile": "paper_full", "role": "paper_r2r_full_scope_anchor"},
+            {"lr": 0.000003, "gamma": 0.8, "p": 0.0, "alpha": 0.0, "scope_profile": "last_crossmodal", "role": "no_sgr_control"}
+          ],
+          "candidate_count": 14
+        },
+        "hamt-r2r": {
+          "grids": [
+            {"lr": [0.000002, 0.000005, 0.000008], "gamma": [0.8, 0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000003, 0.000005, 0.000008], "gamma": [0.8], "fixed": {"p": 0.1, "alpha": -0.2, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000002, 0.000005, 0.000008], "gamma": [0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}}
+          ],
+          "points": [
+            {"lr": 0.000005, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "scope_profile": "paper_full", "role": "paper_r2r_full_scope_anchor"},
+            {"lr": 0.000005, "gamma": 0.8, "p": 0.0, "alpha": 0.0, "scope_profile": "last_crossmodal", "role": "no_sgr_control"}
+          ],
+          "candidate_count": 14
+        },
+        "goat-r2r": {
+          "grids": [
+            {"lr": [0.000001, 0.000003, 0.000005], "gamma": [0.8, 0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000003, 0.000005, 0.000008], "gamma": [0.8], "fixed": {"p": 0.1, "alpha": -0.1, "scope_profile": "last_crossmodal"}},
+            {"lr": [0.000001, 0.000003, 0.000005], "gamma": [0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}}
+          ],
+          "points": [
+            {"lr": 0.000005, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "scope_profile": "paper_full", "role": "paper_r2r_full_scope_anchor"},
+            {"lr": 0.000003, "gamma": 0.8, "p": 0.0, "alpha": 0.0, "scope_profile": "last_crossmodal", "role": "no_sgr_control"}
+          ],
+          "candidate_count": 14
+        }
+      },
+      "candidate_count": 42
+    }
+  },
+  "controls": {
+    "standard_argmax_source_per_setting": true,
+    "standard_argmax_source_execution": "reuse_completed_manifest",
+    "standard_argmax_source_manifest": "vln/manifests/r2r_reused_source_controls.json",
+    "feedtta_sampled_no_update_per_setting": false,
+    "feedtta_action_protocol": "target_native_argmax",
+    "candidate_count": 0
+  },
+  "budget": {
+    "search_candidates": {"fstta": 36, "feedtta": 42},
+    "search_total": 78,
+    "controls": 0,
+    "total_before_confirmation": 78,
+    "by_setting_before_controls": {"duet-r2r": 26, "hamt-r2r": 26, "goat-r2r": 26}
+  },
+  "confirmation": {
+    "run_only_after_search_is_frozen": true,
+    "minimum_promotion": "Relative to the reused argmax Source: exact successful-episode count +1, or tied count with SPL +0.10 pp.",
+    "order_seeds": [1, 2],
+    "matched_source_per_model_order": true,
+    "feedtta_seed_pairing": "Argmax removes action-seed pairing; pair order and SGR seeds as (1,1) and (2,2).",
+    "do_not_reselect_on_val_unseen": true,
+    "feedback_methods_must_report_feedback_budget": true
+  }
+}

@@ -212,10 +212,9 @@ class ContinuousVLNTTA:
         matched_source = bool(
             getattr(tta_cfg, "MATCHED_FEEDTTA_SOURCE", False)
         )
-        self.sample_actions = self.method == "feedtta" or (
-            self.method == "source"
-            and (matched_source or requested_selection != "argmax")
-        )
+        self.sample_actions = requested_selection in ("sample", "matched_sample")
+        if self.method == "source" and matched_source:
+            self.sample_actions = True
         if (
             requested_selection != "argmax"
             and self.method not in ("source", "feedtta")
@@ -225,11 +224,12 @@ class ContinuousVLNTTA:
                 "sample actions; {} requires argmax".format(self.method.upper())
             )
         self.action_selection = (
-            "matched_policy_sampling"
-            if self.method == "feedtta"
+            "policy_sampling"
+            if self.method == "feedtta" and self.sample_actions
             else (
                 "matched_policy_sampling_source_control"
-                if self.sample_actions else "argmax"
+                if self.method == "source" and self.sample_actions
+                else "target_native_argmax"
             )
         )
         self._action_generator = torch.Generator(device="cpu")
@@ -240,6 +240,11 @@ class ContinuousVLNTTA:
             tta_cfg,
             forward_policy=self._forward_policy,
         )
+        if self.method == "feedtta":
+            self.adapter.action_selection_protocol = (
+                "sample_from_policy"
+                if self.sample_actions else "target_native_argmax"
+            )
 
     @property
     def feedback_supervised(self):

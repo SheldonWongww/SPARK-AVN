@@ -734,7 +734,12 @@ class GMapNavAgent(Seq2SeqAgent):
                         new_paths.append([each_sub_node])
                 traj[i]['path'] = new_paths
 
-        self.tta_episode_end(observations=obs)
+        self.tta_episode_end(
+            episode_stats=self.tta_r2r_episode_stats(
+                traj, "nested_graph_path"
+            ),
+            observations=obs,
+        )
         return traj
 
 

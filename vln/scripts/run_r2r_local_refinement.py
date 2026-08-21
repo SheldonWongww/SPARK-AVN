@@ -43,7 +43,9 @@ LOG_ROOT = REPO_ROOT / "vln/results/logs/r2r/hparam_search"
 TUNING_ROOT = REPO_ROOT / "vln/results/tuning/r2r/hparam_search"
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
 RESULT_LAYOUT = "r2r_benchmark_model_method_local_refinement_v1"
-SPEC_SCHEMA = "navtta.vln_r2r_five_method_local_refinement_plan.v1"
+SPEC_SCHEMA_V1 = "navtta.vln_r2r_five_method_local_refinement_plan.v1"
+SPEC_SCHEMA_V2 = "navtta.vln_r2r_two_method_postfix_search_plan.v1"
+SPEC_SCHEMAS = (SPEC_SCHEMA_V1, SPEC_SCHEMA_V2)
 PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_campaign_plan.v1"
 PHASE_SCHEMA = "navtta.vln_r2r_local_refinement_phase.v1"
 CALIBRATION_SCHEMA = "navtta.vln_r2r_local_refinement_calibration.v1"
@@ -319,6 +321,163 @@ def _load_reused_source_manifest(spec):
     }
 
 
+def _validate_reused_source_artifacts(spec):
+    """Authenticate every reused Source artifact before a formal launch."""
+    binding = _reused_source_manifest(spec)
+    document = binding["document"]
+
+    def verify(relative_path, expected_digest, label):
+        path = REPO_ROOT / relative_path
+        if not path.is_file():
+            raise UserError(f"missing reused Source {label}: {relative_path}")
+        actual = sha256(path)
+        if actual != expected_digest:
+            raise UserError(
+                f"reused Source {label} SHA256 mismatch: "
+                f"{actual} != {expected_digest}"
+            )
+
+    source_batch = document["source_batch"]
+    verify(
+        source_batch["grid_path"], source_batch["grid_sha256"],
+        "source GRID.json",
+    )
+    verify(
+        source_batch["summary_path"], source_batch["summary_sha256"],
+        "source SUMMARY.json",
+    )
+    for setting, record in document["records"].items():
+        for stem in ("job_json", "metrics_json", "parameters_json"):
+            verify(
+                record[f"{stem}_path"], record[f"{stem}_sha256"],
+                f"{setting} {stem}",
+            )
+        formal_candidates = [record["formal_manifest_path"]]
+        evidence_copy = record.get("formal_manifest_evidence_copy_path")
+        if evidence_copy is not None:
+            formal_candidates.append(evidence_copy)
+        existing = [
+            relative for relative in formal_candidates
+            if (REPO_ROOT / relative).is_file()
+        ]
+        if not existing:
+            raise UserError(
+                f"missing reused Source {setting} formal manifest; checked "
+                + ", ".join(formal_candidates)
+            )
+        if not any(
+            sha256(REPO_ROOT / relative) == record["formal_manifest_sha256"]
+            for relative in existing
+        ):
+            raise UserError(
+                f"reused Source {setting} formal manifest SHA256 mismatch"
+            )
+        job = _read_json_object(
+            REPO_ROOT / record["job_json_path"], f"{setting} Source job"
+        )
+        parameters = _read_json_object(
+            REPO_ROOT / record["parameters_json_path"],
+            f"{setting} Source parameters",
+        )
+        metrics = _read_json_object(
+            REPO_ROOT / record["metrics_json_path"],
+            f"{setting} Source metrics",
+        )
+        formal_path = next(
+            REPO_ROOT / relative for relative in existing
+            if sha256(REPO_ROOT / relative) == record["formal_manifest_sha256"]
+        )
+        formal = _read_json_object(formal_path, f"{setting} Source formal manifest")
+        job_checks = {
+            "batch_id": source_batch["batch_id"],
+            "run_tag": record["run_tag"],
+            "setting": setting,
+            "model": record["model"],
+            "search_method": "source",
+            "config_method": "source",
+            "parameters": record["parameters"],
+        }
+        if any(job.get(key) != value for key, value in job_checks.items()):
+            raise UserError(f"reused Source {setting} job/record semantic mismatch")
+        parameter_checks = {
+            "batch_id": source_batch["batch_id"],
+            "run_tag": record["run_tag"],
+            "setting": setting,
+            "method": "source",
+            "search_method": "source",
+            "parameters": record["parameters"],
+        }
+        if any(
+            parameters.get(key) != value
+            for key, value in parameter_checks.items()
+        ):
+            raise UserError(
+                f"reused Source {setting} parameters/record semantic mismatch"
+            )
+        metric_checks = dict(job_checks, expected_episodes=document["episode_count"])
+        if metrics.get("metrics") != record["metrics"] or any(
+            metrics.get(key) != value for key, value in metric_checks.items()
+        ):
+            raise UserError(
+                f"reused Source {setting} metrics/record semantic mismatch"
+            )
+        formal_checks = {
+            "task": "vln",
+            "model": record["model"],
+            "method": "source",
+            "run_tag": record["run_tag"],
+            "source_setting": f"{setting}:val_seen:native:source",
+            "seed": document["order_seed"],
+            "git_commit": source_batch["git_commit"],
+            "status": "completed",
+            "exit_code": 0,
+        }
+        if any(formal.get(key) != value for key, value in formal_checks.items()):
+            raise UserError(
+                f"reused Source {setting} formal/record semantic mismatch"
+            )
+        if (
+            (formal.get("checkpoint") or {}).get("sha256")
+            != record["checkpoint_sha256"]
+            or (formal.get("dataset") or {}).get("stream_order_sha256")
+            != document["episode_order_sha256"]
+            or (formal.get("hardware") or {}).get("gpu_name")
+            != document["hardware"]
+        ):
+            raise UserError(
+                f"reused Source {setting} formal provenance mismatch"
+            )
+    return binding
+
+
+def _validate_search_prior_artifacts(spec):
+    if spec.get("schema") != SPEC_SCHEMA_V2:
+        return
+    for method, settings in spec["search_priors"].items():
+        for setting, prior in settings.items():
+            path = REPO_ROOT / prior["prior_job_path"]
+            if not path.is_file():
+                raise UserError(
+                    f"missing search-prior job for {method}/{setting}: "
+                    f"{prior['prior_job_path']}"
+                )
+            if sha256(path) != prior["prior_job_sha256"]:
+                raise UserError(
+                    f"search-prior job SHA256 mismatch for {method}/{setting}"
+                )
+            job = _read_json_object(path, f"{method}/{setting} search-prior job")
+            checks = {
+                "run_tag": prior["prior_run_tag"],
+                "setting": setting,
+                "search_method": method,
+                "parameters": prior["historical_parameters"],
+            }
+            if any(job.get(key) != value for key, value in checks.items()):
+                raise UserError(
+                    f"search-prior job semantic mismatch for {method}/{setting}"
+                )
+
+
 def _reused_source_manifest(spec):
     binding = spec.get("_reused_source_manifest")
     reference = spec.get("controls", {}).get("standard_argmax_source_manifest")
@@ -366,9 +525,20 @@ def enabled_phases_by_setting(spec):
         positions = [global_positions[method] for method in phases]
         if positions != sorted(positions):
             raise UserError(f"enabled phases for {setting} violate method order")
-        if ("feedtta" in phases) != ("feedtta_control" in phases):
+        sampled_control_required = bool(
+            spec.get("controls", {}).get(
+                "feedtta_sampled_no_update_per_setting", False
+            )
+        )
+        if sampled_control_required and (
+            ("feedtta" in phases) != ("feedtta_control" in phases)
+        ):
             raise UserError(
                 f"{setting} must pair FeedTTA with its sampled no-update control"
+            )
+        if not sampled_control_required and "feedtta_control" in phases:
+            raise UserError(
+                f"{setting} enables an obsolete sampled FeedTTA control"
             )
         output[setting] = list(phases)
     return output
@@ -524,7 +694,7 @@ def control_candidates(method):
 
 
 def _validate_spec(document):
-    if document.get("schema") != SPEC_SCHEMA:
+    if document.get("schema") not in SPEC_SCHEMAS:
         raise UserError("unsupported local-refinement schema")
     protocol = _mapping(document.get("protocol"), "protocol")
     if protocol.get("benchmark") != "r2r" or protocol.get("split") != "val_seen":
@@ -538,6 +708,11 @@ def _validate_spec(document):
     selection = protocol.get("selection")
     if not isinstance(selection, list) or selection[:2] != ["higher_SR", "higher_SPL"]:
         raise UserError("local refinement must select by SR then SPL")
+    if (
+        document.get("schema") == SPEC_SCHEMA_V2
+        and protocol.get("prefix_screening_forbidden") is not True
+    ):
+        raise UserError("post-fix search must forbid prefix screening")
 
     execution = _mapping(document.get("execution"), "execution")
     if not isinstance(execution.get("launchable"), bool):
@@ -570,8 +745,18 @@ def _validate_spec(document):
     active_methods = active_tta_methods(document)
     if not active_methods:
         raise UserError("local refinement enables no TTA methods")
+    if (
+        document.get("schema") == SPEC_SCHEMA_V2
+        and active_methods != ("fstta", "feedtta")
+    ):
+        raise UserError("post-fix search must contain only FSTTA and FeedTTA")
     _exact_keys(document.get("methods"), active_methods, "methods")
-    _exact_keys(document.get("parent_anchors"), active_methods, "parent_anchors")
+    prior_key = (
+        "search_priors"
+        if document.get("schema") == SPEC_SCHEMA_V2
+        else "parent_anchors"
+    )
+    _exact_keys(document.get(prior_key), active_methods, prior_key)
     budget = _mapping(document.get("budget"), "budget")
     search_by_method = {}
     search_by_setting = {setting: 0 for setting in SETTINGS}
@@ -580,9 +765,9 @@ def _validate_spec(document):
         method_spec = document["methods"][method]
         _exact_keys(method_spec.get("settings"), method_settings, f"{method}.settings")
         _exact_keys(
-            document["parent_anchors"][method],
+            document[prior_key][method],
             method_settings,
-            f"parent_anchors.{method}",
+            f"{prior_key}.{method}",
         )
         method_total = 0
         for setting in method_settings:
@@ -590,14 +775,35 @@ def _validate_spec(document):
             method_total += len(points)
             search_by_setting[setting] += len(points)
             anchor = _mapping(
-                document["parent_anchors"][method][setting],
-                f"parent_anchors.{method}.{setting}",
+                document[prior_key][method][setting],
+                f"{prior_key}.{method}.{setting}",
             )
-            run_tag = anchor.get("parent_run_tag")
-            safe_component("parent_run_tag", run_tag)
+            if document.get("schema") == SPEC_SCHEMA_V2:
+                run_tag = anchor.get("prior_run_tag")
+                candidate_key = "transformed_candidate"
+                _mapping(
+                    anchor.get("historical_parameters"),
+                    f"{prior_key}.{method}.{setting}.historical_parameters",
+                )
+                _safe_relative_path(
+                    anchor.get("prior_job_path"),
+                    f"{prior_key}.{method}.{setting}.prior_job_path",
+                )
+                _sha256_string(
+                    anchor.get("prior_job_sha256"),
+                    f"{prior_key}.{method}.{setting}.prior_job_sha256",
+                )
+                _nonempty_string(
+                    anchor.get("transfer_note"),
+                    f"{prior_key}.{method}.{setting}.transfer_note",
+                )
+            else:
+                run_tag = anchor.get("parent_run_tag")
+                candidate_key = "candidate"
+            safe_component(f"{prior_key} run_tag", run_tag)
             candidate = _mapping(
-                anchor.get("candidate"),
-                f"parent_anchors.{method}.{setting}.candidate",
+                anchor.get(candidate_key),
+                f"{prior_key}.{method}.{setting}.{candidate_key}",
             )
             occurrences = sum(
                 canonical(item["candidate"]) == canonical(candidate)
@@ -605,7 +811,7 @@ def _validate_spec(document):
             )
             if occurrences != 1:
                 raise UserError(
-                    f"parent anchor {method}/{setting} occurs {occurrences} times"
+                    f"search prior {method}/{setting} occurs {occurrences} times"
                 )
         declared = _positive_int(
             method_spec.get("candidate_count"), f"{method}.candidate_count"
@@ -623,8 +829,76 @@ def _validate_spec(document):
         raise UserError(
             "standard argmax Source execution must reuse the completed manifest"
         )
-    if controls.get("feedtta_sampled_no_update_per_setting") is not True:
-        raise UserError("FeedTTA sampled no-update controls are required")
+    sampled_control_required = document.get("schema") == SPEC_SCHEMA_V1
+    if controls.get("feedtta_sampled_no_update_per_setting") is not (
+        sampled_control_required
+    ):
+        raise UserError(
+            "FeedTTA sampled-control policy does not match the plan schema"
+        )
+    if document.get("schema") == SPEC_SCHEMA_V2 and controls.get(
+        "feedtta_action_protocol"
+    ) != "target_native_argmax":
+        raise UserError(
+            "post-fix FeedTTA search must use target_native_argmax"
+        )
+    if document.get("schema") == SPEC_SCHEMA_V2:
+        supervision = _mapping(
+            protocol.get("supervision_groups"), "protocol.supervision_groups"
+        )
+        if supervision != {
+            "unsupervised": ["fstta"],
+            "binary_feedback_supervised": ["feedtta"],
+        }:
+            raise UserError("post-fix supervision groups are invalid")
+        fstta_fixed = _mapping(
+            document["methods"]["fstta"].get("fixed"), "fstta.fixed"
+        )
+        required_fstta = {
+            "episodic": False,
+            "norm_scope": "last_k_ln",
+            "last_k_ln": 4,
+            "fast_grad_mode": "concordant",
+            "use_fast_lr_scaler": True,
+            "use_slow": True,
+        }
+        if any(fstta_fixed.get(key) != value for key, value in required_fstta.items()):
+            raise UserError("post-fix FSTTA fixed protocol is invalid")
+        feedtta_fixed = _mapping(
+            document["methods"]["feedtta"].get("fixed"), "feedtta.fixed"
+        )
+        required_feedtta = {
+            "action_selection": "argmax",
+            "sgr_seed": 0,
+            "episodic": False,
+        }
+        if any(
+            feedtta_fixed.get(key) != value
+            for key, value in required_feedtta.items()
+        ):
+            raise UserError("post-fix FeedTTA fixed protocol is invalid")
+        allowed_scopes = {"paper_full", "last_crossmodal", "action_head"}
+        for setting in SETTINGS:
+            candidates = expand_candidates("feedtta", setting, document)
+            if any(
+                item["parameters"].get("action_selection") != "argmax"
+                or item["parameters"].get("scope_profile") not in allowed_scopes
+                for item in candidates
+            ):
+                raise UserError(
+                    f"post-fix FeedTTA candidate protocol is invalid for {setting}"
+                )
+        published_fstta_anchor = {
+            "lr_fast": 0.0006, "lr_slow": 0.001, "m": 3, "n": 4,
+        }
+        duet_candidates = expand_candidates("fstta", "duet-r2r", document)
+        if sum(
+            all(item["parameters"].get(key) == value for key, value in (
+                published_fstta_anchor.items()
+            ))
+            for item in duet_candidates
+        ) != 1:
+            raise UserError("post-fix FSTTA search lacks the published DUET anchor")
     control_count = sum(
         method in CONTROL_METHODS
         for phases in enabled.values()
@@ -762,6 +1036,27 @@ def _validate_spec(document):
                 )
             for step in steps:
                 _positive_int(step, f"{method}/{setting} conditional worker limit")
+    if document.get("schema") == SPEC_SCHEMA_V2:
+        exceptions = gpu_safety.get("approved_projection_exceptions")
+        if exceptions != ["fstta/goat-r2r", "feedtta/goat-r2r"]:
+            raise UserError("post-fix GPU projection exceptions are invalid")
+        exception_set = set(exceptions)
+        for method in active_methods:
+            for setting in enabled_settings_for_method(document, method):
+                value = calibration[method][setting]
+                key = f"{method}/{setting}"
+                if key in exception_set:
+                    _positive_int(
+                        value.get("projected_peak_mib"),
+                        f"{key}.projected_peak_mib",
+                    )
+                    if "projection" not in str(value.get("cap_basis", "")):
+                        raise UserError(f"{key} must declare a projection cap basis")
+                else:
+                    _positive_int(
+                        value.get("observed_peak_mib"),
+                        f"{key}.observed_peak_mib",
+                    )
     return reused_source_manifest
 
 
@@ -851,9 +1146,14 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
         raise UserError(f"{phase['phase_id']} candidate count changed")
     root = phase_root(batch_id, phase)
     jobs = []
-    parent_anchor = None
+    prior = None
     if phase["method"] not in CONTROL_METHODS:
-        parent_anchor = spec["parent_anchors"][phase["method"]][phase["setting"]]
+        prior_key = (
+            "search_priors"
+            if spec.get("schema") == SPEC_SCHEMA_V2
+            else "parent_anchors"
+        )
+        prior = spec[prior_key][phase["method"]][phase["setting"]]
     for point_index, item in enumerate(candidates):
         method = phase["method"]
         parameters = dict(item["parameters"])
@@ -877,10 +1177,25 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
             "--result-root", str(result_root),
         ]
         parent_run_tags = []
-        if parent_anchor is not None and canonical(item["candidate"]) == canonical(
-            parent_anchor["candidate"]
-        ):
-            parent_run_tags.append(parent_anchor["parent_run_tag"])
+        search_prior = None
+        if prior is not None:
+            prior_candidate_key = (
+                "transformed_candidate"
+                if spec.get("schema") == SPEC_SCHEMA_V2 else "candidate"
+            )
+            if canonical(item["candidate"]) == canonical(
+                prior[prior_candidate_key]
+            ):
+                if spec.get("schema") == SPEC_SCHEMA_V2:
+                    search_prior = {
+                        "run_tag": prior["prior_run_tag"],
+                        "job_path": prior["prior_job_path"],
+                        "job_sha256": prior["prior_job_sha256"],
+                        "historical_parameters": prior["historical_parameters"],
+                        "transfer_note": prior["transfer_note"],
+                    }
+                else:
+                    parent_run_tags.append(prior["parent_run_tag"])
         jobs.append({
             "batch_id": batch_id,
             "ordinal": point_index,
@@ -906,6 +1221,7 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
             "parameters": parameters,
             "candidate_role": item.get("role"),
             "parent_run_tags": parent_run_tags,
+            "search_prior": search_prior,
             "config_path": str(config_path),
             "job_dir": str(job_dir),
             "result_root": str(result_root),
@@ -1371,7 +1687,7 @@ def _validate_persisted_jobs(phase, batch_id, jobs, spec, gpu):
         "family", "benchmark", "search_method", "config_method",
         "result_layout", "result_namespace", "stage", "config_stage",
         "episodes", "order_seed", "parameters", "candidate_role",
-        "parent_run_tags", "retry_result_root_parent",
+        "parent_run_tags", "search_prior", "retry_result_root_parent",
     )
     for actual, planned in zip(jobs, expected):
         for key in immutable:
@@ -1500,20 +1816,35 @@ def ensure_campaign_plan(cli, spec):
     return root, planned
 
 
-def _load_validated_results(root, spec):
+def _load_validated_results(root, spec, phase=None):
     jobs = staged.load_jobs(root)
     results, errors = staged.write_summary(root, jobs, spec)
     if len(results) + len(errors) != len(jobs) or errors:
         raise UserError(f"refinement phase is incomplete: {root}")
+    if phase is not None:
+        for result in results:
+            _validate_postfix_result_contract(phase, result, spec)
     return results
 
 
-def _phase_complete(root, spec):
+def _phase_complete(root, spec, phase=None):
     try:
-        _load_validated_results(root, spec)
+        _load_validated_results(root, spec, phase=phase)
         return True
     except (UserError, staged.UserError):
         return False
+
+
+def _load_phase_results(root, spec, phase):
+    if spec.get("schema") == SPEC_SCHEMA_V2:
+        return _load_validated_results(root, spec, phase)
+    return _load_validated_results(root, spec)
+
+
+def _phase_complete_for_spec(root, spec, phase):
+    if spec.get("schema") == SPEC_SCHEMA_V2:
+        return _phase_complete(root, spec, phase)
+    return _phase_complete(root, spec)
 
 
 def _result_score(result):
@@ -1532,10 +1863,154 @@ def _result_score(result):
     )
 
 
+def _validate_postfix_result_contract(phase, result, spec):
+    if spec.get("schema") != SPEC_SCHEMA_V2:
+        return
+    adapter = result.get("adapter_diagnostics") or {}
+    method = phase["method"]
+    if method == "fstta":
+        if adapter.get("variance_history_lifetime") != "test_stream":
+            raise UserError(
+                f"{result['run_tag']} did not preserve FSTTA stream variance"
+            )
+        return
+    if method != "feedtta":
+        return
+
+    parameters = result.get("parameters") or {}
+    if parameters.get("action_selection") != "argmax":
+        raise UserError(f"{result['run_tag']} is not target-native argmax")
+    if adapter.get("action_selection_protocol") != "target_native_argmax":
+        raise UserError(
+            f"{result['run_tag']} adapter action protocol is not argmax"
+        )
+    expected_episodes = int(spec["protocol"]["episode_count"])
+    feedback_episodes = int(adapter.get("feedback_episodes", -1))
+    successes = int(adapter.get("successful_feedback_episodes", -1))
+    failures = int(adapter.get("failed_feedback_episodes", -1))
+    if feedback_episodes != expected_episodes or successes + failures != (
+        expected_episodes
+    ):
+        raise UserError(f"{result['run_tag']} has incomplete FeedTTA feedback")
+    metric_successes = int(round(
+        float(result["metrics"]["SR"]) * expected_episodes / 100.0
+    ))
+    if successes != metric_successes:
+        raise UserError(
+            f"{result['run_tag']} feedback/evaluator endpoint mismatch: "
+            f"{successes} != {metric_successes}"
+        )
+
+    diagnostics_path = Path(result["diagnostics_path"])
+    diagnostics = _read_json_object(
+        diagnostics_path, f"{result['run_tag']} diagnostics"
+    )
+    if diagnostics.get("action_selection") != "target_native_argmax":
+        raise UserError(f"{result['run_tag']} top-level action protocol mismatch")
+    if diagnostics.get("feedtta_scope_profile") != parameters.get(
+        "scope_profile"
+    ):
+        raise UserError(f"{result['run_tag']} FeedTTA scope profile mismatch")
+    prefixes = diagnostics.get("trainable_prefixes")
+    if not isinstance(prefixes, list) or not prefixes:
+        raise UserError(f"{result['run_tag']} has no FeedTTA trainable prefixes")
+    if any("pooler" in prefix or "local_his" in prefix for prefix in prefixes):
+        raise UserError(
+            f"{result['run_tag']} includes post-logit zero-gradient modules"
+        )
+    _validate_feedtta_scope_prefixes(
+        phase["setting"], parameters.get("scope_profile"), prefixes,
+        result["run_tag"],
+    )
+
+
+def _validate_feedtta_scope_prefixes(setting, profile, prefixes, run_tag):
+    heads = {
+        "duet-r2r": (
+            "vln_bert.global_sap_head", "vln_bert.local_sap_head",
+            "vln_bert.sap_fuse_linear",
+        ),
+        "goat-r2r": (
+            "vln_bert.global_sap_head", "vln_bert.local_sap_head",
+            "vln_bert.sap_fuse_linear",
+        ),
+        "hamt-r2r": ("vln_bert.next_action",),
+    }[setting]
+    if setting == "duet-r2r":
+        stacks = (
+            "vln_bert.global_encoder.encoder.x_layers",
+            "vln_bert.local_encoder.encoder.x_layers",
+        )
+    elif setting == "goat-r2r":
+        stacks = (
+            "vln_bert.global_encoder.encoder.crossattention",
+            "vln_bert.local_encoder.encoder.crossattention",
+        )
+    else:
+        stacks = ("vln_bert.encoder.x_layers",)
+
+    actual = tuple(prefixes)
+    if profile == "action_head":
+        valid = actual == heads
+    elif profile == "paper_full":
+        valid = actual == stacks + heads
+    elif profile == "last_crossmodal":
+        if len(actual) != len(stacks) + len(heads) or actual[-len(heads):] != heads:
+            valid = False
+        else:
+            last_layers = actual[:len(stacks)]
+            valid = all(
+                re.fullmatch(re.escape(stack) + r"\.\d+", layer) is not None
+                for stack, layer in zip(stacks, last_layers)
+            )
+    else:
+        valid = False
+    if not valid:
+        raise UserError(
+            f"{run_tag} has invalid {setting}/{profile} FeedTTA prefixes: "
+            f"{list(actual)}"
+        )
+
+
+def _validate_or_mark_postfix_results(phase, root, jobs, spec, results):
+    """Turn a post-run scientific-contract failure into a retryable job."""
+    if spec.get("schema") != SPEC_SCHEMA_V2:
+        return results
+    by_tag = {result.get("run_tag"): result for result in results}
+    failures = []
+    for job in jobs:
+        result = by_tag.get(job["run_tag"])
+        if result is None:
+            continue
+        try:
+            _validate_postfix_result_contract(phase, result, spec)
+        except UserError as error:
+            failures.append((job, str(error)))
+    if not failures:
+        return results
+    for job, message in failures:
+        job_root = Path(job["job_dir"])
+        staged.atomic_json(job_root / "POSTFIX_CONTRACT_ERROR.json", {
+            "schema": "navtta.vln_r2r_postfix_contract_error.v1",
+            "run_tag": job["run_tag"],
+            "phase_id": phase["phase_id"],
+            "error": message,
+            "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        })
+        staged.atomic_text(job_root / "exitcode", "86\n")
+    staged.write_summary(root, jobs, spec)
+    raise UserError(
+        f"{phase['phase_id']} has {len(failures)} post-fix contract failure(s); "
+        "rerun with --resume --retry-failed after correcting the cause"
+    )
+
+
 def _feedback_budget(result):
     adapter = result.get("adapter_diagnostics") or {}
     keys = (
         "feedback_observed_episodes", "feedback_observation_rate",
+        "feedback_episodes", "successful_feedback_episodes",
+        "failed_feedback_episodes",
         "queries", "query_rate", "queried_feedback_successes",
         "self_label_episodes", "self_feedback_successes",
     )
@@ -1558,7 +2033,7 @@ def _control_result(batch_id, spec, setting, method):
         # Return a detached JSON value so callers cannot mutate the pinned manifest.
         return json.loads(canonical(record))
     phase = _find_phase(spec, setting, method)
-    results = _load_validated_results(phase_root(batch_id, phase), spec)
+    results = _load_phase_results(phase_root(batch_id, phase), spec, phase)
     if len(results) != 1:
         raise UserError(f"{setting}/{method} must contain exactly one control")
     return results[0]
@@ -1577,7 +2052,11 @@ def _top5_fields():
 
 def summarize_phase(phase, batch_id, spec, results=None):
     root = phase_root(batch_id, phase)
-    results = results if results is not None else _load_validated_results(root, spec)
+    results = (
+        results
+        if results is not None
+        else _load_phase_results(root, spec, phase)
+    )
     method = phase["method"]
     if len(results) != phase["job_count"]:
         raise UserError(f"{phase['phase_id']} result count mismatch")
@@ -1599,9 +2078,15 @@ def summarize_phase(phase, batch_id, spec, results=None):
         staged.atomic_json(root / "CONTROL.json", document)
         return document
 
+    for result in results:
+        _validate_postfix_result_contract(phase, result, spec)
+
     source = _control_result(batch_id, spec, phase["setting"], "source")
     sampled = None
-    if method == "feedtta":
+    if (
+        method == "feedtta"
+        and "feedtta_control" in enabled_phases_by_setting(spec)[phase["setting"]]
+    ):
         sampled = _control_result(
             batch_id, spec, phase["setting"], "feedtta_control"
         )
@@ -1827,7 +2312,10 @@ def run_phase_batch(args, phase, phase_path, jobs, spec):
     )
     thread.start()
     try:
-        return staged.run_batch(args, phase_path, jobs, spec)
+        results = staged.run_batch(args, phase_path, jobs, spec)
+        return _validate_or_mark_postfix_results(
+            phase, phase_path, jobs, spec, results
+        )
     except staged.UserError as error:
         if observed["gpu_memory_mib"] is not None:
             raise UserError(
@@ -1928,6 +2416,8 @@ def assert_launchable(cli, spec):
         or activation.get("automatic_launch_forbidden")
     ) and not cli.confirm_reviewed:
         raise UserError("launch requires --confirm-reviewed")
+    _validate_reused_source_artifacts(spec)
+    _validate_search_prior_artifacts(spec)
 
 
 def execute_campaign(cli, spec):
@@ -1951,10 +2441,13 @@ def execute_campaign(cli, spec):
     with campaign_lock(root):
         completed = []
         for index, (phase, phase_path, jobs) in enumerate(planned):
-            if any(not _phase_complete(path, spec) for _, path, _ in completed):
+            if any(
+                not _phase_complete_for_spec(path, spec, prior_phase)
+                for prior_phase, path, _ in completed
+            ):
                 raise UserError("upstream phase is incomplete; barrier refused advance")
-            if _phase_complete(phase_path, spec):
-                results = _load_validated_results(phase_path, spec)
+            if _phase_complete_for_spec(phase_path, spec, phase):
+                results = _load_phase_results(phase_path, spec, phase)
                 summarize_phase(phase, cli.batch_id, spec, results=results)
                 completed.append((phase, phase_path, jobs))
                 continue

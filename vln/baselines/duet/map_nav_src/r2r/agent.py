@@ -522,5 +522,10 @@ class GMapNavAgent(Seq2SeqAgent):
             self.loss += ml_loss
             self.logs['IL_loss'].append(ml_loss.item())
 
-        self.tta_episode_end(observations=obs)
+        self.tta_episode_end(
+            episode_stats=self.tta_r2r_episode_stats(
+                traj, "nested_graph_path"
+            ),
+            observations=obs,
+        )
         return traj

@@ -79,6 +79,47 @@ The batch `vln-r2r-modelwise-cartesian-v2-seed0` completed all 2,379 jobs with
 zero failures on commit `a258ac5`.  Its compact analysis is tracked in
 `vln/results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md`.
 
+## R2R FSTTA/FeedTTA paper-alignment post-fix search
+
+`r2r_fstta_feedtta_postfix_search_v1.json` is the focused 78-job follow-up.
+It contains only FSTTA (12 candidates per model) and FeedTTA (14 per model),
+uses strict model/method barriers, and reuses the three pinned standard argmax
+Source results. It neither reruns Source nor creates sampled Source controls.
+
+The implementation changes that define this batch are part of its scientific
+identity: FSTTA retains its FAST variance EMA for the complete test stream;
+FeedTTA executes the target model's native argmax policy, receives success from
+the exact evaluator endpoint, and records one of `paper_full`,
+`last_crossmodal`, or `action_head` as its parameter scope. The FeedTTA grid
+includes the paper's literal R2R SGR setting `p=.05, alpha=+.1`, the prior
+negative-SGR winner neighborhoods, a no-SGR control, and smaller-scope points.
+
+The six phases are:
+
+```text
+DUET FSTTA -> DUET FeedTTA -> HAMT FSTTA -> HAMT FeedTTA
+            -> GOAT FSTTA -> GOAT FeedTTA
+```
+
+Run from a clean committed tree:
+
+```bash
+SPEC=vln/experiments/r2r_fstta_feedtta_postfix_search_v1.json
+BATCH=vln-r2r-fstta-feedtta-postfix-v1-seed0
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --spec "$SPEC" --batch-id "$BATCH" --plan-only --print-commands
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --spec "$SPEC" --batch-id "$BATCH" --resume --confirm-reviewed --gpu 0
+python3 vln/scripts/run_r2r_local_refinement.py \
+  --spec "$SPEC" --batch-id "$BATCH" --watch --watch-interval 10
+```
+
+Prior grouped measurements plus the registered conservative GOAT projections
+remain the concurrency authority: FSTTA uses DUET/HAMT/GOAT caps `14/11/14`,
+and FeedTTA uses `6/5/6`. GOAT's two caps are projections from five-worker
+baselines, not completed full-cap measurements. The 29,000 MiB planning and
+30,000 MiB emergency lines remain unchanged.
+
 ## R2R four-method low-learning-rate refinement
 
 `r2r_five_method_local_refinement_v1.json` is the next-round design.  It keeps

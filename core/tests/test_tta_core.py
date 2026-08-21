@@ -716,7 +716,7 @@ class TTACoreTest(unittest.TestCase):
         self.assertEqual(adapter.slow_attempt_count, 2)
         self.assertEqual(adapter.slow_skip_count, 0)
 
-    def test_fstta_episode_start_clears_only_fast_adamw_moments(self):
+    def test_fstta_episode_start_preserves_stream_variance_and_slow_state(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
             policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
@@ -747,7 +747,22 @@ class TTACoreTest(unittest.TestCase):
         )
         torch.testing.assert_close(adapter.slow_anchor.detach(), slow_anchor)
         torch.testing.assert_close(adapter.slow_trajectory[0], pending)
-        self.assertIsNone(adapter.var_hist)
+        torch.testing.assert_close(adapter.var_hist, torch.tensor(2.0))
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(
+            diagnostics["variance_history_lifetime"], "test_stream"
+        )
+        self.assertTrue(diagnostics["variance_history_initialized"])
+
+    def test_fstta_episodic_diagnostics_do_not_claim_stream_variance(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            episodic=True, use_slow=False,
+        )
+        self.assertEqual(
+            adapter.diagnostics()["variance_history_lifetime"], "episode"
+        )
 
     def test_fstta_reset_restores_anchor_in_place_and_clears_all_state(self):
         policy = _TinyPolicy()
@@ -1371,9 +1386,14 @@ class TTACoreTest(unittest.TestCase):
             policy, lr=1e-2, reversal_probability=0.0,
             trainable_prefixes=("net.norms.3", "action_distribution"),
             max_grad_norm=10.0,
+            action_selection_protocol="target_native_argmax",
         )
         self.assertEqual(adapter.gamma, 0.99)
         self.assertFalse(adapter.normalize_gradient)
+        self.assertEqual(
+            adapter.diagnostics()["action_selection_protocol"],
+            "target_native_argmax",
+        )
         self.assertEqual(adapter.param_scope, "module_prefixes")
         self.assertTrue(all(
             name.startswith(("net.norms.3.", "action_distribution."))

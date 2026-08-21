@@ -563,7 +563,12 @@ class Seq2SeqCMTAgent(DiscreteTTAAgentMixin, BaseAgent):
         else:
             self.losses.append(self.loss.item() / self.args.max_action_len)  # This argument is useless.
 
-        self.tta_episode_end(observations=obs)
+        self.tta_episode_end(
+            episode_stats=self.tta_r2r_episode_stats(
+                traj, "viewpoint_tuples"
+            ),
+            observations=obs,
+        )
         return traj
 
     def test(self, use_dropout=False, feedback='argmax', allow_cheat=False, iters=None):

@@ -275,10 +275,36 @@ class ContinuousVLNTTATest(unittest.TestCase):
         self.assertEqual(diagnostics["action_steps"], 2)
         self.assertEqual(diagnostics["replayed_steps"], 3)
 
-    def test_feedtta_uses_a_dedicated_matched_sampling_stream(self):
+    def test_feedtta_defaults_to_target_native_argmax(self):
+        controller = self._controller("feedtta")
+        controller.begin_episode()
+        _, logits, action = controller.step(_nav_inputs())
+        self.assertEqual(int(action.item()), int(logits.argmax(dim=-1).item()))
+        controller.end_episode({"success": 1.0})
+        self.assertEqual(
+            controller.diagnostics()["action_selection"],
+            "target_native_argmax",
+        )
+        self.assertEqual(
+            controller.adapter.diagnostics()["action_selection_protocol"],
+            "target_native_argmax",
+        )
+
+    def test_feedtta_explicit_sampling_uses_a_dedicated_stream(self):
         source_model = TinyDecisionModel()
-        first = self._controller("feedtta", model=copy.deepcopy(source_model))
-        second = self._controller("feedtta", model=copy.deepcopy(source_model))
+        config = _config("feedtta")
+        config.ACTION_SELECTION = "sample"
+        if not hasattr(self, "temporary_directory"):
+            self.temporary_directory = tempfile.TemporaryDirectory()
+            self.addCleanup(self.temporary_directory.cleanup)
+        first = ContinuousVLNTTA(
+            copy.deepcopy(source_model), config, "etpnav",
+            Path(self.temporary_directory.name) / "feed-first.json",
+        )
+        second = ContinuousVLNTTA(
+            copy.deepcopy(source_model), config, "etpnav",
+            Path(self.temporary_directory.name) / "feed-second.json",
+        )
         first.begin_episode()
         second.begin_episode()
         first_actions, second_actions = [], []
@@ -290,7 +316,7 @@ class ContinuousVLNTTATest(unittest.TestCase):
         second.end_episode({"success": 1.0})
         self.assertEqual(
             first.diagnostics()["action_selection"],
-            "matched_policy_sampling",
+            "policy_sampling",
         )
 
     def test_matched_source_control_samples_identically_without_updates(self):

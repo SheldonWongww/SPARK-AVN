@@ -33,7 +33,8 @@ METHOD_KEYS = {
     "eam": {"lr", "confidence_scale", "memory_size", "batch_size",
             "update_interval"},
     "feedtta": {"lr", "p", "alpha", "sgr_seed", "gamma",
-                "normalize_gradient", "optimizer_eps", "action_seed"},
+                "normalize_gradient", "optimizer_eps", "action_seed",
+                "scope_profile"},
     "atena": {"lr_query", "lr_self", "mix_lambda", "query_threshold",
               "self_loss_weight"},
 }
@@ -143,6 +144,10 @@ def _continuous(
     method, params, diagnostics, audit_zero_update=False, audit_control=False,
     audit_expected_episodes=None,
 ):
+    if method == "feedtta" and "scope_profile" in params:
+        raise ValueError(
+            "FeedTTA scope_profile is currently defined only for discrete VLN"
+        )
     tokens = ["TTA.METHOD", method,
               "TTA.DIAGNOSTICS_FILE", diagnostics]
     if audit_zero_update:
@@ -243,6 +248,7 @@ def _discrete(
         "update_interval": "--tta_eam_update_interval",
         "p": "--tta_feedtta_p", "alpha": "--tta_feedtta_alpha",
         "sgr_seed": "--tta_feedtta_sgr_seed", "gamma": "--tta_feedtta_gamma",
+        "scope_profile": "--tta_feedtta_scope_profile",
         "optimizer_eps": "--tta_feedtta_eps", "lr_query": "--tta_atena_lr_query",
         "lr_self": "--tta_atena_lr_self", "mix_lambda": "--tta_atena_mix_lambda",
         "query_threshold": "--tta_atena_query_threshold",

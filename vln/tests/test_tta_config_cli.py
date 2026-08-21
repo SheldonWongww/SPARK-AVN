@@ -42,6 +42,31 @@ class TTAConfigCLITest(unittest.TestCase):
         self.assertEqual(tokens[tokens.index("TTA.FEEDTTA.GAMMA") + 1], "0.95")
         self.assertEqual(tokens[tokens.index("TTA.ACTION_SEED") + 1], "2")
 
+    def test_discrete_feedtta_scope_profile_mapping(self):
+        method, tokens = self._translate(
+            "duet-r2r", "feedtta",
+            {
+                "lr": 5e-6,
+                "action_selection": "argmax",
+                "scope_profile": "last_crossmodal",
+            },
+        )
+        self.assertEqual(method, "feedtta")
+        self.assertEqual(
+            tokens[tokens.index("--tta_feedtta_scope_profile") + 1],
+            "last_crossmodal",
+        )
+        self.assertEqual(
+            tokens[tokens.index("--tta_action_selection") + 1], "argmax"
+        )
+
+    def test_continuous_feedtta_rejects_discrete_scope_profile(self):
+        with self.assertRaisesRegex(ValueError, "only for discrete VLN"):
+            self._translate(
+                "etpnav-r2r-ce", "feedtta",
+                {"scope_profile": "last_crossmodal"},
+            )
+
     def test_unknown_parameter_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unknown tent parameters"):
             self._translate("hamt-r2r", "tent", {"typo": 1})

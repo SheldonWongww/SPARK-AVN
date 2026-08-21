@@ -186,7 +186,7 @@ Source baselines, but cannot be relabelled as canonical-order or TTA reruns.
 Any new formal result must also have a run manifest tied to the top-level Git
 commit, exact configuration, asset digests, seed, and hardware.
 
-## R2R model-wise Cartesian full-val search
+## Completed historical R2R model-wise Cartesian full-val search
 
 The active R2R-only search is defined by
 `experiments/r2r_modelwise_cartesian_hparam_v2.json` and executed by
@@ -202,6 +202,14 @@ respectively.  Across three settings this is 2,373 TTA jobs.  Three standard
 argmax Source jobs and three sampled-Source FeedTTA diagnostic controls bring
 the exact campaign total to **2,379 jobs**.  Every reported delta and frozen
 winner uses standard argmax Source; sampled Source is diagnostic only.
+
+Those FeedTTA jobs predate the paper/protocol audit and retain the historical
+forced-sampling implementation. The active corrected follow-up is
+`experiments/r2r_fstta_feedtta_postfix_search_v1.json`: it contains only FSTTA
+and FeedTTA, restores target-native argmax FeedTTA, fixes evaluator-endpoint
+feedback, adds model-aware FeedTTA scopes, and preserves FSTTA variance over
+the full test stream. It reuses the pinned argmax Source controls and has no
+sampled control jobs.
 
 Results are benchmark-first:
 
@@ -287,12 +295,13 @@ session directly while workers are active.
 
 ## Post-search zero-update adapter parity audit
 
-After all five methods have immutable `FROZEN_HPARAMETERS.json` files, run the
+For historical pre-fix campaigns, after all five methods have immutable
+`FROZEN_HPARAMETERS.json` files, run the
 separate adapter-parity audit before interpreting TTA gains.  It uses the exact
 canonical 256-episode `val_seen` prefix and creates exactly 56 jobs: 40 frozen
 method adapters, eight argmax Source controls, and eight sampled Source
-controls.  FeedTTA is paired with sampled Source; every other method is paired
-with argmax Source.
+controls.  That v1 audit pairs historical sampled FeedTTA with sampled Source;
+it must not be used to certify the corrected target-native-argmax campaign.
 
 ```bash
 SEARCH_BATCH=vln-tta-hparam-final-YYYYMMDDTHHMMSSZ

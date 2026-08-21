@@ -46,8 +46,8 @@ def add_discrete_tta_args(parser):
         choices=("auto", "argmax", "sample"),
         default="auto",
         help=(
-            "auto uses FeedTTA sampling and argmax otherwise; source+sample is "
-            "the matched no-update FeedTTA control"
+            "auto preserves the discrete VLN evaluator's native argmax "
+            "policy; explicit sample is retained only for controlled ablations"
         ),
     )
     group.add_argument("--tta_action_seed", type=int, default=0)
@@ -127,6 +127,17 @@ def add_discrete_tta_args(parser):
     feed.add_argument("--tta_feedtta_sgr_seed", type=int, default=0)
     feed.add_argument("--tta_feedtta_gamma", type=float, default=0.99)
     feed.add_argument(
+        "--tta_feedtta_scope_profile",
+        choices=("paper_full", "last_crossmodal", "action_head"),
+        default="paper_full",
+        help=(
+            "model-aware FeedTTA parameter scope; paper_full updates the full "
+            "cross-modal decision stack, last_crossmodal updates its final "
+            "cross-modal layer and action heads, and action_head updates only "
+            "the action heads"
+        ),
+    )
+    feed.add_argument(
         "--tta_feedtta_normalize_gradient", action="store_true", default=False
     )
     feed.add_argument("--tta_feedtta_eps", type=float, default=1e-5)
@@ -173,7 +184,78 @@ def _default_trainable_prefixes(model):
     )
 
 
-def _adapter_config(args, trainable_prefixes):
+def _feedtta_trainable_prefixes(model, profile):
+    """Map the paper's cross-modal-and-downstream scope onto each VLN model."""
+    profile = str(profile).lower()
+    inner = getattr(model, "vln_bert", None)
+    if inner is None:
+        raise ValueError("Discrete policy does not expose a vln_bert module")
+    if hasattr(inner, "global_encoder") and hasattr(inner, "local_encoder"):
+        heads = [
+            "vln_bert.global_sap_head",
+            "vln_bert.local_sap_head",
+        ]
+        if getattr(inner, "sap_fuse_linear", None) is not None:
+            heads.append("vln_bert.sap_fuse_linear")
+        if profile == "action_head":
+            return tuple(heads)
+
+        # DUET exposes its cross-modal blocks as ``x_layers`` while GOAT uses
+        # ``crossattention``.  Freeze the positional/map embeddings that live
+        # beside these stacks: the paper updates from the cross-modal encoder
+        # onward, not the complete global/local input encoders.
+        stack_specs = []
+        for branch in ("global_encoder", "local_encoder"):
+            encoder = getattr(getattr(inner, branch), "encoder")
+            if hasattr(encoder, "x_layers"):
+                stack_name = "x_layers"
+            elif hasattr(encoder, "crossattention"):
+                stack_name = "crossattention"
+            else:
+                raise ValueError(
+                    "Could not infer {} FeedTTA cross-modal stack".format(
+                        branch
+                    )
+                )
+            layers = getattr(encoder, stack_name)
+            stack_specs.append((branch, stack_name, layers))
+        if profile == "paper_full":
+            return tuple(
+                "vln_bert.{}.encoder.{}".format(branch, stack_name)
+                for branch, stack_name, _ in stack_specs
+            ) + tuple(heads)
+        global_branch, global_name, global_layers = stack_specs[0]
+        local_branch, local_name, local_layers = stack_specs[1]
+        if len(global_layers) < 1 or len(local_layers) < 1:
+            raise ValueError("FeedTTA requires nonempty cross-modal layer stacks")
+        return (
+            "vln_bert.{}.encoder.{}.{}".format(
+                global_branch, global_name, len(global_layers) - 1
+            ),
+            "vln_bert.{}.encoder.{}.{}".format(
+                local_branch, local_name, len(local_layers) - 1
+            ),
+            *tuple(heads),
+        )
+    if hasattr(inner, "encoder") and hasattr(inner, "next_action"):
+        heads = ["vln_bert.next_action"]
+        if hasattr(inner, "ref_object"):
+            heads.append("vln_bert.ref_object")
+        if profile == "action_head":
+            return tuple(heads)
+        layers = inner.encoder.x_layers
+        if len(layers) < 1:
+            raise ValueError("FeedTTA requires a nonempty cross-modal layer stack")
+        if profile == "paper_full":
+            return ("vln_bert.encoder.x_layers", *heads)
+        return (
+            "vln_bert.encoder.x_layers.{}".format(len(layers) - 1),
+            *heads,
+        )
+    raise ValueError("Could not infer FeedTTA module prefixes")
+
+
+def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
     common_weight_decay = (
         0.0 if args.tta_weight_decay is None else args.tta_weight_decay
     )
@@ -242,6 +324,10 @@ def _adapter_config(args, trainable_prefixes):
         WEIGHT_DECAY=common_weight_decay,
         EPS=args.tta_feedtta_eps,
         MAX_GRAD_NORM=replay_max_grad_norm,
+        ACTION_SELECTION_PROTOCOL=(
+            "sample_from_policy"
+            if action_selection == "sample" else "target_native_argmax"
+        ),
     )
     atena = SimpleNamespace(
         LR_QUERY=args.tta_atena_lr_query,
@@ -453,10 +539,8 @@ class DiscreteTTAController:
             raise ValueError("adapter audit requires expected episodes > 0")
         requested_selection = str(args.tta_action_selection).lower()
         self.action_selection = (
-            "sample" if self.method == "feedtta" else "argmax"
+            "argmax"
         ) if requested_selection == "auto" else requested_selection
-        if self.method == "feedtta" and self.action_selection != "sample":
-            raise ValueError("FeedTTA requires matched policy sampling")
         if (
             self.method not in ("source", "feedtta")
             and self.action_selection != "argmax"
@@ -477,11 +561,27 @@ class DiscreteTTAController:
         self.diagnostics_path = args.tta_diagnostics or os.path.join(
             args.output_dir, "tta_diagnostics.json"
         )
-        if self.method in ("eam", "feedtta"):
+        self.feedtta_scope_profile = (
+            (
+                "explicit_prefixes"
+                if args.tta_trainable_prefixes is not None
+                else str(args.tta_feedtta_scope_profile)
+            )
+            if self.method == "feedtta" else None
+        )
+        if self.method == "eam":
             self.trainable_prefixes = tuple(
                 args.tta_trainable_prefixes
                 if args.tta_trainable_prefixes is not None
                 else _default_trainable_prefixes(model)
+            )
+        elif self.method == "feedtta":
+            self.trainable_prefixes = tuple(
+                args.tta_trainable_prefixes
+                if args.tta_trainable_prefixes is not None
+                else _feedtta_trainable_prefixes(
+                    model, self.feedtta_scope_profile
+                )
             )
         else:
             self.trainable_prefixes = tuple(args.tta_trainable_prefixes or ())
@@ -501,7 +601,9 @@ class DiscreteTTAController:
         else:
             self.adapter = build_adapter(
                 model,
-                _adapter_config(args, self.trainable_prefixes),
+                _adapter_config(
+                    args, self.trainable_prefixes, self.action_selection
+                ),
                 forward_policy=discrete_forward_policy,
             )
 
@@ -521,13 +623,13 @@ class DiscreteTTAController:
     def begin_episode(self):
         if self._episode_open:
             raise RuntimeError("TTA episode_start called twice")
-        # Match the continuous evaluator: every episode owns an independent
-        # stream, so different prior trajectory lengths cannot desynchronize a
-        # FeedTTA/source-sampling comparison.
-        self.current_action_seed = (
-            self.action_seed + self.episode_count * 1000003
-        )
-        self._action_generator.manual_seed(self.current_action_seed)
+        # Explicit sampling ablations use an independent per-episode stream so
+        # different prior trajectory lengths cannot desynchronize paired runs.
+        if self.action_selection == "sample":
+            self.current_action_seed = (
+                self.action_seed + self.episode_count * 1000003
+            )
+            self._action_generator.manual_seed(self.current_action_seed)
         self.adapter.episode_start()
         self._trajectory_hasher.update(
             "episode:{}\0".format(self.episode_count).encode("ascii")
@@ -658,13 +760,25 @@ class DiscreteTTAController:
             "batch_size": 1,
             "tta_step_unit": "high_level_navigation_decision",
             "action_selection": (
-                "matched_policy_sampling"
-                if self.action_selection == "sample" else "argmax"
+                "policy_sampling"
+                if self.action_selection == "sample"
+                else "target_native_argmax"
             ),
-            "action_seed": self.action_seed,
-            "current_episode_action_seed": self.current_action_seed,
-            "action_seed_schedule": "base_plus_episode_index_times_1000003",
-            "action_rng": "dedicated_cpu_uniform_inverse_cdf",
+            "action_seed": (
+                self.action_seed if self.action_selection == "sample" else None
+            ),
+            "current_episode_action_seed": (
+                self.current_action_seed
+                if self.action_selection == "sample" else None
+            ),
+            "action_seed_schedule": (
+                "base_plus_episode_index_times_1000003"
+                if self.action_selection == "sample" else None
+            ),
+            "action_rng": (
+                "dedicated_cpu_uniform_inverse_cdf"
+                if self.action_selection == "sample" else None
+            ),
             "masked_action_entropy": "finite_logits_only",
             "cached_policy_state": "detached_between_decisions",
             "trajectory_steps": self.trajectory_steps,
@@ -675,6 +789,7 @@ class DiscreteTTAController:
                 else "unsupervised"
             ),
             "trainable_prefixes": list(self.trainable_prefixes),
+            "feedtta_scope_profile": self.feedtta_scope_profile,
             "adapter": diagnostics,
         }
         path = Path(self.diagnostics_path)
@@ -775,3 +890,32 @@ class DiscreteTTAAgentMixin:
             controller.end_episode(
                 episode_stats=episode_stats, observations=observations
             )
+
+    def tta_r2r_episode_stats(self, trajectories, path_format):
+        """Return the exact R2R evaluator success for binary-feedback TTA.
+
+        DUET and GOAT may rerank the submitted endpoint after the simulator has
+        stopped.  Feedback must therefore be computed from the submitted path,
+        not from the simulator's current observation.  HAMT uses a flat list of
+        viewpoint tuples, while DUET/GOAT use nested graph paths.
+        """
+        controller = getattr(self, "tta_controller", None)
+        if controller is None or controller.method != "feedtta":
+            return None
+        if len(trajectories) != 1:
+            raise ValueError(
+                "Canonical binary-feedback R2R TTA requires batch size one"
+            )
+        item = trajectories[0]
+        instr_id = item["instr_id"]
+        scan, ground_truth = self.env.gt_trajs[instr_id]
+        if path_format == "nested_graph_path":
+            evaluator_path = item["path"]
+        elif path_format == "viewpoint_tuples":
+            evaluator_path = [step[0] for step in item["path"]]
+        else:
+            raise ValueError("Unknown R2R trajectory format: {}".format(path_format))
+        scores = self.env._eval_item(scan, evaluator_path, ground_truth)
+        if "success" not in scores:
+            raise ValueError("R2R evaluator did not return episode success")
+        return {"success": float(scores["success"])}

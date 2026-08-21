@@ -1128,9 +1128,9 @@ class FSTTAAdapter(_AdapterDiagnostics):
         if self.episodic:
             self.reset()
         self.grad_buffer = []
-        # FAST variance statistics are intra-episode in FSTTA. The slow
-        # trajectory, anchor, and slow AdamW moments intentionally persist.
-        self.var_hist = None
+        # Paper Eq. (6) maintains the historical FAST variance over all test
+        # samples.  Episode boundaries discard only an incomplete gradient
+        # window; they must not restart the stream-level variance EMA.
         if self.reset_optimizer_each_episode:
             self._clear_optimizer_state()
         else:
@@ -1185,6 +1185,10 @@ class FSTTAAdapter(_AdapterDiagnostics):
             "slow_pending_episodes": len(self.slow_trajectory),
             "discarded_fast_gradients": self.discarded_fast_gradients,
             "last_sigma": self.last_sigma,
+            "variance_history_lifetime": (
+                "episode" if self.episodic else "test_stream"
+            ),
+            "variance_history_initialized": self.var_hist is not None,
             "lr_scale_mean": self.lr_scale_sum / scale_count,
             "lr_scale_min": (
                 self.lr_scale_min if self.lr_scale_count else 0.0
@@ -1699,7 +1703,7 @@ class EAMAdapter(_AdapterDiagnostics):
 
 
 class FEEDTTAAdapter(_AdapterDiagnostics):
-    """Paper-aligned episode-feedback REINFORCE with SGR.
+    """Episode-feedback policy-gradient adaptation with SGR.
 
     Modality encoders remain frozen.  The AVN mapping of the paper's
     "cross-modal encoder and subsequent modules" is expressed explicitly by
@@ -1707,7 +1711,11 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
     the shared implementation.  Per-action score gradients are folded into a
     single discounted accumulator, which is exactly equivalent to Eq. (3) but
     keeps memory O(number of adapted parameters), independent of trajectory
-    length.
+    length.  The paper writes trajectories as ``tau ~ pi`` but does not state
+    the action selector used in its released experiments.  The adapter accepts
+    the action actually executed by the task runner so task glue can preserve
+    either an on-policy sample or a target-native deterministic policy and
+    report that protocol explicitly.
     """
 
     def __init__(
@@ -1731,6 +1739,7 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         weight_decay=0.0,
         optimizer_eps=1e-5,
         max_grad_norm=0.0,
+        action_selection_protocol="sample_from_policy",
     ):
         self.model = model
         self.base_lr = float(lr)
@@ -1739,6 +1748,11 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.sgr_seed = int(sgr_seed)
         self.gamma = float(gamma)
         self.normalize_gradient = bool(normalize_gradient)
+        self.action_selection_protocol = str(action_selection_protocol)
+        if not self.action_selection_protocol:
+            raise ValueError(
+                "FEEDTTA action_selection_protocol must be nonempty"
+            )
         self.episodic = bool(episodic)
         self.max_grad_norm = float(max_grad_norm)
         if self.episodic:
@@ -1837,7 +1851,7 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
     @torch.enable_grad()
     def adapt(self, logits, action=None, **kwargs):
         if action is None:
-            raise ValueError("FEEDTTA requires the sampled action")
+            raise ValueError("FEEDTTA requires the executed action")
         action = action.long().view(-1, 1)
         nll = -logits.log_softmax(dim=-1).gather(1, action).mean()
         self.optimizer.zero_grad(set_to_none=True)
@@ -1962,7 +1976,7 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             "failed_feedback_episodes": self.failed_episodes,
             "feedback_type": "binary_episode_success",
             "feedback_values": "+1_success_-1_failure",
-            "action_selection_protocol": "sample_from_policy",
+            "action_selection_protocol": self.action_selection_protocol,
             "update_timing": "once_after_episode_feedback",
             "reversal_probability": self.reversal_probability,
             "reversal_scale": self.reversal_scale,
@@ -2713,6 +2727,9 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             weight_decay=float(fdvalue("WEIGHT_DECAY", 0.0)),
             optimizer_eps=float(fdvalue("EPS", 1e-5)),
             max_grad_norm=float(fdvalue("MAX_GRAD_NORM", 0.0)),
+            action_selection_protocol=str(fdvalue(
+                "ACTION_SELECTION_PROTOCOL", "sample_from_policy"
+            )),
         ))
     if method == "atena":
         atena_cfg = getattr(tta_cfg, "ATENA", None)

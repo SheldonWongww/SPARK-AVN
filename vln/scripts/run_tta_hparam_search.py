@@ -1480,7 +1480,10 @@ def _bump_attempt(job):
     attempt_root.mkdir(parents=True, exist_ok=False)
     old_job = dict(job)
     atomic_json(attempt_root / "job.json", old_job)
-    for name in ("console.log", "exitcode", "metrics.json", "worker_state.json"):
+    for name in (
+        "console.log", "exitcode", "metrics.json", "worker_state.json",
+        "POSTFIX_CONTRACT_ERROR.json",
+    ):
         path = job_dir / name
         if path.exists():
             path.rename(attempt_root / name)

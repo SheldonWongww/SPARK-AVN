@@ -425,7 +425,8 @@ class R2RLocalRefinementTests(unittest.TestCase):
         enabled["execution"]["barrier_implementation_status"] = "implemented_validated"
         with self.assertRaisesRegex(MODULE.UserError, "confirm-reviewed"):
             MODULE.assert_launchable(cli(confirm_reviewed=False), enabled)
-        MODULE.assert_launchable(cli(confirm_reviewed=True), enabled)
+        with mock.patch.object(MODULE, "_validate_reused_source_artifacts"):
+            MODULE.assert_launchable(cli(confirm_reviewed=True), enabled)
 
     def test_phase_worker_override_is_declared_and_persistable(self):
         phase = next(
@@ -649,6 +650,9 @@ class R2RLocalRefinementTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(MODULE, "_assert_no_live_other_phase"))
             stack.enter_context(mock.patch.object(MODULE, "summarize_phase"))
             stack.enter_context(mock.patch.object(MODULE, "aggregate_campaign"))
+            stack.enter_context(mock.patch.object(
+                MODULE, "_validate_reused_source_artifacts"
+            ))
             stack.enter_context(mock.patch.object(MODULE.staged, "run_batch", side_effect=run_batch))
             MODULE.execute_campaign(cli(), enabled)
 
@@ -687,6 +691,9 @@ class R2RLocalRefinementTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(MODULE, "_phase_complete", side_effect=complete))
             stack.enter_context(mock.patch.object(MODULE, "_assert_no_live_other_phase"))
             stack.enter_context(mock.patch.object(MODULE, "summarize_phase"))
+            stack.enter_context(mock.patch.object(
+                MODULE, "_validate_reused_source_artifacts"
+            ))
             stack.enter_context(mock.patch.object(MODULE.staged, "run_batch", side_effect=run_batch))
             with self.assertRaisesRegex(MODULE.staged.UserError, "synthetic failure"):
                 MODULE.execute_campaign(cli(), enabled)
@@ -716,6 +723,9 @@ class R2RLocalRefinementTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(
                 MODULE, "_phase_started",
                 side_effect=lambda path: Path(path).name == phases[1]["phase_id"],
+            ))
+            stack.enter_context(mock.patch.object(
+                MODULE, "_validate_reused_source_artifacts"
             ))
             with self.assertRaisesRegex(MODULE.UserError, "downstream execution"):
                 MODULE.execute_campaign(cli(resume=True), enabled)
