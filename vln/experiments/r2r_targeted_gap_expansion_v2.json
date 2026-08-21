@@ -1,0 +1,206 @@
+{
+  "schema": "navtta.vln_r2r_targeted_gap_refinement_plan.v1",
+  "experiment_id": "vln-r2r-targeted-gap-expansion-v2",
+  "status": "reviewed_launchable",
+  "purpose": "Expanded full-val_seen search for DUET Tent, GOAT FeedTTA, and GOAT ATENA after the 29-job targeted v1 campaign left only zero- or one-success gains.",
+  "parent_evidence": {
+    "batch_id": "vln-r2r-targeted-gap-refine-v1-seed0",
+    "git_commit": "9c006fbd521f1bfab8f8f7b654109d4971e59f38",
+    "spec": "vln/experiments/r2r_targeted_gap_refinement_v1.json",
+    "spec_sha256": "fec86947a209b524ed19517b108693c74504bc8685afee7305f6c80ea0a29fd9",
+    "analysis": "vln/results/analysis/hparam_search/R2R_TARGETED_GAP_REFINEMENT_V1.md"
+  },
+  "search_priors": {
+    "tent": {
+      "duet-r2r": {
+        "prior_run_tag": "vln-r2r-targeted-gap-refine-v1-seed0-refine-00-tent-0008-duet-r2r-6da4361d12",
+        "prior_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-refine-v1-seed0-refine-00-tent-0008-duet-r2r-6da4361d12-duet-r2r-val_seen-native/manifest.json",
+        "prior_manifest_sha256": "37c2e34dbe2932614f9af8178f6749f7002a97f4ff152ae8370ed6e90c9e9cda",
+        "historical_parameters": {"episodic": false, "last_k_ln": 4, "lr": 0.00003, "max_grad_norm": 0.0, "norm_scope": "last_k_ln", "optimizer": "AdamW", "update_interval": 1, "weight_decay": 0.0},
+        "transformed_candidate": {"lr": 0.00004, "norm_scope": "last_k_ln", "last_k_ln": 4},
+        "transfer_note": "The k=4 winner preserved SR but gained only 0.05 SPL; expand its LR boundary and replay-connected LayerNorm depth while retaining update_interval=1."
+      }
+    },
+    "feedtta": {
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-targeted-gap-refine-v1-seed0-refine-01-feedtta-0010-goat-r2r-73b8e47478",
+        "prior_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-refine-v1-seed0-refine-01-feedtta-0010-goat-r2r-73b8e47478-goat-r2r-val_seen-native/manifest.json",
+        "prior_manifest_sha256": "0b7f5eda5d447bcae5420163d0a56ddf2ce335fa9bad9ba2f580f829c7ff85f9",
+        "historical_parameters": {"action_selection": "argmax", "alpha": 0.1, "episodic": false, "gamma": 0.8, "lr": 0.000001, "max_grad_norm": 0.0, "normalize_gradient": false, "optimizer": "Adam", "optimizer_eps": 0.00001, "p": 0.05, "scope_profile": "action_head", "sgr_seed": 0, "weight_decay": 0.0},
+        "transformed_candidate": {"lr": 0.000001125, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "scope_profile": "action_head"},
+        "transfer_note": "Interpolate the narrow lr-gamma success ridge and extend gamma before spending six diagnostic points on SGR."
+      }
+    },
+    "atena": {
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-targeted-gap-refine-v1-seed0-refine-02-atena-0001-goat-r2r-2340c32d10",
+        "prior_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-refine-v1-seed0-refine-02-atena-0001-goat-r2r-2340c32d10-goat-r2r-val_seen-native/manifest.json",
+        "prior_manifest_sha256": "e449abb3b8bf8b27daedf80d9de2024e7f410ff3231216e3d5aad0a3fb6323d2",
+        "historical_parameters": {"action_selection": "argmax", "episodic": false, "lr_query": 0.00000035, "lr_self": 0.00000004375, "max_grad_norm": 0.0, "mix_lambda": 0.0, "optimizer": "AdamW", "query_threshold": 0.15, "self_loss_weight": 0.1, "weight_decay": 0.01},
+        "transformed_candidate": {"query_threshold": 0.15, "lr_query": 0.000000325, "lr_self": 0.000000040625, "mix_lambda": 0.0},
+        "transfer_note": "Expand corrected-feedback low-LR/query thresholds, decouple self LR, and rerun only the historical high-SPL branch under the corrected endpoint."
+      }
+    }
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "requirements": [
+      "Bind a new batch ID to this tracked spec and implementation commit.",
+      "Pass --confirm-reviewed after inspecting the immutable 97-job expansion.",
+      "Reuse pinned argmax Source evidence; never rerun Source or sampled controls.",
+      "Run DUET Tent, then GOAT FeedTTA, then GOAT ATENA with strict barriers."
+    ]
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "order_seed": 0,
+    "settings": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "source_protocol": "standard_argmax",
+    "selection": ["higher_SR", "higher_SPL", "lower_parameter_drift", "fewer_updates"],
+    "sr_quantum_pp": 0.0979431929480901,
+    "seed_variance_estimated": false,
+    "supervision_groups": {
+      "unsupervised": ["tent"],
+      "binary_feedback_supervised": ["feedtta", "atena"]
+    }
+  },
+  "execution": {
+    "launchable": true,
+    "strict_model_barrier_required": true,
+    "strict_method_barrier_required": true,
+    "barrier_implementation_status": "implemented_validated",
+    "model_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "method_order_within_model": ["tent", "feedtta", "atena"],
+    "enabled_methods_by_setting": {
+      "duet-r2r": ["tent"],
+      "hamt-r2r": [],
+      "goat-r2r": ["feedtta", "atena"]
+    },
+    "cross_model_overlap_forbidden": true,
+    "cross_method_overlap_forbidden": true,
+    "tail_policy": "Finish every job in the active model/method phase before releasing the next phase.",
+    "control_execution": {},
+    "gpu_safety": {
+      "production_planned_steady_used_mib_max": 29000,
+      "emergency_abort_observed_used_mib": 30000,
+      "minimum_production_headroom_mib": 3760,
+      "scheduler_prelaunch_gate_mib_range": [23500, 25000],
+      "production_limit_is_not_a_scheduler_gate": true,
+      "launch_stagger_is_not_a_memory_guard": true,
+      "raise_concurrency_one_worker_at_a_time": false,
+      "require_all_children_at_steady_vram_before_next_raise": true,
+      "calibration_initial_group_workers": 5,
+      "calibration_episode_limit": 100,
+      "grouped_jump_after_measured_baseline": true,
+      "grouped_jump_projection_max_mib": 28500,
+      "grouped_jump_per_worker_margin_factor": 1.05,
+      "grouped_jump_requires_independent_steady_validation": true,
+      "formal_cap_policy": "Reuse the completed targeted-v1 production measurements for identical model-method implementations.",
+      "approved_projection_exceptions": []
+    },
+    "concurrency_calibration": {
+      "tent": {
+        "duet-r2r": {"production_cap": 10, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 1900, "observed_peak_mib": 16630, "cap_basis": "completed_targeted_v1_measurement", "prelaunch_gate_mib": 25000}
+      },
+      "feedtta": {
+        "goat-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "observed_peak_mib": 11902, "cap_basis": "completed_targeted_v1_measurement", "prelaunch_gate_mib": 24500},
+        "seven_workers_forbidden": true
+      },
+      "atena": {
+        "goat-r2r": {"production_cap": 5, "calibration_baseline": 5, "conditional_test_steps": [], "estimated_mib_per_job": 5290, "observed_peak_mib": 21200, "cap_basis": "completed_targeted_v1_measurement", "prelaunch_gate_mib": 23500}
+      }
+    }
+  },
+  "methods": {
+    "tent": {
+      "fixed": {"optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false, "update_interval": 1},
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr": [0.00002, 0.00004, 0.00005, 0.000075, 0.0001], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 4}},
+            {"lr": [0.000003, 0.00001, 0.00003, 0.00005, 0.0001], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 6}},
+            {"lr": [0.000001, 0.000003, 0.00001, 0.00003, 0.00005], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 9}},
+            {"lr": [0.0000003, 0.000001, 0.000003, 0.00001, 0.00003], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 15}},
+            {"lr": [0.0000003, 0.000001, 0.000003, 0.00001], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 29}}
+          ],
+          "points": [],
+          "candidate_count": 24
+        }
+      },
+      "candidate_count": 24
+    },
+    "feedtta": {
+      "fixed": {"optimizer": "Adam", "optimizer_eps": 0.00001, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "sgr_seed": 0, "normalize_gradient": false, "episodic": false},
+      "settings": {
+        "goat-r2r": {
+          "grids": [
+            {"lr": [0.000000625, 0.000000875, 0.000001125, 0.000001375, 0.00000175], "gamma": [0.8, 0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}},
+            {"lr": [0.00000075, 0.000001, 0.00000125, 0.0000015, 0.000002], "gamma": [0.7, 0.75, 0.85, 0.95], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}}
+          ],
+          "points": [
+            {"lr": 0.000001, "gamma": 0.8, "p": 0.0, "alpha": 0.0, "scope_profile": "action_head", "role": "winner_no_sgr"},
+            {"lr": 0.000001, "gamma": 0.8, "p": 0.1, "alpha": -0.1, "scope_profile": "action_head", "role": "winner_negative_sgr"},
+            {"lr": 0.00000125, "gamma": 0.8, "p": 0.0, "alpha": 0.0, "scope_profile": "action_head", "role": "ridge_no_sgr"},
+            {"lr": 0.00000125, "gamma": 0.8, "p": 0.1, "alpha": -0.1, "scope_profile": "action_head", "role": "ridge_negative_sgr"},
+            {"lr": 0.0000015, "gamma": 0.9, "p": 0.0, "alpha": 0.0, "scope_profile": "action_head", "role": "upper_ridge_no_sgr"},
+            {"lr": 0.0000015, "gamma": 0.9, "p": 0.1, "alpha": -0.1, "scope_profile": "action_head", "role": "upper_ridge_negative_sgr"}
+          ],
+          "candidate_count": 36
+        }
+      },
+      "candidate_count": 36
+    },
+    "atena": {
+      "fixed": {"self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false},
+      "settings": {
+        "goat-r2r": {
+          "grids": [
+            {"query_threshold": [0.14, 0.15, 0.17, 0.2], "fixed": {"lr_query": 0.000000275, "lr_self": 0.000000034375, "mix_lambda": 0.0}},
+            {"query_threshold": [0.14, 0.15, 0.17, 0.2], "fixed": {"lr_query": 0.0000003, "lr_self": 0.0000000375, "mix_lambda": 0.0}},
+            {"query_threshold": [0.14, 0.15, 0.17, 0.2], "fixed": {"lr_query": 0.000000325, "lr_self": 0.000000040625, "mix_lambda": 0.0}},
+            {"query_threshold": [0.14, 0.15, 0.17, 0.2], "fixed": {"lr_query": 0.000000375, "lr_self": 0.000000046875, "mix_lambda": 0.0}},
+            {"query_threshold": [0.14, 0.15, 0.17, 0.2], "fixed": {"lr_query": 0.000000425, "lr_self": 0.000000053125, "mix_lambda": 0.0}},
+            {"lr_self": [0.00000001171875, 0.0000000234375, 0.00000003515625, 0.00000005859375, 0.0000000703125], "fixed": {"lr_query": 0.000000375, "mix_lambda": 0.0, "query_threshold": 0.15}},
+            {"mix_lambda": [0.625, 0.75, 0.875], "fixed": {"lr_query": 0.0000048, "lr_self": 0.0000006, "query_threshold": 0.0}},
+            {"mix_lambda": [0.625, 0.75, 0.875], "fixed": {"lr_query": 0.0000056, "lr_self": 0.0000007, "query_threshold": 0.0}},
+            {"mix_lambda": [0.625, 0.75, 0.875], "fixed": {"lr_query": 0.0000064, "lr_self": 0.0000008, "query_threshold": 0.0}},
+            {"mix_lambda": [0.625, 0.75, 0.875], "fixed": {"lr_query": 0.0000072, "lr_self": 0.0000009, "query_threshold": 0.0}}
+          ],
+          "points": [],
+          "candidate_count": 37
+        }
+      },
+      "candidate_count": 37,
+      "secondary_feedback_efficiency_report": {"enabled": true, "rule": "Also report the lowest query-rate point within 0.1 pp SR and 0.2 pp SPL of the winner."}
+    }
+  },
+  "controls": {
+    "standard_argmax_source_per_setting": true,
+    "standard_argmax_source_execution": "reuse_completed_manifest",
+    "standard_argmax_source_manifest": "vln/manifests/r2r_reused_source_controls.json",
+    "feedtta_sampled_no_update_per_setting": false,
+    "feedtta_action_protocol": "target_native_argmax",
+    "candidate_count": 0
+  },
+  "budget": {
+    "search_candidates": {"tent": 24, "feedtta": 36, "atena": 37},
+    "search_total": 97,
+    "controls": 0,
+    "total_before_confirmation": 97,
+    "by_setting_before_controls": {"duet-r2r": 24, "hamt-r2r": 0, "goat-r2r": 73}
+  },
+  "confirmation": {
+    "run_only_after_search_is_frozen": true,
+    "minimum_promotion": "At least two additional successful episodes without lower SPL, or one additional success with SPL at least 0.10 pp above Source.",
+    "order_seeds": [1, 2],
+    "matched_source_per_model_order": true,
+    "feedback_methods_must_report_feedback_budget": true,
+    "do_not_reselect_on_val_unseen": true
+  }
+}

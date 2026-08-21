@@ -138,6 +138,14 @@ for the exact rationale, budget, and launch command. All 29 jobs completed
 without failure on commit `9c006fb`; the result analysis is
 [`R2R_TARGETED_GAP_REFINEMENT_V1.md`](../results/analysis/hparam_search/R2R_TARGETED_GAP_REFINEMENT_V1.md).
 
+`r2r_targeted_gap_expansion_v2.json` is the expanded 97-job successor. It
+keeps the same three strict phases and Source reuse while expanding Tent to
+replay-connected LayerNorm depths, FeedTTA across the narrow LR-gamma ridge,
+and corrected ATENA across low-LR query/self-label behavior plus one bounded
+high-SPL branch. All candidates are distinct from corrected targeted-v1
+configurations. See
+[`R2R_TARGETED_GAP_EXPANSION_V2_PLAN.md`](R2R_TARGETED_GAP_EXPANSION_V2_PLAN.md).
+
 ## R2R four-method low-learning-rate refinement
 
 `r2r_five_method_local_refinement_v1.json` is the next-round design.  It keeps

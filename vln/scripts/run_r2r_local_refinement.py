@@ -464,6 +464,66 @@ def _validate_search_prior_artifacts(spec):
         return
     for method, settings in spec["search_priors"].items():
         for setting, prior in settings.items():
+            manifest_reference = prior.get("prior_manifest_path")
+            if manifest_reference is not None:
+                path = REPO_ROOT / manifest_reference
+                if not path.is_file():
+                    raise UserError(
+                        f"missing search-prior manifest for {method}/{setting}: "
+                        f"{manifest_reference}"
+                    )
+                try:
+                    git("ls-files", "--error-unmatch", "--", manifest_reference)
+                except subprocess.CalledProcessError as error:
+                    raise UserError(
+                        f"search-prior manifest is not tracked: {manifest_reference}"
+                    ) from error
+                if sha256(path) != prior["prior_manifest_sha256"]:
+                    raise UserError(
+                        f"search-prior manifest SHA256 mismatch for "
+                        f"{method}/{setting}"
+                    )
+                manifest = _read_json_object(
+                    path, f"{method}/{setting} search-prior manifest"
+                )
+                checks = {
+                    "run_tag": prior["prior_run_tag"],
+                    "task": "vln",
+                    "model": SETTING_MODEL[setting],
+                    "method": method,
+                    "source_setting": f"{setting}:val_seen:native:{method}",
+                    "seed": 0,
+                    "status": "completed",
+                    "exit_code": 0,
+                }
+                if any(
+                    manifest.get(key) != value for key, value in checks.items()
+                ):
+                    raise UserError(
+                        f"search-prior manifest semantic mismatch for "
+                        f"{method}/{setting}"
+                    )
+                expected = config_cli._discrete(
+                    method, prior["historical_parameters"], "prior-diagnostics"
+                )[4:]
+                overrides = manifest.get("config_overrides")
+                if not isinstance(overrides, list) or len(expected) % 2:
+                    raise UserError(
+                        f"search-prior manifest config is invalid for "
+                        f"{method}/{setting}"
+                    )
+                for index in range(0, len(expected), 2):
+                    option, value = expected[index:index + 2]
+                    if not any(
+                        overrides[offset:offset + 2] == [option, value]
+                        for offset in range(max(0, len(overrides) - 1))
+                    ):
+                        raise UserError(
+                            f"search-prior manifest lacks {option}={value} "
+                            f"for {method}/{setting}"
+                        )
+                continue
+
             path = REPO_ROOT / prior["prior_job_path"]
             if not path.is_file():
                 raise UserError(
@@ -809,14 +869,24 @@ def _validate_spec(document):
                     anchor.get("historical_parameters"),
                     f"{prior_key}.{method}.{setting}.historical_parameters",
                 )
-                _safe_relative_path(
-                    anchor.get("prior_job_path"),
-                    f"{prior_key}.{method}.{setting}.prior_job_path",
-                )
-                _sha256_string(
-                    anchor.get("prior_job_sha256"),
-                    f"{prior_key}.{method}.{setting}.prior_job_sha256",
-                )
+                if anchor.get("prior_manifest_path") is not None:
+                    _safe_relative_path(
+                        anchor.get("prior_manifest_path"),
+                        f"{prior_key}.{method}.{setting}.prior_manifest_path",
+                    )
+                    _sha256_string(
+                        anchor.get("prior_manifest_sha256"),
+                        f"{prior_key}.{method}.{setting}.prior_manifest_sha256",
+                    )
+                else:
+                    _safe_relative_path(
+                        anchor.get("prior_job_path"),
+                        f"{prior_key}.{method}.{setting}.prior_job_path",
+                    )
+                    _sha256_string(
+                        anchor.get("prior_job_sha256"),
+                        f"{prior_key}.{method}.{setting}.prior_job_sha256",
+                    )
                 _nonempty_string(
                     anchor.get("transfer_note"),
                     f"{prior_key}.{method}.{setting}.transfer_note",
@@ -1261,11 +1331,19 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
                 if _uses_search_priors(spec):
                     search_prior = {
                         "run_tag": prior["prior_run_tag"],
-                        "job_path": prior["prior_job_path"],
-                        "job_sha256": prior["prior_job_sha256"],
                         "historical_parameters": prior["historical_parameters"],
                         "transfer_note": prior["transfer_note"],
                     }
+                    if prior.get("prior_manifest_path") is not None:
+                        search_prior.update({
+                            "manifest_path": prior["prior_manifest_path"],
+                            "manifest_sha256": prior["prior_manifest_sha256"],
+                        })
+                    else:
+                        search_prior.update({
+                            "job_path": prior["prior_job_path"],
+                            "job_sha256": prior["prior_job_sha256"],
+                        })
                 else:
                     parent_run_tags.append(prior["parent_run_tag"])
         jobs.append({
