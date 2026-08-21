@@ -125,7 +125,7 @@ and FeedTTA uses `6/5/6`. This batch directly observed GOAT FSTTA at 12 workers
 
 ## R2R targeted gap refinement
 
-`r2r_targeted_gap_refinement_v1.json` is a 29-job follow-up for only the three
+`r2r_targeted_gap_refinement_v1.json` is a completed 29-job follow-up for only the three
 remaining weak pairs: nine DUET Tent points, eleven GOAT FeedTTA points, and
 nine GOAT ATENA points. It reuses all Source evidence and runs no sampled
 controls. Tent keeps `update_interval=1` and searches graph-local LayerNorm
@@ -134,7 +134,9 @@ below its `1e-6` LR boundary. ATENA first fixes its feedback to a lazy callback
 over the submitted evaluator trajectory, then reruns one protocol anchor plus
 eight local points. See
 [`R2R_TARGETED_GAP_REFINEMENT_PLAN.md`](R2R_TARGETED_GAP_REFINEMENT_PLAN.md)
-for the exact rationale, budget, and launch command.
+for the exact rationale, budget, and launch command. All 29 jobs completed
+without failure on commit `9c006fb`; the result analysis is
+[`R2R_TARGETED_GAP_REFINEMENT_V1.md`](../results/analysis/hparam_search/R2R_TARGETED_GAP_REFINEMENT_V1.md).
 
 ## R2R four-method low-learning-rate refinement
 

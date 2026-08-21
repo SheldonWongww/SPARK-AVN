@@ -211,6 +211,13 @@ feedback, adds model-aware FeedTTA scopes, and preserves FSTTA variance over
 the full test stream. It reuses the pinned argmax Source controls and has no
 sampled control jobs.
 
+The subsequent focused batch is defined by
+`experiments/r2r_targeted_gap_refinement_v1.json`. It contains only DUET Tent,
+GOAT FeedTTA, and GOAT ATENA (29 full-split jobs), reuses Source, and corrects
+ATENA to consume submitted-trajectory evaluator success through a lazy query
+callback. Results are documented in
+`results/analysis/hparam_search/R2R_TARGETED_GAP_REFINEMENT_V1.md`.
+
 Results are benchmark-first:
 
 ```text
