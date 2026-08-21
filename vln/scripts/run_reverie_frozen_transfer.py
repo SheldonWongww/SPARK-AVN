@@ -840,8 +840,12 @@ def _write_worker(attempt_dir, command):
 def launch_attempt(attempt_dir, metadata):
     worker = _write_worker(attempt_dir, metadata["command"])
     launcher_log = (attempt_dir / "launcher.log").open("ab", buffering=0)
+    # Invoke Bash directly.  Executing the ``#!/usr/bin/env bash`` script by
+    # path leaves a short env -> bash exec window; sampling /proc during that
+    # window records an identity that changes immediately and makes a live
+    # worker look orphaned to status/resume checks.
     process = subprocess.Popen(
-        [str(worker)],
+        ["bash", str(worker)],
         cwd=str(REPO_ROOT),
         stdout=launcher_log,
         stderr=subprocess.STDOUT,

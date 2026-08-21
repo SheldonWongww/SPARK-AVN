@@ -25,6 +25,31 @@ def _write_json(path, value):
 
 
 class ReverieFrozenTransferTest(unittest.TestCase):
+    def test_worker_launch_uses_stable_bash_process_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            attempt = Path(directory) / "attempt-00"
+            process = mock.Mock(pid=123)
+            with mock.patch.object(
+                runner.subprocess, "Popen", return_value=process
+            ) as popen, mock.patch.object(
+                runner,
+                "process_identity",
+                return_value={
+                    "pid": 123,
+                    "start_token": "proc:1",
+                    "cmdline_sha256": "a" * 64,
+                },
+            ):
+                launched, launcher_log = runner.launch_attempt(
+                    attempt, {"command": ["true"]}
+                )
+                launcher_log.close()
+            self.assertIs(launched, process)
+            self.assertEqual(
+                popen.call_args.args[0],
+                ["bash", str(attempt / "worker.sh")],
+            )
+
     def test_source_registry_uses_canonical_self_validating_manifests(self):
         spec = runner.load_spec(SPEC_PATH)
         _, source = runner._validate_source_registry(spec)
