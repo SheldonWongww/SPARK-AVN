@@ -525,6 +525,7 @@ class DiscreteTTAController:
         self.args = args
         self.model = model
         self.method = str(args.tta_method).lower()
+        self.benchmark = str(getattr(args, "dataset", "")).lower()
         audit_zero_update = bool(args.tta_audit_zero_update)
         audit_control = bool(args.tta_audit_control)
         if audit_zero_update and self.method == "source":
@@ -720,6 +721,12 @@ class DiscreteTTAController:
             raise RuntimeError("TTA episode ended before prepare_action")
         if self.method in ("feedtta", "atena"):
             if episode_stats is None:
+                if self.benchmark == "reverie":
+                    raise ValueError(
+                        "REVERIE binary-feedback TTA requires submitted-"
+                        "trajectory evaluator success; simulator-distance "
+                        "fallback is forbidden"
+                    )
                 if observations is None or len(observations) != 1:
                     raise ValueError(
                         "Binary-feedback TTA requires one final observation"
@@ -742,6 +749,29 @@ class DiscreteTTAController:
                 self.binary_feedback_endpoint = (
                     "final_simulator_observation_distance"
                 )
+            elif self.benchmark == "reverie":
+                expected_endpoint = (
+                    "reverie_submitted_trajectory_evaluator_navigation_"
+                    "success_lazy_query"
+                    if self.method == "atena" else
+                    "reverie_submitted_trajectory_evaluator_navigation_"
+                    "success_every_episode"
+                )
+                if self.binary_feedback_endpoint != expected_endpoint:
+                    raise ValueError(
+                        "REVERIE binary feedback did not come from the "
+                        "submitted-trajectory navigation-success evaluator"
+                    )
+                if self.method == "atena" and not callable(episode_stats):
+                    raise ValueError(
+                        "REVERIE ATENA feedback must remain a lazy evaluator "
+                        "callback until the entropy gate queries it"
+                    )
+                if self.method == "feedtta" and callable(episode_stats):
+                    raise ValueError(
+                        "REVERIE FeedTTA feedback must be evaluated eagerly "
+                        "once per submitted trajectory"
+                    )
         self.adapter.episode_end(episode_stats=episode_stats)
         self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
@@ -937,5 +967,80 @@ class DiscreteTTAAgentMixin:
             return evaluate_submitted_endpoint
         controller.binary_feedback_endpoint = (
             "r2r_submitted_trajectory_evaluator_success_every_episode"
+        )
+        return evaluate_submitted_endpoint()
+
+    def tta_reverie_episode_stats(self, trajectories, path_format):
+        """Return REVERIE navigation success at the submitted endpoint.
+
+        The official REVERIE evaluator separates navigation success (the
+        submitted endpoint can see the referred object) from remote grounding
+        success (the predicted object id is correct).  FeedTTA and ATENA are
+        permitted to consume only the former.  Graph agents may rerank their
+        endpoint after the simulator stops, so the final submitted trajectory
+        must be evaluated instead of reading ``observation['distance']``.
+        """
+        controller = getattr(self, "tta_controller", None)
+        if controller is None or controller.method not in ("feedtta", "atena"):
+            return None
+        if len(trajectories) != 1:
+            raise ValueError(
+                "Canonical binary-feedback REVERIE TTA requires batch size one"
+            )
+        item = trajectories[0]
+        instr_id = item["instr_id"]
+        scan, ground_truth, ground_truth_object = self.env.gt_trajs[instr_id]
+
+        if path_format == "nested_graph_path":
+            evaluator_path = item["path"]
+            predicted_object = item.get("pred_objid")
+
+            def evaluate_submitted_endpoint():
+                scores = self.env._eval_item(
+                    scan,
+                    evaluator_path,
+                    predicted_object,
+                    ground_truth,
+                    ground_truth_object,
+                )
+                if "success" not in scores:
+                    raise ValueError(
+                        "REVERIE evaluator did not return navigation success"
+                    )
+                return {"success": float(scores["success"])}
+        elif path_format == "viewpoint_tuples":
+            evaluator_path = [step[0] for step in item["path"]]
+            predicted_object = item.get("predObjId")
+
+            def evaluate_submitted_endpoint():
+                scores = self.env._eval_item(
+                    scan,
+                    evaluator_path,
+                    ground_truth,
+                    predicted_object,
+                    ground_truth_object,
+                )
+                if "success" not in scores:
+                    raise ValueError(
+                        "REVERIE evaluator did not return navigation success"
+                    )
+                return {"success": float(scores["success"])}
+        else:
+            raise ValueError(
+                "Unknown REVERIE trajectory format: {}".format(path_format)
+            )
+
+        # ATENA must not inspect the held-out outcome unless its entropy gate
+        # spends a query.  FeedTTA consumes exactly one eager navigation label
+        # after every completed submitted trajectory.
+        if controller.method == "atena":
+            controller.binary_feedback_endpoint = (
+                "reverie_submitted_trajectory_evaluator_navigation_"
+                "success_lazy_query"
+            )
+            return evaluate_submitted_endpoint
+        controller.binary_feedback_endpoint = (
+            "reverie_submitted_trajectory_evaluator_navigation_"
+            "success_every_episode"
         )
         return evaluate_submitted_endpoint()

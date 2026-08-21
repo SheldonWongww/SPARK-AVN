@@ -14,6 +14,9 @@ DISCRETE_SETTINGS = {
 }
 CONTINUOUS_SETTINGS = {"etpnav-r2r-ce", "bevbert-r2r-ce"}
 METHODS = {"source", "tent", "fstta", "eam", "feedtta", "atena"}
+FEEDTTA_SCOPE_PROFILES = {
+    "configured_prefixes", "paper_full", "last_crossmodal", "action_head",
+}
 
 
 COMMON = {
@@ -144,10 +147,12 @@ def _continuous(
     method, params, diagnostics, audit_zero_update=False, audit_control=False,
     audit_expected_episodes=None,
 ):
-    if method == "feedtta" and "scope_profile" in params:
-        raise ValueError(
-            "FeedTTA scope_profile is currently defined only for discrete VLN"
-        )
+    if (
+        method == "feedtta"
+        and params.get("scope_profile", "configured_prefixes")
+        not in FEEDTTA_SCOPE_PROFILES
+    ):
+        raise ValueError("invalid continuous FeedTTA scope_profile")
     tokens = ["TTA.METHOD", method,
               "TTA.DIAGNOSTICS_FILE", diagnostics]
     if audit_zero_update:
@@ -188,6 +193,7 @@ def _continuous(
         "p": "P", "alpha": "ALPHA", "sgr_seed": "SGR_SEED",
         "gamma": "GAMMA", "normalize_gradient": "NORMALIZE_GRADIENT",
         "optimizer_eps": "EPS", "lr_query": "LR_QUERY", "lr_self": "LR_SELF",
+        "scope_profile": "SCOPE_PROFILE",
         "mix_lambda": "MIX_LAMBDA", "query_threshold": "QUERY_THRESHOLD",
         "self_loss_weight": "SELF_LOSS_WEIGHT",
     }

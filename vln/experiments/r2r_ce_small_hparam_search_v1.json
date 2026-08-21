@@ -1,0 +1,282 @@
+{
+  "schema": "navtta.vln_tta_hparam_search.v1",
+  "experiment_id": "vln-r2r-ce-small-hparam-search-v1",
+  "profile": {
+    "name": "r2r_ce_two_stage_small",
+    "purpose": "Screen low-intensity continual TTA on 100 canonical episodes, then confirm one winner per model-method on all 778 val_seen episodes.",
+    "streamvln_status": "blocked_no_formal_tta_runner"
+  },
+  "split": "val_seen",
+  "smoke_episodes": 2,
+  "screening_episodes": 100,
+  "primary_order_seed": 0,
+  "final_order_seeds": [0],
+  "settings": [
+    "etpnav-r2r-ce",
+    "bevbert-r2r-ce"
+  ],
+  "setting_episode_counts": {
+    "etpnav-r2r-ce": 778,
+    "bevbert-r2r-ce": 778
+  },
+  "reused_source_controls": {
+    "path": "vln/manifests/r2r_ce_reused_source_controls.json",
+    "sha256": "40ec2c6ac9e4685040df75ddd60201a476ae85c24558d9411bb54428b6c3e94b"
+  },
+  "protocol": {
+    "batch_size": 1,
+    "continual_across_episodes": true,
+    "reset_from_source_between_jobs": true,
+    "tta_step_unit": "high_level_waypoint_navigation_decision",
+    "screening_then_full_only": true,
+    "require_complete_screening": true,
+    "source_control_execution": "reuse_completed_formal_manifest",
+    "source_execution_jobs": 0,
+    "screening_source_stage": "offline_first_100_from_reused_full_source",
+    "finalist_promotion_source": "stage1_100_episode_canonical_prefix",
+    "full_val_seen_finalists_per_setting": 1,
+    "full_val_seen_matched_source_controls": true,
+    "final_source_stage": "reused_full_778_episode_source",
+    "paper_anchor_always_promoted": false,
+    "freeze_winner_before_order_robustness": true,
+    "order_robustness_enabled": false,
+    "require_formal_final_manifest": true,
+    "formal_launch_requires_review_confirmation": true,
+    "formal_launch_requires_full_matrix": true,
+    "joint_launch_required": true,
+    "matched_source_action_selection": {
+      "tent": "argmax",
+      "fstta": "argmax",
+      "eam": "argmax",
+      "feedtta": "argmax",
+      "atena": "argmax"
+    },
+    "feedtta_action_protocol": "target_native_argmax",
+    "no_val_unseen_or_test_during_search": true,
+    "shared_gpu_coexistence": {
+      "peer_campaign": "reverie_r2r_frozen_transfer_v1",
+      "ce_worker_cap": 1,
+      "peer_worker_cap": 1,
+      "required_concurrency_profile": "shared_gpu_with_r2r_ce",
+      "joint_readiness_ack_required": true,
+      "campaign_lifetime_lock_required": true,
+      "shared_active_reservation_required": true,
+      "require_isolated_two_episode_smoke_before_adjustment": true,
+      "adjust_only_from_observed_peak_memory": true
+    }
+  },
+  "fixed_scopes": {
+    "tent": "last_layernorm_or_last_4_layernorm_affine",
+    "fstta": "last_4_layernorm_affine",
+    "eam": "cross_modal_planner_and_navigation_head",
+    "feedtta": "explicit_model_aware_scope_profile",
+    "atena": "all_checkpoint_trainable_policy_parameters_except_critic"
+  },
+  "methods": {
+    "tent": {
+      "supervision": "unsupervised",
+      "screening": {
+        "fixed": {
+          "update_interval": 1,
+          "optimizer": "AdamW",
+          "weight_decay": 0.0,
+          "max_grad_norm": 0.0,
+          "episodic": false
+        },
+        "candidates_by_setting": {
+          "etpnav-r2r-ce": [
+            {"lr": 1e-8, "norm_scope": "last_k_ln", "last_k_ln": 4},
+            {"lr": 3e-8, "norm_scope": "last_k_ln", "last_k_ln": 4},
+            {"lr": 1e-7, "norm_scope": "last_ln", "last_k_ln": 1},
+            {"lr": 1.5625e-5, "norm_scope": "ln", "last_k_ln": 4}
+          ],
+          "bevbert-r2r-ce": [
+            {"lr": 1e-8, "norm_scope": "last_k_ln", "last_k_ln": 4},
+            {"lr": 3e-8, "norm_scope": "last_k_ln", "last_k_ln": 4},
+            {"lr": 1e-7, "norm_scope": "last_ln", "last_k_ln": 1},
+            {"lr": 1.5625e-5, "norm_scope": "ln", "last_k_ln": 4}
+          ]
+        },
+        "anchor_by_setting": {
+          "etpnav-r2r-ce": {"lr": 1.5625e-5, "norm_scope": "ln", "last_k_ln": 4},
+          "bevbert-r2r-ce": {"lr": 1.5625e-5, "norm_scope": "ln", "last_k_ln": 4}
+        }
+      }
+    },
+    "fstta": {
+      "supervision": "unsupervised",
+      "screening": {
+        "fixed": {
+          "q": 0.1,
+          "rho": 0.95,
+          "tau": 0.7,
+          "a": 0.9,
+          "b": 1.1,
+          "optimizer": "AdamW",
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "norm_scope": "last_k_ln",
+          "last_k_ln": 4,
+          "fast_grad_mode": "concordant",
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "max_grad_norm": 0.0,
+          "episodic": false
+        },
+        "candidates_by_setting": {
+          "etpnav-r2r-ce": [
+            {"lr_fast": 3e-7, "lr_slow": 1e-5, "m": 16, "n": 32},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 16, "n": 32},
+            {"lr_fast": 3e-6, "lr_slow": 1e-4, "m": 8, "n": 16},
+            {"lr_fast": 5e-4, "lr_slow": 1e-3, "m": 4, "n": 32}
+          ],
+          "bevbert-r2r-ce": [
+            {"lr_fast": 3e-7, "lr_slow": 1e-5, "m": 16, "n": 32},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 16, "n": 32},
+            {"lr_fast": 3e-6, "lr_slow": 1e-4, "m": 8, "n": 16},
+            {"lr_fast": 1.5e-4, "lr_slow": 1e-3, "m": 1, "n": 16}
+          ]
+        },
+        "anchor_by_setting": {
+          "etpnav-r2r-ce": {"lr_fast": 5e-4, "lr_slow": 1e-3, "m": 4, "n": 32},
+          "bevbert-r2r-ce": {"lr_fast": 1.5e-4, "lr_slow": 1e-3, "m": 1, "n": 16}
+        }
+      }
+    },
+    "eam": {
+      "supervision": "unsupervised_vln_port",
+      "screening": {
+        "fixed": {
+          "confidence_scale": 0.4,
+          "optimizer": "Adam",
+          "max_grad_norm": 0.0,
+          "episodic": false
+        },
+        "candidates_by_setting": {
+          "etpnav-r2r-ce": [
+            {"lr": 3e-9, "update_interval": 32, "memory_size": 32, "batch_size": 8},
+            {"lr": 1e-8, "update_interval": 16, "memory_size": 32, "batch_size": 8},
+            {"lr": 3e-8, "update_interval": 8, "memory_size": 32, "batch_size": 8},
+            {"lr": 1e-6, "update_interval": 1, "memory_size": 32, "batch_size": 8}
+          ],
+          "bevbert-r2r-ce": [
+            {"lr": 3e-9, "update_interval": 32, "memory_size": 32, "batch_size": 8},
+            {"lr": 1e-8, "update_interval": 16, "memory_size": 32, "batch_size": 8},
+            {"lr": 3e-8, "update_interval": 8, "memory_size": 32, "batch_size": 8},
+            {"lr": 1e-6, "update_interval": 1, "memory_size": 64, "batch_size": 8}
+          ]
+        },
+        "anchor_by_setting": {
+          "etpnav-r2r-ce": {"lr": 1e-6, "update_interval": 1, "memory_size": 32, "batch_size": 8},
+          "bevbert-r2r-ce": {"lr": 1e-6, "update_interval": 1, "memory_size": 64, "batch_size": 8}
+        }
+      }
+    },
+    "feedtta": {
+      "supervision": "binary_episode_navigation_feedback",
+      "screening": {
+        "fixed": {
+          "p": 0.05,
+          "alpha": -0.2,
+          "gamma": 0.99,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-5,
+          "max_grad_norm": 0.0,
+          "action_selection": "argmax",
+          "action_seed": 0,
+          "sgr_seed": 0,
+          "episodic": false
+        },
+        "candidates_by_setting": {
+          "etpnav-r2r-ce": [
+            {"lr": 1e-8, "scope_profile": "last_crossmodal"},
+            {"lr": 3e-8, "scope_profile": "last_crossmodal"},
+            {"lr": 1e-7, "scope_profile": "last_crossmodal"},
+            {"lr": 3e-8, "scope_profile": "action_head"}
+          ],
+          "bevbert-r2r-ce": [
+            {"lr": 1e-8, "scope_profile": "last_crossmodal"},
+            {"lr": 3e-8, "scope_profile": "last_crossmodal"},
+            {"lr": 1e-7, "scope_profile": "last_crossmodal"},
+            {"lr": 3e-8, "scope_profile": "action_head"}
+          ]
+        },
+        "anchor_by_setting": {
+          "etpnav-r2r-ce": {"lr": 3e-8, "scope_profile": "last_crossmodal"},
+          "bevbert-r2r-ce": {"lr": 3e-8, "scope_profile": "last_crossmodal"}
+        }
+      }
+    },
+    "atena": {
+      "supervision": "active_binary_episode_navigation_feedback",
+      "screening": {
+        "fixed": {
+          "optimizer": "AdamW",
+          "weight_decay": 0.01,
+          "max_grad_norm": 0.0,
+          "action_selection": "argmax",
+          "episodic": false
+        },
+        "candidates_by_setting": {
+          "etpnav-r2r-ce": [
+            {"lr_query": 3e-8, "lr_self": 1e-8, "mix_lambda": 0.5, "query_threshold": 0.3, "self_loss_weight": 0.1},
+            {"lr_query": 1e-7, "lr_self": 1e-8, "mix_lambda": 0.5, "query_threshold": 0.3, "self_loss_weight": 0.1},
+            {"lr_query": 3e-7, "lr_self": 3e-8, "mix_lambda": 0.5, "query_threshold": 0.3, "self_loss_weight": 0.1},
+            {"lr_query": 5e-7, "lr_self": 1e-8, "mix_lambda": 0.5, "query_threshold": 0.3, "self_loss_weight": 0.1}
+          ],
+          "bevbert-r2r-ce": [
+            {"lr_query": 3e-8, "lr_self": 1e-8, "mix_lambda": 0.25, "query_threshold": 0.1, "self_loss_weight": 0.1},
+            {"lr_query": 1e-7, "lr_self": 1e-8, "mix_lambda": 0.25, "query_threshold": 0.1, "self_loss_weight": 0.1},
+            {"lr_query": 3e-7, "lr_self": 3e-8, "mix_lambda": 0.25, "query_threshold": 0.1, "self_loss_weight": 0.1},
+            {"lr_query": 2e-6, "lr_self": 4e-8, "mix_lambda": 0.25, "query_threshold": 0.1, "self_loss_weight": 0.1}
+          ]
+        },
+        "anchor_by_setting": {
+          "etpnav-r2r-ce": {"lr_query": 5e-7, "lr_self": 1e-8, "mix_lambda": 0.5, "query_threshold": 0.3, "self_loss_weight": 0.1},
+          "bevbert-r2r-ce": {"lr_query": 2e-6, "lr_self": 4e-8, "mix_lambda": 0.25, "query_threshold": 0.1, "self_loss_weight": 0.1}
+        }
+      }
+    }
+  },
+  "selection": {
+    "r2r_and_r2r_ce": {
+      "primary": "SPL",
+      "source_constraint": "SR_not_more_than_1.5_percentage_points_below_matched_source",
+      "source_sr_floor_tolerance_percentage_points": 1.5,
+      "tie_breakers": ["SR", "lower_parameter_drift", "fewer_updates"]
+    },
+    "reverie": {
+      "primary": "RGSPL",
+      "source_constraint": "unused_in_this_campaign",
+      "source_sr_floor_tolerance_percentage_points": 1.5,
+      "tie_breakers": ["RGS", "SPL", "lower_parameter_drift"]
+    },
+    "reject": ["nonfinite", "incomplete_episode_stream", "late_stream_collapse"],
+    "notes": {
+      "screening": "The 100-episode prefix ranks candidates only; one winner per model-method is frozen before full val_seen confirmation.",
+      "anchor": "Historical or paper anchors are present for calibration but are not force-promoted when only one full-val slot exists."
+    }
+  },
+  "budget": {
+    "screening_tta_jobs": 40,
+    "full_val_seen_tta_jobs": 10,
+    "source_execution_jobs": 0,
+    "total_executed_jobs": 50
+  },
+  "scheduler_defaults": {
+    "max_workers": 1,
+    "max_per_model": 1,
+    "max_discrete_workers": 1,
+    "max_continuous_workers": 1,
+    "max_gpu_memory_mib_before_launch": 16000,
+    "estimated_job_gpu_memory_mib": 8000,
+    "max_aggregate_gpu_memory_mib": 26000,
+    "max_cgroup_memory_gib_before_launch": 55.0,
+    "estimated_job_memory_gib": 20.0,
+    "max_aggregate_cgroup_memory_gib": 75.0,
+    "launch_stagger_seconds": 15.0,
+    "resource_wait_timeout_seconds": 3600
+  }
+}

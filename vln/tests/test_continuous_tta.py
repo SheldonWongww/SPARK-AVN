@@ -20,7 +20,10 @@ except ImportError:  # Lightweight repository checks need not install PyTorch.
 
 
 if torch is not None:
-    from navtta_vln.continuous_tta import ContinuousVLNTTA
+    from navtta_vln.continuous_tta import (
+        ContinuousVLNTTA,
+        _feedtta_trainable_prefixes,
+    )
 
 
     class TinyDecisionModel(nn.Module):
@@ -288,6 +291,45 @@ class ContinuousVLNTTATest(unittest.TestCase):
         self.assertEqual(
             controller.adapter.diagnostics()["action_selection_protocol"],
             "target_native_argmax",
+        )
+
+    def test_feedtta_continuous_scope_profiles_are_model_aware(self):
+        stack = lambda: SimpleNamespace(  # noqa: E731
+            encoder=SimpleNamespace(x_layers=[object(), object(), object()])
+        )
+        etpnav = SimpleNamespace(
+            global_encoder=stack(), global_sap_head=object()
+        )
+        self.assertEqual(
+            _feedtta_trainable_prefixes(
+                etpnav, "etpnav", "last_crossmodal", ()
+            ),
+            ("global_encoder.encoder.x_layers.2", "global_sap_head"),
+        )
+        bevbert = SimpleNamespace(
+            global_encoder=stack(),
+            local_encoder=stack(),
+            global_sap_head=object(),
+            local_sap_head=object(),
+            sap_fuse_linear=object(),
+        )
+        self.assertEqual(
+            _feedtta_trainable_prefixes(
+                bevbert, "bevbert", "paper_full", ()
+            ),
+            (
+                "global_encoder.encoder.x_layers",
+                "local_encoder.encoder.x_layers",
+                "global_sap_head",
+                "local_sap_head",
+                "sap_fuse_linear",
+            ),
+        )
+        self.assertEqual(
+            _feedtta_trainable_prefixes(
+                bevbert, "bevbert", "action_head", ()
+            ),
+            ("global_sap_head", "local_sap_head", "sap_fuse_linear"),
         )
 
     def test_feedtta_explicit_sampling_uses_a_dedicated_stream(self):

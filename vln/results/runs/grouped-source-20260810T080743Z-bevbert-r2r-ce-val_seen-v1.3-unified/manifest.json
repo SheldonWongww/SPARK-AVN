@@ -1,0 +1,144 @@
+{
+  "run_id": "grouped-source-20260810T080743Z-bevbert-r2r-ce-val_seen-v1.3-unified",
+  "task": "vln",
+  "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
+  "model": "bevbert",
+  "method": "source",
+  "run_tag": "grouped-source-20260810T080743Z",
+  "source_setting": "bevbert-r2r-ce:val_seen:v1.3-unified",
+  "seed": 0,
+  "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+  "config": "vln/baselines/bevbert/bevbert_ce/run_r2r/iter_train.yaml",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/vlnce017/bin/python",
+    "run.py",
+    "--exp_name",
+    "source_val_seen",
+    "--run-type",
+    "eval",
+    "--exp-config",
+    "run_r2r/iter_train.yaml",
+    "SIMULATOR_GPU_IDS",
+    "[0]",
+    "TORCH_GPU_ID",
+    "0",
+    "TORCH_GPU_IDS",
+    "[0]",
+    "GPU_NUMBERS",
+    "1",
+    "NUM_ENVIRONMENTS",
+    "1",
+    "TASK_CONFIG.SEED",
+    "0",
+    "TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.ALLOW_SLIDING",
+    "True",
+    "TASK_CONFIG.DATASET.DATA_PATH",
+    "/root/autodl-tmp/code/NavTTA/vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/{split}/{split}_bertidx.json.gz",
+    "MODEL.pretrained_path",
+    "None",
+    "IL.back_algo",
+    "control",
+    "TENSORBOARD_DIR",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/tensorboard/",
+    "CHECKPOINT_FOLDER",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/checkpoints/",
+    "RESULTS_DIR",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/metrics/",
+    "VIDEO_DIR",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/videos/",
+    "LOG_FILE",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/run.log",
+    "EVAL.SPLIT",
+    "val_seen",
+    "EVAL.CKPT_PATH_DIR",
+    "/root/autodl-tmp/code/NavTTA/vln/checkpoints/bevbert/ckpt.iter9600.pth",
+    "EVAL.EPISODE_COUNT",
+    "-1",
+    "EVAL.EPISODE_ORDER_MANIFEST",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_ce_v1_3_unified"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/bevbert/ckpt.iter9600.pth",
+    "size": 2551084857,
+    "sha256": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "waypoint_predictor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/etpnav/wp_pred/check_cwp_bestdist_hfov90",
+      "size": 201954133,
+      "sha256": "09d0f42cbd801e05b0fa0212b901d409f033f4d0bce2fce1fa8a1331b502159f"
+    },
+    {
+      "name": "depth_encoder",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/etpnav/ddppo-models/gibson-2plus-resnet50.pth",
+      "size": 49853716,
+      "sha256": "a6a600277efacf5fd98e293267221185d843eb3012aeff62fabfeee24c2bcdad"
+    },
+    {
+      "name": "clip_vit_b16",
+      "path": "/root/autodl-tmp/cache/clip/ViT-B-16.pt",
+      "size": 350837078,
+      "sha256": "5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/val_seen/val_seen_bertidx.json.gz",
+    "version": "r2r_ce_v1_3_unified_etpnav_bevbert",
+    "size": 742311,
+    "index_sha256": "4cb1d97271017982103458fc9156e73ae4771e9b811b15ce9a7f959ad38c43ce",
+    "stream_order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e",
+    "stream_content_sha256": "4cb1d97271017982103458fc9156e73ae4771e9b811b15ce9a7f959ad38c43ce"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 40400,
+      "sha256": "85170f9404e9951c1409e8532323f92936982d10b48c387024d532f207939b94"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_ce_v1_3_unified/val_seen.json",
+      "size": 56481,
+      "sha256": "3c3edb55e4f7bf2812b3863f15c0bd7c56a230311023aafcd265d7f4a1106a49"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-debian-bookworm-sid",
+    "python": "3.6.12",
+    "cuda_visible_devices": "0",
+    "torch": "1.9.1+cu111",
+    "torch_cuda": "11.1",
+    "cuda_available": true,
+    "cudnn": 8005,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-10T08:50:57.362260+00:00",
+  "completed_at": "2026-08-10T09:20:25.596021+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "c067db98faa1b3ea7c9947b94c8c0d1b9e005d2cfa94302ba458b5ffed3e9786",
+  "result_artifacts": [
+    {
+      "name": "metrics/source_val_seen/stats_ckpt_47_val_seen.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/metrics/source_val_seen/stats_ckpt_47_val_seen.json",
+      "size": 349,
+      "sha256": "80340dcc216d1952c7fa3d317910631059bea4da9a58ba9afab0e212879fd2c9"
+    },
+    {
+      "name": "metrics/source_val_seen/stats_ep_ckpt_47_val_seen_r0_w1.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/metrics/source_val_seen/stats_ep_ckpt_47_val_seen_r0_w1.json",
+      "size": 232277,
+      "sha256": "dae377f264d9867dcc9f8fd37c1d47c9d62e5c6280dacb25a4c9a236f0002197"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "schema": "navtta.vln_reused_source_controls.v1",
+  "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
+  "split": "val_seen",
+  "episode_count": 778,
+  "seed": 0,
+  "action_selection": "target_native_argmax",
+  "episode_order": {
+    "path": "vln/manifests/episode_order/r2r_ce_v1_3_unified/val_seen.json",
+    "sha256": "3c3edb55e4f7bf2812b3863f15c0bd7c56a230311023aafcd265d7f4a1106a49",
+    "order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e"
+  },
+  "settings": {
+    "etpnav-r2r-ce": {
+      "model": "etpnav",
+      "run_id": "grouped-source-20260810T080743Z-etpnav-r2r-ce-val_seen-v1.3-unified",
+      "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+      "checkpoint_sha256": "4e70d2a1b4a6cfb32158901b7300cbc2be657641f16c9a17f35ca8570470d8b3",
+      "dataset_index_sha256": "4cb1d97271017982103458fc9156e73ae4771e9b811b15ce9a7f959ad38c43ce",
+      "formal_manifest": {
+        "path": "vln/results/runs/grouped-source-20260810T080743Z-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "sha256": "84f8c4ade062a904ae21b2600739683e352b8ef1c15eaf48b4aab4a6d242b560"
+      },
+      "aggregate_artifact": {
+        "name": "metrics/source_val_seen/stats_ckpt_59_val_seen.json",
+        "path": "vln/results/source/grouped-source-20260810T080743Z/etpnav-r2r-ce/val_seen/metrics/source_val_seen/stats_ckpt_59_val_seen.json",
+        "size": 349,
+        "sha256": "21930c7c5f0657deefcdd5cb3ba2171e5bcd96b3f7709890faef18044b288ff4"
+      },
+      "per_episode_artifact": {
+        "name": "metrics/source_val_seen/stats_ep_ckpt_59_val_seen_r0_w1.json",
+        "path": "vln/results/source/grouped-source-20260810T080743Z/etpnav-r2r-ce/val_seen/metrics/source_val_seen/stats_ep_ckpt_59_val_seen_r0_w1.json",
+        "size": 232201,
+        "sha256": "b91d474da83afb5a1033e1dfc7e59c97e432c4c50e6dc127cb2a70fb384c2fea"
+      }
+    },
+    "bevbert-r2r-ce": {
+      "model": "bevbert",
+      "run_id": "grouped-source-20260810T080743Z-bevbert-r2r-ce-val_seen-v1.3-unified",
+      "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+      "checkpoint_sha256": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8",
+      "dataset_index_sha256": "4cb1d97271017982103458fc9156e73ae4771e9b811b15ce9a7f959ad38c43ce",
+      "formal_manifest": {
+        "path": "vln/results/runs/grouped-source-20260810T080743Z-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "sha256": "f5688b389a5c461891215b1e831ba0b194c07faf6950520af0a3a822b39a8ddd"
+      },
+      "aggregate_artifact": {
+        "name": "metrics/source_val_seen/stats_ckpt_47_val_seen.json",
+        "path": "vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/metrics/source_val_seen/stats_ckpt_47_val_seen.json",
+        "size": 349,
+        "sha256": "80340dcc216d1952c7fa3d317910631059bea4da9a58ba9afab0e212879fd2c9"
+      },
+      "per_episode_artifact": {
+        "name": "metrics/source_val_seen/stats_ep_ckpt_47_val_seen_r0_w1.json",
+        "path": "vln/results/source/grouped-source-20260810T080743Z/bevbert-r2r-ce/val_seen/metrics/source_val_seen/stats_ep_ckpt_47_val_seen_r0_w1.json",
+        "size": 232277,
+        "sha256": "dae377f264d9867dcc9f8fd37c1d47c9d62e5c6280dacb25a4c9a236f0002197"
+      }
+    }
+  },
+  "reuse_policy": {
+    "source_execution_jobs": 0,
+    "screening_metrics": "recompute_from_first_100_canonical_per_episode_records",
+    "full_metrics": "recompute_from_all_778_canonical_per_episode_records",
+    "missing_or_mismatched_evidence": "fail_closed_without_launching_source"
+  }
+}

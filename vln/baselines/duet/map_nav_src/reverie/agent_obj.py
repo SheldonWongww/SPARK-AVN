@@ -514,5 +514,8 @@ class GMapObjectNavAgent(Seq2SeqAgent):
             self.logs['IL_loss'].append(ml_loss.item())
             self.logs['OG_loss'].append(og_loss.item())
 
-        self.tta_episode_end(observations=obs)
+        episode_stats = self.tta_reverie_episode_stats(
+            traj, path_format='nested_graph_path'
+        )
+        self.tta_episode_end(episode_stats=episode_stats)
         return traj

@@ -1,0 +1,622 @@
+{
+  "benchmark": "r2r",
+  "protocol": {
+    "episode_count": 1021,
+    "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+    "metric_unit": "percentage_points",
+    "order_seed": 0,
+    "qualification": "Frozen model-method selection evidence; independent split/order robustness is not established.",
+    "selection_scope": "val_seen_seed0_hyperparameter_selection",
+    "source_protocol": "standard_argmax"
+  },
+  "protocol_status": "complete_val_seen_seed0_selection",
+  "provenance_status": "complete_formal_manifest_identity_verified",
+  "publication_status": "selection_registry_not_publication_final",
+  "records": {
+    "duet-r2r": {
+      "atena": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 3.42,
+          "SR": 1.57
+        },
+        "formal_immutable_identity_sha256": "0f44dddb12ff7056bf4d18027b698537fa47ecc203b9547c696817e674c5fb8e",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-01-atena-0000-duet-r2r-8d3372dc24-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "4a3399d6a1a252d5a0a3418e186ca05e106799ac3cf7e2dcfc146dc1f053ec09",
+        "method": "atena",
+        "metrics": {
+          "SPL": 76.3,
+          "SR": 80.41
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 1.6e-06,
+          "lr_self": 2e-07,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.0,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-01-atena-0000-duet-r2r-8d3372dc24",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 1.87,
+          "SR": 1.47
+        },
+        "formal_immutable_identity_sha256": "49fa9e30d809bc9b0558852afe4c4ca9bba62d36c7bc63d8b5cee6494b8f60e6",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-00-eam-0000-duet-r2r-57ab8b8bf5-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "61d7725c9fb6db68c7912b19226909573ac0835a3b3ce20614009b9d0ee5399f",
+        "method": "eam",
+        "metrics": {
+          "SPL": 74.75,
+          "SR": 80.31
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.5,
+          "episodic": false,
+          "lr": 1e-05,
+          "max_grad_norm": 0.0,
+          "memory_size": 64,
+          "optimizer": "Adam",
+          "update_interval": 8,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-00-eam-0000-duet-r2r-57ab8b8bf5",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 1.0,
+          "SR": 0.49
+        },
+        "formal_immutable_identity_sha256": "63cd3ce01d5c7f7cc05aaf034880e1600e28dc5e38d7a29fdf1ff1c9eecd742a",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "e9ab74ff173f04edaae26a21b38b9123b58ada37241b248ffbb53da246ea43b3",
+        "method": "feedtta",
+        "metrics": {
+          "SPL": 73.88,
+          "SR": 79.33
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "episodic": false,
+          "gamma": 0.8,
+          "lr": 5e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 0.22,
+          "SR": 0.3
+        },
+        "formal_immutable_identity_sha256": "07307ff45a42d48e28edc02a9a3c789aa8ab04947be608189d090253c59e5ad1",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "1cc85244bb6e69b870813c24114cba8c53d655ef537e9b73534583257e7605e5",
+        "method": "fstta",
+        "metrics": {
+          "SPL": 73.1,
+          "SR": 79.14
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0018,
+          "lr_slow": 0.0003,
+          "m": 8,
+          "max_grad_norm": 0.0,
+          "n": 4,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "b09d07795131e814a73b91149c6af8c7f312d4858b4bf21ad97954e9fd98d77b",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-duet-r2r-3865cf90bc-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "e7adfa7bcab1c9b0c19b4f37b08c9c38de75cb247716c629504941612a87d9bc",
+        "method": "source",
+        "metrics": {
+          "ACTION_STEPS": 5.69,
+          "CLS": 77.99,
+          "LENGTHS": 12.33,
+          "NAV_ERROR": 2.28,
+          "NDTW": 78.74,
+          "ORACLE_ERROR": 1.28,
+          "ORACLE_SR": 85.7,
+          "SDTW": 70.93,
+          "SPL": 72.88,
+          "SR": 78.84,
+          "STEPS": 6.19
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-duet-r2r-3865cf90bc",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+        "delta_vs_source_pp": {
+          "SPL": 0.2,
+          "SR": 0.1
+        },
+        "formal_immutable_identity_sha256": "25da06951a9f423de6d7aa847f4eb251952a904038dfbac6760abbe37992d1e1",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b-duet-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "af4d7032eeec5e9051ecc6ffc09402370f2d70b217b2b4e6c20044d4c56bd609",
+        "method": "tent",
+        "metrics": {
+          "SPL": 73.08,
+          "SR": 78.94
+        },
+        "parameters": {
+          "episodic": false,
+          "last_k_ln": 9,
+          "lr": 1e-05,
+          "max_grad_norm": 0.0,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b",
+        "supervision_category": "unsupervised_tta"
+      }
+    },
+    "goat-r2r": {
+      "atena": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.19,
+          "SR": 0.1
+        },
+        "formal_immutable_identity_sha256": "5e278ff8751f230faa0d371130c098425c9ee86834a2a937b21d0eabd0af4e1c",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "9c42cbb78e22adfdabe93f875aa79ab8ea51c15fb8f3b723e4b04b7b12aecd46",
+        "method": "atena",
+        "metrics": {
+          "SPL": 80.24,
+          "SR": 84.92
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 3.75e-07,
+          "lr_self": 3.515625e-08,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.0,
+          "optimizer": "AdamW",
+          "query_threshold": 0.15,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.5,
+          "SR": 0.49
+        },
+        "formal_immutable_identity_sha256": "a7f8ef22f3e7f34d1ed06bbe58e296b43e0d93543812968450c3bfded1bb6434",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-04-eam-0000-goat-r2r-01a184b229-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "c3c1ba40611a511976c382c238529de3810ca748fd8f717184612d2e5f7ee6d4",
+        "method": "eam",
+        "metrics": {
+          "SPL": 80.55,
+          "SR": 85.31
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.3,
+          "episodic": false,
+          "lr": 3e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 4,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-04-eam-0000-goat-r2r-01a184b229",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.06,
+          "SR": 0.1
+        },
+        "formal_immutable_identity_sha256": "b01c6712236c588919974add20ce912ac7be49ee92d639b0271603754c0173a6",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "1e3c4afa23a38543e955a6684097dbed88ae384e05b09a1ee8e742a8c723c5ab",
+        "method": "feedtta",
+        "metrics": {
+          "SPL": 80.11,
+          "SR": 84.92
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": -0.1,
+          "episodic": false,
+          "gamma": 0.8,
+          "lr": 1e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.1,
+          "scope_profile": "action_head",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.16,
+          "SR": 0.1
+        },
+        "formal_immutable_identity_sha256": "f836847b6efa4e47226a102814a2fdad0901d651dae8980bd20579f7e7b193b9",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "df7316d7e83960a5c32b518b9f73a292ccfba4b33b82a33527ff663185b348f2",
+        "method": "fstta",
+        "metrics": {
+          "SPL": 80.21,
+          "SR": 84.92
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0018,
+          "lr_slow": 0.001,
+          "m": 3,
+          "max_grad_norm": 0.0,
+          "n": 8,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "cc4cbec4898a33ab666a6bd9990f8c74a563ade3202e5887beb8d80790b14e7c",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-goat-r2r-3865cf90bc-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "6dcb148b179ea45bbef99ccc34ab0109be035b78dfe5e4fa5e48329eaed65b96",
+        "method": "source",
+        "metrics": {
+          "ACTION_STEPS": 5.45,
+          "CLS": 82.67,
+          "LENGTHS": 11.69,
+          "NAV_ERROR": 1.67,
+          "NDTW": 84.13,
+          "ORACLE_ERROR": 1.01,
+          "ORACLE_SR": 89.23,
+          "SDTW": 78.2,
+          "SPL": 80.05,
+          "SR": 84.82,
+          "STEPS": 5.83
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-goat-r2r-3865cf90bc",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+        "delta_vs_source_pp": {
+          "SPL": 0.27,
+          "SR": 0.1
+        },
+        "formal_immutable_identity_sha256": "a1aad8eaf57d299e1710bd21939868460e51b6c07ee5c3a514fd6ccf681355b2",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323-goat-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "f2fdafba2492e446b1605c0fb07e5192274675124a9dcb820f861642c6ea5e4e",
+        "method": "tent",
+        "metrics": {
+          "SPL": 80.32,
+          "SR": 84.92
+        },
+        "parameters": {
+          "episodic": false,
+          "lr": 1e-05,
+          "max_grad_norm": 0.0,
+          "norm_scope": "ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323",
+        "supervision_category": "unsupervised_tta"
+      }
+    },
+    "hamt-r2r": {
+      "atena": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 1.98,
+          "SR": 1.86
+        },
+        "formal_immutable_identity_sha256": "16cade262f5d4b5563e95961c72eef5861f40ea1cebe6e6eda70714cb2cf1905",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-03-atena-0000-hamt-r2r-8dfe151e97-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "d501f3b5831071591ebf7c8f981f66899f9cc367215b4a6b18d948ac95abce33",
+        "method": "atena",
+        "metrics": {
+          "SPL": 74.16,
+          "SR": 77.47
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 3.2e-06,
+          "lr_self": 4e-07,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.25,
+          "optimizer": "AdamW",
+          "query_threshold": 0.1,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-03-atena-0000-hamt-r2r-8dfe151e97",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 1.22,
+          "SR": 1.08
+        },
+        "formal_immutable_identity_sha256": "03014916be6105da5c555b7d9a17d5050824120e2a5222e706c98344f6f23128",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-02-eam-0000-hamt-r2r-c88e328c7a-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "bd750d1e33a3fb11de0da1fd03aa07c118f773e222f051dc2200d6c794ed390a",
+        "method": "eam",
+        "metrics": {
+          "SPL": 73.4,
+          "SR": 76.69
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.6,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 8,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-02-eam-0000-hamt-r2r-c88e328c7a",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 0.48,
+          "SR": 0.39
+        },
+        "formal_immutable_identity_sha256": "1200c900fd662a71cf459a6555da0bebb234865d5bdd7e5926104a01cd45df8b",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "78dba723a2a71778c7bef78e19f810777d1baf37b0b51ec759c48d79b976ecd4",
+        "method": "feedtta",
+        "metrics": {
+          "SPL": 72.66,
+          "SR": 76.0
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "episodic": false,
+          "gamma": 0.9,
+          "lr": 2e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 0.79,
+          "SR": 0.79
+        },
+        "formal_immutable_identity_sha256": "0753c3d9b8774c72713e89d5c3b17c84e7efc3f5f67a4794440fb141ba599507",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "44f4fcaf0f02b07b88ff96695aa8168219a8a277d0eeeda54376f8a37f47122a",
+        "method": "fstta",
+        "metrics": {
+          "SPL": 72.97,
+          "SR": 76.4
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0008,
+          "lr_slow": 0.0002,
+          "m": 1,
+          "max_grad_norm": 0.0,
+          "n": 16,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "5e11cfe838a48520f24ad65158b6ac4274e1dce9bd0cdae124badce342570985",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-hamt-r2r-3865cf90bc-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "6c30dfc92530ba96d4bef2f854fc494ec84967eec89393b3ca790b24408c159c",
+        "method": "source",
+        "metrics": {
+          "CLS": 77.36,
+          "LENGTHS": 11.15,
+          "NAV_ERROR": 2.51,
+          "NDTW": 78.33,
+          "ORACLE_ERROR": 1.68,
+          "ORACLE_SR": 81.0,
+          "SDTW": 68.39,
+          "SPL": 72.18,
+          "SR": 75.61,
+          "STEPS": 5.52
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-hamt-r2r-3865cf90bc",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+        "delta_vs_source_pp": {
+          "SPL": 0.7,
+          "SR": 0.69
+        },
+        "formal_immutable_identity_sha256": "9ed8a8e32666bc4615d4c28f1bf43bcdebfe6a75c5e2cb852fd14421408336cb",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28-hamt-r2r-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "daab8d26155cf0fc6316f2492b5bfbc9032283287ba55d36a10110510941a8ae",
+        "method": "tent",
+        "metrics": {
+          "SPL": 72.88,
+          "SR": 76.3
+        },
+        "parameters": {
+          "episodic": false,
+          "lr": 3e-06,
+          "max_grad_norm": 0.0,
+          "norm_scope": "ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28",
+        "supervision_category": "unsupervised_tta"
+      }
+    }
+  },
+  "registry_status": "complete",
+  "schema": "navtta.vln_r2r_final_registry.v1",
+  "selected_winners": {
+    "path": "vln/results/final/r2r/selected_winners.json",
+    "sha256": "6d964bdfaa21b196f70773e86534ac7212905213612c6b0b6d9994efda062538"
+  },
+  "source_ledger": {
+    "path": "vln/manifests/r2r_reused_source_controls.json",
+    "sha256": "15b9a9f72bb5bcaeb26fabc5abdf94cfffcc03778b4ea8f9ec10940d8044a3b4"
+  },
+  "split": "val_seen",
+  "supervision_categories": {
+    "binary_episode_feedback_tta": {
+      "feedback": "binary_navigation_success",
+      "methods": [
+        "feedtta",
+        "atena"
+      ],
+      "uses_episode_feedback": true
+    },
+    "source_no_adaptation": {
+      "methods": [
+        "source"
+      ],
+      "uses_episode_feedback": false
+    },
+    "unsupervised_tta": {
+      "methods": [
+        "tent",
+        "fstta",
+        "eam"
+      ],
+      "uses_episode_feedback": false
+    }
+  }
+}

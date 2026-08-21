@@ -9,6 +9,7 @@ still-running GPU job.
 """
 
 import argparse
+from contextlib import nullcontext
 import csv
 import hashlib
 import itertools
@@ -24,7 +25,32 @@ import sys
 import time
 
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from shared_gpu_launch_guard import (  # noqa: E402
+    ReservationLedgerError,
+    release_shared_gpu_reservation,
+    shared_gpu_launch_guard,
+)
+from joint_campaign_contract import (  # noqa: E402
+    campaign_lifetime_lock,
+    JointLaunchError,
+    process_identity,
+    process_identity_alive,
+    validate_joint_launch,
+    wait_for_joint_release,
+    write_ready_ack,
+)
+
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.run_manifest_identity import immutable_identity_sha256  # noqa: E402
+
 DEFAULT_SPEC_PATH = REPO_ROOT / "vln/experiments/tta_hparam_search_v1.json"
 _configured_spec = os.environ.get("NAVTTA_VLN_HPARAM_SPEC")
 SPEC_PATH = (
@@ -88,6 +114,236 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def uses_reused_source_controls(spec):
+    return spec.get("protocol", {}).get("source_control_execution") == (
+        "reuse_completed_formal_manifest"
+    )
+
+
+def uses_shared_gpu_peer(spec):
+    return bool(
+        spec.get("protocol", {}).get("shared_gpu_coexistence", {}).get(
+            "peer_campaign"
+        )
+    )
+
+
+def _repo_evidence_path(relative_path, label):
+    path = (REPO_ROOT / str(relative_path)).resolve()
+    try:
+        path.relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        raise UserError("{} escapes the repository".format(label))
+    if not path.is_file():
+        raise UserError("missing reused Source evidence {}: {}".format(
+            label, path
+        ))
+    return path
+
+
+def _verified_evidence_path(reference, label):
+    if not isinstance(reference, dict):
+        raise UserError("{} reference must be an object".format(label))
+    path = _repo_evidence_path(reference.get("path"), label)
+    expected_sha = reference.get("sha256")
+    if not isinstance(expected_sha, str) or sha256(path) != expected_sha:
+        raise UserError("{} SHA256 mismatch".format(label))
+    expected_size = reference.get("size")
+    if expected_size is not None and path.stat().st_size != int(expected_size):
+        raise UserError("{} size mismatch".format(label))
+    return path
+
+
+def _load_reused_source_manifest(spec):
+    if not uses_reused_source_controls(spec):
+        raise UserError("search spec does not declare reused Source controls")
+    path = _verified_evidence_path(
+        spec.get("reused_source_controls"), "reused Source control manifest"
+    )
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError("invalid reused Source control manifest: {}".format(error))
+    if document.get("schema") != "navtta.vln_reused_source_controls.v1":
+        raise UserError("unsupported reused Source control schema")
+    if document.get("split") != spec.get("split"):
+        raise UserError("reused Source split does not match search")
+    if document.get("episode_count") != 778:
+        raise UserError("reused R2R-CE Source must contain 778 episodes")
+    if document.get("seed") != spec.get("primary_order_seed"):
+        raise UserError("reused Source seed does not match search")
+    if document.get("action_selection") != "target_native_argmax":
+        raise UserError("reused Source must use target-native argmax")
+    if set(document.get("settings", {})) != set(spec.get("settings", [])):
+        raise UserError("reused Source setting set does not match search")
+    policy = document.get("reuse_policy", {})
+    if policy.get("source_execution_jobs") != 0 or policy.get(
+            "missing_or_mismatched_evidence") != "fail_closed_without_launching_source":
+        raise UserError("reused Source policy must be zero-execution fail-closed")
+    return document
+
+
+def _source_metric_values(per_episode, ordered_ids):
+    raw_names = (
+        "steps_taken", "distance_to_goal", "success", "oracle_success",
+        "path_length", "collisions", "spl", "ndtw", "sdtw", "ghost_cnt",
+    )
+    raw = {}
+    for name in raw_names:
+        values = []
+        for episode_id in ordered_ids:
+            value = per_episode[episode_id].get(name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise UserError(
+                    "reused Source episode {} has invalid {}".format(
+                        episode_id, name
+                    )
+                )
+            value = float(value)
+            if not math.isfinite(value):
+                raise UserError("reused Source contains non-finite metrics")
+            values.append(value)
+        raw[name] = statistics.fmean(values)
+    metrics = {
+        "STEPS_TAKEN": raw["steps_taken"],
+        "DISTANCE_TO_GOAL": raw["distance_to_goal"],
+        "SR": 100.0 * raw["success"],
+        "OSR": 100.0 * raw["oracle_success"],
+        "PATH_LENGTH": raw["path_length"],
+        "COLLISIONS": raw["collisions"],
+        "SPL": 100.0 * raw["spl"],
+        "NDTW": 100.0 * raw["ndtw"],
+        "SDTW": 100.0 * raw["sdtw"],
+        "GHOST_CNT": raw["ghost_cnt"],
+    }
+    return raw, metrics
+
+
+def reused_source_result(setting, episodes, spec):
+    """Authenticate one completed full Source run and derive prefix metrics."""
+    controls = _load_reused_source_manifest(spec)
+    try:
+        reference = controls["settings"][setting]
+    except KeyError:
+        raise UserError("missing reused Source control for {}".format(setting))
+
+    formal_path = _verified_evidence_path(
+        reference.get("formal_manifest"),
+        "{} formal Source manifest".format(setting),
+    )
+    formal = json.loads(formal_path.read_text(encoding="utf-8"))
+    expected_formal = {
+        "run_id": reference.get("run_id"),
+        "task": "vln",
+        "benchmark": controls.get("benchmark"),
+        "model": reference.get("model"),
+        "method": "source",
+        "seed": controls.get("seed"),
+        "git_commit": reference.get("git_commit"),
+        "status": "completed",
+        "exit_code": 0,
+    }
+    for key, expected in expected_formal.items():
+        if formal.get(key) != expected:
+            raise UserError(
+                "{} formal Source manifest mismatch for {}".format(
+                    setting, key
+                )
+            )
+    if formal.get("checkpoint", {}).get("sha256") != reference.get(
+            "checkpoint_sha256"):
+        raise UserError("{} Source checkpoint mismatch".format(setting))
+    dataset = formal.get("dataset", {})
+    if (
+        dataset.get("index_sha256") != reference.get("dataset_index_sha256")
+        or dataset.get("stream_order_sha256")
+        != controls["episode_order"]["order_sha256"]
+    ):
+        raise UserError("{} Source dataset/order mismatch".format(setting))
+    if formal.get("pinned_manifests", {}).get("episode_order", {}).get(
+            "sha256") != controls["episode_order"]["sha256"]:
+        raise UserError("{} Source episode-order manifest mismatch".format(setting))
+
+    aggregate_path = _verified_evidence_path(
+        reference.get("aggregate_artifact"),
+        "{} aggregate Source artifact".format(setting),
+    )
+    per_episode_path = _verified_evidence_path(
+        reference.get("per_episode_artifact"),
+        "{} per-episode Source artifact".format(setting),
+    )
+    formal_artifacts = {
+        item.get("name"): (item.get("size"), item.get("sha256"))
+        for item in formal.get("result_artifacts", [])
+        if isinstance(item, dict)
+    }
+    for key in ("aggregate_artifact", "per_episode_artifact"):
+        artifact = reference[key]
+        if formal_artifacts.get(artifact["name"]) != (
+                artifact["size"], artifact["sha256"]):
+            raise UserError(
+                "{} formal manifest does not authenticate {}".format(
+                    setting, key
+                )
+            )
+
+    order_path = _verified_evidence_path(
+        controls.get("episode_order"), "canonical R2R-CE episode order"
+    )
+    order = json.loads(order_path.read_text(encoding="utf-8"))
+    if (
+        order.get("episode_count") != controls["episode_count"]
+        or order.get("order_sha256") != controls["episode_order"]["order_sha256"]
+    ):
+        raise UserError("canonical R2R-CE episode order is inconsistent")
+    ordered_ids = [str(item["episode_id"]) for item in order.get("episodes", [])]
+    per_episode = json.loads(per_episode_path.read_text(encoding="utf-8"))
+    if (
+        len(ordered_ids) != controls["episode_count"]
+        or len(set(ordered_ids)) != len(ordered_ids)
+        or set(per_episode) != set(ordered_ids)
+    ):
+        raise UserError("{} Source per-episode coverage mismatch".format(setting))
+
+    full_raw, _ = _source_metric_values(per_episode, ordered_ids)
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    if set(aggregate) != set(full_raw):
+        raise UserError("{} Source aggregate metric set mismatch".format(setting))
+    for key, expected in full_raw.items():
+        if not math.isclose(
+            float(aggregate[key]), expected, rel_tol=0.0, abs_tol=1e-12
+        ):
+            raise UserError(
+                "{} Source aggregate disagrees for {}".format(setting, key)
+            )
+
+    count = controls["episode_count"] if int(episodes) < 0 else int(episodes)
+    if count < 1 or count > controls["episode_count"]:
+        raise UserError("invalid reused Source prefix length {}".format(count))
+    _, metrics = _source_metric_values(per_episode, ordered_ids[:count])
+    return {
+        "run_tag": "{}-{}ep".format(reference["run_id"], count),
+        "setting": setting,
+        "model": reference["model"],
+        "search_method": "shared_source_control",
+        "config_method": "source",
+        "stage": "reused_source_control",
+        "episodes": count,
+        "expected_episodes": count,
+        "order_seed": controls["seed"],
+        "parameters": {"action_selection": "argmax", "action_seed": 0},
+        "metrics": metrics,
+        "adapter_diagnostics": {"relative_param_drift": 0.0, "updates": 0},
+        "reused_formal_manifest": str(formal_path),
+        "reused_formal_manifest_sha256": reference["formal_manifest"]["sha256"],
+        "per_episode_artifact_sha256": reference["per_episode_artifact"]["sha256"],
+    }
+
+
+def reused_source_results(settings, episodes, spec):
+    return [reused_source_result(setting, episodes, spec) for setting in settings]
+
+
 def git(*args):
     return subprocess.check_output(
         ["git", "-C", str(REPO_ROOT)] + list(args), text=True
@@ -104,18 +360,75 @@ def load_spec(path=SPEC_PATH):
         spec = json.load(stream)
     if spec.get("schema") != "navtta.vln_tta_hparam_search.v1":
         raise UserError("unsupported search specification schema")
+    protocol = spec.get("protocol", {})
+    order_robustness_enabled = protocol.get(
+        "order_robustness_enabled", True
+    )
+    required_order_seeds = [0, 1, 2] if order_robustness_enabled else [0]
     final_order_seeds = spec.get("final_order_seeds")
-    if (final_order_seeds != [0, 1, 2]
+    if (final_order_seeds != required_order_seeds
             or any(type(value) is not int for value in final_order_seeds)):
-        raise UserError("the search specification must use order seeds [0, 1, 2]")
+        raise UserError(
+            "the search specification must use order seeds {}".format(
+                required_order_seeds
+            )
+        )
     if type(spec.get("primary_order_seed")) is not int or spec.get(
             "primary_order_seed") != 0:
         raise UserError("the search specification primary order seed must be integer 0")
-    protocol = spec.get("protocol", {})
     if not protocol.get("full_val_seen_matched_source_controls"):
         raise UserError("the search requires full-val matched Source controls")
     if not protocol.get("freeze_winner_before_order_robustness"):
         raise UserError("the canonical full-val winner must be frozen before orders")
+    if uses_reused_source_controls(spec):
+        required_flags = (
+            "require_formal_final_manifest",
+            "formal_launch_requires_review_confirmation",
+            "formal_launch_requires_full_matrix",
+            "joint_launch_required",
+        )
+        if any(not protocol.get(key) for key in required_flags):
+            raise UserError(
+                "reused Source campaign is missing formal/joint launch gates"
+            )
+        if protocol.get("source_execution_jobs") != 0:
+            raise UserError("reused Source protocol must execute zero Source jobs")
+        for setting in spec.get("settings", []):
+            reused_source_result(setting, int(spec["screening_episodes"]), spec)
+            reused_source_result(setting, -1, spec)
+        screening_jobs = sum(
+            len(list(stage1_points(method, setting, spec)))
+            for method in METHODS
+            for setting in spec.get("settings", [])
+        )
+        full_jobs = (
+            len(METHODS)
+            * len(spec.get("settings", []))
+            * int(protocol["full_val_seen_finalists_per_setting"])
+        )
+        expected_budget = {
+            "screening_tta_jobs": screening_jobs,
+            "full_val_seen_tta_jobs": full_jobs,
+            "source_execution_jobs": 0,
+            "total_executed_jobs": screening_jobs + full_jobs,
+        }
+        if spec.get("budget") != expected_budget:
+            raise UserError("reused Source search budget does not match candidates")
+        coexistence = protocol.get("shared_gpu_coexistence", {})
+        defaults = spec.get("scheduler_defaults", {})
+        if (
+            coexistence.get("ce_worker_cap") != 1
+            or coexistence.get("peer_worker_cap") != 1
+            or coexistence.get("required_concurrency_profile")
+            != "shared_gpu_with_r2r_ce"
+            or defaults.get("max_workers") != 1
+            or defaults.get("max_per_model") != 1
+            or defaults.get("max_continuous_workers") != 1
+            or not coexistence.get("joint_readiness_ack_required")
+            or not coexistence.get("campaign_lifetime_lock_required")
+            or not coexistence.get("shared_active_reservation_required")
+        ):
+            raise UserError("joint R2R-CE/REVERIE worker caps must remain 1+1")
     return spec
 
 
@@ -143,6 +456,16 @@ def _deduplicate_candidates(candidates):
 
 def anchor_for(method, setting, spec):
     method_spec = spec["methods"][method]
+    screening = method_spec.get("screening")
+    if screening is not None:
+        anchors = screening.get("anchor_by_setting", {})
+        if setting not in anchors:
+            raise UserError(
+                "{} screening has no anchor for {}".format(method, setting)
+            )
+        result = dict(anchors[setting])
+        result.update(screening.get("fixed", {}))
+        return result
     if method == "tent":
         result = dict(method_spec["paper_anchor"])
         result.update(method_spec["stage1"]["fixed"])
@@ -174,6 +497,35 @@ def anchor_for(method, setting, spec):
 
 def stage1_points(method, setting, spec):
     method_spec = spec["methods"][method]
+    screening = method_spec.get("screening")
+    if screening is not None:
+        candidates_by_setting = screening.get("candidates_by_setting", {})
+        points = candidates_by_setting.get(setting)
+        if not isinstance(points, list) or not points:
+            raise UserError(
+                "{} screening has no candidates for {}".format(
+                    method, setting
+                )
+            )
+        fixed = screening.get("fixed", {})
+        if not isinstance(fixed, dict):
+            raise UserError("{}.screening.fixed must be an object".format(method))
+        for candidate in points:
+            if not isinstance(candidate, dict):
+                raise UserError(
+                    "{} screening candidates must be objects".format(method)
+                )
+            point = dict(candidate)
+            overlap = set(point).intersection(fixed)
+            if any(point[key] != fixed[key] for key in overlap):
+                raise UserError(
+                    "{} screening candidate overrides fixed parameters".format(
+                        method
+                    )
+                )
+            point.update(fixed)
+            yield point
+        return
     if method == "tent":
         for point in _product(method_spec["stage1"]["grid"]):
             point.update(method_spec["stage1"]["fixed"])
@@ -326,20 +678,39 @@ def expand_stage(method, stage, setting, promoted, spec):
     return _ensure_anchor(candidates, method, setting, spec)
 
 
-def workflow_stages(method, include_orders=False):
-    stages = ("smoke", "controls", "stage1") + INTERMEDIATE_STAGES[method] + (
-        "final_controls", "final",
-    )
+def intermediate_stages(method, spec=None):
+    if spec is not None and spec.get("protocol", {}).get(
+            "screening_then_full_only"):
+        return ()
+    return INTERMEDIATE_STAGES[method]
+
+
+def workflow_stages(method, include_orders=False, spec=None):
+    if (
+        include_orders
+        and spec is not None
+        and not spec.get("protocol", {}).get("order_robustness_enabled", True)
+    ):
+        raise UserError("this search specification disables the orders stage")
+    if spec is not None and uses_reused_source_controls(spec):
+        stages = ("stage1",) + intermediate_stages(method, spec) + ("final",)
+    else:
+        stages = ("smoke", "controls", "stage1") + intermediate_stages(
+            method, spec
+        ) + (
+            "final_controls", "final",
+        )
     return stages + (("orders",) if include_orders else ())
 
 
-def previous_search_stage(method, stage):
+def previous_search_stage(method, stage, spec=None):
     if stage == "stage2":
         return "stage1"
     if stage == "stage3":
         return "stage2"
     if stage == "final":
-        return INTERMEDIATE_STAGES[method][-1] if INTERMEDIATE_STAGES[method] else "stage1"
+        stages = intermediate_stages(method, spec)
+        return stages[-1] if stages else "stage1"
     if stage == "orders":
         return "final"
     return None
@@ -414,6 +785,90 @@ def _all_finite(value):
     return True
 
 
+def _validate_full_formal_manifest(job, spec, diagnostics_path):
+    """Authenticate a full-stream TTA run before it can become a finalist."""
+    controls = _load_reused_source_manifest(spec)
+    source = controls["settings"][job["setting"]]
+    data_version = "v1.3-unified"
+    run_id = "{}-{}-val_seen-{}".format(
+        job["run_tag"], job["setting"], data_version
+    )
+    path = (REPO_ROOT / "vln/results/runs" / run_id / "manifest.json").resolve()
+    canonical_root = (REPO_ROOT / "vln/results/runs").resolve()
+    try:
+        path.relative_to(canonical_root)
+    except ValueError:
+        raise UserError("formal final manifest escapes canonical results/runs")
+    if not path.is_file():
+        raise UserError("missing formal final manifest: {}".format(path))
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise UserError("invalid formal final manifest: {}".format(error))
+    expected = {
+        "run_id": run_id,
+        "task": "vln",
+        "benchmark": controls["benchmark"],
+        "model": source["model"],
+        "method": job["config_method"],
+        "run_tag": job["run_tag"],
+        "source_setting": "{}:val_seen:{}:{}".format(
+            job["setting"], data_version, job["config_method"]
+        ),
+        "seed": controls["seed"],
+        "git_commit": git("rev-parse", "HEAD"),
+        "status": "completed",
+        "exit_code": 0,
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise UserError(
+                "formal final manifest {} mismatch: expected {!r}, got {!r}"
+                .format(key, value, manifest.get(key))
+            )
+    if manifest.get("checkpoint", {}).get("sha256") != source[
+        "checkpoint_sha256"
+    ]:
+        raise UserError("formal final checkpoint SHA256 mismatch")
+    dataset = manifest.get("dataset", {})
+    if (
+        dataset.get("stream_content_sha256")
+        != source["dataset_index_sha256"]
+        or dataset.get("stream_order_sha256")
+        != controls["episode_order"]["order_sha256"]
+    ):
+        raise UserError("formal final dataset/order identity mismatch")
+    identity = manifest.get("immutable_identity_sha256")
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", str(identity or ""))
+        or immutable_identity_sha256(manifest) != identity
+    ):
+        raise UserError("formal final immutable identity mismatch")
+    artifacts = manifest.get("result_artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise UserError("formal final manifest has no result artifacts")
+    result_root = Path(job["result_root"]).resolve()
+    authenticated_paths = set()
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise UserError("formal final manifest has malformed artifacts")
+        artifact_path = Path(str(artifact.get("path", ""))).resolve()
+        try:
+            artifact_path.relative_to(result_root)
+        except ValueError:
+            raise UserError("formal final artifact escapes result root")
+        if not artifact_path.is_file():
+            raise UserError("formal final artifact is missing: {}".format(artifact_path))
+        if artifact.get("size") != artifact_path.stat().st_size:
+            raise UserError("formal final artifact size mismatch")
+        if sha256(artifact_path) != artifact.get("sha256"):
+            raise UserError("formal final artifact SHA256 mismatch")
+        authenticated_paths.add(artifact_path)
+    if Path(diagnostics_path).resolve() not in authenticated_paths:
+        raise UserError("formal final manifest does not authenticate diagnostics")
+    return path, manifest
+
+
 def parse_metrics(job, spec=None):
     spec = spec or load_spec()
     console = Path(job["job_dir"]) / "console.log"
@@ -468,6 +923,28 @@ def parse_metrics(job, spec=None):
                 raise UserError(
                     "TTA diagnostics are missing adapter.{}".format(required)
                 )
+    if (
+        job.get("config_method") == "feedtta"
+        and job.get("setting") in CONTINUOUS_SETTINGS
+        and "scope_profile" in job.get("parameters", {})
+    ):
+        parameters = job.get("parameters", {})
+        expected_action = (
+            "target_native_argmax"
+            if parameters.get("action_selection", "argmax") == "argmax"
+            else "policy_sampling"
+        )
+        if diag.get("action_selection") != expected_action:
+            raise UserError("continuous FeedTTA action protocol mismatch")
+        expected_scope = parameters["scope_profile"]
+        if diag.get("feedtta_scope_profile") != expected_scope:
+            raise UserError("continuous FeedTTA scope profile mismatch")
+        if adapter.get("action_selection_protocol") != (
+            "target_native_argmax"
+            if expected_action == "target_native_argmax"
+            else "sample_from_policy"
+        ):
+            raise UserError("continuous FeedTTA adapter action protocol mismatch")
 
     expected_episodes = (
         int(job["episodes"]) if int(job["episodes"]) > 0
@@ -482,7 +959,20 @@ def parse_metrics(job, spec=None):
                 "incomplete episode stream: expected {}, got {}".format(
                     expected_episodes, observed
                 )
-            )
+                )
+
+    formal_path = None
+    formal_manifest = None
+    if (
+        int(job["episodes"]) < 0
+        and job.get("config_method") != "source"
+        and spec.get("protocol", {}).get(
+            "require_formal_final_manifest", False
+        )
+    ):
+        formal_path, formal_manifest = _validate_full_formal_manifest(
+            job, spec, diagnostics
+        )
 
     result = dict(job)
     result["metrics"] = values
@@ -490,6 +980,16 @@ def parse_metrics(job, spec=None):
     result["diagnostics_path"] = str(diagnostics) if diag is not None else None
     result["diagnostics_sha256"] = sha256(diagnostics) if diag is not None else None
     result["adapter_diagnostics"] = adapter
+    result["formal_manifest_path"] = (
+        str(formal_path) if formal_path is not None else None
+    )
+    result["formal_manifest_sha256"] = (
+        sha256(formal_path) if formal_path is not None else None
+    )
+    result["formal_immutable_identity_sha256"] = (
+        formal_manifest.get("immutable_identity_sha256")
+        if formal_manifest is not None else None
+    )
     result["requires_posthoc_late_collapse_check"] = True
     return result
 
@@ -616,10 +1116,25 @@ def tuning_result_root(method, batch_id, stage, setting, run_tag,
 
 
 def _source_candidates(method, settings, spec):
+    declared = spec.get("protocol", {}).get(
+        "matched_source_action_selection", {}
+    )
+    if isinstance(declared, dict):
+        action_selection = declared.get(
+            method, "sample" if method == "feedtta" else "argmax"
+        )
+    elif isinstance(declared, str):
+        action_selection = declared
+    else:
+        raise UserError(
+            "protocol.matched_source_action_selection must be a string or object"
+        )
+    if action_selection not in ("argmax", "sample"):
+        raise UserError("matched Source action selection must be argmax or sample")
     candidates = {}
     for setting in settings:
         parameters = {
-            "action_selection": "sample" if method == "feedtta" else "argmax",
+            "action_selection": action_selection,
             "action_seed": int(spec["primary_order_seed"]),
         }
         candidates[setting] = [
@@ -799,8 +1314,9 @@ def _validate_persisted_stage(stage_dir, batch_id, method, settings, spec,
     return manifest, jobs
 
 
-def _last_screening_stage(method):
-    return INTERMEDIATE_STAGES[method][-1] if INTERMEDIATE_STAGES[method] else "stage1"
+def _last_screening_stage(method, spec=None):
+    stages = intermediate_stages(method, spec)
+    return stages[-1] if stages else "stage1"
 
 
 def _validate_stage_prerequisites(batch_root, batch_id, method, stage, settings,
@@ -808,19 +1324,25 @@ def _validate_stage_prerequisites(batch_root, batch_id, method, stage, settings,
     batch_root = Path(batch_root)
     required = []
     if stage == "stage1":
-        required = ["controls"]
+        required = [] if uses_reused_source_controls(spec) else ["controls"]
     elif stage == "stage2":
-        required = ["controls", "stage1"]
-    elif stage == "stage3":
-        required = ["controls", "stage2"]
-    elif stage == "final_controls":
-        required = ["controls", _last_screening_stage(method)]
-    elif stage == "final":
-        required = [
-            "controls", _last_screening_stage(method), "final_controls",
+        required = ["stage1"] if uses_reused_source_controls(spec) else [
+            "controls", "stage1"
         ]
+    elif stage == "stage3":
+        required = ["stage2"] if uses_reused_source_controls(spec) else [
+            "controls", "stage2"
+        ]
+    elif stage == "final_controls":
+        required = ["controls", _last_screening_stage(method, spec)]
+    elif stage == "final":
+        required = [_last_screening_stage(method, spec)]
+        if not uses_reused_source_controls(spec):
+            required = ["controls"] + required + ["final_controls"]
     elif stage == "orders":
-        required = ["final_controls", "final"]
+        required = ["final"] if uses_reused_source_controls(spec) else [
+            "final_controls", "final"
+        ]
     for prerequisite in required:
         _validate_persisted_stage(
             batch_root / "stages" / prerequisite,
@@ -832,12 +1354,12 @@ def _validate_stage_prerequisites(batch_root, batch_id, method, stage, settings,
         )
     if stage == "final_controls":
         load_stage_results(
-            batch_root / "stages" / _last_screening_stage(method),
+            batch_root / "stages" / _last_screening_stage(method, spec),
             spec,
             allow_partial=True,
         )
         load_stage_results(batch_root / "stages" / "controls", spec)
-    elif stage == "final":
+    elif stage == "final" and not uses_reused_source_controls(spec):
         # This stage is a strict execution barrier.  Candidate promotion below
         # still reads the last screening stage, never final_controls.
         load_stage_results(batch_root / "stages" / "final_controls", spec)
@@ -923,11 +1445,13 @@ def _load_frozen_selection(batch_root, method, settings, spec):
                 encoding="utf-8"
             )
         )
-        control_manifest = json.loads(
-            (batch_root / "stages/final_controls/stage_manifest.json").read_text(
-                encoding="utf-8"
+        control_manifest = None
+        if not uses_reused_source_controls(spec):
+            control_manifest = json.loads(
+                (batch_root / "stages/final_controls/stage_manifest.json").read_text(
+                    encoding="utf-8"
+                )
             )
-        )
     except (OSError, json.JSONDecodeError) as error:
         raise UserError(
             "frozen selection lacks completed final-stage provenance: {}".format(
@@ -935,8 +1459,9 @@ def _load_frozen_selection(batch_root, method, settings, spec):
             )
         )
     batch_id = final_manifest.get("batch_id")
-    if (not isinstance(batch_id, str) or not batch_id
-            or control_manifest.get("batch_id") != batch_id):
+    if not isinstance(batch_id, str) or not batch_id:
+        raise UserError("final batch provenance is invalid")
+    if control_manifest is not None and control_manifest.get("batch_id") != batch_id:
         raise UserError("final and final_controls batch provenance disagrees")
     authenticated_selection, authenticated_frozen = _derive_final_documents(
         batch_root, batch_id, method, settings, spec
@@ -987,6 +1512,11 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
             for setting in settings
         }, promotion_records
     if stage in ("controls", "final_controls"):
+        if uses_reused_source_controls(spec):
+            raise UserError(
+                "this campaign reuses authenticated Source evidence and must "
+                "not execute Source jobs"
+            )
         return _source_candidates(method, settings, spec), promotion_records
     if stage == "stage1":
         return {
@@ -1011,22 +1541,32 @@ def _stage_candidates(method, stage, settings, spec, batch_root):
             ]
         return candidates, promotion_records
 
-    previous = previous_search_stage(method, stage)
+    previous = previous_search_stage(method, stage, spec)
     prior = load_stage_results(
-        batch_root / "stages" / previous, spec, allow_partial=True
+        batch_root / "stages" / previous,
+        spec,
+        allow_partial=not bool(
+            spec.get("protocol", {}).get("require_complete_screening", False)
+        ),
     )
     prior_by_setting = {
         setting: [item for item in prior if item["setting"] == setting]
         for setting in settings
     }
-    controls = load_stage_results(batch_root / "stages" / "controls", spec)
+    controls = (
+        reused_source_results(settings, int(spec["screening_episodes"]), spec)
+        if uses_reused_source_controls(spec)
+        else load_stage_results(batch_root / "stages" / "controls", spec)
+    )
     source_by_setting = {item["setting"]: item for item in controls}
     selected_by_setting = {}
     for setting in settings:
         selected, record = rank_and_promote(
             prior_by_setting[setting], source_by_setting.get(setting), method,
             setting, promotion_limit(method, stage, spec), spec,
-            force_anchor=True,
+            force_anchor=bool(
+                spec["protocol"].get("paper_anchor_always_promoted", True)
+            ),
         )
         promotion_records.append(record)
         selected_by_setting[setting] = selected
@@ -1228,23 +1768,23 @@ def cgroup_memory_gib():
             return int(candidate.read_text().strip()) / 1024 ** 3
         except (OSError, ValueError):
             pass
-    return 0.0
+    raise UserError("cannot query cgroup memory for launch gate")
 
 
-def gpu_stats():
+def gpu_stats(gpu=0):
     try:
         output = subprocess.check_output([
             "nvidia-smi", "--query-gpu=memory.used,utilization.gpu",
-            "--format=csv,noheader,nounits",
+            "--format=csv,noheader,nounits", "-i", str(gpu),
         ], text=True, stderr=subprocess.DEVNULL).strip().splitlines()[0].split(",")
         return int(output[0].strip()), int(output[1].strip())
-    except (OSError, subprocess.CalledProcessError, ValueError, IndexError):
-        return 0, 0
+    except (OSError, subprocess.CalledProcessError, ValueError, IndexError) as error:
+        raise UserError("cannot query GPU {} resources: {}".format(gpu, error))
 
 
-def append_resource(path, running):
+def append_resource(path, running, gpu=0):
     exists = Path(path).exists()
-    gpu_memory, gpu_util = gpu_stats()
+    gpu_memory, gpu_util = gpu_stats(gpu)
     with Path(path).open("a", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         if not exists:
@@ -1367,28 +1907,30 @@ def load_stage_results(stage_dir, spec, allow_partial=False):
 
 def screening_promotion_preview(batch_root, batch_id, stage, method, settings,
                                 results, spec):
-    _validate_persisted_stage(
-        Path(batch_root) / "stages" / "controls",
-        batch_id,
-        method, settings, spec, "controls",
-    )
+    if not uses_reused_source_controls(spec):
+        _validate_persisted_stage(
+            Path(batch_root) / "stages" / "controls",
+            batch_id,
+            method, settings, spec, "controls",
+        )
     _validate_persisted_stage(
         Path(batch_root) / "stages" / stage,
         batch_id,
         method, settings, spec, stage,
     )
-    stages = workflow_stages(method)
+    stages = workflow_stages(method, spec=spec)
     try:
         next_stage = stages[stages.index(stage) + 1]
     except (ValueError, IndexError):
         raise UserError("{} is not a screening stage for {}".format(stage, method))
-    # The full-val matched Source stage is an execution barrier, not a search
-    # promotion.  Finalists still come directly from the last 256-episode
-    # screening stage and are ranked against the screening Source control.
+    # A full-val Source stage, when present, is an execution barrier rather
+    # than a search promotion.  Finalists come directly from screening.
     if next_stage == "final_controls":
         next_stage = "final"
-    controls = load_stage_results(
-        Path(batch_root) / "stages" / "controls", spec
+    controls = (
+        reused_source_results(settings, int(spec["screening_episodes"]), spec)
+        if uses_reused_source_controls(spec)
+        else load_stage_results(Path(batch_root) / "stages" / "controls", spec)
     )
     source_by_setting = {item["setting"]: item for item in controls}
     records = []
@@ -1397,7 +1939,9 @@ def screening_promotion_preview(batch_root, batch_id, stage, method, settings,
         _, record = rank_and_promote(
             candidates, source_by_setting.get(setting), method, setting,
             promotion_limit(method, next_stage, spec), spec,
-            force_anchor=True,
+            force_anchor=bool(
+                spec["protocol"].get("paper_anchor_always_promoted", True)
+            ),
         )
         records.append(record)
     value = {
@@ -1414,7 +1958,9 @@ def screening_promotion_preview(batch_root, batch_id, stage, method, settings,
     return value
 
 
-def process_alive(pid):
+def process_alive(pid, identity=None):
+    if identity is not None:
+        return process_identity_alive(identity)
     try:
         os.kill(int(pid), 0)
         return True
@@ -1446,6 +1992,7 @@ def worker_main(job_path):
     signal.signal(signal.SIGINT, forward)
     atomic_json(state_path, {
         "status": "starting", "worker_pid": os.getpid(),
+        "worker_process": process_identity(),
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
     with console_path.open("ab", buffering=0) as console:
@@ -1458,6 +2005,8 @@ def worker_main(job_path):
         atomic_json(state_path, {
             "status": "running", "worker_pid": os.getpid(),
             "runner_pid": process.pid,
+            "worker_process": process_identity(),
+            "runner_process": process_identity(process.pid),
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         })
         code = process.wait()
@@ -1467,6 +2016,8 @@ def worker_main(job_path):
     atomic_json(state_path, {
         "status": "finished", "worker_pid": os.getpid(),
         "runner_pid": child["process"].pid, "exit_code": code,
+        "worker_process": process_identity(),
+        "runner_process": process_identity(child["process"].pid),
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     })
     return code
@@ -1541,6 +2092,20 @@ def _worker_pid(job):
     return pid if state.get("status") in ("starting", "running") else None
 
 
+def _worker_identity(job):
+    state_path = Path(job["job_dir"]) / "worker_state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    identity = state.get("worker_process")
+    return identity if isinstance(identity, dict) else None
+
+
+def _reservation_token(job):
+    return "r2r_ce:{}:{}".format(job["batch_id"], job["run_tag"])
+
+
 def _progress(stage_dir, jobs, running, pending):
     succeeded = failed = 0
     for job in jobs:
@@ -1575,7 +2140,7 @@ def run_batch(args, stage_dir, jobs, spec):
     max_continuous_workers = 1 if stage == "smoke" else args.max_continuous_workers
     if args.retry_failed:
         ordered = (
-            workflow_stages(args.method, include_orders=True)
+            workflow_stages(args.method, include_orders=True, spec=spec)
             if args.method in METHODS else ()
         )
         if stage in ordered:
@@ -1614,8 +2179,14 @@ def run_batch(args, stage_dir, jobs, spec):
                 terminal_failure = True
             continue
         pid = _worker_pid(job)
-        if pid is not None and process_alive(pid):
-            running[pid] = {"process": None, "job": job, "external": True}
+        identity = _worker_identity(job)
+        if pid is not None and process_alive(pid, identity):
+            running[pid] = {
+                "process": None,
+                "job": job,
+                "external": True,
+                "identity": identity,
+            }
         elif pid is not None:
             if args.retry_failed:
                 _bump_attempt(job)
@@ -1665,13 +2236,21 @@ def run_batch(args, stage_dir, jobs, spec):
                     if code != 0:
                         terminal_failure = True
                         launch_blocked = launch_blocked or effective_fail_fast
+                    if uses_shared_gpu_peer(spec):
+                        release_shared_gpu_reservation(
+                            args.gpu, _reservation_token(active["job"])
+                        )
                     del running[pid]
-                elif not process_alive(pid):
+                elif not process_alive(pid, active.get("identity")):
                     record("orphaned_worker run_tag={} pid={}".format(
                         active["job"]["run_tag"], pid
                     ))
                     terminal_failure = True
                     launch_blocked = launch_blocked or effective_fail_fast
+                    if uses_shared_gpu_peer(spec):
+                        release_shared_gpu_reservation(
+                            args.gpu, _reservation_token(active["job"])
+                        )
                     del running[pid]
 
             if stop_requested:
@@ -1686,7 +2265,7 @@ def run_batch(args, stage_dir, jobs, spec):
 
             now = time.time()
             if now - last_resource >= 5.0:
-                append_resource(resource_log, running)
+                append_resource(resource_log, running, args.gpu)
                 _progress(stage_dir, jobs, running, pending)
                 last_resource = now
 
@@ -1701,52 +2280,141 @@ def run_batch(args, stage_dir, jobs, spec):
             launched = False
             if (len(running) < max_workers and pending and
                     not stop_requested and not launch_blocked):
-                gpu_memory, _ = gpu_stats()
-                memory = cgroup_memory_gib()
-                resources_ok = (
-                    gpu_memory <= args.max_gpu_memory_mib
-                    and memory <= args.max_memory_gib
+                guard = (
+                    shared_gpu_launch_guard(args.gpu)
+                    if uses_shared_gpu_peer(spec) else nullcontext()
                 )
-                if resources_ok:
-                    resource_blocked_since = None
-                    selected = None
-                    for index, job in enumerate(pending):
-                        family_limit = (
-                            max_continuous_workers
-                            if job["family"] == "continuous"
-                            else max_discrete_workers
-                        )
-                        if (model_counts.get(job["model"], 0) < max_per_model
-                                and family_counts[job["family"]] < family_limit):
-                            selected = index
-                            break
-                    if selected is not None:
-                        job = pending.pop(selected)
-                        process = subprocess.Popen(
-                            [sys.executable, str(Path(__file__).resolve()),
-                             "--worker-job", str(Path(job["job_dir"]) / "job.json")],
-                            cwd=str(REPO_ROOT), start_new_session=True,
-                        )
-                        running[process.pid] = {
-                            "process": process, "job": job, "external": False,
+                with guard as reservation_ledger:
+                    # The REVERIE runner uses the same per-GPU lock.  Query
+                    # resources only after acquiring it, then keep it through
+                    # the CUDA settling delay so neither scheduler launches
+                    # from a stale pre-allocation snapshot.
+                    gpu_memory, _ = gpu_stats(args.gpu)
+                    memory = cgroup_memory_gib()
+                    estimated_gpu = int(getattr(
+                        args, "estimated_job_gpu_memory_mib", 0
+                    ))
+                    aggregate_gpu_cap = int(getattr(
+                        args, "max_aggregate_gpu_memory_mib",
+                        args.max_gpu_memory_mib + estimated_gpu,
+                    ))
+                    estimated_memory = float(getattr(
+                        args, "estimated_job_memory_gib", 0.0
+                    ))
+                    aggregate_memory_cap = float(getattr(
+                        args, "max_aggregate_memory_gib",
+                        args.max_memory_gib + estimated_memory,
+                    ))
+                    reservation_snapshot = (
+                        reservation_ledger.snapshot(gpu_memory, memory)
+                        if uses_shared_gpu_peer(spec) else {
+                            "effective_gpu_memory_mib": gpu_memory,
+                            "effective_cgroup_memory_gib": memory,
+                            "active_reservations": 0,
                         }
-                        record("launch worker_pid={} run_tag={}".format(
-                            process.pid, job["run_tag"]
-                        ))
-                        launched = True
-                        time.sleep(args.launch_stagger)
-                else:
-                    if resource_blocked_since is None:
-                        resource_blocked_since = now
-                        record("resource_wait gpu_mib={} memory_gib={:.3f}".format(
-                            gpu_memory, memory
-                        ))
-                    if (not running and now - resource_blocked_since
-                            >= args.resource_wait_timeout):
-                        raise UserError(
-                            "resource thresholds blocked all launches for {} seconds"
-                            .format(args.resource_wait_timeout)
-                        )
+                    )
+                    effective_gpu = reservation_snapshot[
+                        "effective_gpu_memory_mib"
+                    ]
+                    effective_memory = reservation_snapshot[
+                        "effective_cgroup_memory_gib"
+                    ]
+                    resources_ok = (
+                        effective_gpu <= args.max_gpu_memory_mib
+                        and effective_memory <= args.max_memory_gib
+                        and effective_gpu + estimated_gpu <= aggregate_gpu_cap
+                        and effective_memory + estimated_memory
+                        <= aggregate_memory_cap
+                    )
+                    if resources_ok:
+                        resource_blocked_since = None
+                        selected = None
+                        for index, job in enumerate(pending):
+                            family_limit = (
+                                max_continuous_workers
+                                if job["family"] == "continuous"
+                                else max_discrete_workers
+                            )
+                            if (model_counts.get(job["model"], 0) < max_per_model
+                                    and family_counts[job["family"]] < family_limit):
+                                selected = index
+                                break
+                        if selected is not None:
+                            job = pending.pop(selected)
+                            token = _reservation_token(job)
+                            if uses_shared_gpu_peer(spec):
+                                reservation_ledger.reserve(
+                                    token,
+                                    gpu_memory_mib=estimated_gpu,
+                                    cgroup_memory_gib=estimated_memory,
+                                    observed_gpu_memory_mib=gpu_memory,
+                                    observed_cgroup_memory_gib=memory,
+                                    owner=process_identity(),
+                                    metadata={
+                                        "role": "r2r_ce",
+                                        "batch_id": args.batch_id,
+                                        "run_tag": job["run_tag"],
+                                    },
+                                )
+                            process = None
+                            try:
+                                process = subprocess.Popen(
+                                    [
+                                        sys.executable,
+                                        str(Path(__file__).resolve()),
+                                        "--worker-job",
+                                        str(Path(job["job_dir"]) / "job.json"),
+                                    ],
+                                    cwd=str(REPO_ROOT),
+                                    start_new_session=True,
+                                )
+                                if uses_shared_gpu_peer(spec):
+                                    worker_identity = process_identity(process.pid)
+                                    if worker_identity is None:
+                                        raise UserError(
+                                            "cannot bind R2R-CE worker identity"
+                                        )
+                                    reservation_ledger.add_owner(
+                                        token, worker_identity
+                                    )
+                            except Exception:
+                                if process is not None and process.poll() is None:
+                                    try:
+                                        os.killpg(process.pid, signal.SIGTERM)
+                                    except ProcessLookupError:
+                                        pass
+                                if uses_shared_gpu_peer(spec):
+                                    reservation_ledger.release(token)
+                                raise
+                            running[process.pid] = {
+                                "process": process,
+                                "job": job,
+                                "external": False,
+                                "identity": worker_identity,
+                            }
+                            record("launch worker_pid={} run_tag={}".format(
+                                process.pid, job["run_tag"]
+                            ))
+                            launched = True
+                            time.sleep(args.launch_stagger)
+                    else:
+                        if resource_blocked_since is None:
+                            resource_blocked_since = now
+                            record(
+                                "resource_wait gpu_mib={} projected_gpu_mib={} "
+                                "memory_gib={:.3f} projected_memory_gib={:.3f}"
+                                .format(
+                                    effective_gpu, effective_gpu + estimated_gpu,
+                                    effective_memory,
+                                    effective_memory + estimated_memory,
+                                )
+                            )
+                        if (not running and now - resource_blocked_since
+                                >= args.resource_wait_timeout):
+                            raise UserError(
+                                "resource thresholds blocked all launches for {} seconds"
+                                .format(args.resource_wait_timeout)
+                            )
             if launch_blocked and not running:
                 break
             if not launched:
@@ -1759,6 +2427,12 @@ def run_batch(args, stage_dir, jobs, spec):
     terminal = len(results) + len(errors) == len(jobs)
     if stop_requested or not terminal:
         raise UserError("stage completed with failed, invalid, or pending jobs")
+    if (
+        screening_stage
+        and spec.get("protocol", {}).get("require_complete_screening", False)
+        and (terminal_failure or errors)
+    ):
+        raise UserError("required-complete screening has failed or invalid jobs")
     if screening_stage:
         screening_promotion_preview(
             Path(stage_dir).parent.parent, args.batch_id, stage, args.method,
@@ -1792,7 +2466,19 @@ def _stage_manifest(args, stage, jobs, spec):
             "max_discrete_workers": args.max_discrete_workers,
             "max_continuous_workers": args.max_continuous_workers,
             "max_gpu_memory_mib": args.max_gpu_memory_mib,
+            "estimated_job_gpu_memory_mib": getattr(
+                args, "estimated_job_gpu_memory_mib", 0
+            ),
+            "max_aggregate_gpu_memory_mib": getattr(
+                args, "max_aggregate_gpu_memory_mib", None
+            ),
             "max_memory_gib": args.max_memory_gib,
+            "estimated_job_memory_gib": getattr(
+                args, "estimated_job_memory_gib", 0.0
+            ),
+            "max_aggregate_memory_gib": getattr(
+                args, "max_aggregate_memory_gib", None
+            ),
         },
     }
 
@@ -1811,6 +2497,18 @@ def ensure_batch_manifest(args, spec, batch_root):
         "spec_sha256": sha256(SPEC_PATH),
         "result_layout": RESULT_LAYOUT,
     }
+    if uses_reused_source_controls(spec):
+        source_path = _verified_evidence_path(
+            spec["reused_source_controls"], "reused Source control manifest"
+        )
+        expected.update({
+            "reused_source_controls_path": str(source_path),
+            "reused_source_controls_sha256": sha256(source_path),
+            "joint_launch_manifest": (
+                str(Path(args.joint_launch_manifest).resolve())
+                if args.joint_launch_manifest is not None else None
+            ),
+        })
     if path.is_file():
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
@@ -1861,7 +2559,7 @@ def ensure_stage_plan(args, spec, batch_root, stage):
     if promotion:
         atomic_json(stage_dir / "promotion.json", {
             "schema": "navtta.vln_tta_promotion.v1",
-            "from_stage": previous_search_stage(args.method, stage),
+            "from_stage": previous_search_stage(args.method, stage, spec),
             "to_stage": stage,
             "settings": promotion,
         })
@@ -1871,19 +2569,22 @@ def ensure_stage_plan(args, spec, batch_root, stage):
 
 def _derive_final_documents(batch_root, batch_id, method, settings, spec):
     batch_root = Path(batch_root)
-    _validate_persisted_stage(
-        batch_root / "stages" / "final_controls",
-        batch_id,
-        method, settings, spec, "final_controls",
-    )
+    if not uses_reused_source_controls(spec):
+        _validate_persisted_stage(
+            batch_root / "stages" / "final_controls",
+            batch_id,
+            method, settings, spec, "final_controls",
+        )
     _validate_persisted_stage(
         batch_root / "stages" / "final",
         batch_id,
         method, settings, spec, "final",
     )
     finalists = load_stage_results(batch_root / "stages" / "final", spec)
-    controls = load_stage_results(
-        batch_root / "stages" / "final_controls", spec
+    controls = (
+        reused_source_results(settings, -1, spec)
+        if uses_reused_source_controls(spec)
+        else load_stage_results(batch_root / "stages" / "final_controls", spec)
     )
     expected_finalists = int(
         spec["protocol"]["full_val_seen_finalists_per_setting"]
@@ -1893,7 +2594,10 @@ def _derive_final_documents(batch_root, batch_id, method, settings, spec):
         "method": method,
         "split": spec["split"],
         "finalist_stage": "final",
-        "matched_source_stage": "final_controls",
+        "matched_source_stage": (
+            "reused_full_778_episode_source"
+            if uses_reused_source_controls(spec) else "final_controls"
+        ),
         "git_commit": git("rev-parse", "HEAD"),
         "spec_sha256": sha256(SPEC_PATH),
         "settings": {},
@@ -1924,7 +2628,25 @@ def _derive_final_documents(batch_root, batch_id, method, settings, spec):
         winner = selected[0]
         output["settings"][setting] = {
             "winner_run_tag": winner["run_tag"],
+            "winner_formal_provenance": {
+                key: winner[key]
+                for key in (
+                    "formal_manifest_path",
+                    "formal_manifest_sha256",
+                    "formal_immutable_identity_sha256",
+                )
+                if winner.get(key) is not None
+            },
             "source_run_tag": setting_controls[0]["run_tag"],
+            "source_provenance": {
+                key: setting_controls[0][key]
+                for key in (
+                    "reused_formal_manifest",
+                    "reused_formal_manifest_sha256",
+                    "per_episode_artifact_sha256",
+                )
+                if key in setting_controls[0]
+            },
             "frozen_parameters": winner["parameters"],
             "winner_metrics": winner["metrics"],
             "source_metrics": setting_controls[0]["metrics"],
@@ -2028,11 +2750,20 @@ def runner_supports_order_seed():
 
 
 def execute_method(args, spec):
+    if (
+        args.stage == "orders"
+        and not spec.get("protocol", {}).get(
+            "order_robustness_enabled", True
+        )
+    ):
+        raise UserError("this search specification disables the orders stage")
     batch_root = LOG_ROOT / args.method / args.batch_id
     batch_root.mkdir(parents=True, exist_ok=True)
     ensure_batch_manifest(args, spec, batch_root)
     stages = (
-        workflow_stages(args.method, include_orders=args.with_orders)
+        workflow_stages(
+            args.method, include_orders=args.with_orders, spec=spec
+        )
         if args.stage == "all" else (args.stage,)
     )
     if args.stage == "all" and args.episodes is not None:
@@ -2099,9 +2830,17 @@ def campaign_status(method, batch_id, watch=False):
 
 
 def parse_args(argv=None):
-    defaults = load_spec()["scheduler_defaults"]
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--spec", type=Path, default=SPEC_PATH)
+    preliminary, _ = pre_parser.parse_known_args(argv)
+    spec_path = preliminary.spec
+    if not spec_path.is_absolute():
+        spec_path = REPO_ROOT / spec_path
+    spec_path = spec_path.resolve()
+    defaults = load_spec(spec_path)["scheduler_defaults"]
     parser = argparse.ArgumentParser()
     parser.add_argument("method", choices=METHODS + ("all",))
+    parser.add_argument("--spec", type=Path, default=spec_path)
     parser.add_argument("--batch-id", required=True)
     parser.add_argument("--settings", nargs="+")
     parser.add_argument(
@@ -2127,8 +2866,32 @@ def parse_args(argv=None):
                         default=defaults["max_continuous_workers"])
     parser.add_argument("--max-gpu-memory-mib", type=int,
                         default=defaults["max_gpu_memory_mib_before_launch"])
+    parser.add_argument(
+        "--estimated-job-gpu-memory-mib", type=int,
+        default=defaults.get("estimated_job_gpu_memory_mib", 0),
+    )
+    parser.add_argument(
+        "--max-aggregate-gpu-memory-mib", type=int,
+        default=defaults.get(
+            "max_aggregate_gpu_memory_mib",
+            defaults["max_gpu_memory_mib_before_launch"]
+            + defaults.get("estimated_job_gpu_memory_mib", 0),
+        ),
+    )
     parser.add_argument("--max-memory-gib", type=float,
                         default=defaults["max_cgroup_memory_gib_before_launch"])
+    parser.add_argument(
+        "--estimated-job-memory-gib", type=float,
+        default=defaults.get("estimated_job_memory_gib", 0.0),
+    )
+    parser.add_argument(
+        "--max-aggregate-memory-gib", type=float,
+        default=defaults.get(
+            "max_aggregate_cgroup_memory_gib",
+            defaults["max_cgroup_memory_gib_before_launch"]
+            + defaults.get("estimated_job_memory_gib", 0.0),
+        ),
+    )
     parser.add_argument("--launch-stagger", type=float,
                         default=defaults["launch_stagger_seconds"])
     parser.add_argument("--resource-wait-timeout", type=float,
@@ -2138,9 +2901,14 @@ def parse_args(argv=None):
     parser.add_argument("--no-fail-fast", dest="fail_fast", action="store_false")
     parser.set_defaults(fail_fast=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--confirm-reviewed", action="store_true")
+    parser.add_argument("--joint-launch-manifest", type=Path)
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--watch", action="store_true")
     args = parser.parse_args(argv)
+    if not args.spec.is_absolute():
+        args.spec = REPO_ROOT / args.spec
+    args.spec = args.spec.resolve()
     if args.smoke:
         if args.stage not in ("all", "smoke"):
             parser.error("--smoke conflicts with --stage")
@@ -2161,6 +2929,18 @@ def parse_args(argv=None):
     if min(args.max_workers, args.max_per_model, args.max_discrete_workers,
            args.max_continuous_workers) < 1:
         parser.error("worker limits must be positive")
+    if min(
+        args.max_gpu_memory_mib,
+        args.estimated_job_gpu_memory_mib,
+        args.max_aggregate_gpu_memory_mib,
+    ) < 0:
+        parser.error("GPU memory guards must be nonnegative")
+    if min(
+        args.max_memory_gib,
+        args.estimated_job_memory_gib,
+        args.max_aggregate_memory_gib,
+    ) < 0:
+        parser.error("memory guards must be nonnegative")
     if args.gpu < 0 or args.launch_stagger < 0 or args.resource_wait_timeout <= 0:
         parser.error("invalid resource option")
     if args.retry_failed and not args.resume:
@@ -2168,23 +2948,129 @@ def parse_args(argv=None):
     return args
 
 
+def _validate_formal_joint_launch(args, spec):
+    protocol = spec.get("protocol", {})
+    if not protocol.get("joint_launch_required") or args.dry_run:
+        return None
+    if not args.confirm_reviewed:
+        raise UserError("formal launch requires --confirm-reviewed")
+    if (
+        args.method != "all"
+        or args.stage != "all"
+        or args.settings is not None
+        or args.with_orders
+    ):
+        raise UserError(
+            "the reviewed 40+10 campaign must launch the complete method/model "
+            "matrix through method=all --stage all"
+        )
+    defaults = spec["scheduler_defaults"]
+    expected = {
+        "max_workers": defaults["max_workers"],
+        "max_per_model": defaults["max_per_model"],
+        "max_discrete_workers": defaults["max_discrete_workers"],
+        "max_continuous_workers": defaults["max_continuous_workers"],
+        "max_gpu_memory_mib": defaults["max_gpu_memory_mib_before_launch"],
+        "estimated_job_gpu_memory_mib": defaults[
+            "estimated_job_gpu_memory_mib"
+        ],
+        "max_aggregate_gpu_memory_mib": defaults[
+            "max_aggregate_gpu_memory_mib"
+        ],
+        "max_memory_gib": defaults["max_cgroup_memory_gib_before_launch"],
+        "estimated_job_memory_gib": defaults["estimated_job_memory_gib"],
+        "max_aggregate_memory_gib": defaults[
+            "max_aggregate_cgroup_memory_gib"
+        ],
+        "launch_stagger": defaults["launch_stagger_seconds"],
+    }
+    changed = [
+        key for key, value in expected.items()
+        if getattr(args, key) != value
+    ]
+    if changed:
+        raise UserError(
+            "joint R2R-CE launch forbids CLI resource/cap overrides: {}"
+            .format(", ".join(changed))
+        )
+    try:
+        return validate_joint_launch(
+            args.joint_launch_manifest,
+            repo_root=REPO_ROOT,
+            role="r2r_ce",
+            batch_id=args.batch_id,
+            gpu=args.gpu,
+            spec_path=SPEC_PATH,
+            spec_sha256=sha256(SPEC_PATH),
+        )
+    except JointLaunchError as error:
+        raise UserError(str(error))
+
+
+def _prepare_joint_batch_manifests(args, spec):
+    """Fail before ACK if any method batch cannot be owned or resumed."""
+    for method in METHODS:
+        child = argparse.Namespace(**vars(args))
+        child.method = method
+        batch_root = LOG_ROOT / method / args.batch_id
+        if batch_root.exists() and any(batch_root.iterdir()) and not args.resume:
+            raise UserError(
+                "batch already exists for {}; use --resume".format(method)
+            )
+        batch_root.mkdir(parents=True, exist_ok=True)
+        ensure_batch_manifest(child, spec, batch_root)
+
+
 def main(argv=None):
+    global SPEC_PATH
     args = parse_args(argv)
+    SPEC_PATH = args.spec
     if args.status or args.watch:
         campaign_status(args.method, args.batch_id, watch=args.watch)
         return
     if git("status", "--porcelain", "--untracked-files=no") and not args.dry_run:
         raise UserError("tracked worktree must be clean before launch")
-    spec = load_spec()
-    if args.method == "all":
-        if args.stage != "all":
-            raise UserError("method=all requires --stage all")
-        for method in METHODS:
-            child = argparse.Namespace(**vars(args))
-            child.method = method
-            execute_method(child, spec)
-    else:
-        execute_method(args, spec)
+    spec = load_spec(args.spec)
+    authorization = _validate_formal_joint_launch(args, spec)
+    lock = nullcontext()
+    if authorization is not None:
+        lock = campaign_lifetime_lock(
+            LOG_ROOT / ".locks" / "{}.lock".format(args.batch_id),
+            role="r2r_ce",
+            batch_id=args.batch_id,
+        )
+    try:
+        with lock:
+            if authorization is not None:
+                _prepare_joint_batch_manifests(args, spec)
+                with shared_gpu_launch_guard(args.gpu) as reservation_ledger:
+                    reservation_ledger.snapshot(
+                        gpu_stats(args.gpu)[0], cgroup_memory_gib()
+                    )
+                _, launch_document = authorization
+                write_ready_ack(
+                    args.joint_launch_manifest,
+                    launch_document,
+                    role="r2r_ce",
+                    batch_id=args.batch_id,
+                    spec_sha256=sha256(args.spec),
+                )
+                wait_for_joint_release(
+                    args.joint_launch_manifest,
+                    launch_document,
+                    role="r2r_ce",
+                )
+            if args.method == "all":
+                if args.stage != "all":
+                    raise UserError("method=all requires --stage all")
+                for method in METHODS:
+                    child = argparse.Namespace(**vars(args))
+                    child.method = method
+                    execute_method(child, spec)
+            else:
+                execute_method(args, spec)
+    except JointLaunchError as error:
+        raise UserError(str(error))
 
 
 if __name__ == "__main__":
@@ -2192,6 +3078,6 @@ if __name__ == "__main__":
         raise SystemExit(worker_main(sys.argv[2]))
     try:
         main()
-    except UserError as error:
+    except (UserError, ReservationLedgerError) as error:
         print("error: {}".format(error), file=sys.stderr)
         raise SystemExit(1)

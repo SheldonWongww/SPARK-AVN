@@ -6,6 +6,7 @@ unit.  Batch size one lets us remove masked/visited actions before entropy
 losses, avoiding ``0 * log(0)`` NaNs while retaining an exact native-index map.
 """
 
+import copy
 import json
 import hashlib
 import os
@@ -18,6 +19,9 @@ from navtta_core.tta import build_adapter, module_state_sha256
 
 TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena")
 FEEDBACK_METHODS = ("feedtta", "atena")
+FEEDTTA_SCOPE_PROFILES = (
+    "configured_prefixes", "paper_full", "last_crossmodal", "action_head",
+)
 
 
 def make_continuous_tta_config(CN, trainable_prefixes):
@@ -93,6 +97,9 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FEEDTTA.NORMALIZE_GRADIENT = False
     config.FEEDTTA.PARAM_SCOPE = "module_prefixes"
     config.FEEDTTA.TRAINABLE_PREFIXES = list(trainable_prefixes)
+    # Preserve the pre-profile scope unless a job explicitly selects one of
+    # the paper-aligned model-aware profiles below.
+    config.FEEDTTA.SCOPE_PROFILE = "configured_prefixes"
     config.FEEDTTA.OPTIMIZER = "Adam"
     config.FEEDTTA.BETA1 = 0.9
     config.FEEDTTA.BETA2 = 0.999
@@ -125,6 +132,88 @@ def _tree_detach(value):
     if isinstance(value, list):
         return [_tree_detach(item) for item in value]
     return value
+
+
+def _feedtta_trainable_prefixes(model, variant, profile, configured_prefixes):
+    """Resolve the paper's cross-modal-and-downstream scope for VLN-CE."""
+    profile = str(profile).lower()
+    if profile not in FEEDTTA_SCOPE_PROFILES:
+        raise ValueError("Unknown continuous FeedTTA scope profile: {}".format(
+            profile
+        ))
+    if profile == "configured_prefixes":
+        prefixes = tuple(configured_prefixes)
+        if not prefixes:
+            raise ValueError("configured FeedTTA prefixes cannot be empty")
+        return prefixes
+
+    variant = str(variant).lower()
+    if variant == "etpnav":
+        branch_names = ("global_encoder",)
+        head_names = ("global_sap_head",)
+    elif variant == "bevbert":
+        branch_names = ("global_encoder", "local_encoder")
+        head_names = (
+            "global_sap_head", "local_sap_head", "sap_fuse_linear",
+        )
+    else:
+        raise ValueError("Unknown continuous VLN variant: {}".format(variant))
+
+    missing_heads = [name for name in head_names if not hasattr(model, name)]
+    if missing_heads:
+        raise ValueError(
+            "Continuous FeedTTA model is missing action heads: {}".format(
+                ", ".join(missing_heads)
+            )
+        )
+    if profile == "action_head":
+        return head_names
+
+    stacks = []
+    for branch_name in branch_names:
+        branch = getattr(model, branch_name, None)
+        encoder = getattr(branch, "encoder", None)
+        layers = getattr(encoder, "x_layers", None)
+        if layers is None or len(layers) < 1:
+            raise ValueError(
+                "Could not infer {} FeedTTA cross-modal stack".format(
+                    branch_name
+                )
+            )
+        stack_prefix = "{}.encoder.x_layers".format(branch_name)
+        stacks.append((stack_prefix, len(layers)))
+
+    if profile == "paper_full":
+        return tuple(prefix for prefix, _ in stacks) + head_names
+    return tuple(
+        "{}.{}".format(prefix, length - 1)
+        for prefix, length in stacks
+    ) + head_names
+
+
+def _adapter_config_with_feedtta_scope(tta_cfg, model, variant):
+    """Clone the frozen runtime config and bind an explicit FeedTTA scope."""
+    feed_cfg = getattr(tta_cfg, "FEEDTTA", None)
+    profile = str(
+        getattr(feed_cfg, "SCOPE_PROFILE", "configured_prefixes")
+    ).lower()
+    configured = tuple(getattr(feed_cfg, "TRAINABLE_PREFIXES", ()))
+    prefixes = _feedtta_trainable_prefixes(
+        model, variant, profile, configured
+    )
+    adapter_cfg = (
+        tta_cfg.clone() if hasattr(tta_cfg, "clone") else copy.deepcopy(tta_cfg)
+    )
+    was_frozen = bool(
+        hasattr(adapter_cfg, "is_frozen") and adapter_cfg.is_frozen()
+    )
+    if hasattr(adapter_cfg, "defrost"):
+        adapter_cfg.defrost()
+    adapter_cfg.FEEDTTA.TRAINABLE_PREFIXES = list(prefixes)
+    adapter_cfg.FEEDTTA.SCOPE_PROFILE = profile
+    if was_frozen and hasattr(adapter_cfg, "freeze"):
+        adapter_cfg.freeze()
+    return adapter_cfg, profile, prefixes
 
 
 class ContinuousVLNTTA:
@@ -235,9 +324,20 @@ class ContinuousVLNTTA:
         self._action_generator = torch.Generator(device="cpu")
         self._action_generator.manual_seed(self.action_seed)
 
+        adapter_cfg = tta_cfg
+        self.feedtta_scope_profile = None
+        self.trainable_prefixes = ()
+        if self.method == "feedtta":
+            (
+                adapter_cfg,
+                self.feedtta_scope_profile,
+                self.trainable_prefixes,
+            ) = _adapter_config_with_feedtta_scope(
+                tta_cfg, decision_model, self.variant
+            )
         self.adapter = build_adapter(
             decision_model,
-            tta_cfg,
+            adapter_cfg,
             forward_policy=self._forward_policy,
         )
         if self.method == "feedtta":
@@ -457,6 +557,8 @@ class ContinuousVLNTTA:
             "feedback_supervision": (
                 "binary_episode_success" if self.feedback_supervised else "none"
             ),
+            "feedtta_scope_profile": self.feedtta_scope_profile,
+            "trainable_prefixes": list(self.trainable_prefixes),
             "masked_action_entropy": "finite_logits_only",
             "action_steps": self.action_steps,
             "trajectory_steps": self.trajectory_steps,

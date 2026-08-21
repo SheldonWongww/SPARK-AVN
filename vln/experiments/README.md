@@ -1,5 +1,21 @@
 # VLN experiment specifications
 
+## R2R-CE low-intensity two-stage search
+
+`r2r_ce_small_hparam_search_v1.json` defines the ETPNav/BEVBert-only R2R-CE
+campaign documented in `R2R_CE_SMALL_HPARAM_SEARCH_PLAN.md`: 40
+100-episode TTA screening jobs promote exactly 10 full-778-episode jobs.  It
+executes no Source jobs; the scheduler authenticates the completed formal
+Source evidence declared by
+`vln/manifests/r2r_ce_reused_source_controls.json` and derives both the fixed
+100-episode prefix and full controls offline.  StreamVLN is blocked until it
+has a formal TTA runner.  Formal execution must use
+`vln/scripts/run_joint_reverie_r2r_ce.py`, which starts one CE worker and one
+REVERIE worker together only after both schedulers acknowledge their preflight
+and campaign lock.  A shared per-GPU active-reservation ledger protects the
+projected GPU/RAM gates during CUDA cold start; direct exclusive,
+CLI-overprovisioned, or duplicate-resume launch is rejected.
+
 ## R2R model-wise direct Cartesian full-val search
 
 `r2r_modelwise_cartesian_hparam_v2.json` is the immutable design input for the

@@ -493,5 +493,8 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
         else:
             self.losses.append(self.loss.item() / self.args.max_action_len)  # This argument is useless.
 
-        self.tta_episode_end(observations=obs)
+        episode_stats = self.tta_reverie_episode_stats(
+            traj, path_format='viewpoint_tuples'
+        )
+        self.tta_episode_end(episode_stats=episode_stats)
         return traj

@@ -404,6 +404,111 @@ class DiscreteTTAControllerTest(unittest.TestCase):
             "r2r_submitted_trajectory_evaluator_success_lazy_query",
         )
 
+    def test_reverie_feedback_uses_only_submitted_navigation_success(self):
+        class GraphEnvironment:
+            gt_trajs = {
+                "instruction": ("scan", ["start", "goal"], "target")
+            }
+            calls = 0
+
+            @classmethod
+            def _eval_item(
+                cls, scan, path, predicted_object, ground_truth, target_object
+            ):
+                cls.calls += 1
+                self.assertEqual(scan, "scan")
+                self.assertEqual(path[-1][-1], "goal")
+                self.assertEqual(predicted_object, "wrong-object")
+                self.assertEqual(ground_truth, ["start", "goal"])
+                self.assertEqual(target_object, "target")
+                # Grounding deliberately fails.  Binary-feedback TTA must not
+                # receive or infer that label.
+                return {"success": 1.0, "rgs": 0.0, "rgspl": 0.0}
+
+        agent = DiscreteTTAAgentMixin()
+        agent.env = GraphEnvironment()
+        trajectory = [{
+            "instr_id": "instruction",
+            "path": [["start"], ["reranked", "goal"]],
+            "pred_objid": "wrong-object",
+        }]
+
+        agent.tta_controller = SimpleNamespace(method="feedtta")
+        stats = agent.tta_reverie_episode_stats(
+            trajectory, "nested_graph_path"
+        )
+        self.assertEqual(stats, {"success": 1.0})
+        self.assertEqual(GraphEnvironment.calls, 1)
+        self.assertEqual(
+            agent.tta_controller.binary_feedback_endpoint,
+            "reverie_submitted_trajectory_evaluator_navigation_"
+            "success_every_episode",
+        )
+
+        agent.tta_controller = SimpleNamespace(method="atena")
+        callback = agent.tta_reverie_episode_stats(
+            trajectory, "nested_graph_path"
+        )
+        self.assertTrue(callable(callback))
+        self.assertEqual(GraphEnvironment.calls, 1)
+        self.assertEqual(callback(), {"success": 1.0})
+        self.assertEqual(GraphEnvironment.calls, 2)
+        self.assertEqual(
+            agent.tta_controller.binary_feedback_endpoint,
+            "reverie_submitted_trajectory_evaluator_navigation_"
+            "success_lazy_query",
+        )
+
+    def test_reverie_hamt_feedback_uses_submitted_tuple_endpoint(self):
+        class HamtEnvironment:
+            gt_trajs = {
+                "instruction": ("scan", ["start", "goal"], "target")
+            }
+
+            @staticmethod
+            def _eval_item(
+                scan, path, ground_truth, predicted_object, target_object
+            ):
+                self.assertEqual(path, ["start", "goal"])
+                self.assertEqual(predicted_object, "prediction")
+                return {"success": 0.0, "rgs": 1.0}
+
+        agent = DiscreteTTAAgentMixin()
+        agent.tta_controller = SimpleNamespace(method="feedtta")
+        agent.env = HamtEnvironment()
+        stats = agent.tta_reverie_episode_stats(
+            [{
+                "instr_id": "instruction",
+                "path": [("start", 0.0, 0.0), ("goal", 0.0, 0.0)],
+                "predObjId": "prediction",
+            }],
+            "viewpoint_tuples",
+        )
+        self.assertEqual(stats, {"success": 0.0})
+
+    def test_reverie_controller_rejects_simulator_distance_fallback(self):
+        prefixes = (
+            "--tta_trainable_prefixes",
+            "vln_bert.global_encoder",
+            "vln_bert.local_encoder",
+            "vln_bert.global_sap_head",
+            "vln_bert.local_sap_head",
+            "vln_bert.sap_fuse_linear",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            policy = _TinyGraphPolicy()
+            args = _args(directory, "feedtta", *prefixes)
+            args.dataset = "reverie"
+            controller = DiscreteTTAController(
+                args, policy, "val_seen"
+            )
+            controller.begin_episode()
+            self._step(controller, policy, torch.randn(1, 6))
+            with self.assertRaisesRegex(
+                ValueError, "simulator-distance fallback is forbidden"
+            ):
+                controller.end_episode(observations=[{"distance": 0.0}])
+
 
 if __name__ == "__main__":
     unittest.main()

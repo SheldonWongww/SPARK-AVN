@@ -1,0 +1,80 @@
+{
+  "schema": "navtta.vln_reverie_reused_source_controls.v1",
+  "benchmark": "reverie",
+  "split": "val_seen",
+  "source_protocol": "standard_argmax",
+  "episode_count": 1423,
+  "order_seed": 0,
+  "episode_order_sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1",
+  "dataset_version": "canonical discrete REVERIE val_seen",
+  "hardware": "NVIDIA vGPU-32GB",
+  "source_batch": {
+    "batch_id": "grouped-source-20260810T080743Z",
+    "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230"
+  },
+  "records": {
+    "duet-reverie": {
+      "model": "duet",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 71.75,
+        "SPL": 63.94,
+        "RGS": 57.41,
+        "RGSPL": 51.14
+      },
+      "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "dataset_sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-reverie-val_seen-native/manifest.json",
+      "formal_manifest_sha256": "660db3758044d8a2fa918d9a2dd4661cb4073c3def8a6b01291751232842a402",
+      "immutable_identity_sha256": "1d48f5192433a19cc964b5e9fb221091cbf2ad42f1658d412262a95dbdae9dbd",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/duet-reverie/val_seen/logs/valid.txt",
+      "metrics_artifact_sha256": "aaea69b26f380c96b7cd59acc9485bd0b242488976af062feea45c2d35121af2"
+    },
+    "hamt-reverie": {
+      "model": "hamt",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 43.29,
+        "SPL": 40.19,
+        "RGS": 27.2,
+        "RGSPL": 25.18
+      },
+      "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "dataset_sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-hamt-reverie-val_seen-native/manifest.json",
+      "formal_manifest_sha256": "404799bb441965fd890cda56bf8ff912db2f6511853e295c88fc6b3ff07afb14",
+      "immutable_identity_sha256": "13c7820954d86c0d48b465248542e798f63196bfeb08d5c19c77991aae242657",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/val_seen/logs/valid.txt",
+      "metrics_artifact_sha256": "b2f2a471ddfc14434dc88d96d1aeb006350c909fa6748aeac9c5efeaaa71c644"
+    },
+    "goat-reverie": {
+      "model": "goat",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 80.74,
+        "SPL": 73.44,
+        "RGS": 64.93,
+        "RGSPL": 58.82
+      },
+      "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "dataset_sha256": "8945f8042359e8be228c6e704c04260a503ab6d6f464093cfb5bab8fa207e8e0",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-reverie-val_seen-native/manifest.json",
+      "formal_manifest_sha256": "fc92de11e88be473471752fb4de39eb5fbf63ae82569decbfc0857918350af89",
+      "immutable_identity_sha256": "337efa3c0c8e4c0aa5dfb5a5d9025665df058cf02a8eed3fe7b1b74ac81536d6",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/goat-reverie/val_seen/test/goat_reverie_source/logs/valid.txt",
+      "metrics_artifact_sha256": "266ad0ec221c6718567ecdee1c9650dfeb25bde7ec505a25438d8e52f94a9bb3"
+    }
+  }
+}

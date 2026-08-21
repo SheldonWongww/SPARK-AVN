@@ -1,0 +1,211 @@
+{
+  "run_id": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7-goat-r2r-val_seen-native",
+  "task": "vln",
+  "benchmark": "r2r_discrete_goat",
+  "model": "goat",
+  "method": "atena",
+  "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7",
+  "source_setting": "goat-r2r:val_seen:native:atena",
+  "seed": 0,
+  "git_commit": "ef4f3e37fca3b3057cb2a2c365352b70633bd22b",
+  "config": "/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/phases/02-goat-r2r-atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/parameters.json",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/goat/bin/python",
+    "r2r/main_nav.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "r2r",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/goat/atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/val_seen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "roberta",
+    "--mode",
+    "valid",
+    "--name",
+    "goat_r2r_source",
+    "--enc_full_graph",
+    "--graph_sprels",
+    "--fusion",
+    "dynamic",
+    "--train_alg",
+    "dagger",
+    "--num_l_layers",
+    "6",
+    "--num_x_layers",
+    "3",
+    "--num_pano_layers",
+    "2",
+    "--max_action_len",
+    "15",
+    "--batch_size",
+    "1",
+    "--features",
+    "clip768",
+    "--image_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0",
+    "--dropout",
+    "0",
+    "--do_back_txt",
+    "--do_back_img",
+    "--do_back_txt_type",
+    "type_2",
+    "--do_back_img_type",
+    "type_1",
+    "--do_add_method",
+    "door",
+    "--do_front_txt",
+    "--do_front_img",
+    "--do_front_his",
+    "--backdoor_dict_file",
+    "../datasets/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv",
+    "--frontdoor_dict_file",
+    "../datasets/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv",
+    "--resume_file",
+    "../datasets/R2R/navigator/goat_r2r/ckpts/best_val_unseen.pt",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_seen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_goat",
+    "--expert_policy",
+    "spl",
+    "--max_instr_len",
+    "200",
+    "--tta_method",
+    "atena",
+    "--tta_diagnostics",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/goat/atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/val_seen/tta_diagnostics.json",
+    "--tta_action_selection",
+    "argmax",
+    "--tta_atena_lr_query",
+    "4.25e-07",
+    "--tta_atena_lr_self",
+    "5.3125e-08",
+    "--tta_max_grad_norm",
+    "0.0",
+    "--tta_atena_mix_lambda",
+    "0.0",
+    "--tta_optimizer",
+    "AdamW",
+    "--tta_atena_query_threshold",
+    "0.2",
+    "--tta_atena_self_loss_weight",
+    "0.1",
+    "--tta_weight_decay",
+    "0.01"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/goat/R2R/best_val_unseen.pt",
+    "size": 877551955,
+    "sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/features/CLIP-ViT-B-16-views.hdf5",
+      "size": 3129297165,
+      "sha256": "378d756bcec1aa6f9acbfe48ba3f017d75ee136fd90b12f89b312b3fb82164fb"
+    },
+    {
+      "name": "backdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv",
+      "size": 306009,
+      "sha256": "728044c41ca15806a0e1724d6bf4c33c8220c74869d759a81142948c207d9e33"
+    },
+    {
+      "name": "frontdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv",
+      "size": 295056,
+      "sha256": "0985cee98a0ccb4724fbb17a22f42201dffb6587ed0238b9a63bf9b9ee86142e"
+    },
+    {
+      "name": "submission_viewpoint_candidates",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/scanvp_candview_relangles.json",
+      "size": 5124730,
+      "sha256": "cead28ce0d9b248766c5295338e0809eeedfec499b1eafd39e15e63609394d14"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/R2R_val_seen_roberta_enc.json",
+    "version": "r2r_discrete_goat",
+    "size": 571431,
+    "index_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+    "stream_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+    "stream_content_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 41134,
+      "sha256": "0de5df0de8e029a3c440d06db63b8226e170073dfddaead3406ee2ae3e5b58de"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_goat/val_seen.json",
+      "size": 76968,
+      "sha256": "b0ac1a9103a9b48741dfbf32f6a835af8e1125021c803dddf72e35f02b6daf68"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-21T16:50:06.814534+00:00",
+  "completed_at": "2026-08-21T17:02:05.061137+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "b563ebdd59a717c7003e3c8b8b73ee64cb472e6d41b3ad50371c4d18860634bd",
+  "result_artifacts": [
+    {
+      "name": "test/goat_r2r_source/logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/goat/atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/val_seen/test/goat_r2r_source/logs/valid.txt",
+      "size": 6288,
+      "sha256": "3f33200738edac0f4f3123b183222cbd6829a68de653beb1a845907498459fe7"
+    },
+    {
+      "name": "test/goat_r2r_source/logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/goat/atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/val_seen/test/goat_r2r_source/logs/validation_args.json",
+      "size": 7311,
+      "sha256": "d4f8c1e0d716074cc5135ec3d3b0ce6ddefe3172a73da5d46497c7845e5b0b68"
+    },
+    {
+      "name": "tta_diagnostics.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/r2r/hparam_search/vln-r2r-targeted-gap-expand-v2-seed0/goat/atena/jobs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0019-goat-r2r-8f64c12ed7/val_seen/tta_diagnostics.json",
+      "size": 36908,
+      "sha256": "3f6e9b142d13599f4a4388bd213d5540a3be25d3172af0377048e6d49b077de9"
+    }
+  ]
+}

@@ -1,0 +1,522 @@
+{
+  "schema": "navtta.vln_reverie_r2r_frozen_transfer.v1",
+  "experiment_id": "vln-reverie-r2r-frozen-transfer-v1",
+  "status": "reviewed_joint_launchable_after_r2r_registry",
+  "purpose": "Transfer one frozen R2R-selected configuration for each DUET/HAMT/GOAT by Tent/FSTTA/EAM/FeedTTA/ATENA cell to complete REVERIE val_seen without tuning on REVERIE.",
+  "r2r_registry_dependency": {
+    "path": "vln/results/final/r2r/registry.json",
+    "schema": "navtta.vln_r2r_final_registry.v1",
+    "required_registry_status": "complete",
+    "required_before_execution": true,
+    "plan_only_may_precede_registry": true,
+    "parameter_pointer": "records.<r2r-setting>.<method>.parameters",
+    "required_record_fields": [
+      "parameters",
+      "run_tag",
+      "metrics",
+      "formal_manifest_path",
+      "formal_manifest_sha256"
+    ]
+  },
+  "source_control": {
+    "execution": "reuse_only",
+    "rerun_forbidden": true,
+    "manifest": "vln/manifests/reverie_reused_source_controls.json",
+    "sha256": "853c670171b0e04edf992d7c85d27a2ab999b881b8c847c8094910ae3ff62bfe"
+  },
+  "protocol": {
+    "benchmark": "reverie",
+    "split": "val_seen",
+    "episode_count": 1423,
+    "order_seed": 0,
+    "settings": [
+      "duet-reverie",
+      "hamt-reverie",
+      "goat-reverie"
+    ],
+    "methods": [
+      "tent",
+      "fstta",
+      "eam",
+      "feedtta",
+      "atena"
+    ],
+    "reported_metrics": [
+      "SR",
+      "SPL",
+      "RGS",
+      "RGSPL"
+    ],
+    "selection": "none_frozen_transfer",
+    "full_split_only": true,
+    "reset_from_source_between_jobs": true,
+    "source_action_protocol": "target_native_argmax",
+    "feedtta_action_protocol": "target_native_argmax",
+    "binary_feedback": {
+      "label": "navigation_success_only",
+      "grounding_feedback_forbidden": true,
+      "simulator_distance_fallback_forbidden": true,
+      "endpoint": "official_submitted_trajectory_after_endpoint_reranking_and_object_prediction",
+      "feedtta_timing": "eager_once_per_episode",
+      "atena_timing": "lazy_only_when_entropy_gate_queries"
+    },
+    "supervision_groups": {
+      "unsupervised": [
+        "tent",
+        "fstta",
+        "eam"
+      ],
+      "binary_feedback_supervised": [
+        "feedtta",
+        "atena"
+      ]
+    }
+  },
+  "execution": {
+    "method_order": [
+      "tent",
+      "fstta",
+      "eam",
+      "feedtta",
+      "atena"
+    ],
+    "setting_order": [
+      "duet-reverie",
+      "hamt-reverie",
+      "goat-reverie"
+    ],
+    "strict_method_barrier_required": true,
+    "joint_launch_required": true,
+    "joint_readiness_ack_required": true,
+    "campaign_lifetime_lock_required": true,
+    "shared_active_reservation_required": true,
+    "cross_method_overlap_forbidden": true,
+    "parallel_models_within_method": "profile_dependent",
+    "default_concurrency_profile": "shared_gpu_with_r2r_ce",
+    "concurrency_profiles": {
+      "shared_gpu_with_r2r_ce": {
+        "purpose": "Run REVERIE concurrently with the independent R2R-CE campaign without assuming exclusive access to the 32-GiB GPU.",
+        "max_workers_by_method": {
+          "tent": 1,
+          "fstta": 1,
+          "eam": 1,
+          "feedtta": 1,
+          "atena": 1
+        },
+        "minimum_free_mib_before_launch": {
+          "tent": 4096,
+          "fstta": 5120,
+          "eam": 6144,
+          "feedtta": 8192,
+          "atena": 10240
+        },
+        "estimated_job_gpu_memory_mib": {
+          "tent": 4096,
+          "fstta": 5120,
+          "eam": 6144,
+          "feedtta": 8192,
+          "atena": 10240
+        },
+        "max_aggregate_gpu_memory_mib": 26000,
+        "max_cgroup_memory_gib_before_launch": 55.0,
+        "estimated_job_memory_gib": 15.0,
+        "max_aggregate_cgroup_memory_gib": 75.0,
+        "shared_launch_settle_seconds": 15.0,
+        "gpu_poll_seconds": 15,
+        "launch_stagger_seconds": 0,
+        "requires_external_ce_scheduler_to_preserve_reservation": true
+      },
+      "exclusive_gpu": {
+        "purpose": "Optional faster profile only after confirming no R2R-CE or other GPU workload is active.",
+        "max_workers_by_method": {
+          "tent": 3,
+          "fstta": 3,
+          "eam": 3,
+          "feedtta": 2,
+          "atena": 2
+        },
+        "minimum_free_mib_before_launch": {
+          "tent": 4096,
+          "fstta": 4096,
+          "eam": 5120,
+          "feedtta": 6144,
+          "atena": 8192
+        },
+        "gpu_poll_seconds": 15,
+        "launch_stagger_seconds": 15,
+        "requires_external_ce_scheduler_to_preserve_reservation": false
+      }
+    },
+    "gpu": 0,
+    "formal_full_split": true,
+    "episode_limit_forbidden": true,
+    "order_seed_cli_forbidden": true
+  },
+  "jobs": [
+    {
+      "setting": "duet-reverie",
+      "r2r_setting": "duet-r2r",
+      "method": "tent",
+      "parameters": {
+        "episodic": false,
+        "last_k_ln": 9,
+        "lr": 0.00001,
+        "max_grad_norm": 0.0,
+        "norm_scope": "last_k_ln",
+        "optimizer": "AdamW",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b",
+        "metrics": {"SR": 78.94, "SPL": 73.08}
+      }
+    },
+    {
+      "setting": "hamt-reverie",
+      "r2r_setting": "hamt-r2r",
+      "method": "tent",
+      "parameters": {
+        "episodic": false,
+        "lr": 0.000003,
+        "max_grad_norm": 0.0,
+        "norm_scope": "ln",
+        "optimizer": "AdamW",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28",
+        "metrics": {"SR": 76.3, "SPL": 72.88}
+      }
+    },
+    {
+      "setting": "goat-reverie",
+      "r2r_setting": "goat-r2r",
+      "method": "tent",
+      "parameters": {
+        "episodic": false,
+        "lr": 0.00001,
+        "max_grad_norm": 0.0,
+        "norm_scope": "ln",
+        "optimizer": "AdamW",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323",
+        "metrics": {"SR": 84.92, "SPL": 80.32}
+      }
+    },
+    {
+      "setting": "duet-reverie",
+      "r2r_setting": "duet-r2r",
+      "method": "fstta",
+      "parameters": {
+        "a": 0.9,
+        "b": 1.1,
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "eigen_eps": 0.000001,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "last_k_ln": 4,
+        "lr_fast": 0.0018,
+        "lr_slow": 0.0003,
+        "m": 8,
+        "max_grad_norm": 0.0,
+        "n": 4,
+        "norm_scope": "last_k_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3",
+        "metrics": {"SR": 79.14, "SPL": 73.1}
+      }
+    },
+    {
+      "setting": "hamt-reverie",
+      "r2r_setting": "hamt-r2r",
+      "method": "fstta",
+      "parameters": {
+        "a": 0.9,
+        "b": 1.1,
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "eigen_eps": 0.000001,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "last_k_ln": 4,
+        "lr_fast": 0.0008,
+        "lr_slow": 0.0002,
+        "m": 1,
+        "max_grad_norm": 0.0,
+        "n": 16,
+        "norm_scope": "last_k_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22",
+        "metrics": {"SR": 76.4, "SPL": 72.97}
+      }
+    },
+    {
+      "setting": "goat-reverie",
+      "r2r_setting": "goat-r2r",
+      "method": "fstta",
+      "parameters": {
+        "a": 0.9,
+        "b": 1.1,
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "eigen_eps": 0.000001,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "last_k_ln": 4,
+        "lr_fast": 0.0018,
+        "lr_slow": 0.001,
+        "m": 3,
+        "max_grad_norm": 0.0,
+        "n": 8,
+        "norm_scope": "last_k_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779",
+        "metrics": {"SR": 84.92, "SPL": 80.21}
+      }
+    },
+    {
+      "setting": "duet-reverie",
+      "r2r_setting": "duet-r2r",
+      "method": "eam",
+      "parameters": {
+        "batch_size": 8,
+        "confidence_scale": 0.5,
+        "episodic": false,
+        "lr": 0.00001,
+        "max_grad_norm": 0.0,
+        "memory_size": 64,
+        "optimizer": "Adam",
+        "update_interval": 8,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "pending-r2r-eam-atena-formal-confirmation-v1",
+        "historical_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0314-duet-r2r-57ab8b8bf5",
+        "historical_metrics": {"SR": 80.31, "SPL": 74.75},
+        "requires_formal_confirmation": true
+      }
+    },
+    {
+      "setting": "hamt-reverie",
+      "r2r_setting": "hamt-r2r",
+      "method": "eam",
+      "parameters": {
+        "batch_size": 8,
+        "confidence_scale": 0.6,
+        "episodic": false,
+        "lr": 0.000001,
+        "max_grad_norm": 0.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "update_interval": 8,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "pending-r2r-eam-atena-formal-confirmation-v1",
+        "historical_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0189-hamt-r2r-c88e328c7a",
+        "historical_metrics": {"SR": 76.69, "SPL": 73.4},
+        "requires_formal_confirmation": true
+      }
+    },
+    {
+      "setting": "goat-reverie",
+      "r2r_setting": "goat-r2r",
+      "method": "eam",
+      "parameters": {
+        "batch_size": 8,
+        "confidence_scale": 0.3,
+        "episodic": false,
+        "lr": 0.000003,
+        "max_grad_norm": 0.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "update_interval": 4,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "pending-r2r-eam-atena-formal-confirmation-v1",
+        "historical_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-eam-cartesian-0225-goat-r2r-01a184b229",
+        "historical_metrics": {"SR": 85.31, "SPL": 80.55},
+        "requires_formal_confirmation": true
+      }
+    },
+    {
+      "setting": "duet-reverie",
+      "r2r_setting": "duet-r2r",
+      "method": "feedtta",
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": 0.1,
+        "episodic": false,
+        "gamma": 0.8,
+        "lr": 0.000005,
+        "max_grad_norm": 0.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 0.00001,
+        "p": 0.05,
+        "scope_profile": "last_crossmodal",
+        "sgr_seed": 0,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87",
+        "metrics": {"SR": 79.33, "SPL": 73.88}
+      }
+    },
+    {
+      "setting": "hamt-reverie",
+      "r2r_setting": "hamt-r2r",
+      "method": "feedtta",
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": 0.1,
+        "episodic": false,
+        "gamma": 0.9,
+        "lr": 0.000002,
+        "max_grad_norm": 0.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 0.00001,
+        "p": 0.05,
+        "scope_profile": "last_crossmodal",
+        "sgr_seed": 0,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102",
+        "metrics": {"SR": 76.0, "SPL": 72.66}
+      }
+    },
+    {
+      "setting": "goat-reverie",
+      "r2r_setting": "goat-r2r",
+      "method": "feedtta",
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.1,
+        "episodic": false,
+        "gamma": 0.8,
+        "lr": 0.000001,
+        "max_grad_norm": 0.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 0.00001,
+        "p": 0.1,
+        "scope_profile": "action_head",
+        "sgr_seed": 0,
+        "weight_decay": 0.0
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5",
+        "metrics": {"SR": 84.92, "SPL": 80.11}
+      }
+    },
+    {
+      "setting": "duet-reverie",
+      "r2r_setting": "duet-r2r",
+      "method": "atena",
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 0.0000016,
+        "lr_self": 0.0000002,
+        "max_grad_norm": 0.0,
+        "mix_lambda": 0.5,
+        "optimizer": "AdamW",
+        "query_threshold": 0.0,
+        "self_loss_weight": 0.1,
+        "weight_decay": 0.01
+      },
+      "r2r_anchor": {
+        "run_tag": "pending-r2r-eam-atena-formal-confirmation-v1",
+        "historical_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-atena-cartesian-0048-duet-r2r-8d3372dc24",
+        "historical_metrics": {"SR": 80.41, "SPL": 76.29},
+        "requires_corrected_confirmation": true
+      }
+    },
+    {
+      "setting": "hamt-reverie",
+      "r2r_setting": "hamt-r2r",
+      "method": "atena",
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 0.0000032,
+        "lr_self": 0.0000004,
+        "max_grad_norm": 0.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.1,
+        "self_loss_weight": 0.1,
+        "weight_decay": 0.01
+      },
+      "r2r_anchor": {
+        "run_tag": "pending-r2r-eam-atena-formal-confirmation-v1",
+        "historical_run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-atena-cartesian-0065-hamt-r2r-8dfe151e97",
+        "historical_metrics": {"SR": 77.47, "SPL": 74.16},
+        "requires_corrected_confirmation": true
+      }
+    },
+    {
+      "setting": "goat-reverie",
+      "r2r_setting": "goat-r2r",
+      "method": "atena",
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 0.000000375,
+        "lr_self": 0.00000003515625,
+        "max_grad_norm": 0.0,
+        "mix_lambda": 0.0,
+        "optimizer": "AdamW",
+        "query_threshold": 0.15,
+        "self_loss_weight": 0.1,
+        "weight_decay": 0.01
+      },
+      "r2r_anchor": {
+        "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e",
+        "metrics": {"SR": 84.92, "SPL": 80.24}
+      }
+    }
+  ]
+}

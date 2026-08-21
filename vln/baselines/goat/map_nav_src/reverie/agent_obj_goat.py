@@ -818,7 +818,10 @@ class GMapObjectNavAgent(Seq2SeqAgent):
                         new_paths.append([each_sub_node])
                 traj[i]['path'] = new_paths
 
-        self.tta_episode_end(observations=obs)
+        episode_stats = self.tta_reverie_episode_stats(
+            traj, path_format='nested_graph_path'
+        )
+        self.tta_episode_end(episode_stats=episode_stats)
         return traj
     
     def get_per_traj_feats(self, idx):

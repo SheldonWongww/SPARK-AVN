@@ -60,11 +60,22 @@ class TTAConfigCLITest(unittest.TestCase):
             tokens[tokens.index("--tta_action_selection") + 1], "argmax"
         )
 
-    def test_continuous_feedtta_rejects_discrete_scope_profile(self):
-        with self.assertRaisesRegex(ValueError, "only for discrete VLN"):
+    def test_continuous_feedtta_scope_profile_mapping(self):
+        method, tokens = self._translate(
+            "etpnav-r2r-ce", "feedtta",
+            {"scope_profile": "last_crossmodal"},
+        )
+        self.assertEqual(method, "feedtta")
+        self.assertEqual(
+            tokens[tokens.index("TTA.FEEDTTA.SCOPE_PROFILE") + 1],
+            "last_crossmodal",
+        )
+
+    def test_continuous_feedtta_rejects_unknown_scope_profile(self):
+        with self.assertRaisesRegex(ValueError, "invalid continuous"):
             self._translate(
                 "etpnav-r2r-ce", "feedtta",
-                {"scope_profile": "last_crossmodal"},
+                {"scope_profile": "all_the_things"},
             )
 
     def test_unknown_parameter_is_rejected(self):
