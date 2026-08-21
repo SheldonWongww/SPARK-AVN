@@ -360,9 +360,11 @@ class DiscreteTTAControllerTest(unittest.TestCase):
     def test_r2r_feedback_uses_submitted_trajectory_endpoint(self):
         class FakeEnvironment:
             gt_trajs = {"instruction": ("scan", ["start", "goal"])}
+            calls = 0
 
-            @staticmethod
-            def _eval_item(scan, path, ground_truth):
+            @classmethod
+            def _eval_item(cls, scan, path, ground_truth):
+                cls.calls += 1
                 self.assertEqual(scan, "scan")
                 self.assertEqual(ground_truth, ["start", "goal"])
                 self.assertEqual(path[-1][-1], "goal")
@@ -379,6 +381,28 @@ class DiscreteTTAControllerTest(unittest.TestCase):
             "nested_graph_path",
         )
         self.assertEqual(stats, {"success": 1.0})
+        self.assertEqual(FakeEnvironment.calls, 1)
+        self.assertEqual(
+            agent.tta_controller.binary_feedback_endpoint,
+            "r2r_submitted_trajectory_evaluator_success_every_episode",
+        )
+
+        agent.tta_controller = SimpleNamespace(method="atena")
+        feedback = agent.tta_r2r_episode_stats(
+            [{
+                "instr_id": "instruction",
+                "path": [["start"], ["reranked", "goal"]],
+            }],
+            "nested_graph_path",
+        )
+        self.assertTrue(callable(feedback))
+        self.assertEqual(FakeEnvironment.calls, 1)
+        self.assertEqual(feedback(), {"success": 1.0})
+        self.assertEqual(FakeEnvironment.calls, 2)
+        self.assertEqual(
+            agent.tta_controller.binary_feedback_endpoint,
+            "r2r_submitted_trajectory_evaluator_success_lazy_query",
+        )
 
 
 if __name__ == "__main__":

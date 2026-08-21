@@ -45,7 +45,8 @@ RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
 RESULT_LAYOUT = "r2r_benchmark_model_method_local_refinement_v1"
 SPEC_SCHEMA_V1 = "navtta.vln_r2r_five_method_local_refinement_plan.v1"
 SPEC_SCHEMA_V2 = "navtta.vln_r2r_two_method_postfix_search_plan.v1"
-SPEC_SCHEMAS = (SPEC_SCHEMA_V1, SPEC_SCHEMA_V2)
+SPEC_SCHEMA_V3 = "navtta.vln_r2r_targeted_gap_refinement_plan.v1"
+SPEC_SCHEMAS = (SPEC_SCHEMA_V1, SPEC_SCHEMA_V2, SPEC_SCHEMA_V3)
 PLAN_SCHEMA = "navtta.vln_r2r_local_refinement_campaign_plan.v1"
 PHASE_SCHEMA = "navtta.vln_r2r_local_refinement_phase.v1"
 CALIBRATION_SCHEMA = "navtta.vln_r2r_local_refinement_calibration.v1"
@@ -100,6 +101,14 @@ CALIBRATION_RESOURCE_FIELDS = (
 
 class UserError(RuntimeError):
     pass
+
+
+def _uses_search_priors(spec):
+    return spec.get("schema") in (SPEC_SCHEMA_V2, SPEC_SCHEMA_V3)
+
+
+def _enforces_corrected_result_contract(spec):
+    return spec.get("schema") in (SPEC_SCHEMA_V2, SPEC_SCHEMA_V3)
 
 
 def canonical(value):
@@ -451,7 +460,7 @@ def _validate_reused_source_artifacts(spec):
 
 
 def _validate_search_prior_artifacts(spec):
-    if spec.get("schema") != SPEC_SCHEMA_V2:
+    if not _uses_search_priors(spec):
         return
     for method, settings in spec["search_priors"].items():
         for setting, prior in settings.items():
@@ -516,7 +525,9 @@ def enabled_phases_by_setting(spec):
     global_positions = {method: index for index, method in enumerate(global_order)}
     for setting in SETTINGS:
         phases = declared[setting]
-        if not isinstance(phases, list) or not phases:
+        if not isinstance(phases, list):
+            raise UserError(f"enabled phases for {setting} must be an array")
+        if not phases and spec.get("schema") != SPEC_SCHEMA_V3:
             raise UserError(f"enabled phases for {setting} must be a nonempty array")
         if len(phases) != len(set(phases)):
             raise UserError(f"enabled phases for {setting} contain duplicates")
@@ -709,10 +720,10 @@ def _validate_spec(document):
     if not isinstance(selection, list) or selection[:2] != ["higher_SR", "higher_SPL"]:
         raise UserError("local refinement must select by SR then SPL")
     if (
-        document.get("schema") == SPEC_SCHEMA_V2
+        _uses_search_priors(document)
         and protocol.get("prefix_screening_forbidden") is not True
     ):
-        raise UserError("post-fix search must forbid prefix screening")
+        raise UserError("corrected follow-up search must forbid prefix screening")
 
     execution = _mapping(document.get("execution"), "execution")
     if not isinstance(execution.get("launchable"), bool):
@@ -750,10 +761,23 @@ def _validate_spec(document):
         and active_methods != ("fstta", "feedtta")
     ):
         raise UserError("post-fix search must contain only FSTTA and FeedTTA")
+    if document.get("schema") == SPEC_SCHEMA_V3:
+        expected_enabled = {
+            "duet-r2r": ["tent"],
+            "hamt-r2r": [],
+            "goat-r2r": ["feedtta", "atena"],
+        }
+        if enabled != expected_enabled:
+            raise UserError(
+                "targeted gap refinement must contain only DUET Tent and "
+                "GOAT FeedTTA/ATENA"
+            )
+        if active_methods != ("tent", "feedtta", "atena"):
+            raise UserError("targeted gap refinement method set is invalid")
     _exact_keys(document.get("methods"), active_methods, "methods")
     prior_key = (
         "search_priors"
-        if document.get("schema") == SPEC_SCHEMA_V2
+        if _uses_search_priors(document)
         else "parent_anchors"
     )
     _exact_keys(document.get(prior_key), active_methods, prior_key)
@@ -778,7 +802,7 @@ def _validate_spec(document):
                 document[prior_key][method][setting],
                 f"{prior_key}.{method}.{setting}",
             )
-            if document.get("schema") == SPEC_SCHEMA_V2:
+            if _uses_search_priors(document):
                 run_tag = anchor.get("prior_run_tag")
                 candidate_key = "transformed_candidate"
                 _mapping(
@@ -836,12 +860,38 @@ def _validate_spec(document):
         raise UserError(
             "FeedTTA sampled-control policy does not match the plan schema"
         )
-    if document.get("schema") == SPEC_SCHEMA_V2 and controls.get(
+    if _uses_search_priors(document) and "feedtta" in active_methods and controls.get(
         "feedtta_action_protocol"
     ) != "target_native_argmax":
         raise UserError(
-            "post-fix FeedTTA search must use target_native_argmax"
+            "corrected FeedTTA search must use target_native_argmax"
         )
+    if _uses_search_priors(document) and "feedtta" in active_methods:
+        feedtta_fixed = _mapping(
+            document["methods"]["feedtta"].get("fixed"), "feedtta.fixed"
+        )
+        required_feedtta = {
+            "action_selection": "argmax",
+            "sgr_seed": 0,
+            "episodic": False,
+        }
+        if any(
+            feedtta_fixed.get(key) != value
+            for key, value in required_feedtta.items()
+        ):
+            raise UserError("corrected FeedTTA fixed protocol is invalid")
+        allowed_scopes = {"paper_full", "last_crossmodal", "action_head"}
+        for setting in enabled_settings_for_method(document, "feedtta"):
+            candidates = expand_candidates("feedtta", setting, document)
+            if any(
+                item["parameters"].get("action_selection") != "argmax"
+                or item["parameters"].get("scope_profile") not in allowed_scopes
+                for item in candidates
+            ):
+                raise UserError(
+                    f"corrected FeedTTA candidate protocol is invalid for {setting}"
+                )
+
     if document.get("schema") == SPEC_SCHEMA_V2:
         supervision = _mapping(
             protocol.get("supervision_groups"), "protocol.supervision_groups"
@@ -864,30 +914,6 @@ def _validate_spec(document):
         }
         if any(fstta_fixed.get(key) != value for key, value in required_fstta.items()):
             raise UserError("post-fix FSTTA fixed protocol is invalid")
-        feedtta_fixed = _mapping(
-            document["methods"]["feedtta"].get("fixed"), "feedtta.fixed"
-        )
-        required_feedtta = {
-            "action_selection": "argmax",
-            "sgr_seed": 0,
-            "episodic": False,
-        }
-        if any(
-            feedtta_fixed.get(key) != value
-            for key, value in required_feedtta.items()
-        ):
-            raise UserError("post-fix FeedTTA fixed protocol is invalid")
-        allowed_scopes = {"paper_full", "last_crossmodal", "action_head"}
-        for setting in SETTINGS:
-            candidates = expand_candidates("feedtta", setting, document)
-            if any(
-                item["parameters"].get("action_selection") != "argmax"
-                or item["parameters"].get("scope_profile") not in allowed_scopes
-                for item in candidates
-            ):
-                raise UserError(
-                    f"post-fix FeedTTA candidate protocol is invalid for {setting}"
-                )
         published_fstta_anchor = {
             "lr_fast": 0.0006, "lr_slow": 0.001, "m": 3, "n": 4,
         }
@@ -899,6 +925,41 @@ def _validate_spec(document):
             for item in duet_candidates
         ) != 1:
             raise UserError("post-fix FSTTA search lacks the published DUET anchor")
+    elif document.get("schema") == SPEC_SCHEMA_V3:
+        supervision = _mapping(
+            protocol.get("supervision_groups"), "protocol.supervision_groups"
+        )
+        if supervision != {
+            "unsupervised": ["tent"],
+            "binary_feedback_supervised": ["feedtta", "atena"],
+        }:
+            raise UserError("targeted gap refinement supervision groups are invalid")
+
+        tent_candidates = expand_candidates("tent", "duet-r2r", document)
+        if any(
+            item["parameters"].get("update_interval") != 1
+            or item["parameters"].get("norm_scope")
+            not in {"last_ln", "last_k_ln"}
+            for item in tent_candidates
+        ):
+            raise UserError("targeted DUET Tent protocol is invalid")
+
+        feedtta_candidates = expand_candidates(
+            "feedtta", "goat-r2r", document
+        )
+        if any(
+            item["parameters"].get("scope_profile") != "action_head"
+            for item in feedtta_candidates
+        ):
+            raise UserError("targeted GOAT FeedTTA must use action_head")
+
+        atena_candidates = expand_candidates("atena", "goat-r2r", document)
+        if any(
+            item["parameters"].get("action_selection") != "argmax"
+            or item["parameters"].get("episodic") is not False
+            for item in atena_candidates
+        ):
+            raise UserError("targeted GOAT ATENA protocol is invalid")
     control_count = sum(
         method in CONTROL_METHODS
         for phases in enabled.values()
@@ -1057,6 +1118,17 @@ def _validate_spec(document):
                         value.get("observed_peak_mib"),
                         f"{key}.observed_peak_mib",
                     )
+    elif document.get("schema") == SPEC_SCHEMA_V3:
+        if gpu_safety.get("approved_projection_exceptions") != []:
+            raise UserError(
+                "targeted gap refinement must use measured concurrency caps"
+            )
+        for method in active_methods:
+            for setting in enabled_settings_for_method(document, method):
+                _positive_int(
+                    calibration[method][setting].get("observed_peak_mib"),
+                    f"{method}/{setting}.observed_peak_mib",
+                )
     return reused_source_manifest
 
 
@@ -1150,7 +1222,7 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
     if phase["method"] not in CONTROL_METHODS:
         prior_key = (
             "search_priors"
-            if spec.get("schema") == SPEC_SCHEMA_V2
+            if _uses_search_priors(spec)
             else "parent_anchors"
         )
         prior = spec[prior_key][phase["method"]][phase["setting"]]
@@ -1181,12 +1253,12 @@ def build_phase_jobs(phase, batch_id, spec, gpu=0):
         if prior is not None:
             prior_candidate_key = (
                 "transformed_candidate"
-                if spec.get("schema") == SPEC_SCHEMA_V2 else "candidate"
+                if _uses_search_priors(spec) else "candidate"
             )
             if canonical(item["candidate"]) == canonical(
                 prior[prior_candidate_key]
             ):
-                if spec.get("schema") == SPEC_SCHEMA_V2:
+                if _uses_search_priors(spec):
                     search_prior = {
                         "run_tag": prior["prior_run_tag"],
                         "job_path": prior["prior_job_path"],
@@ -1836,13 +1908,13 @@ def _phase_complete(root, spec, phase=None):
 
 
 def _load_phase_results(root, spec, phase):
-    if spec.get("schema") == SPEC_SCHEMA_V2:
+    if _enforces_corrected_result_contract(spec):
         return _load_validated_results(root, spec, phase)
     return _load_validated_results(root, spec)
 
 
 def _phase_complete_for_spec(root, spec, phase):
-    if spec.get("schema") == SPEC_SCHEMA_V2:
+    if _enforces_corrected_result_contract(spec):
         return _phase_complete(root, spec, phase)
     return _phase_complete(root, spec)
 
@@ -1864,7 +1936,7 @@ def _result_score(result):
 
 
 def _validate_postfix_result_contract(phase, result, spec):
-    if spec.get("schema") != SPEC_SCHEMA_V2:
+    if not _enforces_corrected_result_contract(spec):
         return
     adapter = result.get("adapter_diagnostics") or {}
     method = phase["method"]
@@ -1874,12 +1946,39 @@ def _validate_postfix_result_contract(phase, result, spec):
                 f"{result['run_tag']} did not preserve FSTTA stream variance"
             )
         return
-    if method != "feedtta":
+    if method not in ("feedtta", "atena"):
         return
 
     parameters = result.get("parameters") or {}
     if parameters.get("action_selection") != "argmax":
         raise UserError(f"{result['run_tag']} is not target-native argmax")
+    diagnostics_path = Path(result["diagnostics_path"])
+    diagnostics = _read_json_object(
+        diagnostics_path, f"{result['run_tag']} diagnostics"
+    )
+    if method == "atena":
+        if diagnostics.get("binary_feedback_endpoint") != (
+            "r2r_submitted_trajectory_evaluator_success_lazy_query"
+        ):
+            raise UserError(
+                f"{result['run_tag']} ATENA feedback endpoint is not the "
+                "submitted evaluator path"
+            )
+        expected_episodes = int(spec["protocol"]["episode_count"])
+        queries = int(adapter.get("queries", -1))
+        observed = int(adapter.get("feedback_observed_episodes", -2))
+        if (
+            queries < 0
+            or queries > expected_episodes
+            or observed != queries
+            or int(adapter.get("query_gate_evaluations", -1))
+            != expected_episodes
+        ):
+            raise UserError(
+                f"{result['run_tag']} has an invalid lazy ATENA feedback budget"
+            )
+        return
+
     if adapter.get("action_selection_protocol") != "target_native_argmax":
         raise UserError(
             f"{result['run_tag']} adapter action protocol is not argmax"
@@ -1901,10 +2000,6 @@ def _validate_postfix_result_contract(phase, result, spec):
             f"{successes} != {metric_successes}"
         )
 
-    diagnostics_path = Path(result["diagnostics_path"])
-    diagnostics = _read_json_object(
-        diagnostics_path, f"{result['run_tag']} diagnostics"
-    )
     if diagnostics.get("action_selection") != "target_native_argmax":
         raise UserError(f"{result['run_tag']} top-level action protocol mismatch")
     if diagnostics.get("feedtta_scope_profile") != parameters.get(
@@ -1974,7 +2069,7 @@ def _validate_feedtta_scope_prefixes(setting, profile, prefixes, run_tag):
 
 def _validate_or_mark_postfix_results(phase, root, jobs, spec, results):
     """Turn a post-run scientific-contract failure into a retryable job."""
-    if spec.get("schema") != SPEC_SCHEMA_V2:
+    if not _enforces_corrected_result_contract(spec):
         return results
     by_tag = {result.get("run_tag"): result for result in results}
     failures = []

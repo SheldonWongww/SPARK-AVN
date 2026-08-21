@@ -556,6 +556,7 @@ class DiscreteTTAController:
         self.episode_count = 0
         self._episode_open = False
         self._pending_policy_inputs = None
+        self.binary_feedback_endpoint = None
         self._trajectory_hasher = hashlib.sha256()
         self.trajectory_steps = 0
         self.diagnostics_path = args.tta_diagnostics or os.path.join(
@@ -614,6 +615,7 @@ class DiscreteTTAController:
         self._action_generator.manual_seed(self.action_seed)
         self._episode_open = False
         self._pending_policy_inputs = None
+        self.binary_feedback_endpoint = None
         self._trajectory_hasher = hashlib.sha256()
         self.trajectory_steps = 0
 
@@ -737,6 +739,9 @@ class DiscreteTTAController:
                     episode_stats = {
                         "success": float(observation["distance"]) < 3.0
                     }
+                self.binary_feedback_endpoint = (
+                    "final_simulator_observation_distance"
+                )
         self.adapter.episode_end(episode_stats=episode_stats)
         self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
@@ -788,6 +793,7 @@ class DiscreteTTAController:
                 if self.method in ("feedtta", "atena")
                 else "unsupervised"
             ),
+            "binary_feedback_endpoint": self.binary_feedback_endpoint,
             "trainable_prefixes": list(self.trainable_prefixes),
             "feedtta_scope_profile": self.feedtta_scope_profile,
             "adapter": diagnostics,
@@ -900,7 +906,7 @@ class DiscreteTTAAgentMixin:
         viewpoint tuples, while DUET/GOAT use nested graph paths.
         """
         controller = getattr(self, "tta_controller", None)
-        if controller is None or controller.method != "feedtta":
+        if controller is None or controller.method not in ("feedtta", "atena"):
             return None
         if len(trajectories) != 1:
             raise ValueError(
@@ -915,7 +921,21 @@ class DiscreteTTAAgentMixin:
             evaluator_path = [step[0] for step in item["path"]]
         else:
             raise ValueError("Unknown R2R trajectory format: {}".format(path_format))
-        scores = self.env._eval_item(scan, evaluator_path, ground_truth)
-        if "success" not in scores:
-            raise ValueError("R2R evaluator did not return episode success")
-        return {"success": float(scores["success"])}
+        def evaluate_submitted_endpoint():
+            scores = self.env._eval_item(scan, evaluator_path, ground_truth)
+            if "success" not in scores:
+                raise ValueError("R2R evaluator did not return episode success")
+            return {"success": float(scores["success"])}
+
+        # FeedTTA consumes feedback after every episode.  ATENA must preserve
+        # its query budget, so expose the same exact evaluator endpoint as a
+        # lazy callback and let its entropy gate decide whether to call it.
+        if controller.method == "atena":
+            controller.binary_feedback_endpoint = (
+                "r2r_submitted_trajectory_evaluator_success_lazy_query"
+            )
+            return evaluate_submitted_endpoint
+        controller.binary_feedback_endpoint = (
+            "r2r_submitted_trajectory_evaluator_success_every_episode"
+        )
+        return evaluate_submitted_endpoint()

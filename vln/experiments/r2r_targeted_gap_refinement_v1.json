@@ -1,0 +1,198 @@
+{
+  "schema": "navtta.vln_r2r_targeted_gap_refinement_plan.v1",
+  "experiment_id": "vln-r2r-targeted-gap-refinement-v1",
+  "status": "reviewed_launchable",
+  "purpose": "Small full-val_seen follow-up for DUET Tent, GOAT FeedTTA, and GOAT ATENA after auditing weak or tied gains; ATENA uses corrected lazy evaluator-endpoint feedback.",
+  "parent_evidence": {
+    "cartesian_batch_id": "vln-r2r-modelwise-cartesian-v2-seed0",
+    "low_lr_batch_id": "vln-r2r-low-lr-refine-prod-nosource-20260820",
+    "postfix_batch_id": "vln-r2r-fstta-feedtta-postfix-v1-seed0",
+    "analysis": [
+      "vln/results/analysis/hparam_search/R2R_CARTESIAN_V2_AND_LOCAL_REFINEMENT.md",
+      "vln/results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md"
+    ],
+    "implementation_change": "ATENA receives a lazy callback for success at the submitted R2R evaluator endpoint, so unqueried episodes remain self-supervised while queried feedback matches the formal trajectory metric."
+  },
+  "search_priors": {
+    "tent": {
+      "duet-r2r": {
+        "prior_run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-00-tent-0000-duet-r2r-afea08f440",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-low-lr-refine-prod-nosource-20260820/phases/00-duet-r2r-tent/jobs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-00-tent-0000-duet-r2r-afea08f440/job.json",
+        "prior_job_sha256": "42a578fbd7b7ba9d63d066feae33a927af905e52d7134a7fbbb2e5d6cd821a29",
+        "historical_parameters": {"episodic": false, "lr": 1e-9, "max_grad_norm": 0.0, "norm_scope": "ln", "optimizer": "AdamW", "update_interval": 1, "weight_decay": 0.0},
+        "transformed_candidate": {"lr": 0.00001, "norm_scope": "last_k_ln", "last_k_ln": 4, "update_interval": 1},
+        "transfer_note": "The compliant all-LayerNorm tie motivates a graph-local last-four-LayerNorm candidate at an LR on the historical SPL ridge; this is intentionally not an exact replay."
+      }
+    },
+    "feedtta": {
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-05-feedtta-0009-goat-r2r-b17cab3011",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-fstta-feedtta-postfix-v1-seed0/phases/05-goat-r2r-feedtta/jobs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-05-feedtta-0009-goat-r2r-b17cab3011/job.json",
+        "prior_job_sha256": "ce42c65d7db7df38fa099128482ed5cc9acbdebb4a8dc4e15f3322a68798e5c0",
+        "historical_parameters": {"action_selection": "argmax", "alpha": 0.1, "episodic": false, "gamma": 0.9, "lr": 0.000001, "max_grad_norm": 0.0, "normalize_gradient": false, "optimizer": "Adam", "optimizer_eps": 0.00001, "p": 0.05, "scope_profile": "action_head", "sgr_seed": 0, "weight_decay": 0.0},
+        "transformed_candidate": {"lr": 0.00000075, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "scope_profile": "action_head"},
+        "transfer_note": "The corrected action-head winner lies on the smallest tested LR boundary, so the focused candidate interpolates below 1e-6 without replaying an existing point."
+      }
+    },
+    "atena": {
+      "goat-r2r": {
+        "prior_run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-12-atena-0045-goat-r2r-d9a3686b4a",
+        "prior_job_path": "vln/results/logs/r2r/hparam_search/vln-r2r-low-lr-refine-prod-nosource-20260820/phases/12-goat-r2r-atena/jobs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-12-atena-0045-goat-r2r-d9a3686b4a/job.json",
+        "prior_job_sha256": "030b247bcdb5749f0312808a2b2d5b0e10478548943d63bdb9937fcffa2c5cbf",
+        "historical_parameters": {"action_selection": "argmax", "episodic": false, "lr_query": 4e-7, "lr_self": 5e-8, "max_grad_norm": 0.0, "mix_lambda": 0.0, "optimizer": "AdamW", "query_threshold": 0.15, "self_loss_weight": 0.1, "weight_decay": 0.01},
+        "transformed_candidate": {"lr_query": 4e-7, "lr_self": 5e-8, "mix_lambda": 0.0, "query_threshold": 0.15},
+        "transfer_note": "Exact numeric anchor rerun after replacing pre-rerank simulator-distance feedback with a lazy submitted-trajectory evaluator callback."
+      }
+    }
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "requirements": [
+      "Bind a new batch ID to this tracked spec and the implementation commit.",
+      "Pass --confirm-reviewed after inspecting the immutable 29-job expansion.",
+      "Reuse pinned argmax Source evidence; never rerun Source or sampled controls.",
+      "Run DUET Tent, then GOAT FeedTTA, then GOAT ATENA with strict barriers."
+    ]
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_seen",
+    "episode_count": 1021,
+    "order_seed": 0,
+    "settings": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "reset_from_source_between_jobs": true,
+    "full_split_only": true,
+    "prefix_screening_forbidden": true,
+    "source_protocol": "standard_argmax",
+    "selection": ["higher_SR", "higher_SPL", "lower_parameter_drift", "fewer_updates"],
+    "sr_quantum_pp": 0.0979431929480901,
+    "seed_variance_estimated": false,
+    "supervision_groups": {
+      "unsupervised": ["tent"],
+      "binary_feedback_supervised": ["feedtta", "atena"]
+    }
+  },
+  "execution": {
+    "launchable": true,
+    "strict_model_barrier_required": true,
+    "strict_method_barrier_required": true,
+    "barrier_implementation_status": "implemented_validated",
+    "model_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "method_order_within_model": ["tent", "feedtta", "atena"],
+    "enabled_methods_by_setting": {
+      "duet-r2r": ["tent"],
+      "hamt-r2r": [],
+      "goat-r2r": ["feedtta", "atena"]
+    },
+    "cross_model_overlap_forbidden": true,
+    "cross_method_overlap_forbidden": true,
+    "tail_policy": "Finish every job in the active model/method phase before releasing the next phase.",
+    "control_execution": {},
+    "gpu_safety": {
+      "production_planned_steady_used_mib_max": 29000,
+      "emergency_abort_observed_used_mib": 30000,
+      "minimum_production_headroom_mib": 3760,
+      "scheduler_prelaunch_gate_mib_range": [23500, 25000],
+      "production_limit_is_not_a_scheduler_gate": true,
+      "launch_stagger_is_not_a_memory_guard": true,
+      "raise_concurrency_one_worker_at_a_time": false,
+      "require_all_children_at_steady_vram_before_next_raise": true,
+      "calibration_initial_group_workers": 5,
+      "calibration_episode_limit": 100,
+      "grouped_jump_after_measured_baseline": true,
+      "grouped_jump_projection_max_mib": 28500,
+      "grouped_jump_per_worker_margin_factor": 1.05,
+      "grouped_jump_requires_independent_steady_validation": true,
+      "formal_cap_policy": "Reuse completed grouped full-method measurements; do not perform another serial calibration for this small follow-up.",
+      "approved_projection_exceptions": []
+    },
+    "concurrency_calibration": {
+      "tent": {
+        "duet-r2r": {"production_cap": 10, "calibration_baseline": 5, "conditional_test_steps": [6, 7, 8, 9, 10], "estimated_mib_per_job": 1900, "observed_peak_mib": 18797, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 25000}
+      },
+      "feedtta": {
+        "goat-r2r": {"production_cap": 6, "calibration_baseline": 5, "conditional_test_steps": [6], "estimated_mib_per_job": 4400, "observed_peak_mib": 16378, "cap_basis": "completed_postfix_six_worker_measurement", "prelaunch_gate_mib": 24500},
+        "seven_workers_forbidden": true
+      },
+      "atena": {
+        "goat-r2r": {"production_cap": 5, "calibration_baseline": 5, "conditional_test_steps": [], "estimated_mib_per_job": 5290, "observed_peak_mib": 26495, "cap_basis": "completed_grouped_measurement", "prelaunch_gate_mib": 23500}
+      }
+    }
+  },
+  "methods": {
+    "tent": {
+      "fixed": {"optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false},
+      "settings": {
+        "duet-r2r": {
+          "grids": [
+            {"lr": [0.000003, 0.00001, 0.00003], "fixed": {"norm_scope": "last_ln", "update_interval": 1}},
+            {"lr": [0.000003, 0.00001, 0.00003], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 3, "update_interval": 1}},
+            {"lr": [0.000003, 0.00001, 0.00003], "fixed": {"norm_scope": "last_k_ln", "last_k_ln": 4, "update_interval": 1}}
+          ],
+          "points": [],
+          "candidate_count": 9
+        }
+      },
+      "candidate_count": 9
+    },
+    "feedtta": {
+      "fixed": {"optimizer": "Adam", "optimizer_eps": 0.00001, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "sgr_seed": 0, "normalize_gradient": false, "episodic": false},
+      "settings": {
+        "goat-r2r": {
+          "grids": [
+            {"lr": [0.0000005, 0.00000075, 0.00000125, 0.0000015, 0.000002], "gamma": [0.8, 0.9], "fixed": {"p": 0.05, "alpha": 0.1, "scope_profile": "action_head"}}
+          ],
+          "points": [
+            {"lr": 0.000001, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "scope_profile": "action_head", "role": "missing_gamma_pair_at_prior_lr"}
+          ],
+          "candidate_count": 11
+        }
+      },
+      "candidate_count": 11
+    },
+    "atena": {
+      "fixed": {"self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false},
+      "settings": {
+        "goat-r2r": {
+          "grids": [
+            {"query_threshold": [0.13, 0.15, 0.17], "fixed": {"lr_query": 0.00000035, "lr_self": 0.00000004375, "mix_lambda": 0.0}},
+            {"query_threshold": [0.13, 0.15, 0.17], "fixed": {"lr_query": 0.00000045, "lr_self": 0.00000005625, "mix_lambda": 0.0}}
+          ],
+          "points": [
+            {"lr_query": 0.0000004, "lr_self": 0.00000005, "mix_lambda": 0.0, "query_threshold": 0.15, "role": "corrected_evaluator_feedback_anchor"},
+            {"lr_query": 0.0000004, "lr_self": 0.000000025, "mix_lambda": 0.0, "query_threshold": 0.15, "role": "half_self_lr"},
+            {"lr_query": 0.0000004, "lr_self": 0.000000075, "mix_lambda": 0.0, "query_threshold": 0.15, "role": "one_and_half_self_lr"}
+          ],
+          "candidate_count": 9
+        }
+      },
+      "candidate_count": 9,
+      "secondary_feedback_efficiency_report": {"enabled": true, "rule": "Also report the lowest query-rate point within 0.1 pp SR and 0.2 pp SPL of the winner."}
+    }
+  },
+  "controls": {
+    "standard_argmax_source_per_setting": true,
+    "standard_argmax_source_execution": "reuse_completed_manifest",
+    "standard_argmax_source_manifest": "vln/manifests/r2r_reused_source_controls.json",
+    "feedtta_sampled_no_update_per_setting": false,
+    "feedtta_action_protocol": "target_native_argmax",
+    "candidate_count": 0
+  },
+  "budget": {
+    "search_candidates": {"tent": 9, "feedtta": 11, "atena": 9},
+    "search_total": 29,
+    "controls": 0,
+    "total_before_confirmation": 29,
+    "by_setting_before_controls": {"duet-r2r": 9, "hamt-r2r": 0, "goat-r2r": 20}
+  },
+  "confirmation": {
+    "run_only_after_search_is_frozen": true,
+    "minimum_promotion": "Relative to pinned argmax Source: at least one additional successful episode without lower SPL, or tied success count with SPL +0.10 pp.",
+    "order_seeds": [1, 2],
+    "matched_source_per_model_order": true,
+    "feedback_methods_must_report_feedback_budget": true,
+    "do_not_reselect_on_val_unseen_after_confirmation": true,
+    "do_not_reselect_on_val_unseen": true
+  }
+}

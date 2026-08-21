@@ -123,6 +123,19 @@ and FeedTTA uses `6/5/6`. This batch directly observed GOAT FSTTA at 12 workers
 14-worker GOAT FSTTA ceiling remains a projection. The 29,000 MiB planning and
 30,000 MiB emergency lines remain unchanged.
 
+## R2R targeted gap refinement
+
+`r2r_targeted_gap_refinement_v1.json` is a 29-job follow-up for only the three
+remaining weak pairs: nine DUET Tent points, eleven GOAT FeedTTA points, and
+nine GOAT ATENA points. It reuses all Source evidence and runs no sampled
+controls. Tent keeps `update_interval=1` and searches graph-local LayerNorm
+scopes; FeedTTA stays on corrected argmax/action-head semantics and interpolates
+below its `1e-6` LR boundary. ATENA first fixes its feedback to a lazy callback
+over the submitted evaluator trajectory, then reruns one protocol anchor plus
+eight local points. See
+[`R2R_TARGETED_GAP_REFINEMENT_PLAN.md`](R2R_TARGETED_GAP_REFINEMENT_PLAN.md)
+for the exact rationale, budget, and launch command.
+
 ## R2R four-method low-learning-rate refinement
 
 `r2r_five_method_local_refinement_v1.json` is the next-round design.  It keeps
