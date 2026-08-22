@@ -837,11 +837,11 @@ class TTACoreTest(unittest.TestCase):
                 _TinyPolicy(), episodic=True, use_slow=True, last_k=1
             )
 
-    def test_eam_current_only_then_replay_updates_auxiliary_branch_only(self):
+    def test_eam_warmup_skips_k_minus_one_then_updates_auxiliary_on_kth(self):
         policy = _TinyPolicy()
         source_before = [p.detach().clone() for p in policy.parameters()]
         adapter = EAMAdapter(
-            policy, batch_size=2, memory_size=4, lr=1e-2,
+            policy, batch_size=3, memory_size=4, lr=1e-2,
             trainable_prefixes=("net.norms", "action_distribution"),
         )
         self.assertEqual(adapter.update_interval, 1)
@@ -850,21 +850,40 @@ class TTACoreTest(unittest.TestCase):
         self.assertTrue(all(not name.startswith("critic.") for name in adapter.names))
         aux_before = [p.detach().clone() for p in adapter.params]
         adapter.episode_start()
-        for step in range(2):
+        for step in range(3):
             inputs = _inputs()
             adapter.before_inference(policy_inputs=inputs)
             with torch.no_grad():
                 _, logits = _forward(policy, inputs)
-            adapter.prepare_action(logits, policy_inputs=inputs)
+            action_logits = adapter.prepare_action(
+                logits, policy_inputs=inputs
+            )
+            self.assertEqual(action_logits.shape, logits.shape)
+            self.assertEqual(
+                adapter._cached_current["replay_ready"], step == 2
+            )
+            if step < 2:
+                self.assertIsNone(adapter._cached_current["source_batch"])
+            else:
+                self.assertEqual(
+                    len(adapter._cached_current["source_batch"]), 3
+                )
             adapter.adapt(logits, action=torch.tensor([[0]]))
-            # Strict Algorithm 3: when m < K, B=x still reaches Model Update.
-            self.assertEqual(adapter.update_count, step + 1)
+            self.assertEqual(adapter.update_count, int(step == 2))
+            self.assertEqual(adapter.update_attempt_count, int(step == 2))
+            self.assertEqual(adapter.optimizer_step_attempts, int(step == 2))
+            if step < 2:
+                self.assertTrue(all(
+                    torch.equal(before, after)
+                    for before, after in zip(aux_before, adapter.params)
+                ))
         adapter.episode_end()
-        self.assertEqual(adapter.update_count, 2)
-        self.assertEqual(adapter.seen_samples, 2)
-        self.assertEqual(len(adapter.replay), 2)
-        self.assertEqual(adapter.update_attempt_count, 2)
-        self.assertEqual(adapter.current_only_batches, 1)
+        self.assertEqual(adapter.update_count, 1)
+        self.assertEqual(adapter.seen_samples, 3)
+        self.assertEqual(len(adapter.replay), 3)
+        self.assertEqual(adapter.update_attempt_count, 1)
+        self.assertEqual(adapter.warmup_no_update_steps, 2)
+        self.assertEqual(adapter.current_only_batches, 2)
         self.assertEqual(adapter.replayed_step_count, 3)
         self.assertTrue(any(
             not torch.equal(before, after)
@@ -960,7 +979,7 @@ class TTACoreTest(unittest.TestCase):
             prepared = adapter.prepare_action(logits, policy_inputs=inputs)
             self.assertEqual(prepared.shape[-1], action_count)
             adapter.adapt(logits, action=torch.tensor([[0]]))
-        self.assertEqual(adapter.replayed_step_count, 3)
+        self.assertEqual(adapter.replayed_step_count, 2)
 
     def test_eam_rejects_high_entropy_source_sample(self):
         policy = _TinyPolicy()
@@ -1074,17 +1093,20 @@ class TTACoreTest(unittest.TestCase):
         ))
         for entry, action in zip(adapter.replay, expected_actions):
             torch.testing.assert_close(entry["action"], action)
-        self.assertEqual(adapter.update_count, 3)
+        self.assertEqual(adapter.update_count, 0)
+        self.assertEqual(adapter.update_attempt_count, 0)
+        self.assertEqual(adapter.warmup_no_update_steps, 3)
         self.assertEqual(adapter.current_only_batches, 3)
 
-    def test_eam_update_interval_counts_action_steps(self):
+    def test_eam_update_interval_remains_on_global_action_steps_after_warmup(self):
         policy = _TinyPolicy()
         adapter = EAMAdapter(
-            policy, batch_size=1, memory_size=2, update_interval=2,
+            policy, batch_size=3, memory_size=4, update_interval=2,
             trainable_prefixes=("net.norms", "action_distribution"),
         )
         adapter.episode_start()
-        for step in range(2):
+        expected_updates = [0, 0, 0, 1]
+        for step in range(4):
             inputs = _inputs()
             adapter.before_inference(policy_inputs=inputs)
             with torch.no_grad():
@@ -1094,8 +1116,11 @@ class TTACoreTest(unittest.TestCase):
                 policy_inputs=inputs,
             )
             adapter.adapt(logits, action=torch.tensor([[0]]))
-            self.assertEqual(adapter.update_count, step)
+            self.assertEqual(adapter.update_count, expected_updates[step])
         adapter.episode_end()
+        self.assertEqual(adapter.warmup_no_update_steps, 2)
+        self.assertEqual(adapter.update_attempt_count, 1)
+        self.assertEqual(adapter.replayed_step_count, 3)
 
     def test_eam_rejects_invalid_or_episodic_replay_configs(self):
         with self.assertRaisesRegex(ValueError, "MEMORY_SIZE"):
@@ -1106,6 +1131,13 @@ class TTACoreTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "BATCH_SIZE"):
             EAMAdapter(
                 _TinyPolicy(), batch_size=0,
+                trainable_prefixes=("action_distribution",),
+            )
+        with self.assertRaisesRegex(
+            ValueError, "MEMORY_SIZE.*greater than or equal to.*BATCH_SIZE"
+        ):
+            EAMAdapter(
+                _TinyPolicy(), memory_size=2, batch_size=3,
                 trainable_prefixes=("action_distribution",),
             )
         with self.assertRaisesRegex(ValueError, "EPISODIC=False"):
@@ -1255,7 +1287,7 @@ class TTACoreTest(unittest.TestCase):
         adapter = EAMAdapter(
             _TinyPolicy(),
             memory_size=2,
-            batch_size=3,
+            batch_size=2,
             trainable_prefixes=("net.norms", "action_distribution"),
         )
         first = adapter._reservoir_add(_inputs())
@@ -1376,7 +1408,12 @@ class TTACoreTest(unittest.TestCase):
         )
         self.assertEqual(
             diagnostics["short_buffer_behavior"],
-            "current_only_update",
+            "warmup_no_update",
+        )
+        self.assertEqual(diagnostics["warmup_no_update_steps"], 0)
+        self.assertEqual(
+            diagnostics["current_only_batches_semantics"],
+            "legacy_alias_of_warmup_no_update_steps",
         )
         self.assertEqual(diagnostics["update_interval_unit"], "action_step")
 

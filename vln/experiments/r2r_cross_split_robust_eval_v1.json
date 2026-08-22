@@ -1,0 +1,276 @@
+{
+  "schema": "navtta.vln_r2r_cross_split_robust_eval.v1",
+  "experiment_id": "vln-r2r-cross-split-robust-v1",
+  "status": "reviewed_launchable_after_parity_fixes",
+  "purpose": "Select low-drift method-faithful R2R configurations on three globally shuffled val_seen streams, freeze without reading val_unseen, then evaluate on three globally shuffled val_unseen streams.",
+  "plan": "vln/experiments/R2R_CROSS_SPLIT_ROBUST_REEVALUATION_V1_PLAN.md",
+  "protocol": {
+    "selection_split": "val_seen",
+    "evaluation_split": "val_unseen",
+    "selection_order_seeds": [1, 2, 3],
+    "evaluation_order_seeds": [1, 2, 3],
+    "episodes_by_split": {
+      "val_seen": 1021,
+      "val_unseen": 2349
+    },
+    "batch_size": 1,
+    "full_split_only": true,
+    "reset_from_source_between_jobs": true,
+    "continual_across_episodes": true,
+    "freeze_before_evaluation": true,
+    "no_val_unseen_selection": true,
+    "source_execution_jobs": 0,
+    "legacy_order_seed_0_role": "scene_blocked_continual_stress_test_only",
+    "primary_result_order_policy": "global_sha256_ranked_shuffle",
+    "selection_rule": {
+      "feasible_if": {
+        "median_sr_gain_pp_strictly_greater_than": 0.0,
+        "median_spl_gain_pp_strictly_greater_than": 0.0,
+        "worst_sr_gain_pp_at_least": -0.2,
+        "worst_spl_gain_pp_at_least": -0.2
+      },
+      "ranking": [
+        "feasible_first",
+        "higher_worst_seed_sr_gain",
+        "higher_median_sr_gain",
+        "higher_worst_seed_spl_gain",
+        "higher_median_spl_gain",
+        "lower_mean_relative_parameter_drift",
+        "candidate_id_ascending"
+      ],
+      "if_none_feasible": "freeze_the_best_ranked_candidate_and_mark_robust_gate_failed",
+      "positive_val_unseen_gain_is_not_a_selection_constraint": true
+    },
+    "supervision_groups": {
+      "unsupervised_tta": ["tent", "fstta", "eam"],
+      "binary_episode_feedback_tta": ["feedtta", "atena"]
+    }
+  },
+  "source_controls": {
+    "val_seen": {
+      "path": "vln/manifests/r2r_reused_source_controls.json",
+      "sha256": "15b9a9f72bb5bcaeb26fabc5abdf94cfffcc03778b4ea8f9ec10940d8044a3b4",
+      "execution": "reuse_only_order_invariant_argmax_aggregate"
+    },
+    "val_unseen": {
+      "path": "vln/manifests/r2r_val_unseen_reused_source_controls.json",
+      "sha256": "bd8915b12ff0b606da61b8cf5ca82a008489b65352c7edccaf876e447b4be9cd",
+      "execution": "reuse_only_order_invariant_argmax_aggregate"
+    }
+  },
+  "implementation_gates": {
+    "duet_atena_self_prediction": "concat_global_and_local_cls_matching_official_2D_representation",
+    "duet_atena_self_prediction_feature_dim": 1536,
+    "eam_warmup": "no_optimizer_update_until_reservoir_reaches_batch_size",
+    "feedtta_action_protocol": "target_native_argmax",
+    "feedtta_reporting_name": "FeedTTA-argmax",
+    "atena_feedback": "lazy_submitted_trajectory_evaluator_query",
+    "fstta_variance_history": "test_stream",
+    "nonfinite_metrics_forbidden": true,
+    "complete_diagnostics_required": true
+  },
+  "matrix": {
+    "setting_order": ["duet-r2r", "hamt-r2r", "goat-r2r"],
+    "method_order": ["tent", "fstta", "eam", "feedtta", "atena"],
+    "candidates": {
+      "duet-r2r": {
+        "tent": [
+          {
+            "candidate_id": "tent-last9-lr1e-6",
+            "parameters": {"lr": 1e-6, "norm_scope": "last_k_ln", "last_k_ln": 9, "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          },
+          {
+            "candidate_id": "tent-last9-lr1e-5",
+            "parameters": {"lr": 1e-5, "norm_scope": "last_k_ln", "last_k_ln": 9, "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          }
+        ],
+        "fstta": [
+          {
+            "candidate_id": "fstta-conservative-1e-4-3e-5",
+            "parameters": {"lr_fast": 1e-4, "lr_slow": 3e-5, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          },
+          {
+            "candidate_id": "fstta-moderate-1e-4-1e-4",
+            "parameters": {"lr_fast": 1e-4, "lr_slow": 1e-4, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          }
+        ],
+        "eam": [
+          {
+            "candidate_id": "eam-lr1e-6",
+            "parameters": {"lr": 1e-6, "confidence_scale": 0.5, "memory_size": 32, "batch_size": 8, "update_interval": 8, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          },
+          {
+            "candidate_id": "eam-lr3e-6",
+            "parameters": {"lr": 3e-6, "confidence_scale": 0.5, "memory_size": 32, "batch_size": 8, "update_interval": 8, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          }
+        ],
+        "feedtta": [
+          {
+            "candidate_id": "feedtta-low-sum",
+            "parameters": {"lr": 1e-6, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-incumbent-sum",
+            "parameters": {"lr": 5e-6, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-lengthnorm",
+            "parameters": {"lr": 5e-6, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": true, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ],
+        "atena": [
+          {
+            "candidate_id": "atena-paper-r2r",
+            "parameters": {"lr_query": 8e-7, "lr_self": 1e-7, "mix_lambda": 0.75, "query_threshold": 0.1, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "atena-half-lr",
+            "parameters": {"lr_query": 4e-7, "lr_self": 5e-8, "mix_lambda": 0.75, "query_threshold": 0.1, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ]
+      },
+      "hamt-r2r": {
+        "tent": [
+          {
+            "candidate_id": "tent-lr1e-6",
+            "parameters": {"lr": 1e-6, "norm_scope": "ln", "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          },
+          {
+            "candidate_id": "tent-lr3e-6",
+            "parameters": {"lr": 3e-6, "norm_scope": "ln", "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          }
+        ],
+        "fstta": [
+          {
+            "candidate_id": "fstta-conservative-1e-4-3e-5",
+            "parameters": {"lr_fast": 1e-4, "lr_slow": 3e-5, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          },
+          {
+            "candidate_id": "fstta-moderate-1e-4-1e-4",
+            "parameters": {"lr_fast": 1e-4, "lr_slow": 1e-4, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          }
+        ],
+        "eam": [
+          {
+            "candidate_id": "eam-lr3e-7",
+            "parameters": {"lr": 3e-7, "confidence_scale": 0.6, "memory_size": 32, "batch_size": 8, "update_interval": 8, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          },
+          {
+            "candidate_id": "eam-lr1e-6",
+            "parameters": {"lr": 1e-6, "confidence_scale": 0.6, "memory_size": 32, "batch_size": 8, "update_interval": 8, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          }
+        ],
+        "feedtta": [
+          {
+            "candidate_id": "feedtta-low-sum",
+            "parameters": {"lr": 1e-6, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-incumbent-sum",
+            "parameters": {"lr": 2e-6, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-lengthnorm",
+            "parameters": {"lr": 5e-6, "gamma": 0.9, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": true, "scope_profile": "last_crossmodal", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ],
+        "atena": [
+          {
+            "candidate_id": "atena-paper-r2r",
+            "parameters": {"lr_query": 8e-7, "lr_self": 1e-7, "mix_lambda": 0.75, "query_threshold": 0.1, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "atena-mid-lr",
+            "parameters": {"lr_query": 1.6e-6, "lr_self": 2e-7, "mix_lambda": 0.75, "query_threshold": 0.1, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ]
+      },
+      "goat-r2r": {
+        "tent": [
+          {
+            "candidate_id": "tent-lr3e-6",
+            "parameters": {"lr": 3e-6, "norm_scope": "ln", "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          },
+          {
+            "candidate_id": "tent-lr1e-5",
+            "parameters": {"lr": 1e-5, "norm_scope": "ln", "optimizer": "AdamW", "weight_decay": 0.0, "max_grad_norm": 0.0, "update_interval": 1, "episodic": false}
+          }
+        ],
+        "fstta": [
+          {
+            "candidate_id": "fstta-conservative-1e-4-3e-5",
+            "parameters": {"lr_fast": 1e-4, "lr_slow": 3e-5, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          },
+          {
+            "candidate_id": "fstta-moderate-3e-4-1e-4",
+            "parameters": {"lr_fast": 3e-4, "lr_slow": 1e-4, "m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "weight_decay": 0.0, "norm_scope": "last_k_ln", "last_k_ln": 4, "max_grad_norm": 0.0, "episodic": false, "fast_grad_mode": "concordant", "use_fast_lr_scaler": true, "use_slow": true, "slow_optimizer": "AdamW", "reset_slow_optimizer_each_window": false, "reset_optimizer_each_episode": true, "eigen_eps": 1e-6}
+          }
+        ],
+        "eam": [
+          {
+            "candidate_id": "eam-lr1e-6",
+            "parameters": {"lr": 1e-6, "confidence_scale": 0.3, "memory_size": 32, "batch_size": 8, "update_interval": 4, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          },
+          {
+            "candidate_id": "eam-lr3e-6",
+            "parameters": {"lr": 3e-6, "confidence_scale": 0.3, "memory_size": 32, "batch_size": 8, "update_interval": 4, "optimizer": "Adam", "weight_decay": 0.0, "max_grad_norm": 0.0, "episodic": false}
+          }
+        ],
+        "feedtta": [
+          {
+            "candidate_id": "feedtta-low-sum",
+            "parameters": {"lr": 5e-7, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "action_head", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-incumbent-scale-sum",
+            "parameters": {"lr": 1e-6, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": false, "scope_profile": "action_head", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "feedtta-lengthnorm",
+            "parameters": {"lr": 5e-6, "gamma": 0.8, "p": 0.05, "alpha": 0.1, "sgr_seed": 0, "normalize_gradient": true, "scope_profile": "action_head", "optimizer": "Adam", "optimizer_eps": 1e-5, "weight_decay": 0.0, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ],
+        "atena": [
+          {
+            "candidate_id": "atena-goat-low",
+            "parameters": {"lr_query": 3.75e-7, "lr_self": 3.515625e-8, "mix_lambda": 0.0, "query_threshold": 0.15, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          },
+          {
+            "candidate_id": "atena-goat-half-lr",
+            "parameters": {"lr_query": 1.875e-7, "lr_self": 1.7578125e-8, "mix_lambda": 0.0, "query_threshold": 0.15, "self_loss_weight": 0.1, "optimizer": "AdamW", "weight_decay": 0.01, "max_grad_norm": 0.0, "action_selection": "argmax", "episodic": false}
+          }
+        ]
+      }
+    }
+  },
+  "execution": {
+    "formal_requires_clean_tracked_tree": true,
+    "strict_model_barrier": true,
+    "strict_method_barrier": true,
+    "max_workers_by_model": {
+      "duet": {"tent": 6, "fstta": 6, "eam": 5, "feedtta": 6, "atena": 5},
+      "hamt": {"tent": 6, "fstta": 6, "eam": 5, "feedtta": 5, "atena": 5},
+      "goat": {"tent": 6, "fstta": 6, "eam": 5, "feedtta": 6, "atena": 5}
+    },
+    "max_gpu_memory_mib_before_launch": 24500,
+    "estimated_job_gpu_memory_mib": 4500,
+    "max_aggregate_gpu_memory_mib": 29000,
+    "max_cgroup_memory_gib_before_launch": 75.0,
+    "estimated_job_memory_gib": 8.0,
+    "max_aggregate_cgroup_memory_gib": 78.0,
+    "launch_stagger_seconds": 3.0,
+    "resource_wait_timeout_seconds": 900
+  },
+  "budget": {
+    "candidate_configurations": 33,
+    "selection_tta_jobs": 99,
+    "evaluation_tta_jobs": 45,
+    "source_execution_jobs": 0,
+    "total_tta_jobs": 144
+  },
+  "review": {
+    "required": true,
+    "confirmed_scope": "R2R only; val_seen selection and val_unseen frozen evaluation; no Source execution",
+    "selection_does_not_require_positive_val_unseen": true
+  }
+}

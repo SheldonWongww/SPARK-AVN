@@ -15,7 +15,7 @@ Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--smoke-episodes N]
                                       [--tta-config FILE]
                                       [--result-root DIR]
-                                      [--order-seed 0|1|2]
+                                      [--order-seed 0|1|2|3]
                                       [--adapter-parity-audit]
                                       [--episode-limit N] [--dry-run]
 
@@ -42,11 +42,11 @@ episodes and receives the formal manifest/clean-tree lifecycle.
 --adapter-parity-audit is required by the isolated zero-write parity schema
 and is rejected for every ordinary tuning/source configuration.
 
---order-seed is reserved for complete, frozen-hyperparameter val_seen order
-robustness jobs on the eight staged-search settings.  Seed 0 uses the canonical
-manifest; seeds 1 and 2 use the tracked SHA256-ranked derived manifests.  It
-cannot be combined with smoke/prefix jobs, Source, StreamVLN, split all, or
-native CE v1.2.
+--order-seed is reserved for complete, frozen-hyperparameter val_seen or
+val_unseen shuffled-order jobs on the eight staged-search settings.  Seed 0
+keeps the canonical scene-blocked manifest; seeds 1, 2, and 3 use tracked
+global SHA256-ranked permutations.  It cannot be combined with smoke/prefix
+jobs, Source, StreamVLN, split test/all, or native CE v1.2.
 EOF
 }
 
@@ -128,8 +128,8 @@ while [[ "$#" -gt 0 ]]; do
             [[ "$#" -ge 2 ]] || die "--order-seed requires a value"
             [[ "${ORDER_SEED_SET}" -eq 0 ]] || die "order seed specified more than once"
             case "$2" in
-                0|1|2) ORDER_SEED="$2" ;;
-                *) die "--order-seed must be exactly 0, 1, or 2" ;;
+                0|1|2|3) ORDER_SEED="$2" ;;
+                *) die "--order-seed must be exactly 0, 1, 2, or 3" ;;
             esac
             ORDER_SEED_SET=1
             shift 2
@@ -193,8 +193,10 @@ if [[ -n "${EPISODE_LIMIT}" && "${SPLIT}" != "val_seen" ]]; then
     die "prefix hyperparameter jobs are restricted to val_seen"
 fi
 if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
-    [[ "${SPLIT}" == "val_seen" ]] || \
-        die "--order-seed is restricted to complete val_seen robustness jobs"
+    case "${SPLIT}" in
+        val_seen|val_unseen) ;;
+        *) die "--order-seed is restricted to complete val_seen or val_unseen jobs" ;;
+    esac
     [[ -z "${SMOKE_EPISODES}" ]] || \
         die "--order-seed cannot be combined with --smoke-episodes"
     [[ -z "${EPISODE_LIMIT}" ]] || \
@@ -344,8 +346,10 @@ if [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
         die "--result-root is reserved for TTA search jobs"
     [[ "${TTA_NAMESPACE}" == "tuning" ]] || \
         die "--result-root cannot override a non-tuning namespace"
-    [[ "${SPLIT}" == "val_seen" ]] || \
-        die "--result-root is restricted to val_seen tuning jobs"
+    case "${SPLIT}" in
+        val_seen|val_unseen) ;;
+        *) die "--result-root is restricted to val_seen or val_unseen tuning jobs" ;;
+    esac
     [[ "${RESULT_ROOT_OVERRIDE}" = /* ]] || \
         die "--result-root must be absolute"
 fi
@@ -457,7 +461,8 @@ if [[ "${ORDER_SEED_SET}" -eq 1 && "${ORDER_SEED}" != "0" ]]; then
     [[ -n "${ORDER_FAMILY}" ]] || die "cannot resolve order-manifest family"
     "${BOOTSTRAP_PYTHON}" \
         "${REPO_ROOT}/vln/scripts/build_order_seed_manifests.py" \
-        --check --family "${ORDER_FAMILY}" --order-seed "${ORDER_SEED}" || \
+        --check --family "${ORDER_FAMILY}" --order-seed "${ORDER_SEED}" \
+        --split "${SPLIT}" || \
         die "tracked order-seed manifest failed deterministic verification"
 fi
 if [[ "${CE_DATA_VERSION}" == "v1.3-unified" ]]; then

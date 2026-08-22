@@ -64,20 +64,23 @@ python vln/scripts/build_episode_order_manifest.py \
 Do not copy annotation content into a manifest beyond the two stable IDs.  The
 source annotation itself remains an untracked data asset.
 
-## Frozen-configuration order robustness
+## Frozen-configuration global shuffled streams
 
-The primary experiment and every search/final-selection stage use the
-canonical files above as order seed 0.  Those files are not rewritten or
-copied.  After a method's full-`val_seen` winner is frozen, order seeds 1 and 2
-use the ten tracked files below `order_seed_1/` and `order_seed_2/` for exactly
-five manifest families: `r2r_duet_hamt`, `r2r_goat`,
-`r2r_ce_v1_3_unified`, `reverie_duet_hamt`, and `reverie_goat`.
+The original canonical, scene-blocked files remain order seed 0 and are never
+rewritten or copied, preserving existing runs and result provenance.  Order
+seeds 1, 2, and 3 define complete global shuffled streams for `val_seen` and
+`val_unseen`.  The 30 derived manifests live below `order_seed_1/`,
+`order_seed_2/`, and `order_seed_3/` for exactly five manifest families:
+`r2r_duet_hamt`, `r2r_goat`, `r2r_ce_v1_3_unified`,
+`reverie_duet_hamt`, and `reverie_goat`.
 
 For each record, `sha256_rank_v1` hashes the canonical JSON object containing
 the domain separator `navtta.episode_order.sha256_rank.v1`, order seed,
 canonical parent's `order_sha256`, scene ID, and episode ID.  Records are
-sorted by that digest, with scene/episode ID only as a deterministic collision
-tie-breaker.  Each derived manifest preserves the annotation path/digest and
+sorted globally by that digest, with scene/episode ID only as a deterministic
+collision tie-breaker.  Episodes are therefore interleaved across scenes by
+the seeded rank instead of being grouped into scene blocks.  Each derived
+manifest preserves the annotation path/digest and
 pins its canonical parent path, exact parent-file SHA256, and parent order
 SHA256.  It is therefore an explicit permutation, not an implicit loader RNG.
 
@@ -89,8 +92,10 @@ python3 vln/scripts/build_order_seed_manifests.py --check
 ```
 
 Nonzero order seeds are valid only for complete frozen-configuration
-`val_seen` robustness jobs.  Smoke/prefix, Source-only, StreamVLN, native CE
-v1.2, and multi-split jobs remain canonical seed-0 protocols.
+`val_seen` or `val_unseen` TTA jobs.  Each run uses one split and one order
+seed.  Smoke/prefix, Source-only, `test`/`all`, StreamVLN, and native CE v1.2
+jobs cannot use `--order-seed`.  A FeedTTA `orders` config must set both
+`action_seed` and `sgr_seed` to the same exact integer as `order_seed`.
 
 ## Active evaluator hooks
 

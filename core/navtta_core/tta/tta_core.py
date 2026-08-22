@@ -1238,8 +1238,9 @@ class EAMAdapter(_AdapterDiagnostics):
 
     Each online action step is one sample ``x``.  Following the paper's
     pseudocode literally, ``x`` is first offered to the reservoir and replay is
-    then sampled from that *updated* reservoir.  When ``|M| < K``, ``B`` is the
-    current sample alone and is still eligible for an update.  Otherwise,
+    then sampled from that *updated* reservoir.  While ``|M| < K``, both
+    branches still infer the current sample for the online action, but no replay
+    batch is formed and no model update is allowed.  Once ``|M| >= K``,
     ``K - 1`` entries are sampled from the whole updated reservoir and the
     current sample is appended explicitly.  Consequently, a retained current
     sample may occur twice in ``B``; Algorithm 3 contains no exclusion step.
@@ -1295,6 +1296,11 @@ class EAMAdapter(_AdapterDiagnostics):
             raise ValueError("EAM.MEMORY_SIZE must be positive")
         if self.batch_size < 1:
             raise ValueError("EAM.BATCH_SIZE must be positive")
+        if self.memory_size < self.batch_size:
+            raise ValueError(
+                "EAM.MEMORY_SIZE must be greater than or equal to "
+                "EAM.BATCH_SIZE so the replay warm-up can complete"
+            )
         if self.update_interval < 1:
             raise ValueError("EAM.UPDATE_INTERVAL must be positive")
 
@@ -1344,6 +1350,9 @@ class EAMAdapter(_AdapterDiagnostics):
         self.replayed_step_count = 0
         self.replay_aux_used_steps = 0
         self.current_replay_duplicates = 0
+        self.warmup_no_update_steps = 0
+        # Deprecated compatibility counter.  It counts warm-up action steps,
+        # not training batches or optimizer updates.
         self.current_only_batches = 0
         self.train_loss_sum = 0.0
         self.last_train_loss = 0.0
@@ -1431,7 +1440,10 @@ class EAMAdapter(_AdapterDiagnostics):
 
         current_entry = self._reservoir_add(policy_inputs)
         if len(self.replay) < self.batch_size:
-            replay_entries = []
+            # Algorithm 3 performs inference but does not form B or update the
+            # auxiliary model until the updated reservoir reaches K entries.
+            replay_entries = None
+            self.warmup_no_update_steps += 1
             self.current_only_batches += 1
         else:
             replay_entries = (
@@ -1459,46 +1471,59 @@ class EAMAdapter(_AdapterDiagnostics):
         current_entry, replay_entries = self._pending_replay
         self._pending_replay = None
 
-        # Algorithm 3, lines 19--21: infer both branches on B.  Variable-length
-        # navigation memories make a physical tensor batch impractical, so old
-        # entries are forwarded separately and their decisions concatenated.
-        # This is numerically the same mini-batch in eval mode.
+        # Both branches always infer x so the online action remains available
+        # during replay warm-up.  Algorithm 3 forms the training batch B only
+        # after the updated reservoir contains at least K entries.
         aux_current = self._forward_aux(policy_inputs)
-        source_batch, aux_batch = [], []
-        for entry in replay_entries:
-            if entry is current_entry:
-                # B_h may contain x because sampling uses the updated M.  Reuse
-                # the same deterministic forward while retaining x twice in B.
-                source_replay = source_current
-                aux_replay = aux_current
-                self.current_replay_duplicates += 1
-            else:
-                replay_inputs = _tree_to_device(
-                    entry["policy_inputs"], self.device
+        replay_ready = replay_entries is not None
+        if replay_ready:
+            # Variable-length navigation memories make a physical tensor batch
+            # impractical, so old entries are forwarded separately.  This is
+            # numerically the same mini-batch in eval mode.
+            source_batch, aux_batch = [], []
+            for entry in replay_entries:
+                if entry is current_entry:
+                    # B_h may contain x because sampling uses the updated M.
+                    # Reuse the deterministic forward while retaining x twice.
+                    source_replay = source_current
+                    aux_replay = aux_current
+                    self.current_replay_duplicates += 1
+                else:
+                    replay_inputs = _tree_to_device(
+                        entry["policy_inputs"], self.device
+                    )
+                    source_replay = self._forward_source(replay_inputs)
+                    aux_replay = self._forward_aux(replay_inputs)
+                source_batch.append(source_replay)
+                aux_batch.append(aux_replay)
+
+            # The explicit current x is the last element of B = B_h union x.
+            source_batch.append(source_current)
+            aux_batch.append(aux_current)
+
+            # Candidate navigation sets are variable-length in VLN.  Keep B as
+            # a logical list and evaluate each row in its own action space.
+            combined_batch, use_aux_batch = [], []
+            for source_decision, auxiliary_decision in zip(
+                source_batch, aux_batch
+            ):
+                combined_decision, use_aux = self._combine(
+                    source_decision, auxiliary_decision
                 )
-                source_replay = self._forward_source(replay_inputs)
-                aux_replay = self._forward_aux(replay_inputs)
-            source_batch.append(source_replay)
-            aux_batch.append(aux_replay)
-
-        # The explicit current x is the last element of B = B_h union x.
-        source_batch.append(source_current)
-        aux_batch.append(aux_current)
-
-        # Candidate navigation sets are variable-length in VLN.  Keep B as a
-        # logical list and evaluate every row with its own action dimension;
-        # concatenating is only valid for fixed-action policies such as AVN.
-        combined_batch, use_aux_batch = [], []
-        for source_decision, auxiliary_decision in zip(
-            source_batch, aux_batch
-        ):
-            combined_decision, use_aux = self._combine(
-                source_decision, auxiliary_decision
+                combined_batch.append(combined_decision)
+                use_aux_batch.append(use_aux)
+            combined_current = combined_batch[-1]
+            current_use_aux = use_aux_batch[-1]
+        else:
+            # Warm-up is inference-only: do not represent x as a one-item
+            # replay batch, because adapt() must not treat it as trainable B.
+            combined_current, current_use_aux = self._combine(
+                source_current, aux_current
             )
-            combined_batch.append(combined_decision)
-            use_aux_batch.append(use_aux)
-        combined_current = combined_batch[-1]
-        current_use_aux = use_aux_batch[-1]
+            source_batch = None
+            aux_batch = None
+            combined_batch = None
+            use_aux_batch = None
 
         self.aux_used_steps += int(current_use_aux.sum().item())
         threshold = self._threshold(source_current.shape[-1])
@@ -1514,6 +1539,7 @@ class EAMAdapter(_AdapterDiagnostics):
 
         self._cached_current = {
             "entry": current_entry,
+            "replay_ready": replay_ready,
             "source_batch": source_batch,
             "aux_batch": aux_batch,
             "combined_batch": combined_batch,
@@ -1552,7 +1578,10 @@ class EAMAdapter(_AdapterDiagnostics):
             current_entry["action"] = (
                 None if action is None else _tree_to_cpu(action)
             )
-        can_update = self.action_steps % self.update_interval == 0
+        can_update = (
+            cached["replay_ready"]
+            and self.action_steps % self.update_interval == 0
+        )
 
         if can_update:
             source_batch = cached["source_batch"]
@@ -1624,6 +1653,7 @@ class EAMAdapter(_AdapterDiagnostics):
         self.replayed_step_count = 0
         self.replay_aux_used_steps = 0
         self.current_replay_duplicates = 0
+        self.warmup_no_update_steps = 0
         self.current_only_batches = 0
         self.train_loss_sum = 0.0
         self.last_train_loss = 0.0
@@ -1649,7 +1679,7 @@ class EAMAdapter(_AdapterDiagnostics):
                 "full_policy_input_action_and_decision_snapshot"
             ),
             "replay_sampling": "updated_reservoir_including_current",
-            "short_buffer_behavior": "current_only_update",
+            "short_buffer_behavior": "warmup_no_update",
             "update_timing": "after_preupdate_action_selection",
             "seen_samples": self.seen_samples,
             "seen_steps": self.seen_samples,
@@ -1665,7 +1695,13 @@ class EAMAdapter(_AdapterDiagnostics):
             "replayed_steps": self.replayed_step_count,
             "replay_aux_used_steps": self.replay_aux_used_steps,
             "current_replay_duplicates": self.current_replay_duplicates,
+            "warmup_no_update_steps": self.warmup_no_update_steps,
+            # Deprecated alias retained for old result readers.  Despite its
+            # historical name, these are inference-only warm-up steps.
             "current_only_batches": self.current_only_batches,
+            "current_only_batches_semantics": (
+                "legacy_alias_of_warmup_no_update_steps"
+            ),
             "mean_train_loss": (
                 self.train_loss_sum / max(1, self.update_count)
             ),
@@ -2528,6 +2564,10 @@ class ATENAAdapter(_AdapterDiagnostics):
                     parameter.numel()
                     for parameter in self.self_prediction_head.parameters()
                 ) if self.self_prediction_head is not None else 0
+            ),
+            "self_prediction_feature_dim": (
+                int(self.self_prediction_head[0].in_features)
+                if self.self_prediction_head is not None else 0
             ),
             "auxiliary_head_constructed": (
                 self.self_prediction_head is not None

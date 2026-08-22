@@ -31,6 +31,12 @@ policy are maintained in [`VLN_TTA_REPORT.md`](VLN_TTA_REPORT.md).  Tracked
 machine-readable summaries live under `results/`; downloaded raw logs and
 leaderboard prediction files remain ignored.
 
+The order-seed-0 R2R `val_unseen` table is currently retained only as a
+scene-blocked continual stress test.  Its replacement uses three globally
+shuffled `val_seen` streams for model-method selection and freezes the result
+before three shuffled `val_unseen` evaluations; see
+[`R2R_CROSS_SPLIT_ROBUST_REEVALUATION_V1_PLAN.md`](experiments/R2R_CROSS_SPLIT_ROBUST_REEVALUATION_V1_PLAN.md).
+
 HAMT R2R uses the paper's final `vitbase-finetune-e2e` checkpoint and its
 matching `r2r.e2e.ft.22k` visual features.  Run HAMT alone on both supported
 benchmarks with:

@@ -160,7 +160,7 @@ class TTAConfigCLITest(unittest.TestCase):
             "hamt-r2r", "tent", {},
             schema="navtta.vln_tta_job.v1",
             stage="orders",
-            order_seed=1,
+            order_seed=3,
         )
         with self.assertRaisesRegex(ValueError, "exact integer"):
             self._translate(
@@ -177,6 +177,13 @@ class TTAConfigCLITest(unittest.TestCase):
                     stage="orders",
                     order_seed=value,
                 )
+        with self.assertRaisesRegex(ValueError, r"\[0, 1, 2, 3\]"):
+            self._translate(
+                "hamt-r2r", "tent", {},
+                schema="navtta.vln_tta_job.v1",
+                stage="orders",
+                order_seed=4,
+            )
 
     def test_rng_seed_parameters_require_exact_integers(self):
         for key in ("action_seed", "sgr_seed"):
@@ -205,6 +212,11 @@ class TTAConfigCLITest(unittest.TestCase):
                 self._translate(
                     "duet-r2r", "feedtta", parameters, **common
                 )
+        seed_three = dict(common, order_seed=3)
+        self._translate(
+            "duet-r2r", "feedtta",
+            {"action_seed": 3, "sgr_seed": 3}, **seed_three
+        )
 
 
 if __name__ == "__main__":

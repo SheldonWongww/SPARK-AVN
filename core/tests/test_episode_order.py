@@ -38,11 +38,11 @@ class EpisodeOrderTest(unittest.TestCase):
         ]
         self.dataset_digest = "a" * 64
 
-    def _manifest(self):
+    def _manifest(self, split="val_seen"):
         return build_episode_order_manifest(
             self.episodes,
             benchmark="synthetic-r2r",
-            split="val_seen",
+            split=split,
             dataset_path="vln/data/synthetic.json",
             dataset_sha256=self.dataset_digest,
             source_id_field="instr_id",
@@ -135,6 +135,27 @@ class EpisodeOrderTest(unittest.TestCase):
                     parent_manifest_path="parent.json",
                     parent_manifest_sha256="b" * 64,
                 )
+
+    def test_seed_three_can_shuffle_a_complete_val_unseen_manifest(self):
+        parent = self._manifest(split="val_unseen")
+        derived = derive_seeded_episode_order_manifest(
+            parent,
+            order_seed=3,
+            parent_manifest_path="orders/val_unseen.json",
+            parent_manifest_sha256="c" * 64,
+        )
+        self.assertEqual(derived["split"], "val_unseen")
+        self.assertEqual(derived["split_ordinal"], 1)
+        self.assertEqual(derived["order_seed"], 3)
+        self.assertEqual(
+            {(item["scene_id"], item["episode_id"]) for item in derived["episodes"]},
+            {(item["scene_id"], item["episode_id"]) for item in parent["episodes"]},
+        )
+        validate_episode_order_manifest(
+            derived,
+            expected_split="val_unseen",
+            expected_benchmark="synthetic-r2r",
+        )
 
     def test_manifest_checks_expected_benchmark(self):
         manifest = self._manifest()

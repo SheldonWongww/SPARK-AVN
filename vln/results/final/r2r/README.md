@@ -1,5 +1,13 @@
 # R2R final selection registry
 
+> **Status (2026-08-22): superseded as the primary cross-split estimate.**
+> The tables in this directory use the canonical order seed 0, whose
+> scene-blocked continual stream is much more correlated on `val_unseen` than
+> on `val_seen`.  Keep these files as immutable stress-test evidence; do not
+> cite their `val_unseen` column as the final R2R main result.  The replacement
+> protocol is registered in
+> [`R2R_CROSS_SPLIT_ROBUST_REEVALUATION_V1_PLAN.md`](../../../experiments/R2R_CROSS_SPLIT_ROBUST_REEVALUATION_V1_PLAN.md).
+
 This directory freezes the best `val_seen`, order-seed-0 R2R configuration for
 Source and the `3 models × 5 TTA methods` matrix. It is the transfer source for
 REVERIE, not a publication-final estimate: the same split selected the

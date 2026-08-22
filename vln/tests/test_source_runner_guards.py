@@ -215,6 +215,9 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertIn(
             "--result-root must end with RUN_TAG/SPLIT", source
         )
+        self.assertIn(
+            "--result-root is restricted to val_seen or val_unseen", source
+        )
 
     def test_adapter_parity_namespace_requires_its_dedicated_runner_flag(self):
         source = RUNNER.read_text(encoding="utf-8")
@@ -243,8 +246,8 @@ class SourceRunnerGuardTest(unittest.TestCase):
     def test_order_seed_is_narrow_and_controls_runtime_and_manifest_seed(self):
         source = RUNNER.read_text(encoding="utf-8")
 
-        self.assertIn('--order-seed 0|1|2', source)
-        self.assertIn('0|1|2) ORDER_SEED="$2"', source)
+        self.assertIn('--order-seed 0|1|2|3', source)
+        self.assertIn('0|1|2|3) ORDER_SEED="$2"', source)
         self.assertIn('"stage": "orders"', source)
         self.assertIn('(("episodes", -1), ("order_seed", seed))', source)
         self.assertIn('type(value) is not int', source)
@@ -256,14 +259,18 @@ class SourceRunnerGuardTest(unittest.TestCase):
             2,
         )
         for arguments, message in (
-            (("duet-r2r", "val_seen", "--order-seed", "3"),
-             "exactly 0, 1, or 2"),
+            (("duet-r2r", "val_seen", "--order-seed", "4"),
+             "exactly 0, 1, 2, or 3"),
             (("duet-r2r", "val_seen", "--order-seed", "1"),
+             "requires a TTA robustness job config"),
+            (("duet-r2r", "val_unseen", "--order-seed", "3"),
              "requires a TTA robustness job config"),
             (("streamvln-r2r-ce", "val_seen", "--tta-config", "missing.json",
               "--order-seed", "1"), "does not support StreamVLN"),
             (("duet-r2r", "all", "--tta-config", "missing.json",
-              "--order-seed", "1"), "complete val_seen"),
+              "--order-seed", "1"), "complete val_seen or val_unseen"),
+            (("duet-r2r", "test", "--tta-config", "missing.json",
+              "--order-seed", "1"), "complete val_seen or val_unseen"),
             (("duet-r2r", "val_seen", "--tta-config", "missing.json",
               "--smoke-episodes", "1", "--order-seed", "1"),
              "cannot be combined with --smoke-episodes"),

@@ -403,6 +403,60 @@ def _sanitize_action_logits(logits):
     return torch.where(finite, logits, torch.full_like(logits, -1e4))
 
 
+def _graph_decision_features(outputs):
+    """Return the model-native graph state used by ATENA's success head.
+
+    The official ATENA DUET implementation represents a navigation decision
+    by concatenating the global-map and local-view CLS tokens.  GOAT exposes a
+    different, recurrent history representation as ``cls_embeds`` and must
+    keep using that model-native state.  Prefer an explicit ``curr_state``
+    when an ATENA-instrumented DUET model provides it; otherwise reconstruct
+    the same DUET state from the standard model outputs.
+
+    This helper is shared by the online pass and the episode-end replay so the
+    self-prediction gate and its replay gradient see exactly the same feature.
+    """
+    if not isinstance(outputs, dict):
+        raise ValueError("Graph policy outputs must be a dictionary")
+
+    if "curr_state" in outputs:
+        features = outputs["curr_state"]
+    elif "cls_embeds" in outputs:
+        # GOAT's navigation model explicitly constructs this state from its
+        # global, local, language, and recurrent-history representations.
+        features = outputs["cls_embeds"]
+    else:
+        try:
+            global_embeds = outputs["gmap_embeds"]
+            local_embeds = outputs["vp_embeds"]
+        except KeyError as error:
+            raise ValueError(
+                "Graph policy does not expose a recognized decision feature"
+            ) from error
+        if (
+            not torch.is_tensor(global_embeds)
+            or not torch.is_tensor(local_embeds)
+            or global_embeds.ndim != 3
+            or local_embeds.ndim != 3
+            or global_embeds.shape[0] != local_embeds.shape[0]
+            or global_embeds.shape[1] < 1
+            or local_embeds.shape[1] < 1
+        ):
+            raise ValueError(
+                "DUET graph features require compatible [batch, tokens, dim] "
+                "global and local embeddings"
+            )
+        # Official ATENA_DUET/map_nav_src/models/vilmodel.py constructs
+        # curr_state exactly this way (feature width = 2 * hidden_size).
+        features = torch.cat(
+            [global_embeds[:, 0], local_embeds[:, 0]], dim=-1
+        )
+
+    if not torch.is_tensor(features) or features.ndim != 2:
+        raise ValueError("Graph policy decision features must be 2-D")
+    return features
+
+
 def discrete_forward_policy(model, policy_inputs):
     """Replay one detached DUET/GOAT/HAMT high-level decision."""
     family = policy_inputs["family"]
@@ -416,12 +470,7 @@ def discrete_forward_policy(model, policy_inputs):
             else "fused_logits"
         )
         logits = outputs[logit_key]
-        if "cls_embeds" in outputs:
-            features = outputs["cls_embeds"]
-        else:
-            features = 0.5 * (
-                outputs["gmap_embeds"][:, 0] + outputs["vp_embeds"][:, 0]
-            )
+        features = _graph_decision_features(outputs)
     elif family == "hamt_r2r":
         replay_inputs = dict(model_inputs)
         replay_inputs["return_states"] = True
@@ -905,11 +954,7 @@ class DiscreteTTAAgentMixin:
         return controller.prepare_action(source_logits, policy_inputs)
 
     def tta_graph_features(self, outputs):
-        if "cls_embeds" in outputs:
-            return outputs["cls_embeds"]
-        return 0.5 * (
-            outputs["gmap_embeds"][:, 0] + outputs["vp_embeds"][:, 0]
-        )
+        return _graph_decision_features(outputs)
 
     def tta_select_action(self, logits):
         controller = getattr(self, "tta_controller", None)

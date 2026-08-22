@@ -21,6 +21,7 @@ from navtta_vln.discrete_tta import (  # noqa: E402
     DiscreteTTAAgentMixin,
     DiscreteTTAController,
     _feedtta_trainable_prefixes,
+    _graph_decision_features,
     add_discrete_tta_args,
     discrete_forward_policy,
 )
@@ -88,27 +89,75 @@ class DiscreteTTAControllerTest(unittest.TestCase):
         controller.adapt_step(
             decision_logits,
             action=action,
-            features=0.5 * (
-                outputs["gmap_embeds"][:, 0]
-                + outputs["vp_embeds"][:, 0]
-            ),
+            features=_graph_decision_features(outputs),
             policy_inputs=inputs,
         )
         return decision_logits, action
 
-    def test_replay_callback_preserves_action_dimension_and_is_finite(self):
+    def test_duet_online_and_replay_use_concatenated_global_local_cls(self):
         policy = _TinyGraphPolicy()
+        x = torch.randn(1, 6)
+        outputs = policy("navigation", {"x": x})
+        online_features = DiscreteTTAAgentMixin().tta_graph_features(outputs)
         features, logits = discrete_forward_policy(
             policy,
             {
                 "family": "graph",
                 "fusion": "dynamic",
-                "model_inputs": {"x": torch.randn(1, 6)},
+                "model_inputs": {"x": x},
             },
         )
-        self.assertEqual(tuple(features.shape), (1, 6))
+        expected = torch.cat(
+            [outputs["gmap_embeds"][:, 0], outputs["vp_embeds"][:, 0]],
+            dim=-1,
+        )
+        self.assertEqual(tuple(features.shape), (1, 12))
+        self.assertTrue(torch.equal(online_features, expected))
+        self.assertTrue(torch.equal(features, expected))
         self.assertEqual(tuple(logits.shape), (1, 3))
         self.assertTrue(torch.isfinite(logits).all())
+
+    def test_graph_feature_contract_preserves_native_duet_and_goat_states(self):
+        global_cls = torch.tensor([[1.0, 2.0]])
+        local_cls = torch.tensor([[3.0, 4.0]])
+        branches = {
+            "gmap_embeds": global_cls.unsqueeze(1),
+            "vp_embeds": local_cls.unsqueeze(1),
+        }
+
+        # An ATENA-instrumented DUET exposes the same concatenation directly.
+        duet_state = torch.tensor([[5.0, 6.0, 7.0, 8.0]])
+        self.assertIs(
+            _graph_decision_features({**branches, "curr_state": duet_state}),
+            duet_state,
+        )
+
+        # GOAT's recurrent history state is model-specific and must not be
+        # replaced by DUET's global/local concatenation.
+        goat_state = torch.tensor([[9.0, 10.0, 11.0]])
+        self.assertIs(
+            _graph_decision_features({**branches, "cls_embeds": goat_state}),
+            goat_state,
+        )
+
+    def test_atena_head_accepts_duet_double_width_feature_and_replays_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = _TinyGraphPolicy(width=6)
+            controller = DiscreteTTAController(
+                _args(directory, "atena"), policy, "val_unseen"
+            )
+            controller.begin_episode()
+            self._step(controller, policy, torch.randn(1, 6))
+            self.assertEqual(
+                controller.adapter.self_prediction_head[0].in_features, 12
+            )
+            controller.end_episode(observations=[{"distance": 2.5}])
+            diagnostics = controller.adapter.diagnostics()
+            self.assertEqual(diagnostics["replayed_steps"], 1)
+            self.assertEqual(diagnostics["self_prediction_feature_dim"], 12)
+            self.assertEqual(
+                diagnostics["max_replay_feature_abs_error"], 0.0
+            )
 
     def test_feedtta_duet_scope_profiles_start_at_crossmodal_stacks(self):
         class CrossmodalStack(nn.Module):

@@ -82,9 +82,10 @@ def _load(path):
     elif (schema == "navtta.vln_tta_job.v1"
           and document.get("stage") == "orders"):
         order_seed = document.get("order_seed")
-        if type(order_seed) is not int or order_seed not in (0, 1, 2):
+        if type(order_seed) is not int or order_seed not in (0, 1, 2, 3):
             raise ValueError(
-                "orders config order_seed must be an exact integer in [0, 1, 2]"
+                "orders config order_seed must be an exact integer in "
+                "[0, 1, 2, 3]"
             )
     elif "order_seed" in document:
         raise ValueError(
