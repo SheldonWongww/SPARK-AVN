@@ -48,3 +48,32 @@ checkpoint digest, canonical formal-manifest path/digest, and immutable run
 identity. Only manifests under `vln/results/runs/` are accepted. Raw result
 artifacts remain untracked; their path, size, and SHA256 metadata are checked
 inside each immutable manifest.
+
+## Two-split benchmark result
+
+After the frozen `val_unseen` campaign has completed and been downloaded, the
+offline builder combines its 15 TTA jobs with the three reuse-only Source
+controls and the frozen `val_seen` registry:
+
+```bash
+python3 vln/scripts/build_r2r_benchmark_results.py \
+  --batch-root vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0 \
+  --check-only
+
+python3 vln/scripts/build_r2r_benchmark_results.py \
+  --batch-root vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0
+```
+
+The download must retain the complete batch directory (including every
+attempt's `metrics.json` and `parameters.json`) and the 15 corresponding
+formal manifests under `vln/results/runs/`. Raw tuning outputs are not needed
+by this builder: it verifies the metric and diagnostics hashes recorded by
+`metrics.json` against the immutable formal manifest.
+
+The only generated files are `benchmark_results.json` and
+`BENCHMARK_RESULTS.md` in this directory. The builder never launches a run or
+modifies downloaded evidence. It rejects incomplete matrices, Source
+execution, parameter drift from the `val_seen` selection, unauthenticated
+metrics, and any checkpoint, dataset, episode-order, commit, or immutable-run
+identity mismatch. Use `--validate` after generation to rebuild in memory and
+compare both files with their evidence.
