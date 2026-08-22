@@ -1,0 +1,1117 @@
+{
+  "benchmark": "r2r",
+  "inputs": {
+    "val_seen_registry": {
+      "path": "vln/results/final/r2r/registry.json",
+      "sha256": "e3237def78e05601a321beb1f82921f8f1c32671ae4301b0284cba9fe9c623a9"
+    },
+    "val_unseen_batch": {
+      "batch_id": "vln-r2r-val-unseen-frozen-eval-v1-seed0",
+      "batch_path": "vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0/BATCH.json",
+      "batch_sha256": "ff2823d883546eb625ead9d8215b9ff24feb02f37616037e0a6ad45a9239059b",
+      "summary_path": "vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0/SUMMARY.json",
+      "summary_sha256": "d54e247496182effd2e3b7cad2860ab0c7115500fa290d8e0973352c8be51d4c"
+    },
+    "val_unseen_source_ledger": {
+      "path": "vln/manifests/r2r_val_unseen_reused_source_controls.json",
+      "sha256": "bd8915b12ff0b606da61b8cf5ca82a008489b65352c7edccaf876e447b4be9cd"
+    },
+    "val_unseen_specification": {
+      "path": "vln/experiments/r2r_val_unseen_frozen_eval_v1.json",
+      "sha256": "dd98782ef748eefbe7468abde5813abaefb0e6651482280424176880bc5325e4"
+    }
+  },
+  "metric_unit": "percentage_points",
+  "protocols": {
+    "val_seen": {
+      "episode_count": 1021,
+      "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+      "metric_unit": "percentage_points",
+      "order_seed": 0,
+      "qualification": "Frozen model-method selection evidence; independent split/order robustness is not established.",
+      "selection_scope": "val_seen_seed0_hyperparameter_selection",
+      "source_protocol": "standard_argmax"
+    },
+    "val_unseen": {
+      "episode_count": 2349,
+      "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+      "full_split_only": true,
+      "order_seed": 0,
+      "source_protocol": "standard_argmax"
+    }
+  },
+  "records": {
+    "duet-r2r": {
+      "methods": {
+        "atena": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "episodic": false,
+            "lr_query": 1.6e-06,
+            "lr_self": 2e-07,
+            "max_grad_norm": 0.0,
+            "mix_lambda": 0.5,
+            "optimizer": "AdamW",
+            "query_threshold": 0.0,
+            "self_loss_weight": 0.1,
+            "weight_decay": 0.01
+          },
+          "method": "atena",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 3.42,
+              "SR": 1.57
+            },
+            "metrics": {
+              "SPL": 76.3,
+              "SR": 80.41
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "0f44dddb12ff7056bf4d18027b698537fa47ecc203b9547c696817e674c5fb8e",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-01-atena-0000-duet-r2r-8d3372dc24-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "4a3399d6a1a252d5a0a3418e186ca05e106799ac3cf7e2dcfc146dc1f053ec09",
+              "git_commit": "ed61007ba0cd76a39f9a9dcbbd5f70dfcfffef36",
+              "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-01-atena-0000-duet-r2r-8d3372dc24"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.91,
+              "SR": -1.02
+            },
+            "metrics": {
+              "SPL": 62.32,
+              "SR": 70.5
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "fb7dec0d2d12f676099b7ce1ca625cd8efe599c5e842c28eecb239736297b207",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-04-atena-02afc15d26-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "0c37d8f7a4362ed79903fbf8f400c55aa6e21a7ef862c1987bb32159f67c461d",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-04-atena-02afc15d26"
+            }
+          }
+        },
+        "eam": {
+          "frozen_parameters": {
+            "batch_size": 8,
+            "confidence_scale": 0.5,
+            "episodic": false,
+            "lr": 1e-05,
+            "max_grad_norm": 0.0,
+            "memory_size": 64,
+            "optimizer": "Adam",
+            "update_interval": 8,
+            "weight_decay": 0.0
+          },
+          "method": "eam",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.87,
+              "SR": 1.47
+            },
+            "metrics": {
+              "SPL": 74.75,
+              "SR": 80.31
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "49fa9e30d809bc9b0558852afe4c4ca9bba62d36c7bc63d8b5cee6494b8f60e6",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-00-eam-0000-duet-r2r-57ab8b8bf5-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "61d7725c9fb6db68c7912b19226909573ac0835a3b3ce20614009b9d0ee5399f",
+              "git_commit": "ed61007ba0cd76a39f9a9dcbbd5f70dfcfffef36",
+              "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-00-eam-0000-duet-r2r-57ab8b8bf5"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -1.22,
+              "SR": -2.98
+            },
+            "metrics": {
+              "SPL": 59.19,
+              "SR": 68.54
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "80619fec78183b956085a6c1b850312bb4483e5b819c815604aca1bf97c53196",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-02-eam-9a323c5931-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "dabdf960135b881d00dfb2075ce6418f107452d3889d48437c8ad93d0b40131c",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-02-eam-9a323c5931"
+            }
+          }
+        },
+        "feedtta": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "alpha": 0.1,
+            "episodic": false,
+            "gamma": 0.8,
+            "lr": 5e-06,
+            "max_grad_norm": 0.0,
+            "normalize_gradient": false,
+            "optimizer": "Adam",
+            "optimizer_eps": 1e-05,
+            "p": 0.05,
+            "scope_profile": "last_crossmodal",
+            "sgr_seed": 0,
+            "weight_decay": 0.0
+          },
+          "method": "feedtta",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.0,
+              "SR": 0.49
+            },
+            "metrics": {
+              "SPL": 73.88,
+              "SR": 79.33
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "63cd3ce01d5c7f7cc05aaf034880e1600e28dc5e38d7a29fdf1ff1c9eecd742a",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "e9ab74ff173f04edaae26a21b38b9123b58ada37241b248ffbb53da246ea43b3",
+              "git_commit": "b2e37dd387fd8df4543dcfcbac7c79592f88d739",
+              "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.13,
+              "SR": 0.55
+            },
+            "metrics": {
+              "SPL": 60.54,
+              "SR": 72.07
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "e3151f5d4f46d072c06dc5c332ec27bdee91e76a01debae883e022ffc2b1d90e",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-03-feedtta-16b79b24b1-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "efb639ee95ce257a92754ddfe4cb83bd1ac7731f62704a56fabf4c839f7f612a",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-03-feedtta-16b79b24b1"
+            }
+          }
+        },
+        "fstta": {
+          "frozen_parameters": {
+            "a": 0.9,
+            "b": 1.1,
+            "beta1": 0.9,
+            "beta2": 0.99,
+            "eigen_eps": 1e-06,
+            "episodic": false,
+            "fast_grad_mode": "concordant",
+            "last_k_ln": 4,
+            "lr_fast": 0.0018,
+            "lr_slow": 0.0003,
+            "m": 8,
+            "max_grad_norm": 0.0,
+            "n": 4,
+            "norm_scope": "last_k_ln",
+            "optimizer": "AdamW",
+            "q": 0.1,
+            "reset_optimizer_each_episode": true,
+            "reset_slow_optimizer_each_window": false,
+            "rho": 0.95,
+            "slow_optimizer": "AdamW",
+            "tau": 0.7,
+            "use_fast_lr_scaler": true,
+            "use_slow": true,
+            "weight_decay": 0.0
+          },
+          "method": "fstta",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.22,
+              "SR": 0.3
+            },
+            "metrics": {
+              "SPL": 73.1,
+              "SR": 79.14
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "07307ff45a42d48e28edc02a9a3c789aa8ab04947be608189d090253c59e5ad1",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "1cc85244bb6e69b870813c24114cba8c53d655ef537e9b73534583257e7605e5",
+              "git_commit": "b2e37dd387fd8df4543dcfcbac7c79592f88d739",
+              "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -1.66,
+              "SR": -1.49
+            },
+            "metrics": {
+              "SPL": 58.75,
+              "SR": 70.03
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "f6a49394b0d448a5bbcc1882d3b4f9034f75328c70eaa03d988bcea54d013083",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-01-fstta-b73f4bfa5e-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "a1018397e2a70975982d3e4919018edd5d8e6246a7daf427d66989903736164b",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-01-fstta-b73f4bfa5e"
+            }
+          }
+        },
+        "source": {
+          "frozen_parameters": {
+            "action_seed": 0,
+            "action_selection": "argmax"
+          },
+          "method": "source",
+          "supervision_category": "source_no_adaptation",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 72.88,
+              "SR": 78.84
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "b09d07795131e814a73b91149c6af8c7f312d4858b4bf21ad97954e9fd98d77b",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-duet-r2r-3865cf90bc-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "e7adfa7bcab1c9b0c19b4f37b08c9c38de75cb247716c629504941612a87d9bc",
+              "git_commit": "a258ac5b1d604cbdaecd64fe0ac184241e8384c1",
+              "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-duet-r2r-3865cf90bc"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 60.41,
+              "SR": 71.52
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "c33acefbdba5f78f9242a60159a386fe099c8a3091b3219c91c4710559fc8bb5",
+              "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "7014badabce28cfe11d38bdac35202706bfb7e5bdf4d91deab8e1f0b35da632f",
+              "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+              "run_tag": "grouped-source-20260810T080743Z"
+            }
+          }
+        },
+        "tent": {
+          "frozen_parameters": {
+            "episodic": false,
+            "last_k_ln": 9,
+            "lr": 1e-05,
+            "max_grad_norm": 0.0,
+            "norm_scope": "last_k_ln",
+            "optimizer": "AdamW",
+            "update_interval": 1,
+            "weight_decay": 0.0
+          },
+          "method": "tent",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.2,
+              "SR": 0.1
+            },
+            "metrics": {
+              "SPL": 73.08,
+              "SR": 78.94
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "25da06951a9f423de6d7aa847f4eb251952a904038dfbac6760abbe37992d1e1",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b-duet-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "af4d7032eeec5e9051ecc6ffc09402370f2d70b217b2b4e6c20044d4c56bd609",
+              "git_commit": "ef4f3e37fca3b3057cb2a2c365352b70633bd22b",
+              "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -2.07,
+              "SR": -2.04
+            },
+            "metrics": {
+              "SPL": 58.34,
+              "SR": 69.48
+            },
+            "provenance": {
+              "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "9725aa05efcb345d0b8473dc6dda10a9da5fcc4024b579d87a45cec0a746506e",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-00-tent-c9af29e0fb-duet-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "aa777fd538d5386f5a03a61abac3e1daddf84a03fb24614def64d36546c32cfd",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-00-duet-00-tent-c9af29e0fb"
+            }
+          }
+        }
+      },
+      "model": "duet"
+    },
+    "goat-r2r": {
+      "methods": {
+        "atena": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "episodic": false,
+            "lr_query": 3.75e-07,
+            "lr_self": 3.515625e-08,
+            "max_grad_norm": 0.0,
+            "mix_lambda": 0.0,
+            "optimizer": "AdamW",
+            "query_threshold": 0.15,
+            "self_loss_weight": 0.1,
+            "weight_decay": 0.01
+          },
+          "method": "atena",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.19,
+              "SR": 0.1
+            },
+            "metrics": {
+              "SPL": 80.24,
+              "SR": 84.92
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "5e278ff8751f230faa0d371130c098425c9ee86834a2a937b21d0eabd0af4e1c",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "9c42cbb78e22adfdabe93f875aa79ab8ea51c15fb8f3b723e4b04b7b12aecd46",
+              "git_commit": "ef4f3e37fca3b3057cb2a2c365352b70633bd22b",
+              "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.79,
+              "SR": 0.42
+            },
+            "metrics": {
+              "SPL": 68.37,
+              "SR": 78.54
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "24a97ca6ff267aa93ee0f974cda02d7f7458894a74507b481a0a4c3250654099",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-04-atena-ceebf08428-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "e9aca6d4efcf27d6f1a1f58949cc9eaac6ce584daef7f647fdffc117b8fb3199",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-04-atena-ceebf08428"
+            }
+          }
+        },
+        "eam": {
+          "frozen_parameters": {
+            "batch_size": 8,
+            "confidence_scale": 0.3,
+            "episodic": false,
+            "lr": 3e-06,
+            "max_grad_norm": 0.0,
+            "memory_size": 32,
+            "optimizer": "Adam",
+            "update_interval": 4,
+            "weight_decay": 0.0
+          },
+          "method": "eam",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.5,
+              "SR": 0.49
+            },
+            "metrics": {
+              "SPL": 80.55,
+              "SR": 85.31
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "a7f8ef22f3e7f34d1ed06bbe58e296b43e0d93543812968450c3bfded1bb6434",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-04-eam-0000-goat-r2r-01a184b229-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "c3c1ba40611a511976c382c238529de3810ca748fd8f717184612d2e5f7ee6d4",
+              "git_commit": "ed61007ba0cd76a39f9a9dcbbd5f70dfcfffef36",
+              "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-04-eam-0000-goat-r2r-01a184b229"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.34,
+              "SR": -0.26
+            },
+            "metrics": {
+              "SPL": 67.92,
+              "SR": 77.86
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "41f3ace02c4879fc9df5295a1c7e492c70f46a1e8cee8495b5ba4e6f63db41c1",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-02-eam-1d15221d90-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "bfcf76c8415fb5fdedf2963c8d0bc40dad12682aa6ff4370b7a8e8499330793c",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-02-eam-1d15221d90"
+            }
+          }
+        },
+        "feedtta": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "alpha": -0.1,
+            "episodic": false,
+            "gamma": 0.8,
+            "lr": 1e-06,
+            "max_grad_norm": 0.0,
+            "normalize_gradient": false,
+            "optimizer": "Adam",
+            "optimizer_eps": 1e-05,
+            "p": 0.1,
+            "scope_profile": "action_head",
+            "sgr_seed": 0,
+            "weight_decay": 0.0
+          },
+          "method": "feedtta",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.06,
+              "SR": 0.1
+            },
+            "metrics": {
+              "SPL": 80.11,
+              "SR": 84.92
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "b01c6712236c588919974add20ce912ac7be49ee92d639b0271603754c0173a6",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "1e3c4afa23a38543e955a6684097dbed88ae384e05b09a1ee8e742a8c723c5ab",
+              "git_commit": "ef4f3e37fca3b3057cb2a2c365352b70633bd22b",
+              "run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -0.06,
+              "SR": -0.09
+            },
+            "metrics": {
+              "SPL": 67.52,
+              "SR": 78.03
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "f9d4476ea6103c0d8e319cab4ea69ccd3e9f2ce35cc3be5724453ba4962798b2",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-03-feedtta-926573d63f-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "79eb3c7d6be226de8b8cd2ef75567eae7295685ab0bd01dd481c96e78b4e0ad8",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-03-feedtta-926573d63f"
+            }
+          }
+        },
+        "fstta": {
+          "frozen_parameters": {
+            "a": 0.9,
+            "b": 1.1,
+            "beta1": 0.9,
+            "beta2": 0.99,
+            "eigen_eps": 1e-06,
+            "episodic": false,
+            "fast_grad_mode": "concordant",
+            "last_k_ln": 4,
+            "lr_fast": 0.0018,
+            "lr_slow": 0.001,
+            "m": 3,
+            "max_grad_norm": 0.0,
+            "n": 8,
+            "norm_scope": "last_k_ln",
+            "optimizer": "AdamW",
+            "q": 0.1,
+            "reset_optimizer_each_episode": true,
+            "reset_slow_optimizer_each_window": false,
+            "rho": 0.95,
+            "slow_optimizer": "AdamW",
+            "tau": 0.7,
+            "use_fast_lr_scaler": true,
+            "use_slow": true,
+            "weight_decay": 0.0
+          },
+          "method": "fstta",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.16,
+              "SR": 0.1
+            },
+            "metrics": {
+              "SPL": 80.21,
+              "SR": 84.92
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "f836847b6efa4e47226a102814a2fdad0901d651dae8980bd20579f7e7b193b9",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "df7316d7e83960a5c32b518b9f73a292ccfba4b33b82a33527ff663185b348f2",
+              "git_commit": "b2e37dd387fd8df4543dcfcbac7c79592f88d739",
+              "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.1,
+              "SR": -0.09
+            },
+            "metrics": {
+              "SPL": 67.68,
+              "SR": 78.03
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "48a79d593224cb216464daa480fd606c80da87f327f870ced327dd665c1f4187",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-01-fstta-850c82e8c9-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "153ba3e08a1996e28751c524e5f90f16bb6009df17af73c14893258937964c1c",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-01-fstta-850c82e8c9"
+            }
+          }
+        },
+        "source": {
+          "frozen_parameters": {
+            "action_seed": 0,
+            "action_selection": "argmax"
+          },
+          "method": "source",
+          "supervision_category": "source_no_adaptation",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 80.05,
+              "SR": 84.82
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "cc4cbec4898a33ab666a6bd9990f8c74a563ade3202e5887beb8d80790b14e7c",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-goat-r2r-3865cf90bc-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "6dcb148b179ea45bbef99ccc34ab0109be035b78dfe5e4fa5e48329eaed65b96",
+              "git_commit": "a258ac5b1d604cbdaecd64fe0ac184241e8384c1",
+              "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-goat-r2r-3865cf90bc"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 67.58,
+              "SR": 78.12
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "5359550d0007bf85e2999fc6362702e9c5b2cd6b40a76255719e858d8d08942c",
+              "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "06206c9dee71d94b92aaaf0c7092e49869173bfc455d8c928387ed96718c4bcd",
+              "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+              "run_tag": "grouped-source-20260810T080743Z"
+            }
+          }
+        },
+        "tent": {
+          "frozen_parameters": {
+            "episodic": false,
+            "lr": 1e-05,
+            "max_grad_norm": 0.0,
+            "norm_scope": "ln",
+            "optimizer": "AdamW",
+            "update_interval": 1,
+            "weight_decay": 0.0
+          },
+          "method": "tent",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.27,
+              "SR": 0.1
+            },
+            "metrics": {
+              "SPL": 80.32,
+              "SR": 84.92
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "a1aad8eaf57d299e1710bd21939868460e51b6c07ee5c3a514fd6ccf681355b2",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323-goat-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "f2fdafba2492e446b1605c0fb07e5192274675124a9dcb820f861642c6ea5e4e",
+              "git_commit": "a7fa28efc34970527461f03f60b959d1bff0be10",
+              "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.4,
+              "SR": 0.17
+            },
+            "metrics": {
+              "SPL": 68.98,
+              "SR": 78.29
+            },
+            "provenance": {
+              "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+              "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "4b09971a6f8e271ec38e3ef3dee6640ec660829ac758157b7a78e56c3f426cb1",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14-goat-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "cea2123ea714d27f0f21a32b802a6937955a06258f1896404288900b7cdc2583",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14"
+            }
+          }
+        }
+      },
+      "model": "goat"
+    },
+    "hamt-r2r": {
+      "methods": {
+        "atena": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "episodic": false,
+            "lr_query": 3.2e-06,
+            "lr_self": 4e-07,
+            "max_grad_norm": 0.0,
+            "mix_lambda": 0.25,
+            "optimizer": "AdamW",
+            "query_threshold": 0.1,
+            "self_loss_weight": 0.1,
+            "weight_decay": 0.01
+          },
+          "method": "atena",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.98,
+              "SR": 1.86
+            },
+            "metrics": {
+              "SPL": 74.16,
+              "SR": 77.47
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "16cade262f5d4b5563e95961c72eef5861f40ea1cebe6e6eda70714cb2cf1905",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-03-atena-0000-hamt-r2r-8dfe151e97-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "d501f3b5831071591ebf7c8f981f66899f9cc367215b4a6b18d948ac95abce33",
+              "git_commit": "ed61007ba0cd76a39f9a9dcbbd5f70dfcfffef36",
+              "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-03-atena-0000-hamt-r2r-8dfe151e97"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -2.75,
+              "SR": -2.26
+            },
+            "metrics": {
+              "SPL": 58.76,
+              "SR": 63.98
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "611986475d57abc94fe0bf06a8c31f072c7fcb069697bdb9d5ce1a520ca1042b",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-04-atena-441dd582be-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "66b145aaa2a23727f84424db734b2a6209c806c8c215ff7c9c78e804812bb9e6",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-04-atena-441dd582be"
+            }
+          }
+        },
+        "eam": {
+          "frozen_parameters": {
+            "batch_size": 8,
+            "confidence_scale": 0.6,
+            "episodic": false,
+            "lr": 1e-06,
+            "max_grad_norm": 0.0,
+            "memory_size": 32,
+            "optimizer": "Adam",
+            "update_interval": 8,
+            "weight_decay": 0.0
+          },
+          "method": "eam",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 1.22,
+              "SR": 1.08
+            },
+            "metrics": {
+              "SPL": 73.4,
+              "SR": 76.69
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "03014916be6105da5c555b7d9a17d5050824120e2a5222e706c98344f6f23128",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-02-eam-0000-hamt-r2r-c88e328c7a-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "bd750d1e33a3fb11de0da1fd03aa07c118f773e222f051dc2200d6c794ed390a",
+              "git_commit": "ed61007ba0cd76a39f9a9dcbbd5f70dfcfffef36",
+              "run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-02-eam-0000-hamt-r2r-c88e328c7a"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -0.47,
+              "SR": -0.25
+            },
+            "metrics": {
+              "SPL": 61.04,
+              "SR": 65.99
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "d66da386dda3bc12fcb0d5da86a0356aaf7a43beefff22501c044b271b3cfe81",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-02-eam-6c6781aeca-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "34525075dd3bbdc725dbf04f2a8ea8c95df503ab6c045488a85f387818f2574b",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-02-eam-6c6781aeca"
+            }
+          }
+        },
+        "feedtta": {
+          "frozen_parameters": {
+            "action_selection": "argmax",
+            "alpha": 0.1,
+            "episodic": false,
+            "gamma": 0.9,
+            "lr": 2e-06,
+            "max_grad_norm": 0.0,
+            "normalize_gradient": false,
+            "optimizer": "Adam",
+            "optimizer_eps": 1e-05,
+            "p": 0.05,
+            "scope_profile": "last_crossmodal",
+            "sgr_seed": 0,
+            "weight_decay": 0.0
+          },
+          "method": "feedtta",
+          "supervision_category": "binary_episode_feedback_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.48,
+              "SR": 0.39
+            },
+            "metrics": {
+              "SPL": 72.66,
+              "SR": 76.0
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "1200c900fd662a71cf459a6555da0bebb234865d5bdd7e5926104a01cd45df8b",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "78dba723a2a71778c7bef78e19f810777d1baf37b0b51ec759c48d79b976ecd4",
+              "git_commit": "b2e37dd387fd8df4543dcfcbac7c79592f88d739",
+              "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.41,
+              "SR": 0.21
+            },
+            "metrics": {
+              "SPL": 61.92,
+              "SR": 66.45
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "0ab033912c66f81e70e2304e10af31fe7bd311f7443dfee80adf47c6ea202707",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "b68c10e780f3b4a61438871760e240f57c3951f59d67fc1424e3a0dcdca4c981",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf"
+            }
+          }
+        },
+        "fstta": {
+          "frozen_parameters": {
+            "a": 0.9,
+            "b": 1.1,
+            "beta1": 0.9,
+            "beta2": 0.99,
+            "eigen_eps": 1e-06,
+            "episodic": false,
+            "fast_grad_mode": "concordant",
+            "last_k_ln": 4,
+            "lr_fast": 0.0008,
+            "lr_slow": 0.0002,
+            "m": 1,
+            "max_grad_norm": 0.0,
+            "n": 16,
+            "norm_scope": "last_k_ln",
+            "optimizer": "AdamW",
+            "q": 0.1,
+            "reset_optimizer_each_episode": true,
+            "reset_slow_optimizer_each_window": false,
+            "rho": 0.95,
+            "slow_optimizer": "AdamW",
+            "tau": 0.7,
+            "use_fast_lr_scaler": true,
+            "use_slow": true,
+            "weight_decay": 0.0
+          },
+          "method": "fstta",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.79,
+              "SR": 0.79
+            },
+            "metrics": {
+              "SPL": 72.97,
+              "SR": 76.4
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "0753c3d9b8774c72713e89d5c3b17c84e7efc3f5f67a4794440fb141ba599507",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "44f4fcaf0f02b07b88ff96695aa8168219a8a277d0eeeda54376f8a37f47122a",
+              "git_commit": "b2e37dd387fd8df4543dcfcbac7c79592f88d739",
+              "run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -0.24,
+              "SR": -0.13
+            },
+            "metrics": {
+              "SPL": 61.27,
+              "SR": 66.11
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "ed46e0884190c28d7219737a4dee90410c240621a2075919348a3a2c29a1b524",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-01-fstta-4998f37857-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "ff76c603296378fe8cf0a5166a7bdc92c416d500cc941689f2523a91a6ce0aa4",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-01-fstta-4998f37857"
+            }
+          }
+        },
+        "source": {
+          "frozen_parameters": {
+            "action_seed": 0,
+            "action_selection": "argmax"
+          },
+          "method": "source",
+          "supervision_category": "source_no_adaptation",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 72.18,
+              "SR": 75.61
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "5e11cfe838a48520f24ad65158b6ac4274e1dce9bd0cdae124badce342570985",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-hamt-r2r-3865cf90bc-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "6c30dfc92530ba96d4bef2f854fc494ec84967eec89393b3ca790b24408c159c",
+              "git_commit": "a258ac5b1d604cbdaecd64fe0ac184241e8384c1",
+              "run_tag": "vln-r2r-modelwise-cartesian-v2-seed0-source-cartesian-0000-hamt-r2r-3865cf90bc"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.0,
+              "SR": 0.0
+            },
+            "metrics": {
+              "SPL": 61.51,
+              "SR": 66.24
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "79c1161d199206c50113aca28d66c0145956f41fb85a1bdf80f82b44ef486a7b",
+              "formal_manifest_path": "vln/results/runs/hamt-r2r-e2e-source-20260810T152328Z-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "89b08dd6df22a9a5aaa4434783af6781d5c4d09bd8dfbe571dd2ced2cf78d3c3",
+              "git_commit": "f6175d64487db902ca86a4ab455e48ffc11bafe2",
+              "run_tag": "hamt-r2r-e2e-source-20260810T152328Z"
+            }
+          }
+        },
+        "tent": {
+          "frozen_parameters": {
+            "episodic": false,
+            "lr": 3e-06,
+            "max_grad_norm": 0.0,
+            "norm_scope": "ln",
+            "optimizer": "AdamW",
+            "update_interval": 1,
+            "weight_decay": 0.0
+          },
+          "method": "tent",
+          "supervision_category": "unsupervised_tta",
+          "val_seen": {
+            "delta_vs_source_pp": {
+              "SPL": 0.7,
+              "SR": 0.69
+            },
+            "metrics": {
+              "SPL": 72.88,
+              "SR": 76.3
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd",
+              "episode_order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80",
+              "formal_immutable_identity_sha256": "9ed8a8e32666bc4615d4c28f1bf43bcdebfe6a75c5e2cb852fd14421408336cb",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28-hamt-r2r-val_seen-native/manifest.json",
+              "formal_manifest_sha256": "daab8d26155cf0fc6316f2492b5bfbc9032283287ba55d36a10110510941a8ae",
+              "git_commit": "a7fa28efc34970527461f03f60b959d1bff0be10",
+              "run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28"
+            }
+          },
+          "val_unseen": {
+            "delta_vs_source_pp": {
+              "SPL": -0.06,
+              "SR": -0.04
+            },
+            "metrics": {
+              "SPL": 61.45,
+              "SR": 66.2
+            },
+            "provenance": {
+              "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+              "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+              "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+              "formal_immutable_identity_sha256": "c4b954a79563a97b40b959cca2328e52e495b26b21d6302ca6c665bdf09804ed",
+              "formal_manifest_path": "vln/results/runs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-00-tent-316ff74aa8-hamt-r2r-val_unseen-native/manifest.json",
+              "formal_manifest_sha256": "3e0e0a9309086d5d6f845303d9c3e659e4d0572cde715e01d7b8cb2e12901f41",
+              "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+              "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-00-tent-316ff74aa8"
+            }
+          }
+        }
+      },
+      "model": "hamt"
+    }
+  },
+  "result_status": "complete_val_seen_selection_and_val_unseen_frozen_evaluation",
+  "schema": "navtta.vln_r2r_benchmark_final_results.v1",
+  "selection_policy": {
+    "evaluation_split": "val_unseen",
+    "order_seed": 0,
+    "qualification": "val_seen selected each model-method configuration; val_unseen evaluated the frozen configuration once and did not reselect it.",
+    "selection_on_val_unseen": false,
+    "selection_split": "val_seen"
+  },
+  "supervision_categories": {
+    "binary_episode_feedback_tta": {
+      "feedback": "binary_navigation_success",
+      "methods": [
+        "feedtta",
+        "atena"
+      ],
+      "uses_episode_feedback": true
+    },
+    "source_no_adaptation": {
+      "methods": [
+        "source"
+      ],
+      "uses_episode_feedback": false
+    },
+    "unsupervised_tta": {
+      "methods": [
+        "tent",
+        "fstta",
+        "eam"
+      ],
+      "uses_episode_feedback": false
+    }
+  }
+}

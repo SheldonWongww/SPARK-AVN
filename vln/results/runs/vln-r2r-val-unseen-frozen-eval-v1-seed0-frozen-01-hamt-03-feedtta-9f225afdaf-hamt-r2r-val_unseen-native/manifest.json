@@ -1,0 +1,179 @@
+{
+  "run_id": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf-hamt-r2r-val_unseen-native",
+  "task": "vln",
+  "benchmark": "r2r_discrete_duet_hamt",
+  "model": "hamt",
+  "method": "feedtta",
+  "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf",
+  "source_setting": "hamt-r2r:val_unseen:native:feedtta",
+  "seed": 0,
+  "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+  "config": "/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0/models/01-hamt/jobs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/attempt-00/parameters.json",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/hamt/bin/python",
+    "r2r/main.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "r2r",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/hamt-r2r/val_unseen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "bert",
+    "--ob_type",
+    "pano",
+    "--num_l_layers",
+    "9",
+    "--num_x_layers",
+    "4",
+    "--hist_enc_pano",
+    "--hist_pano_num_layers",
+    "2",
+    "--fix_lang_embedding",
+    "--fix_hist_embedding",
+    "--features",
+    "vitbase_r2rfte2e",
+    "--feedback",
+    "sample",
+    "--max_action_len",
+    "15",
+    "--max_action_steps",
+    "50",
+    "--max_instr_len",
+    "60",
+    "--image_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--batch_size",
+    "1",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0.4",
+    "--dropout",
+    "0.5",
+    "--resume_file",
+    "../datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_unseen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_duet_hamt",
+    "--tta_method",
+    "feedtta",
+    "--tta_diagnostics",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/hamt-r2r/val_unseen/tta_diagnostics.json",
+    "--tta_action_selection",
+    "argmax",
+    "--tta_feedtta_alpha",
+    "0.1",
+    "--tta_feedtta_gamma",
+    "0.9",
+    "--tta_feedtta_lr",
+    "2e-06",
+    "--tta_max_grad_norm",
+    "0.0",
+    "--tta_optimizer",
+    "Adam",
+    "--tta_feedtta_eps",
+    "1e-05",
+    "--tta_feedtta_p",
+    "0.05",
+    "--tta_feedtta_scope_profile",
+    "last_crossmodal",
+    "--tta_feedtta_sgr_seed",
+    "0",
+    "--tta_weight_decay",
+    "0.0"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/R2R/vitbase-finetune-e2e/best_val_unseen",
+    "size": 1225431690,
+    "sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 1391358984,
+      "sha256": "3d429e9c7cd9c6eab6115951addfb21f98e65782bdb688906ef8ceebf546c34f"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/annotations/R2R_val_unseen_enc.json",
+    "version": "r2r_discrete_duet_hamt",
+    "size": 1749355,
+    "index_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+    "stream_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+    "stream_content_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 41134,
+      "sha256": "0de5df0de8e029a3c440d06db63b8226e170073dfddaead3406ee2ae3e5b58de"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_duet_hamt/val_unseen.json",
+      "size": 176339,
+      "sha256": "0608b494878bd6a87e65de78069461e8ae86680ed7038bf6eeebf5549a513ad7"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-22T05:06:04.963938+00:00",
+  "completed_at": "2026-08-22T05:14:51.784086+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "0ab033912c66f81e70e2304e10af31fe7bd311f7443dfee80adf47c6ea202707",
+  "result_artifacts": [
+    {
+      "name": "logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/hamt-r2r/val_unseen/logs/valid.txt",
+      "size": 3709,
+      "sha256": "2a6665ddb6cac571cb13d7946119c7ff02737cbab2511913493c6ba36270ac9a"
+    },
+    {
+      "name": "logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/hamt-r2r/val_unseen/logs/validation_args.json",
+      "size": 4351,
+      "sha256": "7d3f44c65976968aa19f0f8c36f1fc98389de3869d8a9d72774ae723d6154e20"
+    },
+    {
+      "name": "tta_diagnostics.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-01-hamt-03-feedtta-9f225afdaf/hamt-r2r/val_unseen/tta_diagnostics.json",
+      "size": 5831,
+      "sha256": "cdf4080ab745ea3ff9c41cf12556ad7836b2d993d3ced8aaae454b7037abe06d"
+    }
+  ]
+}

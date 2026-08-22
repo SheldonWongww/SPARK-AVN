@@ -1,0 +1,205 @@
+{
+  "run_id": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14-goat-r2r-val_unseen-native",
+  "task": "vln",
+  "benchmark": "r2r_discrete_goat",
+  "model": "goat",
+  "method": "tent",
+  "run_tag": "vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14",
+  "source_setting": "goat-r2r:val_unseen:native:tent",
+  "seed": 0,
+  "git_commit": "aef150fe0130a8a34bced1f296ee0b987f4ade6f",
+  "config": "/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/frozen_val_unseen/vln-r2r-val-unseen-frozen-eval-v1-seed0/models/02-goat/jobs/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/attempt-00/parameters.json",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/goat/bin/python",
+    "r2r/main_nav.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "r2r",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/goat-r2r/val_unseen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "roberta",
+    "--mode",
+    "valid",
+    "--name",
+    "goat_r2r_source",
+    "--enc_full_graph",
+    "--graph_sprels",
+    "--fusion",
+    "dynamic",
+    "--train_alg",
+    "dagger",
+    "--num_l_layers",
+    "6",
+    "--num_x_layers",
+    "3",
+    "--num_pano_layers",
+    "2",
+    "--max_action_len",
+    "15",
+    "--batch_size",
+    "1",
+    "--features",
+    "clip768",
+    "--image_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0",
+    "--dropout",
+    "0",
+    "--do_back_txt",
+    "--do_back_img",
+    "--do_back_txt_type",
+    "type_2",
+    "--do_back_img_type",
+    "type_1",
+    "--do_add_method",
+    "door",
+    "--do_front_txt",
+    "--do_front_img",
+    "--do_front_his",
+    "--backdoor_dict_file",
+    "../datasets/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv",
+    "--frontdoor_dict_file",
+    "../datasets/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv",
+    "--resume_file",
+    "../datasets/R2R/navigator/goat_r2r/ckpts/best_val_unseen.pt",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_unseen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_goat",
+    "--expert_policy",
+    "spl",
+    "--max_instr_len",
+    "200",
+    "--tta_method",
+    "tent",
+    "--tta_diagnostics",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/goat-r2r/val_unseen/tta_diagnostics.json",
+    "--tta_lr",
+    "1e-05",
+    "--tta_max_grad_norm",
+    "0.0",
+    "--tta_norm_scope",
+    "ln",
+    "--tta_optimizer",
+    "AdamW",
+    "--tta_update_interval",
+    "1",
+    "--tta_weight_decay",
+    "0.0"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/goat/R2R/best_val_unseen.pt",
+    "size": 877551955,
+    "sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/features/CLIP-ViT-B-16-views.hdf5",
+      "size": 3129297165,
+      "sha256": "378d756bcec1aa6f9acbfe48ba3f017d75ee136fd90b12f89b312b3fb82164fb"
+    },
+    {
+      "name": "backdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/navigator/goat_r2r/logs/backdoor/backdoor_update_features.tsv",
+      "size": 306009,
+      "sha256": "728044c41ca15806a0e1724d6bf4c33c8220c74869d759a81142948c207d9e33"
+    },
+    {
+      "name": "frontdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/navigator/goat_r2r/logs/frontdoor/frontdoor_update_features.tsv",
+      "size": 295056,
+      "sha256": "0985cee98a0ccb4724fbb17a22f42201dffb6587ed0238b9a63bf9b9ee86142e"
+    },
+    {
+      "name": "submission_viewpoint_candidates",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/scanvp_candview_relangles.json",
+      "size": 5124730,
+      "sha256": "cead28ce0d9b248766c5295338e0809eeedfec499b1eafd39e15e63609394d14"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/R2R_val_unseen_roberta_enc.json",
+    "version": "r2r_discrete_goat",
+    "size": 1299114,
+    "index_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+    "stream_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+    "stream_content_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 41134,
+      "sha256": "0de5df0de8e029a3c440d06db63b8226e170073dfddaead3406ee2ae3e5b58de"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_goat/val_unseen.json",
+      "size": 176342,
+      "sha256": "61d283bdd5699ca8ba7de4ca4cbba686cc3430919614c91da85ccee4bf12258d"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-22T05:46:00.948436+00:00",
+  "completed_at": "2026-08-22T06:02:44.778239+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "4b09971a6f8e271ec38e3ef3dee6640ec660829ac758157b7a78e56c3f426cb1",
+  "result_artifacts": [
+    {
+      "name": "test/goat_r2r_source/logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/goat-r2r/val_unseen/test/goat_r2r_source/logs/valid.txt",
+      "size": 5825,
+      "sha256": "04172ad908920ac182ddf59cc8105fc225c0f148df81ffe49a0ca99c00179f01"
+    },
+    {
+      "name": "test/goat_r2r_source/logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/goat-r2r/val_unseen/test/goat_r2r_source/logs/validation_args.json",
+      "size": 6846,
+      "sha256": "c430254ab9583f613ef2c8d62bc4a879bef165b142c0d7d4a8df68bf78006498"
+    },
+    {
+      "name": "tta_diagnostics.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/vln-r2r-val-unseen-frozen-eval-v1-seed0-frozen-02-goat-00-tent-eb3052bd14/goat-r2r/val_unseen/tta_diagnostics.json",
+      "size": 10183,
+      "sha256": "e068e4912b979beb6a7c45576663a627647774e8ea9f328133ea3fdae971cc04"
+    }
+  ]
+}
