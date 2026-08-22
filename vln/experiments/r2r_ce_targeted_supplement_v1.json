@@ -1,0 +1,284 @@
+{
+  "schema": "navtta.vln_r2r_ce_targeted_supplement.v1",
+  "experiment_id": "vln-r2r-ce-targeted-supplement-v1",
+  "status": "review_required_not_launched",
+  "purpose": "Run only the five R2R-CE val_seen cells whose first small search did not establish an effective adaptation, using 15 canonical-prefix screening jobs and at most five full confirmations.",
+  "parent_evidence": {
+    "analysis": {
+      "path": "vln/results/analysis/hparam_search/R2R_CE_SMALL_HPARAM_SEARCH_V1.md",
+      "sha256": "58156fe2d396a61f97188be94321756b87c71b0acef2bf1a98b84d6eab750820"
+    },
+    "search_spec": {
+      "path": "vln/experiments/r2r_ce_small_hparam_search_v1.json",
+      "sha256": "f5b1b68b7c843465c5f75a2b425866c35c5eb94b1e26f598f69becb2e252f2ed"
+    },
+    "batch_id": "vln-r2r-ce-small-hparam-search-v1-seed0"
+  },
+  "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
+  "split": "val_seen",
+  "primary_order_seed": 0,
+  "settings": [
+    "etpnav-r2r-ce",
+    "bevbert-r2r-ce"
+  ],
+  "setting_episode_counts": {
+    "etpnav-r2r-ce": 778,
+    "bevbert-r2r-ce": 778
+  },
+  "canonical_order": {
+    "seed": 0,
+    "screening_prefix_episodes": 100,
+    "full_episodes": 778,
+    "manifest": {
+      "path": "vln/manifests/episode_order/r2r_ce_v1_3_unified/val_seen.json",
+      "sha256": "3c3edb55e4f7bf2812b3863f15c0bd7c56a230311023aafcd265d7f4a1106a49",
+      "order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e"
+    },
+    "runner_protocol": "Omit --order-seed: run_source_eval.sh defaults to model seed 0 and the tracked canonical manifest; --order-seed is forbidden for prefix jobs."
+  },
+  "reused_source_controls": {
+    "path": "vln/manifests/r2r_ce_reused_source_controls.json",
+    "sha256": "40ec2c6ac9e4685040df75ddd60201a476ae85c24558d9411bb54428b6c3e94b"
+  },
+  "activation": {
+    "automatic_launch_forbidden": true,
+    "manual_review_required": true,
+    "formal_launch_requires_clean_tracked_tree": true,
+    "formal_launch_requires_confirm_reviewed": true
+  },
+  "protocol": {
+    "batch_size": 1,
+    "continual_across_episodes": true,
+    "reset_from_source_between_jobs": true,
+    "full_restart_policy": "Each full finalist is a new run_source_eval.sh process loading the immutable Source checkpoint, never a continuation of screening state.",
+    "source_control_execution": "reuse_completed_formal_manifest",
+    "source_execution_jobs": 0,
+    "require_complete_screening": true,
+    "screening_then_full_only": true,
+    "full_val_seen_matched_source_controls": true,
+    "require_formal_final_manifest": true,
+    "full_val_seen_finalists_per_cell_max": 1,
+    "full_val_seen_finalists_total_max": 5,
+    "no_val_unseen_or_test_during_search": true,
+    "supervision_groups": {
+      "unsupervised": [
+        "tent",
+        "fstta"
+      ],
+      "binary_episode_navigation_feedback": [
+        "feedtta"
+      ]
+    },
+    "excluded_cells": {
+      "bevbert-r2r-ce": [
+        "tent",
+        "eam",
+        "atena"
+      ],
+      "etpnav-r2r-ce": [
+        "eam",
+        "atena"
+      ]
+    }
+  },
+  "methods": {
+    "tent": {
+      "supervision": "unsupervised",
+      "settings": {
+        "etpnav-r2r-ce": {
+          "fixed": {
+            "norm_scope": "last_k_ln",
+            "last_k_ln": 4,
+            "update_interval": 1,
+            "optimizer": "AdamW",
+            "weight_decay": 0.0,
+            "max_grad_norm": 0.0,
+            "episodic": false
+          },
+          "candidates": [
+            {"lr": 3e-7},
+            {"lr": 1e-6},
+            {"lr": 3e-6}
+          ]
+        }
+      }
+    },
+    "fstta": {
+      "supervision": "unsupervised",
+      "settings": {
+        "etpnav-r2r-ce": {
+          "fixed": {
+            "q": 0.1,
+            "rho": 0.95,
+            "tau": 0.7,
+            "a": 0.9,
+            "b": 1.1,
+            "optimizer": "AdamW",
+            "beta1": 0.9,
+            "beta2": 0.99,
+            "weight_decay": 0.0,
+            "norm_scope": "last_k_ln",
+            "last_k_ln": 4,
+            "fast_grad_mode": "concordant",
+            "use_fast_lr_scaler": true,
+            "use_slow": true,
+            "reset_optimizer_each_episode": true,
+            "reset_slow_optimizer_each_window": false,
+            "max_grad_norm": 0.0,
+            "episodic": false
+          },
+          "candidates": [
+            {"lr_fast": 3e-7, "lr_slow": 1e-5, "m": 4, "n": 16},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 4, "n": 16},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 1, "n": 16}
+          ]
+        },
+        "bevbert-r2r-ce": {
+          "fixed": {
+            "q": 0.1,
+            "rho": 0.95,
+            "tau": 0.7,
+            "a": 0.9,
+            "b": 1.1,
+            "optimizer": "AdamW",
+            "beta1": 0.9,
+            "beta2": 0.99,
+            "weight_decay": 0.0,
+            "norm_scope": "last_k_ln",
+            "last_k_ln": 4,
+            "fast_grad_mode": "concordant",
+            "use_fast_lr_scaler": true,
+            "use_slow": true,
+            "reset_optimizer_each_episode": true,
+            "reset_slow_optimizer_each_window": false,
+            "max_grad_norm": 0.0,
+            "episodic": false
+          },
+          "candidates": [
+            {"lr_fast": 3e-7, "lr_slow": 1e-5, "m": 4, "n": 16},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 4, "n": 16},
+            {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 1, "n": 16}
+          ]
+        }
+      }
+    },
+    "feedtta": {
+      "supervision": "binary_episode_navigation_feedback",
+      "settings": {
+        "etpnav-r2r-ce": {
+          "fixed": {
+            "scope_profile": "last_crossmodal",
+            "p": 0.05,
+            "alpha": -0.2,
+            "gamma": 0.99,
+            "optimizer": "Adam",
+            "optimizer_eps": 1e-5,
+            "max_grad_norm": 0.0,
+            "action_selection": "argmax",
+            "action_seed": 0,
+            "sgr_seed": 0,
+            "episodic": false
+          },
+          "candidates": [
+            {"lr": 3e-7},
+            {"lr": 1e-6},
+            {"lr": 2e-6}
+          ]
+        },
+        "bevbert-r2r-ce": {
+          "fixed": {
+            "scope_profile": "last_crossmodal",
+            "p": 0.05,
+            "alpha": -0.2,
+            "gamma": 0.99,
+            "optimizer": "Adam",
+            "optimizer_eps": 1e-5,
+            "max_grad_norm": 0.0,
+            "action_selection": "argmax",
+            "action_seed": 0,
+            "sgr_seed": 0,
+            "episodic": false
+          },
+          "candidates": [
+            {"lr": 3e-7},
+            {"lr": 1e-6},
+            {"lr": 2e-6}
+          ]
+        }
+      }
+    }
+  },
+  "selection": {
+    "primary": "SPL",
+    "secondary": "SR",
+    "source_sr_floor_tolerance_percentage_points": 1.5,
+    "metric_tie_absolute_tolerance": 1e-12,
+    "fstta": {
+      "max_fast_window_m": 15,
+      "reject_updates_equal_zero": true,
+      "tie_breakers_after_metrics": [
+        "lower_parameter_drift",
+        "fewer_updates"
+      ]
+    },
+    "feedtta": {
+      "require_nonzero_navigation_record_change_for_no_gain_tie": true,
+      "navigation_record_fields": [
+        "steps_taken",
+        "distance_to_goal",
+        "success",
+        "oracle_success",
+        "path_length",
+        "collisions",
+        "spl",
+        "ndtw",
+        "sdtw",
+        "ghost_cnt"
+      ],
+      "tied_candidate_rule": "Among candidates tied on SPL and SR, discard navigation-record no-ops and choose the highest learning rate that remains above the Source SR floor.",
+      "all_tied_candidates_are_noop": "promote_none"
+    },
+    "tent_tie_breakers_after_metrics": [
+      "lower_parameter_drift",
+      "fewer_updates"
+    ]
+  },
+  "execution": {
+    "strict_model_barrier": true,
+    "model_order": [
+      "etpnav-r2r-ce",
+      "bevbert-r2r-ce"
+    ],
+    "phase_order_within_model": [
+      "screening",
+      "full_confirmation"
+    ],
+    "round_robin_methods_within_screening": true,
+    "phases": {
+      "etpnav-r2r-ce": {
+        "screening": {"planned_jobs": 9, "max_workers": 3},
+        "full_confirmation": {"max_jobs": 3, "max_workers": 3}
+      },
+      "bevbert-r2r-ce": {
+        "screening": {"planned_jobs": 6, "max_workers": 3},
+        "full_confirmation": {"max_jobs": 2, "max_workers": 2}
+      }
+    },
+    "resource_limits": {
+      "max_gpu_memory_mib_before_launch": 22000,
+      "estimated_job_gpu_memory_mib": 8000,
+      "max_aggregate_gpu_memory_mib": 30000,
+      "max_cgroup_memory_gib_before_launch": 55.0,
+      "estimated_job_memory_gib": 20.0,
+      "max_aggregate_cgroup_memory_gib": 75.0,
+      "launch_stagger_seconds": 15.0,
+      "resource_wait_timeout_seconds": 3600
+    }
+  },
+  "budget": {
+    "screening_tta_jobs": 15,
+    "full_val_seen_tta_jobs_max": 5,
+    "source_execution_jobs": 0,
+    "total_executed_jobs_max": 20
+  }
+}

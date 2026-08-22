@@ -1,0 +1,502 @@
+import copy
+from contextlib import ExitStack
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+import unittest
+from unittest import mock
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "vln/scripts/run_r2r_ce_targeted_supplement.py"
+SPEC_PATH = REPO_ROOT / "vln/experiments/r2r_ce_targeted_supplement_v1.json"
+MODULE_SPEC = importlib.util.spec_from_file_location("r2r_ce_supplement", SCRIPT)
+RUNNER = importlib.util.module_from_spec(MODULE_SPEC)
+MODULE_SPEC.loader.exec_module(RUNNER)
+
+TRANSLATOR_PATH = REPO_ROOT / "vln/scripts/tta_config_cli.py"
+TRANSLATOR_SPEC = importlib.util.spec_from_file_location(
+    "r2r_ce_supplement_config", TRANSLATOR_PATH
+)
+TRANSLATOR = importlib.util.module_from_spec(TRANSLATOR_SPEC)
+TRANSLATOR_SPEC.loader.exec_module(TRANSLATOR)
+
+
+class R2RCETargetedSupplementTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.spec = RUNNER.load_spec(SPEC_PATH)
+
+    def _result(
+        self, method, setting, index, parameters, spl, sr, updates,
+        drift, changes=0,
+    ):
+        return {
+            "run_tag": "{}-{}-{}".format(setting, method, index),
+            "point_index": index,
+            "setting": setting,
+            "config_method": method,
+            "parameters": parameters,
+            "metrics": {"SPL": spl, "SR": sr},
+            "adapter_diagnostics": {
+                "updates": updates,
+                "relative_param_drift": drift,
+            },
+            "navigation_record_change_count": changes,
+        }
+
+    def test_exact_minimal_scope_and_budget(self):
+        self.assertEqual(set(self.spec["methods"]), {"tent", "fstta", "feedtta"})
+        self.assertNotIn("eam", self.spec["methods"])
+        self.assertNotIn("atena", self.spec["methods"])
+        self.assertEqual(
+            RUNNER.enabled_methods("etpnav-r2r-ce", self.spec),
+            ("tent", "fstta", "feedtta"),
+        )
+        self.assertEqual(
+            RUNNER.enabled_methods("bevbert-r2r-ce", self.spec),
+            ("fstta", "feedtta"),
+        )
+        self.assertEqual(self.spec["budget"], {
+            "screening_tta_jobs": 15,
+            "full_val_seen_tta_jobs_max": 5,
+            "source_execution_jobs": 0,
+            "total_executed_jobs_max": 20,
+        })
+        count = sum(
+            len(RUNNER.expand_candidates(method, setting, self.spec))
+            for setting in RUNNER.SETTINGS
+            for method in RUNNER.enabled_methods(setting, self.spec)
+        )
+        self.assertEqual(count, 15)
+
+    def test_reviewed_candidate_values_and_fstta_windows(self):
+        tent = RUNNER.expand_candidates("tent", "etpnav-r2r-ce", self.spec)
+        self.assertEqual([item["lr"] for item in tent], [3e-7, 1e-6, 3e-6])
+        self.assertTrue(all(item["update_interval"] == 1 for item in tent))
+        self.assertTrue(all(item["norm_scope"] == "last_k_ln" for item in tent))
+
+        expected_fstta = [
+            (3e-7, 1e-5, 4, 16),
+            (1e-6, 3e-5, 4, 16),
+            (1e-6, 3e-5, 1, 16),
+        ]
+        for setting in RUNNER.SETTINGS:
+            points = RUNNER.expand_candidates("fstta", setting, self.spec)
+            self.assertEqual(
+                [(p["lr_fast"], p["lr_slow"], p["m"], p["n"]) for p in points],
+                expected_fstta,
+            )
+            self.assertTrue(all(point["m"] <= 15 for point in points))
+
+            feedtta = RUNNER.expand_candidates("feedtta", setting, self.spec)
+            self.assertEqual([item["lr"] for item in feedtta], [3e-7, 1e-6, 2e-6])
+            self.assertTrue(all(item["scope_profile"] == "last_crossmodal"
+                                for item in feedtta))
+            self.assertTrue(all(item["action_selection"] == "argmax"
+                                for item in feedtta))
+
+    def test_fstta_spec_fails_closed_above_single_episode_bound(self):
+        changed = copy.deepcopy(self.spec)
+        changed["methods"]["fstta"]["settings"]["etpnav-r2r-ce"][
+            "candidates"
+        ][0]["m"] = 16
+        with self.assertRaisesRegex(RUNNER.UserError, "episode bound"):
+            RUNNER._validate_search_grid(changed)
+
+    def test_model_major_phases_and_concurrency_are_fixed(self):
+        phases = RUNNER.phase_sequence(self.spec)
+        self.assertEqual(
+            [(item["setting"], item["kind"], item["max_workers"])
+             for item in phases],
+            [
+                ("etpnav-r2r-ce", "screening", 3),
+                ("etpnav-r2r-ce", "full_confirmation", 3),
+                ("bevbert-r2r-ce", "screening", 3),
+                ("bevbert-r2r-ce", "full_confirmation", 2),
+            ],
+        )
+        limits = self.spec["execution"]["resource_limits"]
+        self.assertLessEqual(
+            limits["max_gpu_memory_mib_before_launch"]
+            + limits["estimated_job_gpu_memory_mib"],
+            limits["max_aggregate_gpu_memory_mib"],
+        )
+        runtime = RUNNER.runtime_args(
+            SimpleNamespace(
+                batch_id="runtime-unit", gpu=0, resume=False,
+                retry_failed=False,
+            ),
+            phases[0], self.spec,
+        )
+        self.assertEqual(runtime.max_workers, 3)
+        self.assertEqual(runtime.max_continuous_workers, 3)
+        self.assertEqual(runtime.max_discrete_workers, 1)
+
+    def test_screening_jobs_are_method_round_robin_canonical_prefixes(self):
+        phases = RUNNER.phase_sequence(self.spec)
+        etp = RUNNER.build_screening_jobs(
+            phases[0], "supplement-unit", self.spec, gpu=2
+        )
+        bev = RUNNER.build_screening_jobs(
+            phases[2], "supplement-unit", self.spec, gpu=2
+        )
+        self.assertEqual(len(etp), 9)
+        self.assertEqual(len(bev), 6)
+        self.assertEqual(
+            [job["config_method"] for job in etp[:3]],
+            ["tent", "fstta", "feedtta"],
+        )
+        self.assertEqual(
+            [job["config_method"] for job in bev[:2]],
+            ["fstta", "feedtta"],
+        )
+        for job in etp + bev:
+            self.assertNotEqual(job["config_method"], "source")
+            self.assertEqual(job["episodes"], 100)
+            self.assertEqual(job["canonical_order_seed"], 0)
+            self.assertIsNone(job["order_seed"])
+            self.assertNotIn("--order-seed", job["command"])
+            self.assertEqual(
+                job["command"][job["command"].index("--episode-limit") + 1],
+                "100",
+            )
+            self.assertTrue(job["restart_from_source_checkpoint"])
+
+    def test_full_jobs_are_dynamic_capped_and_restart_from_source(self):
+        phases = RUNNER.phase_sequence(self.spec)
+        promotions = {"setting": "etpnav-r2r-ce", "cells": {}}
+        for method in ("tent", "fstta", "feedtta"):
+            point = RUNNER.expand_candidates(method, "etpnav-r2r-ce", self.spec)[1]
+            promotions["cells"][method] = {
+                "selected": {
+                    "run_tag": "screen-{}".format(method),
+                    "point_index": 1,
+                    "parameters": point,
+                }
+            }
+        jobs = RUNNER.build_full_jobs(
+            phases[1], "supplement-unit", promotions, self.spec, gpu=0
+        )
+        self.assertEqual(len(jobs), 3)
+        for job in jobs:
+            self.assertEqual(job["episodes"], -1)
+            self.assertNotIn("--episode-limit", job["command"])
+            self.assertNotIn("--order-seed", job["command"])
+            self.assertEqual(job["parent_run_tags"], [
+                "screen-{}".format(job["config_method"])
+            ])
+            self.assertTrue(job["restart_from_source_checkpoint"])
+
+        promotions["cells"]["feedtta"]["selected"] = None
+        self.assertEqual(
+            len(RUNNER.build_full_jobs(
+                phases[1], "supplement-unit", promotions, self.spec
+            )),
+            2,
+        )
+
+    def test_fstta_zero_updates_and_large_m_cannot_be_promoted(self):
+        setting = "etpnav-r2r-ce"
+        source = RUNNER.staged.reused_source_result(setting, 100, self.spec)
+        results = [
+            self._result(
+                "fstta", setting, 0,
+                {"lr_fast": 3e-7, "lr_slow": 1e-5, "m": 4, "n": 16},
+                55.0, 60.0, 0, 0.0,
+            ),
+            self._result(
+                "fstta", setting, 1,
+                {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 16, "n": 16},
+                56.0, 60.0, 100, 0.01,
+            ),
+            self._result(
+                "fstta", setting, 2,
+                {"lr_fast": 1e-6, "lr_slow": 3e-5, "m": 1, "n": 16},
+                52.0, 60.0, 900, 0.02,
+            ),
+        ]
+        selected, record = RUNNER.select_finalist(
+            "fstta", setting, results, source, self.spec
+        )
+        self.assertEqual(selected["run_tag"], results[2]["run_tag"])
+        reasons = {item["run_tag"]: item["reasons"] for item in record["ranked"]}
+        self.assertIn("no_effective_updates", reasons[results[0]["run_tag"]])
+        self.assertIn(
+            "fast_window_exceeds_episode_bound", reasons[results[1]["run_tag"]]
+        )
+
+    def test_feedtta_metric_tie_chooses_highest_safe_nonzero_behavior_lr(self):
+        setting = "bevbert-r2r-ce"
+        source = RUNNER.staged.reused_source_result(setting, 100, self.spec)
+        spl = source["metrics"]["SPL"]
+        sr = source["metrics"]["SR"]
+        results = [
+            self._result(
+                "feedtta", setting, 0, {"lr": 3e-7}, spl, sr, 100, 1e-6, 0
+            ),
+            self._result(
+                "feedtta", setting, 1, {"lr": 1e-6}, spl, sr, 100, 1e-4, 2
+            ),
+            self._result(
+                "feedtta", setting, 2, {"lr": 2e-6}, spl, sr, 100, 2e-4, 1
+            ),
+        ]
+        selected, record = RUNNER.select_finalist(
+            "feedtta", setting, results, source, self.spec
+        )
+        self.assertEqual(selected["parameters"]["lr"], 2e-6)
+        self.assertEqual(
+            record["decision"], "metric_tie_highest_safe_nonzero_behavior_lr"
+        )
+
+    def test_feedtta_all_noop_tie_promotes_no_full_candidate(self):
+        setting = "etpnav-r2r-ce"
+        source = RUNNER.staged.reused_source_result(setting, 100, self.spec)
+        results = [
+            self._result(
+                "feedtta", setting, index, {"lr": lr},
+                source["metrics"]["SPL"], source["metrics"]["SR"],
+                100, lr, 0,
+            )
+            for index, lr in enumerate((3e-7, 1e-6, 2e-6))
+        ]
+        selected, record = RUNNER.select_finalist(
+            "feedtta", setting, results, source, self.spec
+        )
+        self.assertIsNone(selected)
+        self.assertEqual(
+            record["decision"], "all_top_candidates_are_navigation_noops"
+        )
+
+    def test_navigation_record_change_is_exact_and_field_pinned(self):
+        fields = self.spec["selection"]["feedtta"]["navigation_record_fields"]
+        base = {field: float(index) for index, field in enumerate(fields)}
+        source = {"1": dict(base), "2": dict(base)}
+        candidate = copy.deepcopy(source)
+        candidate["2"]["steps_taken"] += 1.0
+        self.assertEqual(
+            RUNNER.count_navigation_record_changes(
+                candidate, source, ["1", "2"], fields
+            ),
+            1,
+        )
+
+    def test_generated_configs_translate_and_never_execute_source(self):
+        phases = RUNNER.phase_sequence(self.spec)
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(mock.patch.object(RUNNER, "LOG_ROOT", root / "logs"))
+            stack.enter_context(mock.patch.object(
+                RUNNER, "TUNING_ROOT", root / "tuning"
+            ))
+            jobs = RUNNER.build_screening_jobs(
+                phases[0], "translation-unit", self.spec, gpu=0
+            )
+            for job in jobs[:3]:
+                RUNNER.staged._write_job(job)
+                config = json.loads(
+                    Path(job["config_path"]).read_text(encoding="utf-8")
+                )
+                method, tokens = TRANSLATOR.translate(
+                    job["setting"], job["config_path"],
+                    str(root / "diagnostics.json"),
+                )
+                self.assertEqual(method, job["config_method"])
+                self.assertNotEqual(method, "source")
+                self.assertTrue(tokens)
+                self.assertNotIn("order_seed", config)
+                self.assertEqual(config["episodes"], 100)
+
+    def test_full_contract_binds_config_tokens_and_authenticated_aggregate(self):
+        phase = RUNNER.phase_sequence(self.spec)[1]
+        point = RUNNER.expand_candidates(
+            "tent", "etpnav-r2r-ce", self.spec
+        )[0]
+        promotions = {
+            "setting": "etpnav-r2r-ce",
+            "cells": {
+                "tent": {"selected": {
+                    "run_tag": "screen-tent", "point_index": 0,
+                    "parameters": point,
+                }},
+                "fstta": {"selected": None},
+                "feedtta": {"selected": None},
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(mock.patch.object(RUNNER, "LOG_ROOT", root / "logs"))
+            stack.enter_context(mock.patch.object(
+                RUNNER, "TUNING_ROOT", root / "tuning"
+            ))
+            job = RUNNER.build_full_jobs(
+                phase, "formal-unit", promotions, self.spec
+            )[0]
+            RUNNER.staged._write_job(job)
+            result_root = Path(job["result_root"])
+            aggregate = result_root / "metrics/source_val_seen/stats_ckpt_59.json"
+            aggregate.parent.mkdir(parents=True)
+            raw = {
+                "steps_taken": 10.0, "distance_to_goal": 1.0,
+                "success": 0.6, "oracle_success": 0.7,
+                "path_length": 9.0, "collisions": 0.1,
+                "spl": 0.5, "ndtw": 0.65, "sdtw": 0.45,
+                "ghost_cnt": 2.0,
+            }
+            aggregate.write_text(json.dumps(raw), encoding="utf-8")
+            method, tokens = TRANSLATOR.translate(
+                job["setting"], job["config_path"],
+                str(result_root / "tta_diagnostics.json"),
+            )
+            self.assertEqual(method, "tent")
+            manifest = {
+                "config": job["config_path"],
+                "config_overrides": ["python", "run.py"] + tokens,
+                "hardware": {"gpu": "unit"},
+                "result_artifacts": [{
+                    "name": "metrics/source_val_seen/stats_ckpt_59.json",
+                    "path": str(aggregate),
+                }],
+            }
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            parsed = {
+                "formal_manifest_path": str(manifest_path),
+                "metrics": {"SR": 60.0, "SPL": 50.0},
+            }
+            contract = RUNNER.validate_full_result_contract(job, parsed)
+            self.assertEqual(contract["metrics"]["SR"], 60.0)
+            self.assertEqual(contract["metrics"]["SPL"], 50.0)
+            self.assertEqual(
+                contract["job_config_sha256"], RUNNER.sha256(job["config_path"])
+            )
+
+    def test_campaign_plan_is_immutable_and_resume_validates_jobs(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(mock.patch.object(RUNNER, "LOG_ROOT", root / "logs"))
+            stack.enter_context(mock.patch.object(
+                RUNNER, "TUNING_ROOT", root / "tuning"
+            ))
+            cli = SimpleNamespace(
+                batch_id="plan-unit", gpu=0, resume=False,
+            )
+            campaign, planned = RUNNER.ensure_campaign_plan(cli, self.spec)
+            self.assertEqual(sum(len(item[2]) for item in planned), 15)
+            plan = json.loads((campaign / "PLAN.json").read_text(encoding="utf-8"))
+            self.assertEqual(plan["source_execution_jobs"], 0)
+            self.assertEqual(plan["full_jobs_max"], 5)
+            cli.resume = True
+            _, resumed = RUNNER.ensure_campaign_plan(cli, self.spec)
+            self.assertEqual(sum(len(item[2]) for item in resumed), 15)
+
+            cli.gpu = 1
+            with self.assertRaisesRegex(RUNNER.UserError, "worker command changed"):
+                RUNNER.ensure_campaign_plan(cli, self.spec)
+            cli.gpu = 0
+
+            job_path = Path(resumed[0][2][0]["job_dir"]) / "job.json"
+            original_job = job_path.read_text(encoding="utf-8")
+            job = json.loads(original_job)
+            job["retry_result_root_parent"] = str(root / "escaped-retries")
+            job_path.write_text(json.dumps(job), encoding="utf-8")
+            with self.assertRaisesRegex(RUNNER.UserError, "job identity changed"):
+                RUNNER.ensure_campaign_plan(cli, self.spec)
+            job_path.write_text(original_job, encoding="utf-8")
+
+            job = json.loads(original_job)
+            job["command"][0] = "/bin/echo"
+            job_path.write_text(json.dumps(job), encoding="utf-8")
+            with self.assertRaisesRegex(RUNNER.UserError, "worker command changed"):
+                RUNNER.ensure_campaign_plan(cli, self.spec)
+            job_path.write_text(original_job, encoding="utf-8")
+
+            config_path = Path(resumed[0][2][0]["config_path"])
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["parameters"]["lr"] = 9e-3
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(RUNNER.UserError, "runtime config changed"):
+                RUNNER.ensure_campaign_plan(cli, self.spec)
+
+    def test_campaign_head_guard_rejects_commit_or_spec_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            head = RUNNER.git("rev-parse", "HEAD")
+            plan = {
+                "schema": RUNNER.PLAN_SCHEMA,
+                "git_commit": "0" * 40,
+                "spec_path": str(SPEC_PATH),
+                "spec_sha256": RUNNER.sha256(SPEC_PATH),
+            }
+            RUNNER.staged.atomic_json(root / "PLAN.json", plan)
+            with self.assertRaisesRegex(RUNNER.UserError, "Git commit changed"):
+                RUNNER.assert_campaign_head(root)
+            plan["git_commit"] = head
+            plan["spec_sha256"] = "0" * 64
+            RUNNER.staged.atomic_json(root / "PLAN.json", plan)
+            with self.assertRaisesRegex(RUNNER.UserError, "spec changed"):
+                RUNNER.assert_campaign_head(root)
+
+    def test_retry_stays_in_campaign_result_parent_and_revalidates(self):
+        phase = RUNNER.phase_sequence(self.spec)[0]
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(mock.patch.object(RUNNER, "LOG_ROOT", root / "logs"))
+            stack.enter_context(mock.patch.object(
+                RUNNER, "TUNING_ROOT", root / "tuning"
+            ))
+            original = RUNNER.build_screening_jobs(
+                phase, "retry-unit", self.spec, gpu=0
+            )[0]
+            RUNNER.staged._write_job(original)
+            current = json.loads(
+                (Path(original["job_dir"]) / "job.json").read_text(encoding="utf-8")
+            )
+            RUNNER.staged._bump_attempt(current)
+            self.assertEqual(current["attempt"], 1)
+            self.assertEqual(
+                Path(current["result_root"]),
+                Path(original["retry_result_root_parent"])
+                / (original["base_run_tag"] + "-retry1") / "val_seen",
+            )
+            validated = RUNNER._validate_persisted_jobs(
+                Path(original["job_dir"]).parents[1], [original]
+            )
+            self.assertEqual(validated[0]["run_tag"], current["run_tag"])
+
+    def test_invalid_screening_postcondition_is_not_considered_complete(self):
+        job = {"stage": RUNNER.SCREENING_STAGE, "run_tag": "candidate"}
+        with mock.patch.object(
+            RUNNER, "_load_valid_results", return_value=[{"run_tag": "candidate"}]
+        ), mock.patch.object(
+            RUNNER, "enrich_screening_result",
+            side_effect=RUNNER.UserError("bad canonical records"),
+        ):
+            self.assertFalse(RUNNER._phase_complete("unused", [job], self.spec))
+
+    def test_launch_requires_review_and_clean_tracked_tree(self):
+        cli = SimpleNamespace(confirm_reviewed=False)
+        with self.assertRaisesRegex(RUNNER.UserError, "confirm-reviewed"):
+            RUNNER._assert_launchable(cli, self.spec)
+        cli.confirm_reviewed = True
+        with mock.patch.object(RUNNER, "git", return_value=" M tracked.py"):
+            with self.assertRaisesRegex(RUNNER.UserError, "clean tracked"):
+                RUNNER._assert_launchable(cli, self.spec)
+
+        def untracked_git(*arguments):
+            if arguments[0] == "status":
+                return ""
+            if arguments[:2] == ("ls-files", "--error-unmatch"):
+                raise RUNNER.subprocess.CalledProcessError(1, arguments)
+            return ""
+
+        with mock.patch.object(RUNNER, "git", side_effect=untracked_git):
+            with self.assertRaisesRegex(RUNNER.UserError, "tracked implementation"):
+                RUNNER._assert_launchable(cli, self.spec)
+
+
+if __name__ == "__main__":
+    unittest.main()
