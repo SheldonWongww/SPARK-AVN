@@ -1,0 +1,268 @@
+{
+  "budget": {
+    "source_execution_jobs": 0,
+    "total_executed_jobs": 15,
+    "tta_jobs": 15
+  },
+  "execution": {
+    "emergency_abort_used_gpu_memory_mib": 30500,
+    "estimated_gpu_memory_mib_by_method": {
+      "atena": 10240,
+      "eam": 6144,
+      "feedtta": 8192,
+      "fstta": 5120,
+      "tent": 4096
+    },
+    "formal_requires_clean_tracked_tree": true,
+    "formal_requires_review_confirmation": true,
+    "launch_stagger_seconds": 5,
+    "max_aggregate_gpu_memory_mib": 29000,
+    "max_workers_by_model": {
+      "duet": 2,
+      "goat": 4,
+      "hamt": 2
+    },
+    "minimum_free_gpu_memory_mib": 4096,
+    "model_phase_order": "duet_then_hamt_then_goat",
+    "poll_seconds": 2,
+    "retry_assigns_new_run_tag": true
+  },
+  "experiment_id": "vln-reverie-val-unseen-frozen-eval-v1",
+  "matrix": {
+    "jobs": [
+      {
+        "method": "tent",
+        "model": "duet",
+        "selected_formal_manifest_sha256": "86fa6b4536e74a842226a5e72abf995fb2fe499505a154e6e269a99876aa3c9d",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-00-tent-duet-reverie-95ef7d249a",
+        "setting": "duet-reverie"
+      },
+      {
+        "method": "fstta",
+        "model": "duet",
+        "selected_formal_manifest_sha256": "6ca922db970bf8ed800a9193b7113efe0810cecb94f634bc10bb9e213c755649",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-01-fstta-00-duet-reverie-70257810fb",
+        "setting": "duet-reverie"
+      },
+      {
+        "method": "eam",
+        "model": "duet",
+        "selected_formal_manifest_sha256": "700297679bf3bd9afa35fe8198bf7525b1100c19455a136fa66960a9aff333f7",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-00-duet-reverie-2e9337c497",
+        "setting": "duet-reverie"
+      },
+      {
+        "method": "feedtta",
+        "model": "duet",
+        "selected_formal_manifest_sha256": "89a1832a6e56c625b7e88f3df4c4ec7b9203dccb000fc24a8be0ffb6b7b6269b",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-00-duet-reverie-017592a2c9",
+        "setting": "duet-reverie"
+      },
+      {
+        "method": "atena",
+        "model": "duet",
+        "selected_formal_manifest_sha256": "9f5069f8953a45c3a1636b6769f152c2345c1df650f690b6fb580753cca1fcd2",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-00-duet-reverie-83c3fbddfb",
+        "setting": "duet-reverie"
+      },
+      {
+        "method": "tent",
+        "model": "hamt",
+        "selected_formal_manifest_sha256": "dc2976900dd22e148e2473df9fcc432f5dbd967cb87a4de8da4e4da95b391a26",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888",
+        "setting": "hamt-reverie"
+      },
+      {
+        "method": "fstta",
+        "model": "hamt",
+        "selected_formal_manifest_sha256": "d3fc65f0158d12956fb9d8b745011fdce25cdb39ca5143cc92309ba96d8946fb",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-06-fstta-hamt-reverie-df584e7574",
+        "setting": "hamt-reverie"
+      },
+      {
+        "method": "eam",
+        "model": "hamt",
+        "selected_formal_manifest_sha256": "88a1392f5a9e8da6d3fd4d871801bfe685d1d35e8bb4391f536b820b957022bb",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-01-hamt-reverie-bfc3dd7093",
+        "setting": "hamt-reverie"
+      },
+      {
+        "method": "feedtta",
+        "model": "hamt",
+        "selected_formal_manifest_sha256": "29228d0c37f6aff1a0e0325fb56c71269b425fb63371d1bd28d23279f0c446e1",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-01-hamt-reverie-f04cd364ee",
+        "setting": "hamt-reverie"
+      },
+      {
+        "method": "atena",
+        "model": "hamt",
+        "selected_formal_manifest_sha256": "a442b4c04a9ba196face3a8dca9ee4295c3703c672a40ca00e3b586378baef86",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-01-hamt-reverie-640b50b476",
+        "setting": "hamt-reverie"
+      },
+      {
+        "method": "tent",
+        "model": "goat",
+        "selected_formal_manifest_sha256": "c6399e400bcc4a89f74c08ab137fecba9d01cb9872e5e8c94869765237778b90",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-10-tent-goat-reverie-cb496d2a6c",
+        "setting": "goat-reverie"
+      },
+      {
+        "method": "fstta",
+        "model": "goat",
+        "selected_formal_manifest_sha256": "e05014a9ad87f9dd8183ae593e50c1936964dd90825c0184675b3e9c50c22f43",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-11-fstta-goat-reverie-d3e68623b2",
+        "setting": "goat-reverie"
+      },
+      {
+        "method": "eam",
+        "model": "goat",
+        "selected_formal_manifest_sha256": "4b89102f3815cd1eccc1d878f91df0d31f98561cf971fd12b6c2f205630897f5",
+        "selected_run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-02-goat-reverie-83202f81eb",
+        "setting": "goat-reverie"
+      },
+      {
+        "method": "feedtta",
+        "model": "goat",
+        "selected_formal_manifest_sha256": "21faa0c2feca3669fa68eeaeac647a45f62b143562b2a3b24040f5a3926fd105",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-13-feedtta-goat-reverie-8b45c329d1",
+        "setting": "goat-reverie"
+      },
+      {
+        "method": "atena",
+        "model": "goat",
+        "selected_formal_manifest_sha256": "2955df687147b4f06e96d39fc4293e53fa61001741442caa8e3fab3f2140bb98",
+        "selected_run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-14-atena-goat-reverie-e602b4f1cd",
+        "setting": "goat-reverie"
+      }
+    ],
+    "method_order": [
+      "tent",
+      "fstta",
+      "eam",
+      "feedtta",
+      "atena"
+    ],
+    "model_order": [
+      "duet",
+      "hamt",
+      "goat"
+    ],
+    "parallel_methods_within_model": true,
+    "setting_order": [
+      "duet-reverie",
+      "hamt-reverie",
+      "goat-reverie"
+    ],
+    "strict_model_barrier": true
+  },
+  "protocol": {
+    "benchmark": "reverie",
+    "binary_feedback": {
+      "atena_timing": "lazy_only_when_entropy_gate_queries",
+      "feedtta_timing": "eager_once_per_episode",
+      "grounding_feedback_forbidden": true,
+      "label": "navigation_success_only",
+      "simulator_distance_fallback_forbidden": true
+    },
+    "canonical_order_seed": 0,
+    "episode_count": 3521,
+    "episode_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+    "frozen_from": "reverie_val_seen_seed0_final_registry",
+    "full_split_only": true,
+    "order_manifests": {
+      "duet_hamt": {
+        "path": "vln/manifests/episode_order/reverie_duet_hamt/val_unseen.json",
+        "settings": [
+          "duet-reverie",
+          "hamt-reverie"
+        ],
+        "sha256": "09b2d4984d0073a6b31dc0ea6057a70c1436b8d54ebb463b901065b23f0c9e47"
+      },
+      "goat": {
+        "path": "vln/manifests/episode_order/reverie_goat/val_unseen.json",
+        "settings": [
+          "goat-reverie"
+        ],
+        "sha256": "1e5ca8cd785c54def1a7225ecc3cf420a1ef28c1e90e8d02780d58f2709c2db3"
+      }
+    },
+    "order_seed_cli_forbidden": true,
+    "reported_metrics": [
+      "SR",
+      "SPL",
+      "RGS",
+      "RGSPL"
+    ],
+    "selection_on_val_unseen": false,
+    "split": "val_unseen"
+  },
+  "purpose": "Evaluate all 15 frozen REVERIE val_seen winners on canonical val_unseen without Source execution or val_unseen reselection.",
+  "registry_dependency": {
+    "path": "vln/results/final/reverie/registry.json",
+    "required_status": "complete",
+    "schema": "navtta.vln_reverie_final_registry.v1",
+    "sha256": "0c87c078b4abc96f72fb5fb7f8976f9a344aadd57b604ad3caab2a6cda476f50"
+  },
+  "schema": "navtta.vln_reverie_val_unseen_frozen_eval.v1",
+  "source_control": {
+    "execution": "reuse_only",
+    "manifest": "vln/manifests/reverie_val_unseen_reused_source_controls.json",
+    "rerun_forbidden": true,
+    "sha256": "d870a16f35ef33b8b566946a4aefda7652a086d983ffe523dfe37c5274d9a71a"
+  },
+  "status": "materialized_from_complete_val_seen_registry",
+  "test_submission_policy": {
+    "benchmark": "reverie",
+    "canonical_order_seed": 0,
+    "eligible_tta_methods": [
+      "tent",
+      "fstta",
+      "eam"
+    ],
+    "eligible_tta_submission_jobs": 9,
+    "episode_count": 6292,
+    "episode_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+    "execution_purpose": "submission_generation_only",
+    "hidden_ground_truth": true,
+    "legal_online_feedback_interface": null,
+    "local_metric_computation_forbidden": true,
+    "native_split": "test",
+    "order_manifests": {
+      "duet_hamt": {
+        "path": "vln/manifests/episode_order/reverie_duet_hamt/test.json",
+        "settings": [
+          "duet-reverie",
+          "hamt-reverie"
+        ],
+        "sha256": "003f882a1e43537b2f046590e2fd3215f3a02266b57fb8ab51b1363d41f3382e"
+      },
+      "goat": {
+        "path": "vln/manifests/episode_order/reverie_goat/test.json",
+        "settings": [
+          "goat-reverie"
+        ],
+        "sha256": "543b7de61221e1a4e8a29c074ea0f8abf7551da9ceeb198614a8c55288435146"
+      }
+    },
+    "selection_or_ranking_on_test_forbidden": true,
+    "source": {
+      "execution": "reuse_existing_submission_only",
+      "ledger": "vln/manifests/reverie_test_reused_source_submissions.json",
+      "rerun_forbidden": true,
+      "sha256": "76ebb559a9a252f212ee1612aa931cb8df177403b5c24a9d1836abe4e91ad7ee"
+    },
+    "unavailable_without_legal_online_feedback": {
+      "atena": {
+        "launch_policy": "fail_closed",
+        "reason": "hidden test labels provide no legal queried binary navigation-success feedback",
+        "status": "N/A"
+      },
+      "feedtta": {
+        "launch_policy": "fail_closed",
+        "reason": "hidden test labels provide no per-episode binary navigation-success feedback",
+        "status": "N/A"
+      }
+    }
+  }
+}

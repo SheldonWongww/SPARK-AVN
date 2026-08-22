@@ -1,0 +1,687 @@
+{
+  "benchmark": "reverie",
+  "protocol": {
+    "benchmark": "reverie",
+    "episode_count": 1423,
+    "episode_order_sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1",
+    "order_seed": 0,
+    "primary_metric": "RGSPL",
+    "selection_scope": "val_seen_seed0_hyperparameter_selection",
+    "split": "val_seen"
+  },
+  "protocol_status": "complete_val_seen_seed0_selection",
+  "provenance_status": "complete_formal_manifest_identity_verified",
+  "publication_status": "selection_registry_not_test_result",
+  "records": {
+    "duet-reverie": {
+      "atena": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": 3.66,
+          "RGSPL": 4.41,
+          "SPL": 4.41,
+          "SR": 3.58
+        },
+        "formal_immutable_identity_sha256": "7db4e6b65614a209bbd15cc76029ded39ae5b3efabebcc3b2f6158a3e6a35512",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-00-duet-reverie-83c3fbddfb-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "9f5069f8953a45c3a1636b6769f152c2345c1df650f690b6fb580753cca1fcd2",
+        "method": "atena",
+        "metric_artifact_sha256": "bf564aec1c12227bf349dac0667468657d757d0753ecd1d76686ab80bc28b374",
+        "metrics": {
+          "RGS": 61.07,
+          "RGSPL": 55.55,
+          "SPL": 68.35,
+          "SR": 75.33
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 1.6e-06,
+          "lr_self": 2e-07,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.0,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-00-duet-reverie-83c3fbddfb",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": 1.27,
+          "RGSPL": 2.83,
+          "SPL": 2.23,
+          "SR": 0.42
+        },
+        "formal_immutable_identity_sha256": "93e96a9fbd10d51cb3d10920612f5a2e5cc275ecfb28d3b75b80483ed806f83b",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-00-duet-reverie-2e9337c497-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "700297679bf3bd9afa35fe8198bf7525b1100c19455a136fa66960a9aff333f7",
+        "method": "eam",
+        "metric_artifact_sha256": "5759aad53a29488e5121012713539099e1cd959704f07a6d60174ee932858262",
+        "metrics": {
+          "RGS": 58.68,
+          "RGSPL": 53.97,
+          "SPL": 66.17,
+          "SR": 72.17
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.5,
+          "episodic": false,
+          "lr": 1e-05,
+          "max_grad_norm": 0.0,
+          "memory_size": 64,
+          "optimizer": "Adam",
+          "update_interval": 8,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-00-duet-reverie-2e9337c497",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": 2.74,
+          "RGSPL": 1.43,
+          "SPL": 1.08,
+          "SR": 2.39
+        },
+        "formal_immutable_identity_sha256": "7d7fca34e8607975396488f4be62e8426a0ff42482f14fc64da6b6872b60dc57",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-00-duet-reverie-017592a2c9-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "89a1832a6e56c625b7e88f3df4c4ec7b9203dccb000fc24a8be0ffb6b7b6269b",
+        "method": "feedtta",
+        "metric_artifact_sha256": "bc29c3ca199e23605488ea64d3a699734f87c2c428504eb86360eb0288cb5dbf",
+        "metrics": {
+          "RGS": 60.15,
+          "RGSPL": 52.57,
+          "SPL": 65.02,
+          "SR": 74.14
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "episodic": false,
+          "gamma": 0.8,
+          "lr": 5e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-00-duet-reverie-017592a2c9",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": -0.28,
+          "RGSPL": 0.42,
+          "SPL": 0.36,
+          "SR": -0.35
+        },
+        "formal_immutable_identity_sha256": "115e4fd6147fe464545ceefb73932d71216a889d1a8fc65de78b00dc96821b11",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-01-fstta-00-duet-reverie-70257810fb-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "6ca922db970bf8ed800a9193b7113efe0810cecb94f634bc10bb9e213c755649",
+        "method": "fstta",
+        "metric_artifact_sha256": "933712e057c7dc8afa92e5b453f0aa0c80302faa7abe5bba40ffd7f71727e12c",
+        "metrics": {
+          "RGS": 57.13,
+          "RGSPL": 51.56,
+          "SPL": 64.3,
+          "SR": 71.4
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0018,
+          "lr_slow": 0.0003,
+          "m": 8,
+          "max_grad_norm": 0.0,
+          "n": 4,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-01-fstta-00-duet-reverie-70257810fb",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": 0.0,
+          "RGSPL": 0.0,
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "1d48f5192433a19cc964b5e9fb221091cbf2ad42f1658d412262a95dbdae9dbd",
+        "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "660db3758044d8a2fa918d9a2dd4661cb4073c3def8a6b01291751232842a402",
+        "method": "source",
+        "metric_artifact_sha256": "aaea69b26f380c96b7cd59acc9485bd0b242488976af062feea45c2d35121af2",
+        "metrics": {
+          "RGS": 57.41,
+          "RGSPL": 51.14,
+          "SPL": 63.94,
+          "SR": 71.75
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "grouped-source-20260810T080743Z",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+        "delta_vs_source_pp": {
+          "RGS": -0.49,
+          "RGSPL": 0.59,
+          "SPL": 0.59,
+          "SR": -0.49
+        },
+        "formal_immutable_identity_sha256": "1b3b193cc5f3fb4afe6e81970360cbebff6813bbd07555315b29e03f2bf2d55b",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-00-tent-duet-reverie-95ef7d249a-duet-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "86fa6b4536e74a842226a5e72abf995fb2fe499505a154e6e269a99876aa3c9d",
+        "method": "tent",
+        "metric_artifact_sha256": "04ac6cc4be8f26b396f978e80472f3f22f68c09a830de76fafc52bff784b821e",
+        "metrics": {
+          "RGS": 56.92,
+          "RGSPL": 51.73,
+          "SPL": 64.53,
+          "SR": 71.26
+        },
+        "parameters": {
+          "episodic": false,
+          "last_k_ln": 9,
+          "lr": 1.5625e-05,
+          "max_grad_norm": 0.0,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-00-tent-duet-reverie-95ef7d249a",
+        "supervision_category": "unsupervised_tta"
+      }
+    },
+    "goat-reverie": {
+      "atena": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": 5.7,
+          "RGSPL": 3.54,
+          "SPL": 3.59,
+          "SR": 6.05
+        },
+        "formal_immutable_identity_sha256": "2b9540851856a038fd53ea00affa5f7d30cda207c6a15767dedb1b7db3b15575",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-14-atena-goat-reverie-e602b4f1cd-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "2955df687147b4f06e96d39fc4293e53fa61001741442caa8e3fab3f2140bb98",
+        "method": "atena",
+        "metric_artifact_sha256": "c14de02bcb24907ec30998d4570c700b41d7d121e5efba2f54b5437505032ef0",
+        "metrics": {
+          "RGS": 70.63,
+          "RGSPL": 62.36,
+          "SPL": 77.03,
+          "SR": 86.79
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 1e-05,
+          "lr_self": 2e-07,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.1,
+          "self_loss_weight": 0.25,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-14-atena-goat-reverie-e602b4f1cd",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": -0.21,
+          "RGSPL": 0.67,
+          "SPL": 1.11,
+          "SR": 0.08
+        },
+        "formal_immutable_identity_sha256": "5598cc407500c06b10afef741be2c7d628f3c615f8575b26b4c8466087a0e1d9",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-02-goat-reverie-83202f81eb-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "4b89102f3815cd1eccc1d878f91df0d31f98561cf971fd12b6c2f205630897f5",
+        "method": "eam",
+        "metric_artifact_sha256": "02bc649bb59271b33aa12b84ca243af9634994cf47458a6b76c82c1350bb1ffb",
+        "metrics": {
+          "RGS": 64.72,
+          "RGSPL": 59.49,
+          "SPL": 74.55,
+          "SR": 80.82
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.3,
+          "episodic": false,
+          "lr": 3e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 4,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-02-goat-reverie-83202f81eb",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": 0.42,
+          "RGSPL": 0.49,
+          "SPL": 0.26,
+          "SR": 0.15
+        },
+        "formal_immutable_identity_sha256": "2f2700eff630b8b2bb8c29099c5edad767ddcea759030a0ad363e3a5603e0066",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-13-feedtta-goat-reverie-8b45c329d1-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "21faa0c2feca3669fa68eeaeac647a45f62b143562b2a3b24040f5a3926fd105",
+        "method": "feedtta",
+        "metric_artifact_sha256": "1bcf3132e0c9574912e8e468c13f599c9a8dd6e056e7ec327d55981d979ec876",
+        "metrics": {
+          "RGS": 65.35,
+          "RGSPL": 59.31,
+          "SPL": 73.7,
+          "SR": 80.89
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": -0.1,
+          "episodic": false,
+          "gamma": 0.8,
+          "lr": 5e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.1,
+          "scope_profile": "action_head",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-13-feedtta-goat-reverie-8b45c329d1",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": 0.07,
+          "RGSPL": 0.07,
+          "SPL": 0.16,
+          "SR": 0.15
+        },
+        "formal_immutable_identity_sha256": "5e349d7876c590f2694d6f483fee88847465c39efb7cedb5df6211255196f6fa",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-11-fstta-goat-reverie-d3e68623b2-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "e05014a9ad87f9dd8183ae593e50c1936964dd90825c0184675b3e9c50c22f43",
+        "method": "fstta",
+        "metric_artifact_sha256": "4e1e9b3d340f07bdceb331c6dfacea6c44d26f490ad5d9a084c1bf623c4d395b",
+        "metrics": {
+          "RGS": 65.0,
+          "RGSPL": 58.89,
+          "SPL": 73.6,
+          "SR": 80.89
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0006,
+          "lr_slow": 0.001,
+          "m": 3,
+          "max_grad_norm": 0.0,
+          "n": 32,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-11-fstta-goat-reverie-d3e68623b2",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": 0.0,
+          "RGSPL": 0.0,
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "337efa3c0c8e4c0aa5dfb5a5d9025665df058cf02a8eed3fe7b1b74ac81536d6",
+        "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "fc92de11e88be473471752fb4de39eb5fbf63ae82569decbfc0857918350af89",
+        "method": "source",
+        "metric_artifact_sha256": "266ad0ec221c6718567ecdee1c9650dfeb25bde7ec505a25438d8e52f94a9bb3",
+        "metrics": {
+          "RGS": 64.93,
+          "RGSPL": 58.82,
+          "SPL": 73.44,
+          "SR": 80.74
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "grouped-source-20260810T080743Z",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+        "delta_vs_source_pp": {
+          "RGS": 0.0,
+          "RGSPL": 0.67,
+          "SPL": 1.25,
+          "SR": 0.43
+        },
+        "formal_immutable_identity_sha256": "63ce7af99c44029e79604c7147a0e184ec34b84ad4af2d4d121e1cd197ca59a1",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-10-tent-goat-reverie-cb496d2a6c-goat-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "c6399e400bcc4a89f74c08ab137fecba9d01cb9872e5e8c94869765237778b90",
+        "method": "tent",
+        "metric_artifact_sha256": "9d9a29a31f0ca268bc0946e428ed8a7ff100f7e6fc9f84fab5c86f606d657dcb",
+        "metrics": {
+          "RGS": 64.93,
+          "RGSPL": 59.49,
+          "SPL": 74.69,
+          "SR": 81.17
+        },
+        "parameters": {
+          "episodic": false,
+          "last_k_ln": 4,
+          "lr": 1.5625e-05,
+          "max_grad_norm": 0.0,
+          "norm_scope": "ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-10-tent-goat-reverie-cb496d2a6c",
+        "supervision_category": "unsupervised_tta"
+      }
+    },
+    "hamt-reverie": {
+      "atena": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 6.88,
+          "RGSPL": 5.97,
+          "SPL": 8.83,
+          "SR": 10.89
+        },
+        "formal_immutable_identity_sha256": "7ae2b941f718f0e0372e4492307512bd302b9eea5134e88313a2a55dff6d0294",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-01-hamt-reverie-640b50b476-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "a442b4c04a9ba196face3a8dca9ee4295c3703c672a40ca00e3b586378baef86",
+        "method": "atena",
+        "metric_artifact_sha256": "411a94f9efc619d55de8edf98929452dc42cc963d7d9ca62eceb99d91ede3965",
+        "metrics": {
+          "RGS": 34.08,
+          "RGSPL": 31.15,
+          "SPL": 49.02,
+          "SR": 54.18
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 3.2e-06,
+          "lr_self": 4e-07,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.25,
+          "optimizer": "AdamW",
+          "query_threshold": 0.1,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-04-atena-01-hamt-reverie-640b50b476",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "eam": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 1.75,
+          "RGSPL": 2.08,
+          "SPL": 1.99,
+          "SR": 1.62
+        },
+        "formal_immutable_identity_sha256": "3ff277081237f38bec6da43c848b18adc189ff183dd3833dae2440a3b7057129",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-01-hamt-reverie-bfc3dd7093-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "88a1392f5a9e8da6d3fd4d871801bfe685d1d35e8bb4391f536b820b957022bb",
+        "method": "eam",
+        "metric_artifact_sha256": "a48159835c432acf7826e897a3222dc19b3176b7d23b4822d203d2b64d557b82",
+        "metrics": {
+          "RGS": 28.95,
+          "RGSPL": 27.26,
+          "SPL": 42.18,
+          "SR": 44.91
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.6,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 8,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-02-eam-01-hamt-reverie-bfc3dd7093",
+        "supervision_category": "unsupervised_tta"
+      },
+      "feedtta": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 0.56,
+          "RGSPL": 0.43,
+          "SPL": 1.46,
+          "SR": 1.83
+        },
+        "formal_immutable_identity_sha256": "4cab61289fe46f5063765ba0ff8a84a1ecbec4e97725cd2c294ee420cd45185e",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-01-hamt-reverie-f04cd364ee-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "29228d0c37f6aff1a0e0325fb56c71269b425fb63371d1bd28d23279f0c446e1",
+        "method": "feedtta",
+        "metric_artifact_sha256": "f2e1cd8dc63bc3445c15ccca04f30f8edceff80c6b63f12e73b31c94d3ea1ebb",
+        "metrics": {
+          "RGS": 27.76,
+          "RGSPL": 25.61,
+          "SPL": 41.65,
+          "SR": 45.12
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "episodic": false,
+          "gamma": 0.9,
+          "lr": 2e-06,
+          "max_grad_norm": 0.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-03-feedtta-01-hamt-reverie-f04cd364ee",
+        "supervision_category": "binary_episode_feedback_tta"
+      },
+      "fstta": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 1.54,
+          "RGSPL": 1.82,
+          "SPL": 2.3,
+          "SR": 2.11
+        },
+        "formal_immutable_identity_sha256": "b117bf78056302a93e8e35231b47a4fd6a4422da55ebda850e3a1ccc33e76cca",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-val-seen-small-hparam-search-v1-seed0-full-06-fstta-hamt-reverie-df584e7574-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "d3fc65f0158d12956fb9d8b745011fdce25cdb39ca5143cc92309ba96d8946fb",
+        "method": "fstta",
+        "metric_artifact_sha256": "a1b576b3792f3bf5cb8488f8193b3ad0a4a46cff133db9630012848e080ccf52",
+        "metrics": {
+          "RGS": 28.74,
+          "RGSPL": 27.0,
+          "SPL": 42.49,
+          "SR": 45.4
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "eigen_eps": 1e-06,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 0.0018,
+          "lr_slow": 0.0003,
+          "m": 2,
+          "max_grad_norm": 0.0,
+          "n": 4,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-val-seen-small-hparam-search-v1-seed0-full-06-fstta-hamt-reverie-df584e7574",
+        "supervision_category": "unsupervised_tta"
+      },
+      "source": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 0.0,
+          "RGSPL": 0.0,
+          "SPL": 0.0,
+          "SR": 0.0
+        },
+        "formal_immutable_identity_sha256": "13c7820954d86c0d48b465248542e798f63196bfeb08d5c19c77991aae242657",
+        "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "404799bb441965fd890cda56bf8ff912db2f6511853e295c88fc6b3ff07afb14",
+        "method": "source",
+        "metric_artifact_sha256": "b2f2a471ddfc14434dc88d96d1aeb006350c909fa6748aeac9c5efeaaa71c644",
+        "metrics": {
+          "RGS": 27.2,
+          "RGSPL": 25.18,
+          "SPL": 40.19,
+          "SR": 43.29
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax"
+        },
+        "run_tag": "grouped-source-20260810T080743Z",
+        "supervision_category": "source_no_adaptation"
+      },
+      "tent": {
+        "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+        "delta_vs_source_pp": {
+          "RGS": 0.28,
+          "RGSPL": 0.43,
+          "SPL": 0.69,
+          "SR": 0.42
+        },
+        "formal_immutable_identity_sha256": "2602933eef2b335a6ecc9638f42174f5880f6a23aec6da2b63d1b37aec00318a",
+        "formal_manifest_path": "vln/results/runs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888-hamt-reverie-val_seen-native/manifest.json",
+        "formal_manifest_sha256": "dc2976900dd22e148e2473df9fcc432f5dbd967cb87a4de8da4e4da95b391a26",
+        "method": "tent",
+        "metric_artifact_sha256": "3a709569465602a1c3919e03f9def791e44787c0809b88fa00352bb632f453b9",
+        "metrics": {
+          "RGS": 27.48,
+          "RGSPL": 25.61,
+          "SPL": 40.88,
+          "SR": 43.71
+        },
+        "parameters": {
+          "episodic": false,
+          "lr": 3e-06,
+          "max_grad_norm": 0.0,
+          "norm_scope": "ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888",
+        "supervision_category": "unsupervised_tta"
+      }
+    }
+  },
+  "registry_status": "complete",
+  "schema": "navtta.vln_reverie_final_registry.v1",
+  "selected_winners": {
+    "path": "vln/results/final/reverie/selected_winners.json",
+    "sha256": "98d63fdcbcb5f7ac45673a40631fe509af56b7bb68664f58530acb25343d1743"
+  },
+  "source_ledger": {
+    "path": "vln/manifests/reverie_reused_source_controls.json",
+    "sha256": "853c670171b0e04edf992d7c85d27a2ab999b881b8c847c8094910ae3ff62bfe"
+  },
+  "split": "val_seen",
+  "supervision_categories": {
+    "binary_episode_feedback_tta": {
+      "feedback": "binary_navigation_success",
+      "methods": [
+        "feedtta",
+        "atena"
+      ],
+      "uses_episode_feedback": true
+    },
+    "source_no_adaptation": {
+      "methods": [
+        "source"
+      ],
+      "uses_episode_feedback": false
+    },
+    "unsupervised_tta": {
+      "methods": [
+        "tent",
+        "fstta",
+        "eam"
+      ],
+      "uses_episode_feedback": false
+    }
+  }
+}
