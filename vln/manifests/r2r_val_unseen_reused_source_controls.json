@@ -1,0 +1,81 @@
+{
+  "schema": "navtta.vln_r2r_val_unseen_reused_source_controls.v1",
+  "benchmark": "r2r",
+  "split": "val_unseen",
+  "source_protocol": "standard_argmax",
+  "episode_count": 2349,
+  "canonical_order_seed": 0,
+  "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+  "dataset_version": "canonical discrete R2R val_unseen",
+  "hardware": "NVIDIA vGPU-32GB",
+  "source_execution_policy": {
+    "execution": "reuse_only",
+    "rerun_forbidden": true,
+    "recovery_policy": "Recover an existing formal manifest before considering any Source execution."
+  },
+  "records": {
+    "duet-r2r": {
+      "model": "duet",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 71.52,
+        "SPL": 60.41
+      },
+      "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+      "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+      "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-r2r-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "7014badabce28cfe11d38bdac35202706bfb7e5bdf4d91deab8e1f0b35da632f",
+      "immutable_identity_sha256": "c33acefbdba5f78f9242a60159a386fe099c8a3091b3219c91c4710559fc8bb5",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/duet-r2r/val_unseen/logs/valid.txt",
+      "metrics_artifact_sha256": "3c1143631257711a3c2f6ba3d10f52f970f88a84efeb69a7873f236b6f0806ac"
+    },
+    "hamt-r2r": {
+      "model": "hamt",
+      "run_tag": "hamt-r2r-e2e-source-20260810T152328Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 66.24,
+        "SPL": 61.51
+      },
+      "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+      "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+      "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/hamt-r2r-e2e-source-20260810T152328Z-hamt-r2r-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "89b08dd6df22a9a5aaa4434783af6781d5c4d09bd8dfbe571dd2ced2cf78d3c3",
+      "immutable_identity_sha256": "79c1161d199206c50113aca28d66c0145956f41fb85a1bdf80f82b44ef486a7b",
+      "metrics_artifact_path": "vln/results/source/hamt-r2r-e2e-source-20260810T152328Z/hamt-r2r/val_unseen/logs/valid.txt",
+      "metrics_artifact_sha256": "4b5ed4a38f53bdf913246999954023b6befbe6e3c1c4da3e3a685fb7221a0359"
+    },
+    "goat-r2r": {
+      "model": "goat",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 78.12,
+        "SPL": 67.58
+      },
+      "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+      "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e",
+      "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-r2r-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "06206c9dee71d94b92aaaf0c7092e49869173bfc455d8c928387ed96718c4bcd",
+      "immutable_identity_sha256": "5359550d0007bf85e2999fc6362702e9c5b2cd6b40a76255719e858d8d08942c",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/goat-r2r/val_unseen/test/goat_r2r_source/logs/valid.txt",
+      "metrics_artifact_sha256": "554e49eef525547dea6952542c69440b5036e75028c623077d643e7597da6b99"
+    }
+  }
+}

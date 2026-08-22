@@ -1,0 +1,193 @@
+{
+  "schema": "navtta.vln_r2r_val_unseen_frozen_eval.v1",
+  "experiment_id": "vln-r2r-val-unseen-frozen-eval-v1",
+  "status": "reviewed_and_source_evidence_complete",
+  "purpose": "Evaluate every frozen R2R val_seen winner once on canonical val_unseen without Source execution or val_unseen reselection.",
+  "registry_dependency": {
+    "path": "vln/results/final/r2r/registry.json",
+    "sha256": "e3237def78e05601a321beb1f82921f8f1c32671ae4301b0284cba9fe9c623a9",
+    "schema": "navtta.vln_r2r_final_registry.v1",
+    "required_status": "complete"
+  },
+  "source_control": {
+    "manifest": "vln/manifests/r2r_val_unseen_reused_source_controls.json",
+    "sha256": "bd8915b12ff0b606da61b8cf5ca82a008489b65352c7edccaf876e447b4be9cd",
+    "execution": "reuse_only",
+    "rerun_forbidden": true
+  },
+  "protocol": {
+    "benchmark": "r2r",
+    "split": "val_unseen",
+    "episode_count": 2349,
+    "canonical_order_seed": 0,
+    "episode_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+    "order_seed_cli_forbidden": true,
+    "full_split_only": true,
+    "frozen_from": "r2r_val_seen_seed0_final_registry",
+    "selection_on_val_unseen": false,
+    "report_all_cells": true,
+    "order_manifests": {
+      "duet_hamt": {
+        "path": "vln/manifests/episode_order/r2r_duet_hamt/val_unseen.json",
+        "sha256": "0608b494878bd6a87e65de78069461e8ae86680ed7038bf6eeebf5549a513ad7",
+        "settings": [
+          "duet-r2r",
+          "hamt-r2r"
+        ]
+      },
+      "goat": {
+        "path": "vln/manifests/episode_order/r2r_goat/val_unseen.json",
+        "sha256": "61d283bdd5699ca8ba7de4ca4cbba686cc3430919614c91da85ccee4bf12258d",
+        "settings": [
+          "goat-r2r"
+        ]
+      }
+    }
+  },
+  "matrix": {
+    "model_order": [
+      "duet",
+      "hamt",
+      "goat"
+    ],
+    "setting_order": [
+      "duet-r2r",
+      "hamt-r2r",
+      "goat-r2r"
+    ],
+    "method_order": [
+      "tent",
+      "fstta",
+      "eam",
+      "feedtta",
+      "atena"
+    ],
+    "strict_model_barrier": true,
+    "parallel_methods_within_model": true,
+    "jobs": [
+      {
+        "setting": "duet-r2r",
+        "model": "duet",
+        "method": "tent",
+        "selected_run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-00-tent-0012-duet-r2r-df01c3be0b",
+        "selected_formal_manifest_sha256": "af4d7032eeec5e9051ecc6ffc09402370f2d70b217b2b4e6c20044d4c56bd609"
+      },
+      {
+        "setting": "duet-r2r",
+        "model": "duet",
+        "method": "fstta",
+        "selected_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-00-fstta-0010-duet-r2r-0d9c5cb9c3",
+        "selected_formal_manifest_sha256": "1cc85244bb6e69b870813c24114cba8c53d655ef537e9b73534583257e7605e5"
+      },
+      {
+        "setting": "duet-r2r",
+        "model": "duet",
+        "method": "eam",
+        "selected_run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-00-eam-0000-duet-r2r-57ab8b8bf5",
+        "selected_formal_manifest_sha256": "61d7725c9fb6db68c7912b19226909573ac0835a3b3ce20614009b9d0ee5399f"
+      },
+      {
+        "setting": "duet-r2r",
+        "model": "duet",
+        "method": "feedtta",
+        "selected_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-01-feedtta-0004-duet-r2r-effec71c87",
+        "selected_formal_manifest_sha256": "e9ab74ff173f04edaae26a21b38b9123b58ada37241b248ffbb53da246ea43b3"
+      },
+      {
+        "setting": "duet-r2r",
+        "model": "duet",
+        "method": "atena",
+        "selected_run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-01-atena-0000-duet-r2r-8d3372dc24",
+        "selected_formal_manifest_sha256": "4a3399d6a1a252d5a0a3418e186ca05e106799ac3cf7e2dcfc146dc1f053ec09"
+      },
+      {
+        "setting": "hamt-r2r",
+        "model": "hamt",
+        "method": "tent",
+        "selected_run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-04-tent-0007-hamt-r2r-84fd45bb28",
+        "selected_formal_manifest_sha256": "daab8d26155cf0fc6316f2492b5bfbc9032283287ba55d36a10110510941a8ae"
+      },
+      {
+        "setting": "hamt-r2r",
+        "model": "hamt",
+        "method": "fstta",
+        "selected_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-02-fstta-0006-hamt-r2r-65408b9d22",
+        "selected_formal_manifest_sha256": "44f4fcaf0f02b07b88ff96695aa8168219a8a277d0eeeda54376f8a37f47122a"
+      },
+      {
+        "setting": "hamt-r2r",
+        "model": "hamt",
+        "method": "eam",
+        "selected_run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-02-eam-0000-hamt-r2r-c88e328c7a",
+        "selected_formal_manifest_sha256": "bd750d1e33a3fb11de0da1fd03aa07c118f773e222f051dc2200d6c794ed390a"
+      },
+      {
+        "setting": "hamt-r2r",
+        "model": "hamt",
+        "method": "feedtta",
+        "selected_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-03-feedtta-0001-hamt-r2r-4f02ae8102",
+        "selected_formal_manifest_sha256": "78dba723a2a71778c7bef78e19f810777d1baf37b0b51ec759c48d79b976ecd4"
+      },
+      {
+        "setting": "hamt-r2r",
+        "model": "hamt",
+        "method": "atena",
+        "selected_run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-03-atena-0000-hamt-r2r-8dfe151e97",
+        "selected_formal_manifest_sha256": "d501f3b5831071591ebf7c8f981f66899f9cc367215b4a6b18d948ac95abce33"
+      },
+      {
+        "setting": "goat-r2r",
+        "model": "goat",
+        "method": "tent",
+        "selected_run_tag": "vln-r2r-low-lr-refine-prod-nosource-20260820-refine-08-tent-0008-goat-r2r-a2b3725323",
+        "selected_formal_manifest_sha256": "f2fdafba2492e446b1605c0fb07e5192274675124a9dcb820f861642c6ea5e4e"
+      },
+      {
+        "setting": "goat-r2r",
+        "model": "goat",
+        "method": "fstta",
+        "selected_run_tag": "vln-r2r-fstta-feedtta-postfix-v1-seed0-refine-04-fstta-0004-goat-r2r-ac37ab8779",
+        "selected_formal_manifest_sha256": "df7316d7e83960a5c32b518b9f73a292ccfba4b33b82a33527ff663185b348f2"
+      },
+      {
+        "setting": "goat-r2r",
+        "model": "goat",
+        "method": "eam",
+        "selected_run_tag": "vln-r2r-eam-atena-formal-confirm-v1-seed0-refine-04-eam-0000-goat-r2r-01a184b229",
+        "selected_formal_manifest_sha256": "c3c1ba40611a511976c382c238529de3810ca748fd8f717184612d2e5f7ee6d4"
+      },
+      {
+        "setting": "goat-r2r",
+        "model": "goat",
+        "method": "feedtta",
+        "selected_run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-01-feedtta-0031-goat-r2r-cdc9c472c5",
+        "selected_formal_manifest_sha256": "1e3c4afa23a38543e955a6684097dbed88ae384e05b09a1ee8e742a8c723c5ab"
+      },
+      {
+        "setting": "goat-r2r",
+        "model": "goat",
+        "method": "atena",
+        "selected_run_tag": "vln-r2r-targeted-gap-expand-v2-seed0-refine-02-atena-0022-goat-r2r-4aa391d47e",
+        "selected_formal_manifest_sha256": "9c42cbb78e22adfdabe93f875aa79ab8ea51c15fb8f3b723e4b04b7b12aecd46"
+      }
+    ]
+  },
+  "execution": {
+    "model_phase_order": "duet_then_hamt_then_goat",
+    "max_workers_by_model": {
+      "duet": 5,
+      "hamt": 5,
+      "goat": 5
+    },
+    "launch_stagger_seconds": 0,
+    "poll_seconds": 2,
+    "formal_requires_clean_tracked_tree": true,
+    "formal_requires_review_confirmation": true,
+    "retry_assigns_new_run_tag": true
+  },
+  "budget": {
+    "source_execution_jobs": 0,
+    "tta_jobs": 15,
+    "total_executed_jobs": 15
+  }
+}

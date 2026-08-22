@@ -1,0 +1,181 @@
+{
+  "run_id": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888-hamt-reverie-val_seen-native",
+  "task": "vln",
+  "benchmark": "reverie_discrete_duet_hamt",
+  "model": "hamt",
+  "method": "tent",
+  "run_tag": "vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888",
+  "source_setting": "hamt-reverie:val_seen:native:tent",
+  "seed": 0,
+  "git_commit": "4e4cbd1429bb2065ba564bb931318aebf0aa326f",
+  "config": "/root/autodl-tmp/code/NavTTA/vln/results/logs/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/phases/00-tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/attempt-00/parameters.json",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/hamt/bin/python",
+    "reverie/main_navref.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "reverie",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/hamt/tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/val_seen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "bert",
+    "--multi_endpoints",
+    "--ob_type",
+    "pano",
+    "--num_l_layers",
+    "9",
+    "--num_x_layers",
+    "4",
+    "--hist_enc_pano",
+    "--hist_pano_num_layers",
+    "2",
+    "--no_lang_ca",
+    "--features",
+    "vitbase_r2rfte2e",
+    "--feedback",
+    "sample",
+    "--max_action_len",
+    "15",
+    "--max_instr_len",
+    "60",
+    "--image_feat_size",
+    "768",
+    "--obj_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--batch_size",
+    "1",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0.4",
+    "--dropout",
+    "0.5",
+    "--resume_file",
+    "../datasets/REVERIE/trained_models/best_val_unseen",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_seen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_duet_hamt",
+    "--tta_method",
+    "tent",
+    "--tta_diagnostics",
+    "/root/autodl-tmp/code/NavTTA/vln/results/tuning/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/hamt/tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/val_seen/tta_diagnostics.json",
+    "--tta_lr",
+    "3e-06",
+    "--tta_max_grad_norm",
+    "0.0",
+    "--tta_norm_scope",
+    "ln",
+    "--tta_optimizer",
+    "AdamW",
+    "--tta_update_interval",
+    "1",
+    "--tta_weight_decay",
+    "0.0"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/REVERIE/best_val_unseen",
+    "size": 1837415641,
+    "sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 1391358984,
+      "sha256": "3d429e9c7cd9c6eab6115951addfb21f98e65782bdb688906ef8ceebf546c34f"
+    },
+    {
+      "name": "object_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/REVERIE/features/obj_pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 261552309,
+      "sha256": "5a7252dbcacdfc5d4db4cd289ca27d2e21f604086260f133041db3ae60a2bec7"
+    },
+    {
+      "name": "object_boxes",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/REVERIE/annotations/BBoxes.json",
+      "size": 7757728,
+      "sha256": "21d227018de2e11eb0a7b3188d760a56a988e8152213d15979ba6ba7a0e58296"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/REVERIE_val_seen_enc.json",
+    "version": "reverie_discrete_duet_hamt",
+    "size": 743527,
+    "index_sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c",
+    "stream_order_sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1",
+    "stream_content_sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 41134,
+      "sha256": "0de5df0de8e029a3c440d06db63b8226e170073dfddaead3406ee2ae3e5b58de"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_duet_hamt/val_seen.json",
+      "size": 112597,
+      "sha256": "71585f6f2193a80c43c2fb99cb843ad3a3c300aaf0bcac553ee2d37bbb34952a"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-21T19:52:12.314634+00:00",
+  "completed_at": "2026-08-21T19:57:07.772871+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "2602933eef2b335a6ecc9638f42174f5880f6a23aec6da2b63d1b37aec00318a",
+  "result_artifacts": [
+    {
+      "name": "logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/hamt/tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/val_seen/logs/valid.txt",
+      "size": 4203,
+      "sha256": "3a709569465602a1c3919e03f9def791e44787c0809b88fa00352bb632f453b9"
+    },
+    {
+      "name": "logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/hamt/tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/val_seen/logs/validation_args.json",
+      "size": 4931,
+      "sha256": "08d48c9837e225834a8ec5889a239efde837720eea828047af3ae873a7d97c51"
+    },
+    {
+      "name": "tta_diagnostics.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/tuning/reverie/frozen_transfer/vln-reverie-r2r-frozen-transfer-v1-seed0/hamt/tent/jobs/vln-reverie-r2r-frozen-transfer-v1-seed0-transfer-00-tent-01-hamt-reverie-e1a2337888/val_seen/tta_diagnostics.json",
+      "size": 8524,
+      "sha256": "e711e7e347229e408b2b796eb24a1acfa4f4561bcc115841cfecf0071c80aab7"
+    }
+  ]
+}

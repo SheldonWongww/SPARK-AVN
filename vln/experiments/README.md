@@ -1,5 +1,19 @@
 # VLN experiment specifications
 
+## R2R frozen `val_unseen` evaluation
+
+`r2r_val_unseen_frozen_eval_v1.json` defines the independent-split evaluation
+of all 15 winners in `vln/results/final/r2r/registry.json`. It runs no Source
+jobs and performs no `val_unseen` selection. DUET, HAMT, and GOAT are strict
+sequential phases; the five TTA methods within one model run in parallel. The
+canonical 2,349-episode order is recorded as seed 0, while commands deliberately
+omit `--order-seed` because that CLI option is restricted to `val_seen`.
+
+The Source ledger reuses three completed controls and forbids Source execution.
+Its HAMT E2E formal manifest was recovered after the fail-closed preflight
+identified the local evidence gap; no Source result was rerun. See
+`R2R_VAL_UNSEEN_FROZEN_EVAL_PLAN.md` for the evidence and launch contract.
+
 ## R2R-CE low-intensity two-stage search
 
 `r2r_ce_small_hparam_search_v1.json` defines the ETPNav/BEVBert-only R2R-CE

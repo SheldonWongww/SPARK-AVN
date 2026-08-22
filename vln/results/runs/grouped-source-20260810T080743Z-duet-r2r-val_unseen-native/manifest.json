@@ -1,0 +1,154 @@
+{
+  "run_id": "grouped-source-20260810T080743Z-duet-r2r-val_unseen-native",
+  "task": "vln",
+  "benchmark": "r2r_discrete_duet_hamt",
+  "model": "duet",
+  "method": "source",
+  "run_tag": "grouped-source-20260810T080743Z",
+  "source_setting": "duet-r2r:val_unseen:native",
+  "seed": 0,
+  "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+  "config": "vln/scripts/run_source_eval.sh#duet-r2r",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/duet/bin/python",
+    "r2r/main_nav.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "r2r",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/duet-r2r/val_unseen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "bert",
+    "--enc_full_graph",
+    "--graph_sprels",
+    "--fusion",
+    "dynamic",
+    "--expert_policy",
+    "spl",
+    "--train_alg",
+    "dagger",
+    "--num_l_layers",
+    "9",
+    "--num_x_layers",
+    "4",
+    "--num_pano_layers",
+    "2",
+    "--max_action_len",
+    "15",
+    "--max_instr_len",
+    "200",
+    "--batch_size",
+    "1",
+    "--features",
+    "vitbase",
+    "--image_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0.4",
+    "--dropout",
+    "0.5",
+    "--gamma",
+    "0",
+    "--resume_file",
+    "../datasets/R2R/trained_models/best_val_unseen",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_unseen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_duet_hamt"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/duet/R2R/best_val_unseen",
+    "size": 2167911792,
+    "sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5",
+      "size": 3141482913,
+      "sha256": "ae0ff208349e6a12096fe47c7b045e42b93e9c047da50d19dd17e04ec8d31bbc"
+    },
+    {
+      "name": "submission_viewpoint_candidates",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/scanvp_candview_relangles.json",
+      "size": 5124730,
+      "sha256": "cead28ce0d9b248766c5295338e0809eeedfec499b1eafd39e15e63609394d14"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/duet/R2R/annotations/R2R_val_unseen_enc.json",
+    "version": "r2r_discrete_duet_hamt",
+    "size": 1749355,
+    "index_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13",
+    "stream_order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390",
+    "stream_content_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 40400,
+      "sha256": "85170f9404e9951c1409e8532323f92936982d10b48c387024d532f207939b94"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/r2r_duet_hamt/val_unseen.json",
+      "size": 176339,
+      "sha256": "0608b494878bd6a87e65de78069461e8ae86680ed7038bf6eeebf5549a513ad7"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-10T08:11:29.532258+00:00",
+  "completed_at": "2026-08-10T08:15:41.143670+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "c33acefbdba5f78f9242a60159a386fe099c8a3091b3219c91c4710559fc8bb5",
+  "result_artifacts": [
+    {
+      "name": "logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/duet-r2r/val_unseen/logs/valid.txt",
+      "size": 2008,
+      "sha256": "3c1143631257711a3c2f6ba3d10f52f970f88a84efeb69a7873f236b6f0806ac"
+    },
+    {
+      "name": "logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/duet-r2r/val_unseen/logs/validation_args.json",
+      "size": 2266,
+      "sha256": "b245d1e438b4a6106dad59daa8334c0ae87363036bf2b709fff7d7f4d9dc2326"
+    }
+  ]
+}
