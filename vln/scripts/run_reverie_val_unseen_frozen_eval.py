@@ -73,10 +73,19 @@ EXECUTION_SURFACE = (
     "core", "tools", "vln/baselines", "vln/navtta_vln",
     "vln/scripts", "vln/experiments", "vln/manifests",
 )
+PROCESS_GROUP_ENV = "NAVTTA_REVERIE_PROCESS_GROUP_TOKEN"
 
 
 class UserError(RuntimeError):
     pass
+
+
+class LaunchCleanupError(UserError):
+    """A launch failed and its process group could not be proven dead."""
+
+    def __init__(self, message, process=None):
+        super().__init__(message)
+        self.process = process
 
 
 def _read_json(path):
@@ -118,6 +127,28 @@ def _sha256(path):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _expected_process_group_token(metadata, attempt_dir):
+    del attempt_dir
+    try:
+        payload = {
+            "schema": "navtta.vln_reverie_process_group.v1",
+            "batch_id": metadata["batch_id"],
+            "run_tag": metadata["run_tag"],
+            "attempt": metadata["attempt"],
+            "setting": metadata["setting"],
+            "method": metadata["method"],
+            "spec_sha256": metadata["spec_sha256"],
+            "git_commit": metadata["git_commit"],
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise UserError("attempt process-group binding is malformed") from error
+    return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
+def _valid_sha256(value):
+    return re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is not None
 
 
 def _resolve(value):
@@ -527,6 +558,9 @@ def materialize_attempt(spec, spec_path, batch_id, batch_root, job, attempt):
     _atomic_json(config_path, config)
     metadata["parameters_path"] = str(config_path)
     metadata["parameters_sha256"] = _sha256(config_path)
+    metadata["process_group_token"] = _expected_process_group_token(
+        metadata, attempt_dir
+    )
     _atomic_json(attempt_dir / "job.json", metadata)
     return attempt_dir, metadata
 
@@ -627,6 +661,9 @@ def materialize_test_attempt(spec, spec_path, batch_id, batch_root, job, attempt
     _atomic_json(config_path, config)
     metadata["parameters_path"] = str(config_path)
     metadata["parameters_sha256"] = _sha256(config_path)
+    metadata["process_group_token"] = _expected_process_group_token(
+        metadata, attempt_dir
+    )
     _atomic_json(attempt_dir / "job.json", metadata)
     return attempt_dir, metadata
 
@@ -644,22 +681,126 @@ def _existing_attempts(batch_root, job):
     return sorted(values)
 
 
-def _pid_alive(path):
-    path = Path(path)
-    if not path.is_file():
+def _attempt_pgid(attempt_dir):
+    path = Path(attempt_dir) / "pid"
+    try:
+        value = int(path.read_text(encoding="utf-8").strip())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        raise UserError("attempt process-group ID is malformed") from error
+    if value <= 0:
+        raise UserError("attempt process-group ID is malformed")
+    return value
+
+
+def _identity_is_group_member(identity, pgid):
+    if not process_identity_alive(identity):
         return False
     try:
-        identity_path = path.with_name("process_identity.json")
-        if identity_path.is_file():
-            return process_identity_alive(_read_json(identity_path))
-        os.kill(int(path.read_text(encoding="utf-8").strip()), 0)
-        return True
-    except (OSError, ValueError):
+        pid = int(identity["pid"])
+        stat_path = Path("/proc") / str(pid) / "stat"
+        if stat_path.is_file():
+            raw_stat = stat_path.read_text(encoding="utf-8")
+            tail = raw_stat[raw_stat.rfind(")") + 2:].split()
+            return (
+                tail[0] != "Z" and int(tail[2]) == pgid
+                and int(tail[3]) == pgid
+            )
+        return os.getpgid(pid) == pgid and os.getsid(pid) == pgid
+    except (IndexError, KeyError, OSError, TypeError, ValueError):
         return False
+
+
+def _proc_group_member_identities(pgid, token, proc_root=Path("/proc")):
+    """Find live members authenticated by token, process group, and session."""
+    if not Path(proc_root).is_dir() or not _valid_sha256(token):
+        return []
+    marker = "{}={}".format(PROCESS_GROUP_ENV, token).encode("ascii")
+    identities = []
+    try:
+        entries = list(Path(proc_root).iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw_stat = (entry / "stat").read_text(encoding="utf-8")
+            tail = raw_stat[raw_stat.rfind(")") + 2:].split()
+            state, member_pgid, member_sid = tail[0], int(tail[2]), int(tail[3])
+            if state == "Z" or member_pgid != pgid or member_sid != pgid:
+                continue
+            environment = (entry / "environ").read_bytes().split(b"\0")
+        except (IndexError, OSError, ValueError):
+            continue
+        if marker not in environment:
+            continue
+        identity = process_identity(int(entry.name))
+        if identity is not None and process_identity_alive(identity):
+            identities.append(identity)
+    return sorted(identities, key=lambda item: item["pid"])
+
+
+def _live_worker_identities(attempt_dir):
+    attempt_dir = Path(attempt_dir)
+    pgid = _attempt_pgid(attempt_dir)
+    if pgid is None:
+        return []
+    job_path = attempt_dir / "job.json"
+    if not job_path.is_file():
+        raise UserError("attempt with a process-group ID lacks job metadata")
+    metadata = _read_json(job_path)
+    identities = []
+    identity_path = attempt_dir / "process_identity.json"
+    if identity_path.is_file():
+        leader = _read_json(identity_path)
+        if leader.get("pid") != pgid:
+            raise UserError("worker identity differs from its process group")
+        if _identity_is_group_member(leader, pgid):
+            identities.append(leader)
+    token = metadata.get("process_group_token")
+    if (
+        not _valid_sha256(token)
+        or token != _expected_process_group_token(metadata, attempt_dir)
+    ):
+        raise UserError("attempt process-group token is invalid")
+    known = {item["pid"] for item in identities}
+    identities.extend(
+        item for item in _proc_group_member_identities(pgid, token)
+        if item["pid"] not in known
+    )
+    return sorted(identities, key=lambda item: item["pid"])
+
+
+def _pid_alive(attempt_dir):
+    return bool(_live_worker_identities(attempt_dir))
+
+
+def _recover_worker_identity(attempt_dir):
+    attempt_dir = Path(attempt_dir)
+    identity_path = attempt_dir / "process_identity.json"
+    if identity_path.is_file():
+        return _pid_alive(attempt_dir)
+    pgid = _attempt_pgid(attempt_dir)
+    if pgid is None:
+        return False
+    identity = process_identity(pgid)
+    if identity is not None:
+        worker = str((attempt_dir / "worker.sh").resolve())
+        argv = [str(value) for value in identity.get("argv", [])]
+        if worker not in argv and worker not in " ".join(argv):
+            raise UserError("unbound live PID is not the canonical attempt worker")
+        if not _identity_is_group_member(identity, pgid):
+            raise UserError("attempt worker is not its recorded session leader")
+        _atomic_json(identity_path, identity)
+    return _pid_alive(attempt_dir)
 
 
 def _state_for_attempt(path):
     path = Path(path)
+    if _pid_alive(path):
+        return "running"
     if (path / "validation_error.json").is_file():
         return "invalid"
     if (path / "metrics.json").is_file() or (path / "submission.json").is_file():
@@ -670,8 +811,6 @@ def _state_for_attempt(path):
             return "finished" if int(exit_path.read_text().strip()) == 0 else "failed"
         except ValueError:
             return "invalid"
-    if _pid_alive(path / "pid"):
-        return "running"
     if (path / "job.json").is_file():
         return "orphaned"
     return "pending"
@@ -864,6 +1003,13 @@ def _validate_attempt_binding(attempt_dir, metadata, expected_job=None,
                               expected_batch_id=None, expected_spec_path=None,
                               split="val_unseen"):
     attempt_dir = Path(attempt_dir).resolve()
+    if metadata.get("process_group_token") is not None or any(
+        value is not None for value in (expected_job, expected_batch_id, expected_spec_path)
+    ):
+        if metadata.get("process_group_token") != _expected_process_group_token(
+            metadata, attempt_dir
+        ):
+            raise UserError("attempt process-group token is invalid")
     bound_spec = None
     if expected_spec_path is not None:
         spec_path = Path(expected_spec_path).resolve()
@@ -1150,14 +1296,36 @@ def validate_test_attempt(attempt_dir, expected_job=None,
     return result
 
 
-def _write_worker(attempt_dir, command):
+def _write_worker(attempt_dir, metadata):
+    command = metadata["command"]
     exit_path = Path(attempt_dir) / "exitcode"
+    authorization = Path(attempt_dir) / "launch_authorized"
+    pid_path = Path(attempt_dir) / "pid"
+    token = metadata["process_group_token"]
+    if not _valid_sha256(token):
+        raise UserError("worker requires a valid per-attempt process token")
+    quoted_authorization = shlex.quote(str(authorization))
+    quoted_exit_tmp = shlex.quote(str(exit_path) + ".tmp")
+    quoted_exit = shlex.quote(str(exit_path))
+    quoted_pid_tmp = shlex.quote(str(pid_path) + ".worker.tmp")
+    quoted_pid = shlex.quote(str(pid_path))
     script = "\n".join((
-        "#!/usr/bin/env bash", "set +e", shlex.join(command), "status=$?",
-        "printf '%s\\n' \"$status\" > {}".format(shlex.quote(str(exit_path) + ".tmp")),
-        "mv {} {}".format(
-            shlex.quote(str(exit_path) + ".tmp"), shlex.quote(str(exit_path))
-        ),
+        "#!/usr/bin/env bash", "set +e",
+        "export {}={}".format(PROCESS_GROUP_ENV, shlex.quote(token)),
+        "printf '%s\\n' \"$$\" > {}".format(quoted_pid_tmp),
+        "mv {} {}".format(quoted_pid_tmp, quoted_pid),
+        "for ((gate_wait=0; gate_wait<600; gate_wait++)); do",
+        "  [[ -f {} ]] && break".format(quoted_authorization),
+        "  sleep 0.1",
+        "done",
+        "if [[ ! -f {} ]]; then".format(quoted_authorization),
+        "  printf '%s\\n' '125' > {}".format(quoted_exit_tmp),
+        "  mv {} {}".format(quoted_exit_tmp, quoted_exit),
+        "  exit 125",
+        "fi",
+        shlex.join(command), "status=$?",
+        "printf '%s\\n' \"$status\" > {}".format(quoted_exit_tmp),
+        "mv {} {}".format(quoted_exit_tmp, quoted_exit),
         "exit \"$status\"", "",
     ))
     path = Path(attempt_dir) / "worker.sh"
@@ -1167,23 +1335,158 @@ def _write_worker(attempt_dir, command):
 
 
 def launch_attempt(attempt_dir, metadata):
-    worker = _write_worker(attempt_dir, metadata["command"])
+    worker = _write_worker(attempt_dir, metadata)
     launcher_log = (Path(attempt_dir) / "launcher.log").open("ab", buffering=0)
-    process = subprocess.Popen(
-        ["bash", str(worker)], cwd=str(REPO_ROOT), stdout=launcher_log,
-        stderr=subprocess.STDOUT, start_new_session=True,
-    )
-    _atomic_text(Path(attempt_dir) / "pid", "{}\n".format(process.pid))
-    identity = process_identity(process.pid)
-    if identity is None:
+    process = None
+    try:
+        process = subprocess.Popen(
+            ["bash", str(worker)], cwd=str(REPO_ROOT), stdout=launcher_log,
+            stderr=subprocess.STDOUT, start_new_session=True,
+            env=dict(os.environ, **{
+                PROCESS_GROUP_ENV: metadata["process_group_token"],
+            }),
+        )
+        _atomic_text(Path(attempt_dir) / "pid", "{}\n".format(process.pid))
+        identity = process_identity(process.pid)
+        if identity is None:
+            raise UserError("cannot bind worker process identity")
+        if not _identity_is_group_member(identity, process.pid):
+            raise UserError("worker did not become its own process-group leader")
+        _atomic_json(Path(attempt_dir) / "process_identity.json", identity)
+        return process, launcher_log
+    except BaseException as error:
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            cleaned = _terminate_attempt_process_group(attempt_dir, process)
+        except Exception:
+            cleaned = False
+        launcher_log.close()
+        if not cleaned:
+            raise LaunchCleanupError(
+                "failed launch still has authenticated descendants; "
+                "reservation retained", process=process,
+            ) from error
+        raise
+
+
+def _authorize_launch(attempt_dir):
+    _atomic_text(Path(attempt_dir) / "launch_authorized", "authorized\n")
+
+
+def _cleanup_process_groups(attempt_dir, process=None):
+    identities = _live_worker_identities(attempt_dir)
+    pgids = set()
+    pgid = _attempt_pgid(attempt_dir)
+    if identities and pgid is not None:
+        pgids.add(pgid)
+    if process is not None and process.poll() is None:
+        # The direct child was launched with start_new_session=True.  Include
+        # it even in the narrow window before procfs/identity files settle.
+        pgids.add(process.pid)
+    return identities, pgids
+
+
+def _terminate_attempt_process_group(attempt_dir, process=None,
+                                     timeout_seconds=10.0):
+    identities, pgids = _cleanup_process_groups(attempt_dir, process)
+    if not identities and not pgids:
+        return True
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-        launcher_log.close()
-        raise UserError("cannot bind worker process identity")
-    _atomic_json(Path(attempt_dir) / "process_identity.json", identity)
-    return process, launcher_log
+        except OSError:
+            return False
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        identities, pgids = _cleanup_process_groups(attempt_dir, process)
+        if not identities and not pgids:
+            return True
+        time.sleep(0.1)
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            return False
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        identities, pgids = _cleanup_process_groups(attempt_dir, process)
+        if not identities and not pgids:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _retain_reservation_owners(ledger, token, attempt_dir, process=None):
+    try:
+        identities = _live_worker_identities(attempt_dir)
+    except Exception:
+        identities = []
+    if process is not None and process.poll() is None:
+        direct = process_identity(process.pid)
+        if (
+            direct is not None
+            and direct.get("pid") == process.pid
+            and process_identity_alive(direct)
+        ):
+            identities.append(direct)
+    owner_keys = ("pid", "start_token", "cmdline_sha256")
+    unique = []
+    for identity in identities:
+        if not any(
+            all(existing.get(key) == identity.get(key) for key in owner_keys)
+            for existing in unique
+        ):
+            unique.append(identity)
+    if not unique:
+        raise LaunchCleanupError(
+            "failed launch is still live but has no persistable process identity"
+        )
+    record = ledger.document["reservations"].get(token)
+    if not isinstance(record, dict) or not isinstance(record.get("owners"), list):
+        raise LaunchCleanupError("failed launch reservation disappeared")
+    owners = record["owners"]
+    known_owners = {
+        tuple(owner.get(key) for key in owner_keys) for owner in owners
+    }
+    for identity in unique:
+        key = tuple(identity.get(name) for name in owner_keys)
+        if key not in known_owners:
+            if (
+                type(identity.get("pid")) is not int
+                or identity["pid"] <= 0
+                or not isinstance(identity.get("start_token"), str)
+                or not identity["start_token"]
+                or not _valid_sha256(identity.get("cmdline_sha256"))
+            ):
+                raise LaunchCleanupError(
+                    "failed launch has an invalid live process identity"
+                )
+            owners.append(identity)
+            known_owners.add(key)
+    # ``ReservationLedger.add_owner`` mutates memory before writing.  A prior
+    # write failure can therefore make the owner look present only in memory;
+    # force a fresh atomic write before allowing this scheduler to exit.
+    try:
+        ledger._write()
+    except Exception as error:
+        raise LaunchCleanupError(
+            "failed launch reservation owners could not be persisted"
+        ) from error
+
+
+def _rollback_failed_launch(ledger, token, process, attempt_dir):
+    if not _terminate_attempt_process_group(attempt_dir, process):
+        _retain_reservation_owners(
+            ledger, token, attempt_dir, process
+        )
+        raise UserError(
+            "failed launch still has authenticated descendants; "
+            "reservation retained"
+        )
+    ledger.release(token)
 
 
 def _gpu_memory_mib(gpu):
@@ -1234,12 +1537,64 @@ def _prepare_batch(spec_path, spec, batch_id, batch_root, gpu, resume,
     _atomic_json(path, payload)
 
 
-def _release(batch_id, job, attempt):
+def _reservation_metadata(batch_id, run_tag):
+    return {
+        "role": "reverie_val_unseen",
+        "batch_id": batch_id,
+        "run_tag": run_tag,
+    }
+
+
+def _release(batch_id, job, attempt, attempt_dir):
+    if _pid_alive(attempt_dir):
+        raise UserError(
+            "refusing to release reservation while attempt descendants are alive"
+        )
     release_shared_gpu_reservation(
         job["gpu"], _reservation_token(
             batch_id, _attempt_tag(job["base_run_tag"], attempt)
         )
     )
+
+
+def _claim_running_reservation(spec, batch_id, job, attempt_dir, metadata):
+    identities = _live_worker_identities(attempt_dir)
+    if not identities:
+        raise UserError("cannot reserve resources for a non-live worker")
+    token = _reservation_token(batch_id, metadata["run_tag"])
+    estimate = spec["execution"]["estimated_gpu_memory_mib_by_method"][job["method"]]
+    expected_metadata = _reservation_metadata(batch_id, metadata["run_tag"])
+    with shared_gpu_launch_guard(job["gpu"]) as ledger:
+        record = ledger.document["reservations"].get(token)
+        if record is None:
+            _, used, _ = _gpu_memory_mib(job["gpu"])
+            owner = process_identity()
+            if owner is None:
+                raise UserError("cannot bind REVERIE scheduler process identity")
+            ledger.reserve(
+                token, gpu_memory_mib=estimate, cgroup_memory_gib=0.0,
+                observed_gpu_memory_mib=used, observed_cgroup_memory_gib=0.0,
+                owner=owner, metadata=expected_metadata,
+            )
+            record = ledger.document["reservations"][token]
+        elif (
+            record.get("gpu_memory_mib") != estimate
+            or not math.isclose(
+                float(record.get("cgroup_memory_gib", math.nan)), 0.0,
+                rel_tol=0.0, abs_tol=0.0,
+            )
+            or record.get("metadata") != expected_metadata
+        ):
+            raise UserError("live REVERIE worker reservation binding mismatch")
+        owner_keys = ("pid", "start_token", "cmdline_sha256")
+        for identity in identities:
+            if not any(
+                all(owner.get(key) == identity.get(key) for key in owner_keys)
+                for owner in record.get("owners", [])
+            ):
+                ledger.add_owner(token, identity)
+    _authorize_launch(attempt_dir)
+    return token
 
 
 def run_model_phase(spec, spec_path, batch_id, batch_root, jobs,
@@ -1274,17 +1629,24 @@ def run_model_phase(spec, spec_path, batch_id, batch_root, jobs,
                     launchable.append((job, 0))
                     continue
                 attempt, path = latest
+                _recover_worker_identity(path)
                 state = _state_for_attempt(path)
+                if state in ("completed", "finished", "failed", "invalid", "orphaned"):
+                    active_handle = active.pop(job["base_run_tag"], None)
+                    if active_handle is not None:
+                        active_handle[0].poll()
+                        if active_handle[1] is not None:
+                            active_handle[1].close()
                 if state in ("completed", "finished"):
                     if job["base_run_tag"] not in validated_complete:
                         try:
-                            validator(
+                            result = validator(
                                 path, expected_job=job,
                                 expected_batch_id=batch_id,
                                 expected_spec_path=spec_path,
                             )
                         except Exception as error:
-                            _release(batch_id, job, attempt)
+                            _release(batch_id, job, attempt, path)
                             _atomic_json(path / "validation_error.json", {"error": str(error)})
                             if not retry_failed:
                                 raise UserError("{} validation failed: {}".format(
@@ -1293,12 +1655,33 @@ def run_model_phase(spec, spec_path, batch_id, batch_root, jobs,
                             launchable.append((job, attempt + 1))
                             continue
                         validated_complete.add(job["base_run_tag"])
-                    _release(batch_id, job, attempt)
+                        if result.get("metrics") is None:
+                            print("completed {} submission={}".format(
+                                result["run_tag"], result["submission_path"]
+                            ))
+                        else:
+                            print("completed {} RGSPL={:.2f}".format(
+                                result["run_tag"], result["metrics"]["RGSPL"]
+                            ))
+                    _release(batch_id, job, attempt, path)
                     completed += 1
                 elif state == "running":
+                    metadata = _read_json(path / "job.json")
+                    _validate_attempt_binding(
+                        path, metadata, expected_job=job,
+                        expected_batch_id=batch_id,
+                        expected_spec_path=spec_path,
+                        split=(
+                            "test" if metadata.get("submission_generation_only")
+                            is True else "val_unseen"
+                        ),
+                    )
+                    _claim_running_reservation(
+                        spec, batch_id, job, path, metadata
+                    )
                     running.append(job)
                 elif state in ("failed", "invalid", "orphaned"):
-                    _release(batch_id, job, attempt)
+                    _release(batch_id, job, attempt, path)
                     if not retry_failed:
                         raise UserError("{} is {}; use --resume --retry-failed".format(
                             job["base_run_tag"], state
@@ -1309,6 +1692,7 @@ def run_model_phase(spec, spec_path, batch_id, batch_root, jobs,
             if completed == len(jobs):
                 return
             busy_methods = Counter(item["method"] for item in running)
+            launched_any = False
             for job, attempt in launchable:
                 if len(running) >= cap or busy_methods[job["method"]] >= 1:
                     continue
@@ -1332,64 +1716,83 @@ def run_model_phase(spec, spec_path, batch_id, batch_root, jobs,
                         spec, spec_path, batch_id, batch_root, job, attempt
                     )
                     token = _reservation_token(batch_id, metadata["run_tag"])
+                    owner = process_identity()
+                    if owner is None:
+                        raise UserError("cannot bind REVERIE scheduler process identity")
                     ledger.reserve(
                         token, gpu_memory_mib=estimate, cgroup_memory_gib=0.0,
                         observed_gpu_memory_mib=used, observed_cgroup_memory_gib=0.0,
-                        owner=process_identity(), metadata={
-                            "role": "reverie_val_unseen", "batch_id": batch_id,
-                            "run_tag": metadata["run_tag"],
-                        },
+                        owner=owner,
+                        metadata=_reservation_metadata(batch_id, metadata["run_tag"]),
                     )
+                    process = None
+                    handle = None
                     try:
                         process, handle = launch_attempt(attempt_dir, metadata)
-                        ledger.add_owner(token, _read_json(
+                        worker_identity = _read_json(
                             attempt_dir / "process_identity.json"
-                        ))
-                    except Exception:
-                        ledger.release(token)
+                        )
+                        ledger.add_owner(token, worker_identity)
+                        _authorize_launch(attempt_dir)
+                    except LaunchCleanupError as error:
+                        _retain_reservation_owners(
+                            ledger, token, attempt_dir, error.process
+                        )
                         raise
-                active[job["base_run_tag"]] = (
-                    process, handle, attempt_dir, metadata, job
-                )
-                running.append(job)
-                busy_methods[job["method"]] += 1
-                last_launch = time.monotonic()
-                print("launched {} pid={}".format(metadata["run_tag"], process.pid))
-            finished = []
-            for tag, (process, handle, path, metadata, job) in active.items():
-                status = process.poll()
-                if status is None:
-                    continue
-                handle.close()
-                finished.append(tag)
-                if status != 0:
-                    raise UserError("{} failed with {}".format(metadata["run_tag"], status))
-                result = validator(
-                    path, expected_job=job,
-                    expected_batch_id=batch_id,
-                    expected_spec_path=spec_path,
-                )
-                validated_complete.add(tag)
-                if result.get("metrics") is None:
-                    print("completed {} submission={}".format(
-                        result["run_tag"], result["submission_path"]
+                    except BaseException:
+                        if handle is not None:
+                            handle.close()
+                        _rollback_failed_launch(
+                            ledger, token, process, attempt_dir
+                        )
+                        raise
+                    active[job["base_run_tag"]] = (
+                        process, handle, attempt_dir, metadata, job
+                    )
+                    running.append(job)
+                    busy_methods[job["method"]] += 1
+                    last_launch = time.monotonic()
+                    launched_any = True
+                    print("launched {} pid={}".format(
+                        metadata["run_tag"], process.pid
                     ))
-                else:
-                    print("completed {} RGSPL={:.2f}".format(
-                        result["run_tag"], result["metrics"]["RGSPL"]
-                    ))
-            for tag in finished:
-                active.pop(tag)
-            if not finished:
+                    # Keep the shared launch lock until CUDA allocation can
+                    # become visible to the peer campaign.
+                    time.sleep(stagger)
+                    descendants = _live_worker_identities(attempt_dir)
+                    for descendant in descendants:
+                        if descendant.get("pid") != worker_identity.get("pid"):
+                            ledger.add_owner(token, descendant)
+            for tag, (process, handle, path, metadata, job) in list(active.items()):
+                if process.poll() is not None and handle is not None:
+                    handle.close()
+                    active[tag] = (process, None, path, metadata, job)
+            if not launched_any:
                 time.sleep(min(float(poll), 2.0))
-    except Exception:
-        for process, handle, _, _, _ in active.values():
-            if process.poll() is None:
+    except BaseException:
+        for process, handle, path, metadata, job in active.values():
+            try:
+                cleaned = _terminate_attempt_process_group(path, process)
+            except Exception:
+                cleaned = False
+            try:
+                process.wait(timeout=10)
+            except (subprocess.TimeoutExpired, AttributeError):
+                pass
+            if handle is not None:
+                handle.close()
+            if cleaned:
                 try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
+                    _release(batch_id, job, metadata["attempt"], path)
+                except Exception:
                     pass
-            handle.close()
+            else:
+                try:
+                    _claim_running_reservation(
+                        spec, batch_id, job, path, metadata
+                    )
+                except Exception:
+                    pass
         raise
 
 
