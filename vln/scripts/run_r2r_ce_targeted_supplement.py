@@ -1176,6 +1176,17 @@ def _proc_token_processes(token, proc_root=Path("/proc")):
     return sorted(records, key=lambda item: item["identity"]["pid"])
 
 
+def _proc_process_state(pid, proc_root=Path("/proc")):
+    stat_path = Path(proc_root) / str(pid) / "stat"
+    if not stat_path.is_file():
+        return None
+    try:
+        raw_stat = stat_path.read_text(encoding="utf-8")
+        return raw_stat[raw_stat.rfind(")") + 2:].split()[0]
+    except (IndexError, OSError):
+        return None
+
+
 def _recorded_live_processes(job):
     """Fallback for local non-Linux tests; formal recovery uses procfs tokens."""
     path = Path(job["job_dir"]) / "worker_state.json"
@@ -1202,15 +1213,9 @@ def _recorded_live_processes(job):
                 pgid, sid = os.getpgid(pid), os.getsid(pid)
             except OSError:
                 continue
-            stat_path = Path("/proc") / str(pid) / "stat"
-            if stat_path.is_file():
-                try:
-                    raw_stat = stat_path.read_text(encoding="utf-8")
-                    state = raw_stat[raw_stat.rfind(")") + 2:].split()[0]
-                except (IndexError, OSError):
-                    continue
-                if state == "Z":
-                    continue
+            process_state = _proc_process_state(pid)
+            if process_state == "Z":
+                continue
             records.append({"identity": identity, "pgid": pgid, "sid": sid})
     return records
 

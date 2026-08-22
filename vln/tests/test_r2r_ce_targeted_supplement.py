@@ -261,6 +261,42 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
                     [child],
                 )
 
+    def test_recorded_worker_and_runner_are_both_preserved(self):
+        worker = {
+            "pid": 20, "start_token": "worker", "cmdline_sha256": "b" * 64
+        }
+        runner = {
+            "pid": 30, "start_token": "runner", "cmdline_sha256": "c" * 64
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            job_dir = Path(directory)
+            (job_dir / "worker_state.json").write_text(json.dumps({
+                "status": "running",
+                "worker_pid": 20,
+                "worker_process": worker,
+                "runner_pid": 30,
+                "runner_process": runner,
+            }), encoding="utf-8")
+            with mock.patch.object(
+                RUNNER.staged, "process_alive", return_value=True
+            ), mock.patch.object(
+                RUNNER.os, "getpgid", side_effect=lambda pid: pid
+            ), mock.patch.object(
+                RUNNER.os, "getsid", side_effect=lambda pid: pid
+            ), mock.patch.object(
+                RUNNER, "_proc_process_state", return_value="S"
+            ):
+                records = RUNNER._recorded_live_processes({
+                    "job_dir": str(job_dir)
+                })
+        self.assertEqual(
+            records,
+            [
+                {"identity": worker, "pgid": 20, "sid": 20},
+                {"identity": runner, "pgid": 30, "sid": 30},
+            ],
+        )
+
     def test_proc_scan_requires_exact_inherited_token(self):
         token = "d" * 64
         identity = {
