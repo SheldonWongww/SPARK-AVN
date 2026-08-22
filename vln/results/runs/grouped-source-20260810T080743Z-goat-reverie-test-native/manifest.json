@@ -1,0 +1,210 @@
+{
+  "run_id": "grouped-source-20260810T080743Z-goat-reverie-test-native",
+  "task": "vln",
+  "benchmark": "reverie_discrete_goat",
+  "model": "goat",
+  "method": "source",
+  "run_tag": "grouped-source-20260810T080743Z",
+  "source_setting": "goat-reverie:test:native",
+  "seed": 0,
+  "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+  "config": "vln/scripts/run_source_eval.sh#goat-reverie",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/goat/bin/python",
+    "reverie/main_nav_obj.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "reverie",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/goat-reverie/test",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "roberta",
+    "--mode",
+    "valid",
+    "--name",
+    "goat_reverie_source",
+    "--enc_full_graph",
+    "--graph_sprels",
+    "--fusion",
+    "dynamic",
+    "--train_alg",
+    "dagger",
+    "--num_l_layers",
+    "6",
+    "--num_x_layers",
+    "3",
+    "--num_pano_layers",
+    "2",
+    "--max_action_len",
+    "15",
+    "--batch_size",
+    "1",
+    "--features",
+    "clip768",
+    "--image_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0",
+    "--dropout",
+    "0",
+    "--do_back_txt",
+    "--do_back_img",
+    "--do_back_txt_type",
+    "type_2",
+    "--do_back_img_type",
+    "type_1",
+    "--do_add_method",
+    "door",
+    "--do_front_txt",
+    "--do_front_img",
+    "--do_front_his",
+    "--backdoor_dict_file",
+    "../datasets/REVERIE/navigator/goat_reverie/logs/backdoor/backdoor_update_features.tsv",
+    "--frontdoor_dict_file",
+    "../datasets/REVERIE/navigator/goat_reverie/logs/frontdoor/frontdoor_update_features.tsv",
+    "--resume_file",
+    "../datasets/REVERIE/navigator/goat_reverie/ckpts/best_val_unseen.pt",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "test",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_goat",
+    "--multi_endpoints",
+    "--dagger_sample",
+    "sample",
+    "--max_instr_len",
+    "80",
+    "--max_objects",
+    "20",
+    "--obj_features",
+    "vitbase",
+    "--obj_feat_size",
+    "768",
+    "--z_instr_update",
+    "--submit"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/goat/REVERIE/best_val_unseen.pt",
+    "size": 870603677,
+    "sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/features/CLIP-ViT-B-16-views.hdf5",
+      "size": 3129297165,
+      "sha256": "378d756bcec1aa6f9acbfe48ba3f017d75ee136fd90b12f89b312b3fb82164fb"
+    },
+    {
+      "name": "backdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/REVERIE/navigator/goat_reverie/logs/backdoor/backdoor_update_features.tsv",
+      "size": 165416,
+      "sha256": "e79b45a15df26e7785b03c16f4506f99d66f8f767a1bd4c3b07d2b0131cdc02a"
+    },
+    {
+      "name": "frontdoor",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/REVERIE/navigator/goat_reverie/logs/frontdoor/frontdoor_update_features.tsv",
+      "size": 295056,
+      "sha256": "ac645c2a177ba9e060ed6b2b75842dc2b2cef36da94fdf2b51f0e4938c09aab1"
+    },
+    {
+      "name": "submission_viewpoint_candidates",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/R2R/annotations/scanvp_candview_relangles.json",
+      "size": 5124730,
+      "sha256": "cead28ce0d9b248766c5295338e0809eeedfec499b1eafd39e15e63609394d14"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    },
+    {
+      "name": "object_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5",
+      "size": 259365852,
+      "sha256": "9d9f591f64d98a3547035575803fa0e78e779a57a06dd34467e480373c26b615"
+    },
+    {
+      "name": "object_boxes",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/REVERIE/annotations/BBoxes.json",
+      "size": 7757728,
+      "sha256": "21d227018de2e11eb0a7b3188d760a56a988e8152213d15979ba6ba7a0e58296"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/goat/REVERIE/annotations/REVERIE_test_roberta_enc.json",
+    "version": "reverie_discrete_goat",
+    "size": 2193113,
+    "index_sha256": "287c9e765d2310f07fe891d52d5b7ab2478fc6e3396864390a15f83bb1c41e6a",
+    "stream_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+    "stream_content_sha256": "287c9e765d2310f07fe891d52d5b7ab2478fc6e3396864390a15f83bb1c41e6a"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 40400,
+      "sha256": "85170f9404e9951c1409e8532323f92936982d10b48c387024d532f207939b94"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_goat/test.json",
+      "size": 469404,
+      "sha256": "543b7de61221e1a4e8a29c074ea0f8abf7551da9ceeb198614a8c55288435146"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-10T08:36:08.272165+00:00",
+  "completed_at": "2026-08-10T08:50:35.927837+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "847d80ca80676e99b5573d0bdffaa15db89a5457e5555ff36aefca386720ef8d",
+  "result_artifacts": [
+    {
+      "name": "test/goat_reverie_source/logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/goat-reverie/test/test/goat_reverie_source/logs/valid.txt",
+      "size": 4086,
+      "sha256": "690d232cb5d6838adc4bda4b71e89421f02297cf36d0e8ad89152ddc2a5d9607"
+    },
+    {
+      "name": "test/goat_reverie_source/logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/goat-reverie/test/test/goat_reverie_source/logs/validation_args.json",
+      "size": 4986,
+      "sha256": "e0d481d14440a40b676a042c0c8a0d01971ad424c1539b0b810a7dfa6173cdc2"
+    },
+    {
+      "name": "test/goat_reverie_source/preds/submit_test_dynamic.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/goat-reverie/test/test/goat_reverie_source/preds/submit_test_dynamic.json",
+      "size": 8679671,
+      "sha256": "e44ce1d0fb16d1c2f239c52ebfc8129fa0bdacc4ec5d6c230904b6688d29d707"
+    }
+  ]
+}

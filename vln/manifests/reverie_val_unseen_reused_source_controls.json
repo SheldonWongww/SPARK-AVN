@@ -1,0 +1,91 @@
+{
+  "schema": "navtta.vln_reverie_val_unseen_reused_source_controls.v1",
+  "benchmark": "reverie",
+  "split": "val_unseen",
+  "source_protocol": "standard_argmax",
+  "episode_count": 3521,
+  "canonical_order_seed": 0,
+  "episode_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+  "dataset_version": "canonical discrete REVERIE val_unseen",
+  "hardware": "NVIDIA vGPU-32GB",
+  "source_execution_policy": {
+    "execution": "reuse_only",
+    "rerun_forbidden": true,
+    "recovery_policy": "Recover and track the existing formal manifest; never replace missing provenance by rerunning Source."
+  },
+  "source_batch": {
+    "batch_id": "grouped-source-20260810T080743Z",
+    "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230"
+  },
+  "records": {
+    "duet-reverie": {
+      "model": "duet",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 46.98,
+        "SPL": 33.73,
+        "RGS": 32.15,
+        "RGSPL": 23.03
+      },
+      "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "dataset_sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3",
+      "episode_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-reverie-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "ecd1dd6808c22c6ecd4f6cf77d0d74c508a632b6265e5c67899476b0522c4e48",
+      "immutable_identity_sha256": "bfd0c927b9fc64c7507ecd53919e1db8f15e7fba9de8fd89e21ae94314fd60bf",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/duet-reverie/val_unseen/logs/valid.txt",
+      "metrics_artifact_sha256": "f27c7faac00afea6c4375d8d0e9b7fa5793698a8c88b009252269fc2d66bc2bc"
+    },
+    "hamt-reverie": {
+      "model": "hamt",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 32.95,
+        "SPL": 30.2,
+        "RGS": 18.92,
+        "RGSPL": 17.28
+      },
+      "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "dataset_sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3",
+      "episode_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-hamt-reverie-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "f33e094909014a9f5ef5c8e1d27d3b1c509363800e3ade11ef9baafa351f0c4e",
+      "immutable_identity_sha256": "c310eb7f6382bba757faff721226fc345b4486511aa3c94b97c8f75d8ed07eb5",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/val_unseen/logs/valid.txt",
+      "metrics_artifact_sha256": "f99786dc98d7b2c0db71dc28aa5b42812d280eb3376e72458fee3f09373de703"
+    },
+    "goat-reverie": {
+      "model": "goat",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "parameters": {
+        "action_selection": "argmax",
+        "action_seed": 0
+      },
+      "metrics": {
+        "SR": 53.82,
+        "SPL": 37.52,
+        "RGS": 39.17,
+        "RGSPL": 27.0
+      },
+      "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "dataset_sha256": "b85b8733014199f71094e7403341d3f816f500a85df36b4ec5036450deb4b7fe",
+      "episode_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+      "evidence_status": "ready",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-reverie-val_unseen-native/manifest.json",
+      "formal_manifest_sha256": "69061c33c0f15a09e763d1a195624b7aba1cc2f9b0b94dacb011d30529d372d4",
+      "immutable_identity_sha256": "3714b6f6771ffaafd7979005f0a741cdc0413214ea5952d17c724915f787ba40",
+      "metrics_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/goat-reverie/val_unseen/test/goat_reverie_source/logs/valid.txt",
+      "metrics_artifact_sha256": "7b8b084e08da5857509efa83e3fb3db232e020bd309898394e4028baae0f2959"
+    }
+  }
+}

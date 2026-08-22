@@ -1,0 +1,59 @@
+{
+  "schema": "navtta.vln_reverie_test_reused_source_submissions.v1",
+  "benchmark": "reverie",
+  "split": "test",
+  "episode_count": 6292,
+  "canonical_order_seed": 0,
+  "episode_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+  "hidden_ground_truth": true,
+  "local_metrics_available": false,
+  "source_execution_policy": {
+    "execution": "reuse_existing_submission_only",
+    "rerun_forbidden": true
+  },
+  "source_batch": {
+    "batch_id": "grouped-source-20260810T080743Z",
+    "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230"
+  },
+  "records": {
+    "duet-reverie": {
+      "model": "duet",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "dataset_sha256": "1fe65add3a7f084a3029965c3b7d1c4ce95e543c851450809b0e385efbc4820d",
+      "episode_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-duet-reverie-test-native/manifest.json",
+      "formal_manifest_sha256": "969a919f08d40317a6be635856ad7592726025a134fb4ada05f22349722b1e11",
+      "immutable_identity_sha256": "cfcf857d4f88538b832bf210a0c12f8fe83214a57eae00fe1408945bb8af3499",
+      "submission_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/duet-reverie/test/preds/submit_test_dynamic.json",
+      "submission_artifact_sha256": "697f35f2e51db7eaf6b3c85c839fc5ba5de6aae173cba62175979bb2edc003b8",
+      "submission_artifact_size": 8073044
+    },
+    "hamt-reverie": {
+      "model": "hamt",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "dataset_sha256": "1fe65add3a7f084a3029965c3b7d1c4ce95e543c851450809b0e385efbc4820d",
+      "episode_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-hamt-reverie-test-native/manifest.json",
+      "formal_manifest_sha256": "140f7fa5f9492e0d80399047dfec7689b1092b373423324016974df5f193d4c7",
+      "immutable_identity_sha256": "aca8193e30f74c5ad1be929cd0b9a4fafe67a70925c9461ddddc6e870f39b77b",
+      "submission_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/test/preds/submit_test.json",
+      "submission_artifact_sha256": "70f9e289db2accac087a721a70cc23e6a2614a22a3d7b958c3d7ee8c32b8ba05",
+      "submission_artifact_size": 7648404
+    },
+    "goat-reverie": {
+      "model": "goat",
+      "run_tag": "grouped-source-20260810T080743Z",
+      "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "dataset_sha256": "287c9e765d2310f07fe891d52d5b7ab2478fc6e3396864390a15f83bb1c41e6a",
+      "episode_order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d",
+      "formal_manifest_path": "vln/results/runs/grouped-source-20260810T080743Z-goat-reverie-test-native/manifest.json",
+      "formal_manifest_sha256": "779accd1cf79f6b3aebaf258b6414c58804badf674a9e7b2b510c540df70ab00",
+      "immutable_identity_sha256": "847d80ca80676e99b5573d0bdffaa15db89a5457e5555ff36aefca386720ef8d",
+      "submission_artifact_path": "vln/results/source/grouped-source-20260810T080743Z/goat-reverie/test/test/goat_reverie_source/preds/submit_test_dynamic.json",
+      "submission_artifact_sha256": "e44ce1d0fb16d1c2f239c52ebfc8129fa0bdacc4ec5d6c230904b6688d29d707",
+      "submission_artifact_size": 8679671
+    }
+  }
+}

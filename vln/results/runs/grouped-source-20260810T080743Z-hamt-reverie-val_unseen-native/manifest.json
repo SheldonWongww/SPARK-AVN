@@ -1,0 +1,159 @@
+{
+  "run_id": "grouped-source-20260810T080743Z-hamt-reverie-val_unseen-native",
+  "task": "vln",
+  "benchmark": "reverie_discrete_duet_hamt",
+  "model": "hamt",
+  "method": "source",
+  "run_tag": "grouped-source-20260810T080743Z",
+  "source_setting": "hamt-reverie:val_unseen:native",
+  "seed": 0,
+  "git_commit": "0c6e38bb3cb1babbd575c09c97f9439571a43230",
+  "config": "vln/scripts/run_source_eval.sh#hamt-reverie",
+  "config_overrides": [
+    "/root/autodl-tmp/conda/envs/hamt/bin/python",
+    "reverie/main_navref.py",
+    "--root_dir",
+    "../datasets",
+    "--dataset",
+    "reverie",
+    "--output_dir",
+    "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/val_unseen",
+    "--world_size",
+    "1",
+    "--seed",
+    "0",
+    "--tokenizer",
+    "bert",
+    "--multi_endpoints",
+    "--ob_type",
+    "pano",
+    "--num_l_layers",
+    "9",
+    "--num_x_layers",
+    "4",
+    "--hist_enc_pano",
+    "--hist_pano_num_layers",
+    "2",
+    "--no_lang_ca",
+    "--features",
+    "vitbase_r2rfte2e",
+    "--feedback",
+    "sample",
+    "--max_action_len",
+    "15",
+    "--max_instr_len",
+    "60",
+    "--image_feat_size",
+    "768",
+    "--obj_feat_size",
+    "768",
+    "--angle_feat_size",
+    "4",
+    "--batch_size",
+    "1",
+    "--ml_weight",
+    "0.2",
+    "--feat_dropout",
+    "0.4",
+    "--dropout",
+    "0.5",
+    "--resume_file",
+    "../datasets/REVERIE/trained_models/best_val_unseen",
+    "--strict_checkpoint_keys",
+    "--test",
+    "--eval_splits",
+    "val_unseen",
+    "--episode_order_manifest",
+    "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_duet_hamt"
+  ],
+  "checkpoint": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/REVERIE/best_val_unseen",
+    "size": 1837415641,
+    "sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c"
+  },
+  "auxiliary_checkpoints": [
+    {
+      "name": "pano_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 1391358984,
+      "sha256": "3d429e9c7cd9c6eab6115951addfb21f98e65782bdb688906ef8ceebf546c34f"
+    },
+    {
+      "name": "object_features",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/REVERIE/features/obj_pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5",
+      "size": 261552309,
+      "sha256": "5a7252dbcacdfc5d4db4cd289ca27d2e21f604086260f133041db3ae60a2bec7"
+    },
+    {
+      "name": "object_boxes",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/hamt/REVERIE/annotations/BBoxes.json",
+      "size": 7757728,
+      "sha256": "21d227018de2e11eb0a7b3188d760a56a988e8152213d15979ba6ba7a0e58296"
+    },
+    {
+      "name": "mattersim_python",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/data/simulators/Matterport3DSimulator/build/MatterSim.cpython-38-x86_64-linux-gnu.so",
+      "size": 171616,
+      "sha256": "0cbe5c00f6b0321eb837b85110ae9e1b9fff88fc9e47263887ab323bb3e083e5"
+    }
+  ],
+  "dataset": {
+    "path": "/root/autodl-tmp/code/NavTTA/vln/data/duet/REVERIE/annotations/REVERIE_val_unseen_enc.json",
+    "version": "reverie_discrete_duet_hamt",
+    "size": 1888617,
+    "index_sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3",
+    "stream_order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca",
+    "stream_content_sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3"
+  },
+  "pinned_manifests": {
+    "assets": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/assets/eval_assets.json",
+      "size": 40400,
+      "sha256": "85170f9404e9951c1409e8532323f92936982d10b48c387024d532f207939b94"
+    },
+    "environment": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/environments/eval_environments.json",
+      "size": 9292,
+      "sha256": "6623ecedf61ceb1a00879c5f9aeb9a6ddc6a04cd0531f2fbd55bca4d16b3281f"
+    },
+    "episode_order": {
+      "path": "/root/autodl-tmp/code/NavTTA/vln/manifests/episode_order/reverie_duet_hamt/val_unseen.json",
+      "size": 277264,
+      "sha256": "09b2d4984d0073a6b31dc0ea6057a70c1436b8d54ebb463b901065b23f0c9e47"
+    }
+  },
+  "hardware": {
+    "hostname": "autodl-container-2d9d419d8f-9c2eacec",
+    "platform": "Linux-5.15.0-94-generic-x86_64-with-glibc2.17",
+    "python": "3.8.20",
+    "cuda_visible_devices": "0",
+    "torch": "2.1.2+cu121",
+    "torch_cuda": "12.1",
+    "cuda_available": true,
+    "cudnn": 8902,
+    "gpu_name": "NVIDIA vGPU-32GB",
+    "gpu_capability": [
+      8,
+      9
+    ]
+  },
+  "started_at": "2026-08-10T08:21:19.007290+00:00",
+  "completed_at": "2026-08-10T08:25:53.944379+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "immutable_identity_sha256": "c310eb7f6382bba757faff721226fc345b4486511aa3c94b97c8f75d8ed07eb5",
+  "result_artifacts": [
+    {
+      "name": "logs/valid.txt",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/val_unseen/logs/valid.txt",
+      "size": 2140,
+      "sha256": "f99786dc98d7b2c0db71dc28aa5b42812d280eb3376e72458fee3f09373de703"
+    },
+    {
+      "name": "logs/validation_args.json",
+      "path": "/root/autodl-tmp/code/NavTTA/vln/results/source/grouped-source-20260810T080743Z/hamt-reverie/val_unseen/logs/validation_args.json",
+      "size": 2488,
+      "sha256": "864a30885ab7aa8d39d07c111a28f2497c88e9408811f4c3ce1f88d7cc54630e"
+    }
+  ]
+}
