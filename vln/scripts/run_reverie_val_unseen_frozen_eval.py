@@ -49,9 +49,7 @@ DEFAULT_SPEC = (
 )
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
 LOG_ROOT = REPO_ROOT / "vln/results/logs/reverie/frozen_val_unseen"
-RESULT_ROOT = REPO_ROOT / "vln/results/tuning/reverie/frozen_val_unseen"
 TEST_LOG_ROOT = REPO_ROOT / "vln/results/logs/reverie/test_submissions"
-TEST_RESULT_ROOT = REPO_ROOT / "vln/results/tuning/reverie/test_submissions"
 FORMAL_ROOT = REPO_ROOT / "vln/results/runs"
 SETTINGS = plan_builder.SETTINGS
 MODELS = plan_builder.MODELS
@@ -449,9 +447,11 @@ def _reservation_token(batch_id, run_tag):
 def materialize_attempt(spec, spec_path, batch_id, batch_root, job, attempt):
     run_tag = _attempt_tag(job["base_run_tag"], attempt)
     attempt_dir = _attempt_dir(batch_root, job, attempt)
+    # Non-val_seen jobs must use run_source_eval.sh's canonical default.
+    # --result-root is intentionally restricted to val_seen tuning jobs.
     result_root = (
-        RESULT_ROOT / batch_id / job["model"] / job["method"] / "jobs"
-        / run_tag / "val_unseen"
+        REPO_ROOT / "vln/results/tuning" / run_tag / job["setting"]
+        / "val_unseen"
     )
     formal_manifest = (
         FORMAL_ROOT
@@ -492,7 +492,6 @@ def materialize_attempt(spec, spec_path, batch_id, batch_root, job, attempt):
     command = [
         str(RUNNER), job["setting"], "val_unseen", str(job["gpu"]),
         "--run-tag", run_tag, "--tta-config", str(config_path),
-        "--result-root", str(result_root),
     ]
     metadata = {
         "schema": JOB_SCHEMA,
@@ -546,9 +545,9 @@ def materialize_test_attempt(spec, spec_path, batch_id, batch_root, job, attempt
         raise UserError(str(error))
     run_tag = _attempt_tag(job["base_run_tag"], attempt)
     attempt_dir = _attempt_dir(batch_root, job, attempt)
+    # Hidden test uses the same canonical runner-owned output convention.
     result_root = (
-        TEST_RESULT_ROOT / batch_id / job["model"] / job["method"] / "jobs"
-        / run_tag / "test"
+        REPO_ROOT / "vln/results/tuning" / run_tag / job["setting"] / "test"
     )
     formal_manifest = (
         FORMAL_ROOT / "{}-{}-test-native".format(run_tag, job["setting"])
@@ -591,7 +590,6 @@ def materialize_test_attempt(spec, spec_path, batch_id, batch_root, job, attempt
     command = [
         str(RUNNER), job["setting"], "test", str(job["gpu"]),
         "--run-tag", run_tag, "--tta-config", str(config_path),
-        "--result-root", str(result_root),
     ]
     metadata = {
         "schema": "navtta.vln_reverie_test_submission_job.v1",
@@ -1013,7 +1011,6 @@ def _validate_attempt_binding(attempt_dir, metadata, expected_job=None,
         str(RUNNER), metadata["setting"], split,
         str(metadata.get("gpu")),
         "--run-tag", metadata["run_tag"], "--tta-config", str(config_path),
-        "--result-root", metadata["result_root"],
     ]
     if metadata.get("command") != expected_command:
         raise UserError("attempt command differs from immutable job metadata")
@@ -1504,8 +1501,7 @@ def print_plan(spec, jobs, batch_id, gpu, print_commands=False):
                 print(shlex.join([
                     str(RUNNER), job["setting"], "val_unseen", str(gpu),
                     "--run-tag", job["base_run_tag"], "--tta-config",
-                    "<ATTEMPT_DIR>/parameters.json", "--result-root",
-                    "<RESULT_ROOT>",
+                    "<ATTEMPT_DIR>/parameters.json",
                 ]))
     policy = spec["test_submission_policy"]
     print(
@@ -1533,8 +1529,7 @@ def print_test_plan(spec, jobs, batch_id, gpu, print_commands=False):
                 print(shlex.join([
                     str(RUNNER), job["setting"], "test", str(gpu),
                     "--run-tag", job["base_run_tag"], "--tta-config",
-                    "<ATTEMPT_DIR>/parameters.json", "--result-root",
-                    "<RESULT_ROOT>",
+                    "<ATTEMPT_DIR>/parameters.json",
                 ]))
     print("feedtta=N/A atena=N/A reason=no_legal_online_binary_feedback")
 

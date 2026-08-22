@@ -315,10 +315,20 @@ class ReveriePostSearchEvalTest(unittest.TestCase):
             self.assertEqual(method, job["method"])
             self.assertIn("--tta_method", tokens)
             command = metadata["command"]
-            self.assertEqual(command[1:3], [job["setting"], "val_unseen"])
+            self.assertEqual(command, [
+                str(runner.RUNNER), job["setting"], "val_unseen", "0",
+                "--run-tag", metadata["run_tag"], "--tta-config",
+                str(attempt / "parameters.json"),
+            ])
             self.assertNotIn("--order-seed", command)
             self.assertNotIn("--episode-limit", command)
+            self.assertNotIn("--result-root", command)
             self.assertEqual(metadata["canonical_order_seed"], 0)
+            self.assertEqual(
+                Path(metadata["result_root"]),
+                REPO_ROOT / "vln/results/tuning" / metadata["run_tag"]
+                / job["setting"] / "val_unseen",
+            )
 
         first = jobs[0]
         attempt, _ = runner.materialize_attempt(
@@ -378,9 +388,19 @@ class ReveriePostSearchEvalTest(unittest.TestCase):
                     "submission_generation_only"
                 ]
             )
-            self.assertEqual(metadata["command"][1:3], [job["setting"], "test"])
+            self.assertEqual(metadata["command"], [
+                str(runner.RUNNER), job["setting"], "test", "0",
+                "--run-tag", metadata["run_tag"], "--tta-config",
+                str(attempt / "parameters.json"),
+            ])
             self.assertNotIn("--order-seed", metadata["command"])
             self.assertNotIn("--episode-limit", metadata["command"])
+            self.assertNotIn("--result-root", metadata["command"])
+            self.assertEqual(
+                Path(metadata["result_root"]),
+                REPO_ROOT / "vln/results/tuning" / metadata["run_tag"]
+                / job["setting"] / "test",
+            )
             method, _ = translate(
                 job["setting"], attempt / "parameters.json", attempt / "diag.json"
             )
