@@ -2,7 +2,7 @@
 
 ## 执行边界
 
-本阶段必须等待 `vln-r2r-ce-targeted-supplement-v1-seed0` 完整结束并下载
+本阶段必须等待 `vln-r2r-ce-targeted-supplement-v1-seed0-rerun2` 完整结束并下载
 `RESULTS.json`、所有 full 结果和 formal manifests。补搜结束前不生成 winner
 registry，也不启动 `val_unseen`；`val_unseen` 指标不参与任何超参数选择。
 
@@ -47,7 +47,7 @@ zero-update 结果不能作为最终 winner；若补搜没有产生有效 FSTTA 
 ```bash
 python3 vln/scripts/build_r2r_ce_final_registry.py \
   --supplement-results \
-  vln/results/logs/r2r-ce/hparam_search/vln-r2r-ce-targeted-supplement-v1-seed0/RESULTS.json \
+  vln/results/logs/r2r-ce/hparam_search/vln-r2r-ce-targeted-supplement-v1-seed0-rerun2/RESULTS.json \
   --write
 ```
 

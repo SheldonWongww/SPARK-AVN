@@ -1303,13 +1303,36 @@ def _screening_result(job, supplement_spec):
     for key in (
         "run_tag", "setting", "config_method", "point_index", "parameters",
         "metrics", "adapter_diagnostics", "expected_episodes",
-        "diagnostics_sha256", "navigation_record_change_count",
-        "navigation_record_artifact_sha256",
-        "matched_source_record_artifact_sha256",
+        "diagnostics_sha256",
     ):
         if json.dumps(persisted.get(key), sort_keys=True, separators=(",", ":")) != json.dumps(
             result.get(key), sort_keys=True, separators=(",", ":")
         ):
+            raise RegistryError(
+                "targeted screening metrics mismatch for {} {}".format(
+                    job["run_tag"], key
+                )
+            )
+    # The scheduler may refresh metrics.json from the base parser after the
+    # promotion pass.  In that case the three enrichment fields are absent,
+    # while PROMOTION.json still contains their producer output.  Recompute
+    # them from the episode artifacts below; if metrics.json retained them,
+    # require the complete set and verify it byte-for-byte.
+    enrichment_keys = (
+        "navigation_record_change_count",
+        "navigation_record_artifact_sha256",
+        "matched_source_record_artifact_sha256",
+    )
+    present_enrichment = [key for key in enrichment_keys if key in persisted]
+    if present_enrichment and len(present_enrichment) != len(enrichment_keys):
+        raise RegistryError(
+            "targeted screening metrics have partial navigation enrichment for {}"
+            .format(job["run_tag"])
+        )
+    for key in present_enrichment:
+        if json.dumps(
+            persisted[key], sort_keys=True, separators=(",", ":")
+        ) != json.dumps(result.get(key), sort_keys=True, separators=(",", ":")):
             raise RegistryError(
                 "targeted screening metrics mismatch for {} {}".format(
                     job["run_tag"], key
@@ -1511,6 +1534,12 @@ def _validate_supplement_campaign_artifacts(path, document, spec,
     campaign_root = expected_results.parent
     plan_path = campaign_root / "PLAN.json"
     plan = _read_json(plan_path, "targeted supplement PLAN")
+    expected_shared_gpu_coordination = {
+        "peer_campaign": supplement_spec["execution"]["parallel_peer_campaign"],
+        "launch_guard_required": True,
+        "active_reservation_required": True,
+        "reservation_role": targeted_runner.RESERVATION_ROLE,
+    }
     expected_plan = {
         "schema": "navtta.vln_r2r_ce_targeted_supplement_plan.v1",
         "experiment_id": document["experiment_id"],
@@ -1524,6 +1553,7 @@ def _validate_supplement_campaign_artifacts(path, document, spec,
         "full_jobs_max": 5,
         "total_jobs_max": 20,
         "strict_model_barrier": True,
+        "shared_gpu_coordination": expected_shared_gpu_coordination,
         "canonical_order_seed": 0,
         "canonical_order_sha256": supplement_spec["canonical_order"][
             "manifest"
@@ -1612,7 +1642,7 @@ def _validate_supplement_campaign_artifacts(path, document, spec,
                 "job_count_cap", "git_commit", "spec_path", "spec_sha256",
                 "canonical_order_seed", "canonical_order_sha256",
                 "source_execution_jobs", "restart_from_source_checkpoint",
-                "resource_limits",
+                "shared_gpu_coordination", "resource_limits",
             }
             if set(phase_document) != expected_phase_keys:
                 raise RegistryError("{} PHASE fields mismatch".format(phase["phase_id"]))
@@ -1627,6 +1657,8 @@ def _validate_supplement_campaign_artifacts(path, document, spec,
                 != supplement_spec["canonical_order"]["manifest"]["order_sha256"]
                 or phase_document.get("resource_limits")
                 != targeted_runner.runtime_limits(phase, supplement_spec)
+                or phase_document.get("shared_gpu_coordination")
+                != expected_shared_gpu_coordination
                 or _portable_repo_path(
                     repo_root, phase_document.get("spec_path", ""),
                     "{} PHASE spec".format(phase["phase_id"]),

@@ -99,6 +99,12 @@ def _supplement_campaign_fixture(root, spec, source_records):
         .read_text(encoding="utf-8")
     )
     commit = "a" * 40
+    shared_gpu_coordination = {
+        "peer_campaign": target_spec["execution"]["parallel_peer_campaign"],
+        "launch_guard_required": True,
+        "active_reservation_required": True,
+        "reservation_role": builder.targeted_runner.RESERVATION_ROLE,
+    }
     phases = []
     confirmations = {}
     for setting_index, setting in enumerate(builder.SETTINGS):
@@ -154,6 +160,7 @@ def _supplement_campaign_fixture(root, spec, source_records):
                 "phase": phase,
                 "source_execution_jobs": 0,
                 "restart_from_source_checkpoint": True,
+                "shared_gpu_coordination": shared_gpu_coordination,
                 "job_count": count,
                 "job_count_cap": (
                     phase["planned_jobs"]
@@ -252,6 +259,7 @@ def _supplement_campaign_fixture(root, spec, source_records):
         "full_jobs_max": 5,
         "total_jobs_max": 20,
         "strict_model_barrier": True,
+        "shared_gpu_coordination": shared_gpu_coordination,
         "phases": phases,
     }
     _write_json(root / "PLAN.json", plan)
@@ -279,7 +287,7 @@ def _supplement_campaign_fixture(root, spec, source_records):
 class R2RCEPostSearchFinalizationTest(unittest.TestCase):
     def test_workspace_spec_is_valid_but_freeze_waits_for_supplement(self):
         _, spec = builder.load_spec(FINALIZATION_SPEC)
-        self.assertEqual(spec["status"], "awaiting_targeted_supplement")
+        self.assertEqual(spec["status"], "targeted_supplement_complete")
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "RESULTS.json"
             with self.assertRaisesRegex(

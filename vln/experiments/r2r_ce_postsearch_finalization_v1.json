@@ -1,7 +1,7 @@
 {
   "schema": "navtta.vln_r2r_ce_postsearch_finalization.v1",
   "experiment_id": "vln-r2r-ce-postsearch-finalization-v1",
-  "status": "awaiting_targeted_supplement",
+  "status": "targeted_supplement_complete",
   "purpose": "Select R2R-CE val_seen winners only after the targeted supplement, freeze a formal 2x5 registry, and materialize a 10-TTA/0-Source canonical val_unseen campaign.",
   "protocol": {
     "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
@@ -59,12 +59,12 @@
   },
   "targeted_supplement": {
     "experiment_id": "vln-r2r-ce-targeted-supplement-v1",
-    "batch_id": "vln-r2r-ce-targeted-supplement-v1-seed0",
+    "batch_id": "vln-r2r-ce-targeted-supplement-v1-seed0-rerun2",
     "spec": {
       "path": "vln/experiments/r2r_ce_targeted_supplement_v1.json",
       "sha256": "64290cbc3a3203d0b45149481e6e8e62ce2f00f9155642ea8da462654ed6a52a"
     },
-    "results_relative_path": "vln/results/logs/r2r-ce/hparam_search/vln-r2r-ce-targeted-supplement-v1-seed0/RESULTS.json",
+    "results_relative_path": "vln/results/logs/r2r-ce/hparam_search/vln-r2r-ce-targeted-supplement-v1-seed0-rerun2/RESULTS.json",
     "required_before_freeze": true
   },
   "selection": {
