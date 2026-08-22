@@ -54,7 +54,7 @@
     },
     "candidate_inventory": {
       "path": "vln/results/final/r2r-ce/initial_full_candidates.json",
-      "sha256": "f983cecc2ff27282fff180d19d310f23e41dfa0adb7829fe65adc06a776ac256"
+      "sha256": "7c2142c4c6328155a3cc36f9223081ff3bde54670de3a53a5663463896e7e543"
     }
   },
   "targeted_supplement": {
