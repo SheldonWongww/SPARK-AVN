@@ -245,6 +245,9 @@
   },
   "execution": {
     "strict_model_barrier": true,
+    "parallel_peer_campaign": "reverie_frozen_evaluation",
+    "shared_gpu_launch_guard_required": true,
+    "shared_active_reservation_required": true,
     "model_order": [
       "etpnav-r2r-ce",
       "bevbert-r2r-ce"

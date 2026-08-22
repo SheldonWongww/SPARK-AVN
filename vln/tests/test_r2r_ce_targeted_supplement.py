@@ -1,5 +1,5 @@
 import copy
-from contextlib import ExitStack
+from contextlib import contextmanager, ExitStack
 import importlib.util
 import json
 from pathlib import Path
@@ -108,6 +108,13 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
 
     def test_model_major_phases_and_concurrency_are_fixed(self):
         phases = RUNNER.phase_sequence(self.spec)
+        execution = self.spec["execution"]
+        self.assertEqual(
+            execution["parallel_peer_campaign"],
+            "reverie_frozen_evaluation",
+        )
+        self.assertTrue(execution["shared_gpu_launch_guard_required"])
+        self.assertTrue(execution["shared_active_reservation_required"])
         self.assertEqual(
             [(item["setting"], item["kind"], item["max_workers"])
              for item in phases],
@@ -134,6 +141,267 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
         self.assertEqual(runtime.max_workers, 3)
         self.assertEqual(runtime.max_continuous_workers, 3)
         self.assertEqual(runtime.max_discrete_workers, 1)
+
+        changed = copy.deepcopy(self.spec)
+        changed["execution"]["shared_active_reservation_required"] = False
+        with self.assertRaisesRegex(RUNNER.UserError, "shared-GPU coordination"):
+            RUNNER._validate_execution(changed)
+
+    def test_peer_reservations_participate_in_atomic_resource_gate(self):
+        args = SimpleNamespace(
+            gpu=0,
+            max_gpu_memory_mib=22000,
+            estimated_job_gpu_memory_mib=8000,
+            max_aggregate_gpu_memory_mib=30000,
+            max_memory_gib=55.0,
+            estimated_job_memory_gib=20.0,
+            max_aggregate_memory_gib=75.0,
+        )
+        ledger = mock.Mock()
+        ledger.snapshot.return_value = {
+            "effective_gpu_memory_mib": 25000,
+            "effective_cgroup_memory_gib": 60.0,
+        }
+        with mock.patch.object(
+            RUNNER.staged, "gpu_stats", return_value=(1000, 10)
+        ), mock.patch.object(
+            RUNNER.staged, "cgroup_memory_gib", return_value=5.0
+        ):
+            okay, gpu, memory, snapshot = RUNNER._reserved_resources_ok(
+                args, ledger
+            )
+        self.assertFalse(okay)
+        self.assertEqual((gpu, memory), (1000, 5.0))
+        self.assertEqual(snapshot["effective_gpu_memory_mib"], 25000)
+        ledger.snapshot.assert_called_once_with(1000, 5.0)
+
+    def test_resume_reclaims_shared_reservation_for_worker_and_runner(self):
+        scheduler = {
+            "pid": 10, "start_token": "scheduler", "cmdline_sha256": "a" * 64
+        }
+        worker = {
+            "pid": 20, "start_token": "worker", "cmdline_sha256": "b" * 64
+        }
+        child = {
+            "pid": 30, "start_token": "runner", "cmdline_sha256": "c" * 64
+        }
+
+        class Ledger:
+            def __init__(self):
+                self.document = {"reservations": {}}
+
+            def reserve(self, token, **kwargs):
+                self.document["reservations"][token] = {
+                    "gpu_memory_mib": kwargs["gpu_memory_mib"],
+                    "cgroup_memory_gib": kwargs["cgroup_memory_gib"],
+                    "owners": [kwargs["owner"]],
+                    "metadata": kwargs["metadata"],
+                }
+
+            def add_owner(self, token, owner):
+                self.document["reservations"][token]["owners"].append(owner)
+
+        ledger = Ledger()
+
+        @contextmanager
+        def guard(_gpu):
+            yield ledger
+
+        args = SimpleNamespace(
+            gpu=0, batch_id="batch", estimated_job_gpu_memory_mib=8000,
+            estimated_job_memory_gib=20.0,
+        )
+        job = {
+            "batch_id": "batch", "run_tag": "candidate",
+            "setting": "etpnav-r2r-ce", "gpu": 0,
+            "config_method": "tent", "phase_id": "00-screening",
+        }
+        with mock.patch.object(
+            RUNNER, "shared_gpu_launch_guard", side_effect=guard
+        ), mock.patch.object(
+            RUNNER.staged, "gpu_stats", return_value=(12000, 50)
+        ), mock.patch.object(
+            RUNNER.staged, "cgroup_memory_gib", return_value=40.0
+        ), mock.patch.object(
+            RUNNER.staged, "process_identity", return_value=scheduler
+        ):
+            token = RUNNER._claim_running_reservation(
+                args, job, [worker, child]
+            )
+            ledger.document["reservations"][token]["metadata"]["role"] = "peer"
+            with self.assertRaisesRegex(
+                RUNNER.UserError, "reservation binding mismatch"
+            ):
+                RUNNER._claim_running_reservation(args, job, [worker, child])
+            ledger.document["reservations"][token]["metadata"][
+                "role"
+            ] = RUNNER.RESERVATION_ROLE
+        record = ledger.document["reservations"][token]
+        self.assertEqual(record["owners"], [scheduler, worker, child])
+        self.assertEqual(record["metadata"]["role"], RUNNER.RESERVATION_ROLE)
+
+    def test_live_descendant_keeps_job_running_after_both_wrappers_exit(self):
+        child = {
+            "pid": 30, "start_token": "runner", "cmdline_sha256": "c" * 64
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            job_dir = Path(directory)
+            job = {
+                "batch_id": "batch", "run_tag": "candidate",
+                "job_dir": str(job_dir), "setting": "etpnav-r2r-ce",
+                "config_method": "tent", "phase_id": "00-screening",
+            }
+            with mock.patch.object(
+                RUNNER, "_proc_token_processes", return_value=[{
+                    "identity": child, "pgid": 29, "sid": 29,
+                }]
+            ):
+                self.assertEqual(
+                    RUNNER._live_job_identities(job),
+                    [child],
+                )
+
+    def test_proc_scan_requires_exact_inherited_token(self):
+        token = "d" * 64
+        identity = {
+            "pid": 30, "start_token": "python", "cmdline_sha256": "e" * 64
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            matched = proc / "30"
+            matched.mkdir()
+            (matched / "stat").write_text(
+                "30 (python worker) S 1 29 29 0 0 0\n", encoding="utf-8"
+            )
+            (matched / "environ").write_bytes(
+                "{}={}".format(RUNNER.PROCESS_TOKEN_ENV, token).encode("ascii")
+                + b"\0"
+            )
+            wrong = proc / "31"
+            wrong.mkdir()
+            (wrong / "stat").write_text(
+                "31 (python worker) S 1 29 29 0 0 0\n", encoding="utf-8"
+            )
+            (wrong / "environ").write_bytes(b"OTHER=value\0")
+            with mock.patch.object(
+                RUNNER.staged, "process_identity",
+                side_effect=lambda pid: identity if pid == 30 else None,
+            ), mock.patch.object(
+                RUNNER.staged, "process_alive", return_value=True
+            ):
+                self.assertEqual(
+                    RUNNER._proc_token_processes(token, proc),
+                    [{"identity": identity, "pgid": 29, "sid": 29}],
+                )
+
+    def test_exitcode_with_live_descendant_does_not_release_retry_or_cross_barrier(self):
+        identity = {
+            "pid": 30, "start_token": "python", "cmdline_sha256": "e" * 64
+        }
+        record = {"identity": identity, "pgid": 29, "sid": 29}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job_dir = root / "job"
+            job_dir.mkdir()
+            (job_dir / "exitcode").write_text("0\n", encoding="utf-8")
+            job = {
+                "batch_id": "batch", "run_tag": "candidate",
+                "setting": "etpnav-r2r-ce", "job_dir": str(job_dir), "gpu": 0,
+                "config_method": "tent", "phase_id": "00-screening",
+            }
+            args = SimpleNamespace(
+                batch_id="batch", gpu=0, resume=True, retry_failed=True,
+                fail_fast=False, max_workers=1, max_gpu_memory_mib=22000,
+                estimated_job_gpu_memory_mib=8000,
+                max_aggregate_gpu_memory_mib=30000,
+                max_memory_gib=55.0, estimated_job_memory_gib=20.0,
+                max_aggregate_memory_gib=75.0, launch_stagger=0,
+                resource_wait_timeout=10,
+            )
+            with mock.patch.object(
+                RUNNER, "assert_campaign_head"
+            ), mock.patch.object(
+                RUNNER, "_live_job_processes", return_value=[record]
+            ), mock.patch.object(
+                RUNNER, "_claim_running_reservation",
+                side_effect=RUNNER.UserError("audit stop after claim"),
+            ) as claim, mock.patch.object(
+                RUNNER, "_release_reservation"
+            ) as release, mock.patch.object(
+                RUNNER.staged, "_bump_attempt"
+            ) as retry, mock.patch.object(
+                RUNNER.subprocess, "Popen"
+            ) as popen, mock.patch.object(
+                RUNNER.staged, "write_summary"
+            ) as summary, mock.patch.object(RUNNER.signal, "signal"):
+                with self.assertRaisesRegex(RUNNER.UserError, "audit stop"):
+                    RUNNER.run_phase_batch(
+                        args, {"kind": "screening"}, root, [job], {}
+                    )
+            claim.assert_called_once_with(args, job, [identity])
+            release.assert_not_called()
+            retry.assert_not_called()
+            popen.assert_not_called()
+            summary.assert_not_called()
+
+    def test_phase_barrier_advances_only_after_exitcode_descendants_finish(self):
+        identity = {
+            "pid": 30, "start_token": "python", "cmdline_sha256": "e" * 64
+        }
+        record = {"identity": identity, "pgid": 29, "sid": 29}
+        events = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job_dir = root / "job"
+            job_dir.mkdir()
+            (job_dir / "exitcode").write_text("0\n", encoding="utf-8")
+            job = {
+                "batch_id": "batch", "run_tag": "candidate",
+                "setting": "etpnav-r2r-ce", "job_dir": str(job_dir), "gpu": 0,
+                "config_method": "tent", "phase_id": "01-full",
+            }
+            args = SimpleNamespace(
+                batch_id="batch", gpu=0, resume=True, retry_failed=False,
+                fail_fast=True, max_workers=1, max_gpu_memory_mib=22000,
+                estimated_job_gpu_memory_mib=8000,
+                max_aggregate_gpu_memory_mib=30000,
+                max_memory_gib=55.0, estimated_job_memory_gib=20.0,
+                max_aggregate_memory_gib=75.0, launch_stagger=0,
+                resource_wait_timeout=10,
+            )
+
+            def claim(*_args):
+                events.append("claim_live_descendant")
+
+            def release(*_args):
+                events.append("release")
+
+            def summary(*_args):
+                events.append("summary")
+                return ([{}], [])
+
+            with mock.patch.object(
+                RUNNER, "assert_campaign_head"
+            ), mock.patch.object(
+                RUNNER, "_live_job_processes",
+                side_effect=[[record], [record], []],
+            ), mock.patch.object(
+                RUNNER, "_claim_running_reservation", side_effect=claim
+            ), mock.patch.object(
+                RUNNER, "_release_reservation", side_effect=release
+            ), mock.patch.object(
+                RUNNER.staged, "append_resource"
+            ), mock.patch.object(
+                RUNNER.staged, "_progress"
+            ), mock.patch.object(
+                RUNNER.staged, "write_summary", side_effect=summary
+            ), mock.patch.object(
+                RUNNER.time, "sleep"
+            ), mock.patch.object(RUNNER.signal, "signal"):
+                RUNNER.run_phase_batch(
+                    args, {"kind": "full_confirmation"}, root, [job], {}
+                )
+        self.assertEqual(events, ["claim_live_descendant", "release", "summary"])
 
     def test_screening_jobs_are_method_round_robin_canonical_prefixes(self):
         phases = RUNNER.phase_sequence(self.spec)
@@ -377,6 +645,11 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
     def test_campaign_plan_is_immutable_and_resume_validates_jobs(self):
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory)
+            head = RUNNER.git("rev-parse", "HEAD")
+            stack.enter_context(mock.patch.object(
+                RUNNER, "git",
+                side_effect=lambda *args: "" if args[0] == "status" else head,
+            ))
             stack.enter_context(mock.patch.object(RUNNER, "LOG_ROOT", root / "logs"))
             stack.enter_context(mock.patch.object(
                 RUNNER, "TUNING_ROOT", root / "tuning"
@@ -389,12 +662,18 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
             plan = json.loads((campaign / "PLAN.json").read_text(encoding="utf-8"))
             self.assertEqual(plan["source_execution_jobs"], 0)
             self.assertEqual(plan["full_jobs_max"], 5)
+            self.assertEqual(plan["shared_gpu_coordination"], {
+                "peer_campaign": "reverie_frozen_evaluation",
+                "launch_guard_required": True,
+                "active_reservation_required": True,
+                "reservation_role": RUNNER.RESERVATION_ROLE,
+            })
             cli.resume = True
             _, resumed = RUNNER.ensure_campaign_plan(cli, self.spec)
             self.assertEqual(sum(len(item[2]) for item in resumed), 15)
 
             cli.gpu = 1
-            with self.assertRaisesRegex(RUNNER.UserError, "worker command changed"):
+            with self.assertRaisesRegex(RUNNER.UserError, "job identity changed"):
                 RUNNER.ensure_campaign_plan(cli, self.spec)
             cli.gpu = 0
 
@@ -496,6 +775,258 @@ class R2RCETargetedSupplementTest(unittest.TestCase):
         with mock.patch.object(RUNNER, "git", side_effect=untracked_git):
             with self.assertRaisesRegex(RUNNER.UserError, "tracked implementation"):
                 RUNNER._assert_launchable(cli, self.spec)
+
+    def test_launch_reserves_inside_shared_guard_before_process_creation(self):
+        events = []
+        scheduler = {
+            "pid": 10, "start_token": "scheduler", "cmdline_sha256": "a" * 64
+        }
+        worker = {
+            "pid": 20, "start_token": "worker", "cmdline_sha256": "b" * 64
+        }
+
+        class Ledger:
+            document = {"reservations": {}}
+
+            def snapshot(self, gpu, memory):
+                events.append(("snapshot", gpu, memory))
+                return {
+                    "effective_gpu_memory_mib": gpu,
+                    "effective_cgroup_memory_gib": memory,
+                }
+
+            def reserve(self, token, **_kwargs):
+                events.append(("reserve", token))
+
+            def add_owner(self, token, identity):
+                events.append(("add_owner", token, identity["pid"]))
+
+            def release(self, token):
+                events.append(("rollback", token))
+
+        @contextmanager
+        def guard(_gpu):
+            events.append(("guard_enter",))
+            try:
+                yield Ledger()
+            finally:
+                events.append(("guard_exit",))
+
+        class Process:
+            pid = 20
+
+            @staticmethod
+            def poll():
+                return 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job_dir = root / "job"
+            job_dir.mkdir()
+            job = {
+                "batch_id": "batch", "run_tag": "candidate",
+                "setting": "etpnav-r2r-ce", "job_dir": str(job_dir), "gpu": 0,
+                "config_method": "tent", "phase_id": "00-screening",
+            }
+            args = SimpleNamespace(
+                batch_id="batch", gpu=0, resume=False, retry_failed=False,
+                fail_fast=True, max_workers=1, max_gpu_memory_mib=22000,
+                estimated_job_gpu_memory_mib=8000,
+                max_aggregate_gpu_memory_mib=30000,
+                max_memory_gib=55.0, estimated_job_memory_gib=20.0,
+                max_aggregate_memory_gib=75.0, launch_stagger=0,
+                resource_wait_timeout=10,
+            )
+
+            def launch(*_args, **kwargs):
+                events.append((
+                    "popen", kwargs["env"][RUNNER.PROCESS_TOKEN_ENV]
+                ))
+                (job_dir / "exitcode").write_text("0\n", encoding="utf-8")
+                return Process()
+
+            def identity(pid=None):
+                return scheduler if pid is None else worker
+
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(
+                    RUNNER, "assert_campaign_head"
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER, "shared_gpu_launch_guard", side_effect=guard
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER, "release_shared_gpu_reservation"
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER, "_live_job_processes", return_value=[]
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.staged, "gpu_stats", return_value=(1000, 10)
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.staged, "cgroup_memory_gib", return_value=5.0
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.staged, "process_identity", side_effect=identity
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.staged, "append_resource"
+                ))
+                stack.enter_context(mock.patch.object(RUNNER.staged, "_progress"))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.staged, "write_summary", return_value=([{}], [])
+                ))
+                stack.enter_context(mock.patch.object(
+                    RUNNER.subprocess, "Popen", side_effect=launch
+                ))
+                stack.enter_context(mock.patch.object(RUNNER.signal, "signal"))
+                stack.enter_context(mock.patch.object(RUNNER.time, "sleep"))
+                RUNNER.run_phase_batch(
+                    args, {"kind": "full_confirmation"}, root, [job], {}
+                )
+
+        names = [item[0] for item in events]
+        self.assertLess(names.index("guard_enter"), names.index("snapshot"))
+        self.assertLess(names.index("snapshot"), names.index("reserve"))
+        self.assertLess(names.index("reserve"), names.index("popen"))
+        self.assertLess(names.index("popen"), names.index("add_owner"))
+        self.assertLess(names.index("add_owner"), names.index("guard_exit"))
+        popen_event = next(item for item in events if item[0] == "popen")
+        self.assertEqual(popen_event[1], RUNNER._job_process_token(job))
+
+    def test_failed_launch_waits_for_process_group_before_reservation_release(self):
+        events = []
+
+        class Process:
+            pid = 20
+
+            @staticmethod
+            def poll():
+                return None
+
+        process = Process()
+        job = {"run_tag": "candidate"}
+        with mock.patch.object(
+            RUNNER, "_cleanup_process_groups",
+            side_effect=[([{"pgid": 20}], {20}), ([], set())],
+        ), mock.patch.object(
+            RUNNER.os, "killpg",
+            side_effect=lambda pid, signum: events.append(("kill", pid, signum)),
+        ):
+            self.assertTrue(RUNNER._terminate_launched_process(process, job))
+        self.assertEqual(events[0], ("kill", 20, RUNNER.signal.SIGTERM))
+
+    def test_cleanup_kills_token_descendant_after_direct_wrapper_exits(self):
+        class Process:
+            pid = 20
+
+            @staticmethod
+            def poll():
+                return 1
+
+        descendant = {
+            "identity": {
+                "pid": 31, "start_token": "child",
+                "cmdline_sha256": "c" * 64,
+            },
+            "pgid": 30,
+            "sid": 30,
+        }
+        with mock.patch.object(
+            RUNNER, "_cleanup_process_groups",
+            side_effect=[([descendant], {30}), ([], set())],
+        ), mock.patch.object(RUNNER.os, "killpg") as killpg:
+            self.assertTrue(RUNNER._terminate_launched_process(
+                Process(), {"run_tag": "candidate"}
+            ))
+        killpg.assert_called_once_with(30, RUNNER.signal.SIGTERM)
+
+    def test_failed_launch_retains_reservation_until_all_descendants_exit(self):
+        ledger = mock.Mock()
+        process = mock.Mock()
+        job = {"run_tag": "candidate"}
+        with mock.patch.object(
+            RUNNER, "_terminate_launched_process", return_value=False
+        ):
+            with self.assertRaisesRegex(
+                RUNNER.UserError, "reservation retained"
+            ):
+                RUNNER._rollback_failed_launch(
+                    ledger, "reservation", process, job
+                )
+        ledger.release.assert_not_called()
+        with mock.patch.object(
+            RUNNER, "_terminate_launched_process", return_value=True
+        ):
+            RUNNER._rollback_failed_launch(
+                ledger, "reservation", process, job
+            )
+        ledger.release.assert_called_once_with("reservation")
+
+    def test_results_are_aggregated_while_campaign_lock_is_held(self):
+        phases = RUNNER.phase_sequence(self.spec)
+        screening = [phases[0], phases[2]]
+        active = {"value": False}
+
+        @contextmanager
+        def lock(_root):
+            active["value"] = True
+            try:
+                yield
+            finally:
+                active["value"] = False
+
+        def promotion(phase, *_args):
+            return {
+                "setting": phase["setting"],
+                "cells": {
+                    method: {"selected": None}
+                    for method in RUNNER.enabled_methods(phase["setting"], self.spec)
+                },
+            }
+
+        def confirmation(phase, *_args):
+            return {"setting": phase["setting"], "cells": {}}
+
+        def aggregate(*_args):
+            self.assertTrue(active["value"])
+
+        initial = [
+            (phase, Path("unused") / phase["phase_id"], [])
+            for phase in screening
+        ]
+        cli = SimpleNamespace(
+            batch_id="lock-unit", plan_only=False, gpu=0, resume=False
+        )
+        with mock.patch.object(
+            RUNNER, "_assert_launchable"
+        ), mock.patch.object(
+            RUNNER, "ensure_campaign_plan", return_value=(Path("unused"), initial)
+        ), mock.patch.object(
+            RUNNER, "campaign_lock", side_effect=lock
+        ), mock.patch.object(
+            RUNNER, "_phase_complete", return_value=True
+        ), mock.patch.object(
+            RUNNER, "_load_valid_results", return_value=[]
+        ), mock.patch.object(
+            RUNNER, "summarize_screening", side_effect=promotion
+        ), mock.patch.object(
+            RUNNER, "build_full_jobs", return_value=[]
+        ), mock.patch.object(
+            RUNNER, "ensure_phase_plan",
+            side_effect=lambda phase, *_args: (
+                Path("unused") / phase["phase_id"], []
+            )
+        ), mock.patch.object(
+            RUNNER, "_mark_empty_phase"
+        ), mock.patch.object(
+            RUNNER, "summarize_full", side_effect=confirmation
+        ), mock.patch.object(
+            RUNNER, "aggregate_campaign", side_effect=aggregate
+        ) as aggregate_mock:
+            RUNNER.execute_campaign(cli, self.spec)
+        aggregate_mock.assert_called_once()
 
 
 if __name__ == "__main__":

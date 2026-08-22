@@ -1,0 +1,109 @@
+{
+  "schema": "navtta.vln_r2r_ce_postsearch_finalization.v1",
+  "experiment_id": "vln-r2r-ce-postsearch-finalization-v1",
+  "status": "awaiting_targeted_supplement",
+  "purpose": "Select R2R-CE val_seen winners only after the targeted supplement, freeze a formal 2x5 registry, and materialize a 10-TTA/0-Source canonical val_unseen campaign.",
+  "protocol": {
+    "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
+    "selection_split": "val_seen",
+    "selection_episode_count": 778,
+    "selection_order_seed": 0,
+    "selection_order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e",
+    "evaluation_split": "val_unseen",
+    "evaluation_episode_count": 1839,
+    "evaluation_order_seed": 0,
+    "evaluation_order_sha256": "e5a86bf609770d0525efc0be6527d8b88c02f932a0a35e1c4162b06172307a8a",
+    "selection_on_val_unseen": false,
+    "source_execution_jobs": 0
+  },
+  "settings": [
+    "etpnav-r2r-ce",
+    "bevbert-r2r-ce"
+  ],
+  "methods": [
+    "tent",
+    "fstta",
+    "eam",
+    "feedtta",
+    "atena"
+  ],
+  "targeted_cells": [
+    ["etpnav-r2r-ce", "tent"],
+    ["etpnav-r2r-ce", "fstta"],
+    ["bevbert-r2r-ce", "fstta"],
+    ["etpnav-r2r-ce", "feedtta"],
+    ["bevbert-r2r-ce", "feedtta"]
+  ],
+  "val_seen_source_control": {
+    "path": "vln/manifests/r2r_ce_reused_source_controls.json",
+    "sha256": "40ec2c6ac9e4685040df75ddd60201a476ae85c24558d9411bb54428b6c3e94b"
+  },
+  "val_unseen_source_control": {
+    "path": "vln/manifests/r2r_ce_val_unseen_reused_source_controls.json",
+    "sha256": "115ebc6e160990ef3c32fc4467a743992b38559918e167152fcc369615aa6e98",
+    "execution": "reuse_only",
+    "rerun_forbidden": true
+  },
+  "initial_search": {
+    "experiment_id": "vln-r2r-ce-small-hparam-search-v1",
+    "batch_id": "vln-r2r-ce-small-hparam-search-v1-seed0",
+    "git_commit": "4e4cbd1429bb2065ba564bb931318aebf0aa326f",
+    "search_spec": {
+      "path": "vln/experiments/r2r_ce_small_hparam_search_v1.json",
+      "sha256": "f5b1b68b7c843465c5f75a2b425866c35c5eb94b1e26f598f69becb2e252f2ed"
+    },
+    "candidate_inventory": {
+      "path": "vln/results/final/r2r-ce/initial_full_candidates.json",
+      "sha256": "f983cecc2ff27282fff180d19d310f23e41dfa0adb7829fe65adc06a776ac256"
+    }
+  },
+  "targeted_supplement": {
+    "experiment_id": "vln-r2r-ce-targeted-supplement-v1",
+    "batch_id": "vln-r2r-ce-targeted-supplement-v1-seed0",
+    "spec": {
+      "path": "vln/experiments/r2r_ce_targeted_supplement_v1.json",
+      "sha256": "64290cbc3a3203d0b45149481e6e8e62ce2f00f9155642ea8da462654ed6a52a"
+    },
+    "results_relative_path": "vln/results/logs/r2r-ce/hparam_search/vln-r2r-ce-targeted-supplement-v1-seed0/RESULTS.json",
+    "required_before_freeze": true
+  },
+  "selection": {
+    "primary": "SPL",
+    "secondary": "SR",
+    "source_sr_floor_tolerance_percentage_points": 1.5,
+    "metric_tie_absolute_tolerance": 1e-12,
+    "supplement_wins_exact_metric_tie": true,
+    "fstta": {
+      "max_fast_window_m": 15,
+      "reject_updates_equal_zero": true,
+      "invalid_initial_incumbent_cannot_be_frozen": true
+    },
+    "candidate_scope": "initial_full_incumbent_plus_same_cell_targeted_full_confirmation_only"
+  },
+  "outputs": {
+    "selected_winners": "vln/results/final/r2r-ce/selected_winners.json",
+    "registry": "vln/results/final/r2r-ce/registry.json",
+    "val_unseen_spec": "vln/experiments/r2r_ce_val_unseen_frozen_eval_v1.json"
+  },
+  "val_unseen_execution": {
+    "model_order": ["etpnav", "bevbert"],
+    "strict_model_barrier": true,
+    "max_workers": 3,
+    "launch_stagger_seconds": 15,
+    "resource_limits": {
+      "max_gpu_memory_mib_before_launch": 22000,
+      "estimated_job_gpu_memory_mib": 8000,
+      "max_aggregate_gpu_memory_mib": 30000,
+      "max_cgroup_memory_gib_before_launch": 55.0,
+      "estimated_job_memory_gib": 20.0,
+      "max_aggregate_cgroup_memory_gib": 75.0,
+      "resource_wait_timeout_seconds": 3600
+    },
+    "formal_requires_clean_tracked_tree": true,
+    "formal_requires_review_confirmation": true,
+    "campaign_lifetime_lock_required": true,
+    "shared_gpu_reservation_required": true,
+    "retry_assigns_new_run_tag": true,
+    "max_attempts_per_job": 2
+  }
+}

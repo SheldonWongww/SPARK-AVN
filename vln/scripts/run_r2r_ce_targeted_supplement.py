@@ -29,6 +29,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import run_tta_hparam_search as staged  # noqa: E402
 import tta_config_cli as config_cli  # noqa: E402
+from shared_gpu_launch_guard import (  # noqa: E402
+    ReservationLedgerError,
+    release_shared_gpu_reservation,
+    shared_gpu_launch_guard,
+)
 
 
 DEFAULT_SPEC = (
@@ -49,6 +54,8 @@ SETTING_MODEL = {
 METHOD_ORDER = ("tent", "fstta", "feedtta")
 SCREENING_STAGE = "r2r_ce_targeted_screening"
 FULL_STAGE = "r2r_ce_targeted_full"
+RESERVATION_ROLE = "r2r_ce_targeted_supplement"
+PROCESS_TOKEN_ENV = "NAVTTA_R2R_CE_TARGETED_PROCESS_TOKEN"
 
 
 class UserError(RuntimeError):
@@ -224,8 +231,14 @@ def _validate_execution(spec):
         or execution.get("phase_order_within_model")
         != ["screening", "full_confirmation"]
         or execution.get("round_robin_methods_within_screening") is not True
+        or execution.get("parallel_peer_campaign")
+        != "reverie_frozen_evaluation"
+        or execution.get("shared_gpu_launch_guard_required") is not True
+        or execution.get("shared_active_reservation_required") is not True
     ):
-        raise UserError("execution must use reviewed model-major strict barriers")
+        raise UserError(
+            "execution must use reviewed model barriers and shared-GPU coordination"
+        )
     expected = {
         "etpnav-r2r-ce": ((9, 3), (3, 3)),
         "bevbert-r2r-ce": ((6, 3), (2, 2)),
@@ -369,6 +382,7 @@ def _make_job(
         "setting": phase["setting"],
         "model": phase["model"],
         "family": "continuous",
+        "gpu": int(gpu),
         "benchmark": "r2r-ce",
         "search_method": method,
         "config_method": method,
@@ -450,6 +464,7 @@ def _job_identity(job):
         for key in (
             "batch_id", "ordinal", "point_index", "phase_index", "phase_id",
             "base_run_tag", "setting", "model", "family", "benchmark",
+            "gpu",
             "search_method", "config_method", "result_layout",
             "result_namespace", "stage", "config_stage", "episodes",
             "order_seed", "canonical_order_seed", "canonical_order_sha256",
@@ -533,6 +548,12 @@ def _phase_manifest(phase, batch_id, jobs, spec):
         ],
         "source_execution_jobs": 0,
         "restart_from_source_checkpoint": True,
+        "shared_gpu_coordination": {
+            "peer_campaign": spec["execution"]["parallel_peer_campaign"],
+            "launch_guard_required": True,
+            "active_reservation_required": True,
+            "reservation_role": RESERVATION_ROLE,
+        },
         "resource_limits": runtime_limits(phase, spec),
     }
 
@@ -596,6 +617,12 @@ def _campaign_plan(batch_id, spec):
         "full_jobs_max": 5,
         "total_jobs_max": 20,
         "strict_model_barrier": True,
+        "shared_gpu_coordination": {
+            "peer_campaign": spec["execution"]["parallel_peer_campaign"],
+            "launch_guard_required": True,
+            "active_reservation_required": True,
+            "reservation_role": RESERVATION_ROLE,
+        },
         "phases": phases,
     }
 
@@ -1083,14 +1110,271 @@ def runtime_args(cli, phase, spec):
     )
 
 
+def _reservation_token(job):
+    return "r2r_ce_targeted:{}:{}".format(job["batch_id"], job["run_tag"])
+
+
+def _reservation_metadata(args, job):
+    return {
+        "role": RESERVATION_ROLE,
+        "batch_id": args.batch_id,
+        "run_tag": job["run_tag"],
+        "setting": job["setting"],
+        "method": job["config_method"],
+        "phase_id": job["phase_id"],
+    }
+
+
+def _job_process_token(job):
+    try:
+        payload = {
+            "schema": "navtta.vln_r2r_ce_targeted_process_group.v1",
+            "batch_id": job["batch_id"],
+            "run_tag": job["run_tag"],
+            "job_dir": str(Path(job["job_dir"]).resolve()),
+            "setting": job["setting"],
+            "method": job["config_method"],
+            "phase_id": job["phase_id"],
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise UserError("targeted job lacks process-token identity") from error
+    return hashlib.sha256(canonical(payload).encode("utf-8")).hexdigest()
+
+
+def _proc_token_processes(token, proc_root=Path("/proc")):
+    """Return live Linux processes authenticated by an inherited job token."""
+    if (
+        not Path(proc_root).is_dir()
+        or re.fullmatch(r"[0-9a-f]{64}", str(token)) is None
+    ):
+        return []
+    marker = "{}={}".format(PROCESS_TOKEN_ENV, token).encode("ascii")
+    records = []
+    try:
+        entries = list(Path(proc_root).iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw_stat = (entry / "stat").read_text(encoding="utf-8")
+            tail = raw_stat[raw_stat.rfind(")") + 2:].split()
+            state, pgid, sid = tail[0], int(tail[2]), int(tail[3])
+            if state == "Z":
+                continue
+            environment = (entry / "environ").read_bytes().split(b"\0")
+        except (IndexError, OSError, ValueError):
+            continue
+        if marker not in environment:
+            continue
+        identity = staged.process_identity(int(entry.name))
+        if identity is not None and staged.process_alive(
+            identity.get("pid"), identity
+        ):
+            records.append({"identity": identity, "pgid": pgid, "sid": sid})
+    return sorted(records, key=lambda item: item["identity"]["pid"])
+
+
+def _recorded_live_processes(job):
+    """Fallback for local non-Linux tests; formal recovery uses procfs tokens."""
+    path = Path(job["job_dir"]) / "worker_state.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    records = []
+    for pid_key, identity_key in (
+        ("worker_pid", "worker_process"),
+        ("runner_pid", "runner_process"),
+    ):
+        identity = state.get(identity_key)
+        try:
+            pid = int(state[pid_key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (
+            isinstance(identity, dict)
+            and identity.get("pid") == pid
+            and staged.process_alive(pid, identity)
+        ):
+            try:
+                pgid, sid = os.getpgid(pid), os.getsid(pid)
+            except OSError:
+                continue
+            stat_path = Path("/proc") / str(pid) / "stat"
+            if stat_path.is_file():
+                try:
+                    raw_stat = stat_path.read_text(encoding="utf-8")
+                    state = raw_stat[raw_stat.rfind(")") + 2:].split()[0]
+                except (IndexError, OSError):
+                    continue
+                if state == "Z":
+                    continue
+            records.append({"identity": identity, "pgid": pgid, "sid": sid})
+    return records
+
+
+def _live_job_processes(job):
+    records = _proc_token_processes(_job_process_token(job))
+    seen = {
+        (
+            item["identity"].get("pid"),
+            item["identity"].get("start_token"),
+            item["identity"].get("cmdline_sha256"),
+        )
+        for item in records
+    }
+    for item in _recorded_live_processes(job):
+        key = (
+            item["identity"].get("pid"),
+            item["identity"].get("start_token"),
+            item["identity"].get("cmdline_sha256"),
+        )
+        if key not in seen:
+            records.append(item)
+            seen.add(key)
+    return sorted(records, key=lambda item: item["identity"]["pid"])
+
+
+def _live_job_identities(job):
+    return [item["identity"] for item in _live_job_processes(job)]
+
+
+def _release_reservation(args, job):
+    if job.get("batch_id") != args.batch_id or job.get("gpu") != args.gpu:
+        raise UserError("targeted reservation job differs from scheduler identity")
+    release_shared_gpu_reservation(job["gpu"], _reservation_token(job))
+
+
+def _claim_running_reservation(args, job, identities):
+    if not identities:
+        raise UserError("cannot reserve resources for a non-live targeted worker")
+    if job.get("batch_id") != args.batch_id or job.get("gpu") != args.gpu:
+        raise UserError("targeted reservation job differs from scheduler identity")
+    token = _reservation_token(job)
+    expected_metadata = _reservation_metadata(args, job)
+    with shared_gpu_launch_guard(args.gpu) as ledger:
+        record = ledger.document["reservations"].get(token)
+        if record is None:
+            gpu_memory, _ = staged.gpu_stats(args.gpu)
+            memory = staged.cgroup_memory_gib()
+            owner = staged.process_identity()
+            if owner is None:
+                raise UserError("cannot bind targeted scheduler process identity")
+            ledger.reserve(
+                token,
+                gpu_memory_mib=args.estimated_job_gpu_memory_mib,
+                cgroup_memory_gib=args.estimated_job_memory_gib,
+                observed_gpu_memory_mib=gpu_memory,
+                observed_cgroup_memory_gib=memory,
+                owner=owner,
+                metadata=expected_metadata,
+            )
+            record = ledger.document["reservations"][token]
+        elif (
+            record.get("gpu_memory_mib") != args.estimated_job_gpu_memory_mib
+            or not math.isclose(
+                float(record.get("cgroup_memory_gib", math.nan)),
+                float(args.estimated_job_memory_gib),
+                rel_tol=0.0,
+                abs_tol=0.0,
+            )
+            or record.get("metadata") != expected_metadata
+        ):
+            raise UserError("targeted worker reservation binding mismatch")
+        owner_keys = ("pid", "start_token", "cmdline_sha256")
+        for identity in identities:
+            if not any(
+                all(owner.get(key) == identity.get(key) for key in owner_keys)
+                for owner in record.get("owners", [])
+            ):
+                ledger.add_owner(token, identity)
+    return token
+
+
+def _reserved_resources_ok(args, ledger):
+    gpu_memory, _ = staged.gpu_stats(args.gpu)
+    memory = staged.cgroup_memory_gib()
+    snapshot = ledger.snapshot(gpu_memory, memory)
+    effective_gpu = snapshot["effective_gpu_memory_mib"]
+    effective_memory = snapshot["effective_cgroup_memory_gib"]
+    okay = (
+        effective_gpu <= args.max_gpu_memory_mib
+        and effective_memory <= args.max_memory_gib
+        and effective_gpu + args.estimated_job_gpu_memory_mib
+        <= args.max_aggregate_gpu_memory_mib
+        and effective_memory + args.estimated_job_memory_gib
+        <= args.max_aggregate_memory_gib
+    )
+    return okay, gpu_memory, memory, snapshot
+
+
+def _cleanup_process_groups(job, process=None):
+    records = _live_job_processes(job)
+    pgids = {item["pgid"] for item in records}
+    if process is not None and process.poll() is None:
+        # This direct child was created by this scheduler with
+        # start_new_session=True.  Include it even before procfs exposes the
+        # inherited token or worker_state.json is written.
+        pgids.add(process.pid)
+    return records, pgids
+
+
+def _terminate_launched_process(process, job, timeout_seconds=10.0):
+    records, pgids = _cleanup_process_groups(job, process)
+    if not records and not pgids:
+        return True
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        records, pgids = _cleanup_process_groups(job, process)
+        if not records and not pgids:
+            return True
+        time.sleep(0.1)
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        records, pgids = _cleanup_process_groups(job, process)
+        if not records and not pgids:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _rollback_failed_launch(ledger, token, process, job):
+    if not _terminate_launched_process(process, job):
+        raise UserError(
+            "failed launch still has authenticated descendants; "
+            "reservation retained"
+        )
+    ledger.release(token)
+
+
 def run_phase_batch(args, phase, root, jobs, spec):
-    """Run one bounded phase without claiming a cross-campaign reservation."""
+    """Run one phase under the GPU lock shared with REVERIE campaigns."""
     assert_campaign_head(campaign_root(args.batch_id))
     running = {}
     pending = []
     terminal_failure = False
     for job in jobs:
         exit_path = Path(job["job_dir"]) / "exitcode"
+        processes = _live_job_processes(job)
+        if processes:
+            running[job["run_tag"]] = {
+                "process": None,
+                "job": job,
+                "processes": processes,
+            }
+            continue
         if exit_path.is_file():
             try:
                 code = int(exit_path.read_text().strip())
@@ -1101,24 +1385,19 @@ def run_phase_batch(args, phase, root, jobs, spec):
                     parsed = staged.parse_metrics(job, spec)
                     if phase["kind"] == "screening":
                         enrich_screening_result(job, parsed, spec)
+                    _release_reservation(args, job)
                     continue
                 except Exception:
                     code = 255
+            _release_reservation(args, job)
             if args.retry_failed:
                 staged._bump_attempt(job)
                 pending.append(job)
             else:
                 terminal_failure = True
             continue
-        identity = staged._worker_identity(job)
-        pid = staged._worker_pid(job)
-        if pid is not None and staged.process_alive(pid, identity):
-            running[pid] = {
-                "process": None,
-                "job": job,
-                "identity": identity,
-            }
-        elif pid is not None:
+        if staged._worker_pid(job) is not None:
+            _release_reservation(args, job)
             if args.retry_failed:
                 staged._bump_attempt(job)
                 pending.append(job)
@@ -1159,9 +1438,29 @@ def run_phase_batch(args, phase, root, jobs, spec):
                 )
             )
             while pending or running:
-                for pid, active in list(running.items()):
+                for tag, active in list(running.items()):
                     exit_path = Path(active["job"]["job_dir"]) / "exitcode"
                     process = active["process"]
+                    processes = _live_job_processes(active["job"])
+                    if (
+                        not processes
+                        and process is not None
+                        and process.poll() is None
+                    ):
+                        processes = [
+                            item for item in active.get("processes", [])
+                            if staged.process_alive(
+                                item["identity"].get("pid"), item["identity"]
+                            )
+                        ]
+                    if processes:
+                        active["processes"] = processes
+                        _claim_running_reservation(
+                            args, active["job"], [
+                                item["identity"] for item in processes
+                            ]
+                        )
+                        continue
                     if exit_path.is_file():
                         try:
                             code = int(exit_path.read_text().strip())
@@ -1175,14 +1474,16 @@ def run_phase_batch(args, phase, root, jobs, spec):
                         if code != 0:
                             terminal_failure = True
                             launch_blocked = launch_blocked or args.fail_fast
-                        del running[pid]
-                    elif not staged.process_alive(pid, active.get("identity")):
-                        record("orphaned_worker run_tag={} pid={}".format(
-                            active["job"]["run_tag"], pid
+                        _release_reservation(args, active["job"])
+                        del running[tag]
+                    else:
+                        record("orphaned_worker run_tag={}".format(
+                            active["job"]["run_tag"]
                         ))
                         terminal_failure = True
                         launch_blocked = launch_blocked or args.fail_fast
-                        del running[pid]
+                        _release_reservation(args, active["job"])
+                        del running[tag]
 
                 now = time.time()
                 if now - last_observation >= 5.0:
@@ -1199,11 +1500,15 @@ def run_phase_batch(args, phase, root, jobs, spec):
                 if stop_requested:
                     launch_blocked = True
                     terminal_failure = True
-                    for pid in list(running):
-                        try:
-                            os.killpg(pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
+                    for active in running.values():
+                        pgids = {
+                            item["pgid"] for item in active.get("processes", [])
+                        }
+                        for pgid in pgids:
+                            try:
+                                os.killpg(pgid, signal.SIGTERM)
+                            except ProcessLookupError:
+                                pass
 
                 launched = False
                 if (
@@ -1212,64 +1517,106 @@ def run_phase_batch(args, phase, root, jobs, spec):
                     and not launch_blocked
                     and not stop_requested
                 ):
-                    gpu_memory, _ = staged.gpu_stats(args.gpu)
-                    memory = staged.cgroup_memory_gib()
-                    resources_ok = (
-                        gpu_memory <= args.max_gpu_memory_mib
-                        and memory <= args.max_memory_gib
-                        and gpu_memory + args.estimated_job_gpu_memory_mib
-                        <= args.max_aggregate_gpu_memory_mib
-                        and memory + args.estimated_job_memory_gib
-                        <= args.max_aggregate_memory_gib
-                    )
-                    if resources_ok:
-                        resource_blocked_since = None
-                        job = pending.pop(0)
-                        assert_campaign_head(campaign_root(args.batch_id))
-                        process = subprocess.Popen(
-                            [
-                                sys.executable,
-                                str(Path(staged.__file__).resolve()),
-                                "--worker-job",
-                                str(Path(job["job_dir"]) / "job.json"),
-                            ],
-                            cwd=str(REPO_ROOT),
-                            start_new_session=True,
+                    with shared_gpu_launch_guard(args.gpu) as ledger:
+                        resources_ok, gpu_memory, memory, snapshot = (
+                            _reserved_resources_ok(args, ledger)
                         )
-                        identity = staged.process_identity(process.pid)
-                        if identity is None:
-                            try:
-                                os.killpg(process.pid, signal.SIGTERM)
-                            except ProcessLookupError:
-                                pass
-                            raise UserError("cannot bind worker process identity")
-                        running[process.pid] = {
-                            "process": process,
-                            "job": job,
-                            "identity": identity,
-                        }
-                        record("launch worker_pid={} run_tag={}".format(
-                            process.pid, job["run_tag"]
-                        ))
-                        launched = True
-                        time.sleep(args.launch_stagger)
-                    else:
-                        if resource_blocked_since is None:
-                            resource_blocked_since = now
-                            record(
-                                "resource_wait gpu_mib={} memory_gib={:.3f}".format(
-                                    gpu_memory, memory
+                        if resources_ok:
+                            resource_blocked_since = None
+                            job = pending.pop(0)
+                            assert_campaign_head(campaign_root(args.batch_id))
+                            token = _reservation_token(job)
+                            owner = staged.process_identity()
+                            if owner is None:
+                                raise UserError(
+                                    "cannot bind targeted scheduler process identity"
                                 )
+                            ledger.reserve(
+                                token,
+                                gpu_memory_mib=args.estimated_job_gpu_memory_mib,
+                                cgroup_memory_gib=args.estimated_job_memory_gib,
+                                observed_gpu_memory_mib=gpu_memory,
+                                observed_cgroup_memory_gib=memory,
+                                owner=owner,
+                                metadata=_reservation_metadata(args, job),
                             )
-                        if (
-                            not running
-                            and now - resource_blocked_since
-                            >= args.resource_wait_timeout
-                        ):
-                            raise UserError(
-                                "resource thresholds blocked all launches for "
-                                "{} seconds".format(args.resource_wait_timeout)
-                            )
+                            process = None
+                            try:
+                                process = subprocess.Popen(
+                                    [
+                                        sys.executable,
+                                        str(Path(staged.__file__).resolve()),
+                                        "--worker-job",
+                                        str(Path(job["job_dir"]) / "job.json"),
+                                    ],
+                                    cwd=str(REPO_ROOT),
+                                    start_new_session=True,
+                                    env=dict(
+                                        os.environ,
+                                        **{
+                                            PROCESS_TOKEN_ENV:
+                                            _job_process_token(job)
+                                        }
+                                    ),
+                                )
+                                identity = staged.process_identity(process.pid)
+                                if identity is None:
+                                    raise UserError(
+                                        "cannot bind worker process identity"
+                                    )
+                                ledger.add_owner(token, identity)
+                            except Exception:
+                                _rollback_failed_launch(
+                                    ledger, token, process, job
+                                )
+                                raise
+                            running[job["run_tag"]] = {
+                                "process": process,
+                                "job": job,
+                                "processes": [{
+                                    "identity": identity,
+                                    "pgid": process.pid,
+                                    "sid": process.pid,
+                                }],
+                            }
+                            record("launch worker_pid={} run_tag={}".format(
+                                process.pid, job["run_tag"]
+                            ))
+                            launched = True
+                            # Keep the cross-campaign launch lock until CUDA
+                            # allocation becomes visible to the next scheduler.
+                            time.sleep(args.launch_stagger)
+                            descendants = _live_job_processes(job)
+                            if descendants:
+                                running[job["run_tag"]]["processes"] = descendants
+                                for item in descendants:
+                                    descendant = item["identity"]
+                                    if descendant.get("pid") != identity.get("pid"):
+                                        ledger.add_owner(token, descendant)
+                        else:
+                            if resource_blocked_since is None:
+                                resource_blocked_since = now
+                                record(
+                                    "resource_wait gpu_mib={} projected_gpu_mib={} "
+                                    "memory_gib={:.3f} projected_memory_gib={:.3f}"
+                                    .format(
+                                        snapshot["effective_gpu_memory_mib"],
+                                        snapshot["effective_gpu_memory_mib"]
+                                        + args.estimated_job_gpu_memory_mib,
+                                        snapshot["effective_cgroup_memory_gib"],
+                                        snapshot["effective_cgroup_memory_gib"]
+                                        + args.estimated_job_memory_gib,
+                                    )
+                                )
+                            if (
+                                not running
+                                and now - resource_blocked_since
+                                >= args.resource_wait_timeout
+                            ):
+                                raise UserError(
+                                    "resource thresholds blocked all launches for "
+                                    "{} seconds".format(args.resource_wait_timeout)
+                                )
                 if launch_blocked and not running:
                     break
                 if not launched:
@@ -1549,7 +1896,7 @@ def execute_campaign(cli, spec):
                 cli.batch_id, spec,
             ))
             completed_phases.append((full_root, full_jobs))
-    aggregate_campaign(cli.batch_id, spec, confirmations)
+        aggregate_campaign(cli.batch_id, spec, confirmations)
 
 
 def status_snapshot(batch_id):
@@ -1576,8 +1923,7 @@ def status_snapshot(batch_id):
                 succeeded += int(code == 0)
                 failed += int(code != 0)
                 continue
-            pid = staged._worker_pid(job)
-            if pid is not None and staged.process_alive(pid):
+            if _live_job_identities(job):
                 running += 1
         values.append({
             "phase_id": phase["phase_id"],
@@ -1634,6 +1980,6 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (UserError, staged.UserError, staged.ReservationLedgerError) as error:
+    except (UserError, staged.UserError, ReservationLedgerError) as error:
         print("error: {}".format(error), file=sys.stderr)
         raise SystemExit(1)

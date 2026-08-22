@@ -78,8 +78,15 @@ order SHA256 `93f44aab…4bd94e`。
 
 并发上限采用已在该 R2R-CE 服务器阶段验证过的 3-worker 保守上限；预启动门槛为
 22,000 MiB，单 job 预留 8,000 MiB，aggregate 上限 30,000 MiB。cgroup memory
-对应为 `55 + 20 <= 75 GiB`。本轮不与其他 campaign 共跑，调度器依靠实际显存/
-cgroup 门槛和 15 秒启动间隔，在下一次启动前重新读取资源占用。
+对应为 `55 + 20 <= 75 GiB`。本轮允许按总计划与 REVERIE frozen evaluation
+并行：两个调度器使用同一 per-GPU launch lock 和 active reservation ledger。
+R2R-CE 在锁内读取实际显存/cgroup 与对端尚未显现为实际占用的预约量，原子完成
+资源判断、reservation 和 worker 启动，并继续持锁 15 秒等待 CUDA 分配可见。
+每个 job 的 worker、runner 及 Python 后代继承唯一 token，恢复时通过 token 与
+PGID/SID 重新发现进程并认领 reservation；即使两层 shell 异常退出，只要评测
+后代仍存活就不会释放或 retry。任务完全终止后才释放，避免两个 campaign 同时
+基于旧快照启动。`exitcode` 仅表示 worker 已写出状态；在 token 后代归零前不视为
+phase terminal，因此模型 barrier 也不会提前放行。
 
 ## 正式证据与恢复
 

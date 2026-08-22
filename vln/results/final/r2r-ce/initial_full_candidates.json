@@ -1,0 +1,376 @@
+{
+  "batch_id": "vln-r2r-ce-small-hparam-search-v1-seed0",
+  "benchmark": "r2r_ce_v1_3_unified_etpnav_bevbert",
+  "episode_count": 778,
+  "episode_order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e",
+  "experiment_id": "vln-r2r-ce-small-hparam-search-v1",
+  "order_seed": 0,
+  "records": {
+    "bevbert-r2r-ce": {
+      "atena": {
+        "formal_immutable_identity_sha256": "feb54a18dd3144834788401f1793788522d4821fbe1e85f816c1696c432a9faa",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-atena-final-0001-bevbert-r2r-ce-850700dced-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "15b87c421741fa4f224261e6f7702e1953992c23c07865cc5bb33e6a6ed2444e",
+        "metrics": {
+          "COLLISIONS": 0.155682,
+          "DISTANCE_TO_GOAL": 3.174996,
+          "GHOST_CNT": 23.636247,
+          "NDTW": 71.73859999999999,
+          "ORACLE_SUCCESS": 76.7352,
+          "OSR": 76.7352,
+          "PATH_LENGTH": 11.7597,
+          "SDTW": 60.338300000000004,
+          "SPL": 64.8505,
+          "SR": 71.4653,
+          "STEPS_TAKEN": 77.073265,
+          "SUCCESS": 71.4653
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 2e-06,
+          "lr_self": 4e-08,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.25,
+          "optimizer": "AdamW",
+          "query_threshold": 0.1,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-atena-final-0001-bevbert-r2r-ce-850700dced"
+      },
+      "eam": {
+        "formal_immutable_identity_sha256": "cb60bc2934c333f528aff9928b811a803222a1d74d6a4fea4e25315b1c0252b3",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-eam-final-0001-bevbert-r2r-ce-5588eba2df-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "5f0a0c014ffd0d3fd69650e5e8bb979088007ddc189d01bb6887deacfd310718",
+        "metrics": {
+          "COLLISIONS": 0.16892,
+          "DISTANCE_TO_GOAL": 3.491639,
+          "GHOST_CNT": 23.898458,
+          "NDTW": 69.5249,
+          "ORACLE_SUCCESS": 75.06429999999999,
+          "OSR": 75.06429999999999,
+          "PATH_LENGTH": 12.427368,
+          "SDTW": 57.649899999999995,
+          "SPL": 61.2692,
+          "SR": 68.8946,
+          "STEPS_TAKEN": 83.53856,
+          "SUCCESS": 68.8946
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.4,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 64,
+          "optimizer": "Adam",
+          "update_interval": 1
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-eam-final-0001-bevbert-r2r-ce-5588eba2df"
+      },
+      "feedtta": {
+        "formal_immutable_identity_sha256": "45b4486c90d54a4fe3590316a6cd97827a5cede961d72022db029462b3d2d6ea",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-feedtta-final-0001-bevbert-r2r-ce-6eaddc7323-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "9ba6563e2263346811bd30e3133b2206a1f3572f1413f082d1beee8a69681cda",
+        "metrics": {
+          "COLLISIONS": 0.156389,
+          "DISTANCE_TO_GOAL": 3.619262,
+          "GHOST_CNT": 24.237789,
+          "NDTW": 68.1134,
+          "ORACLE_SUCCESS": 75.32130000000001,
+          "OSR": 75.32130000000001,
+          "PATH_LENGTH": 12.995782,
+          "SDTW": 56.592699999999994,
+          "SPL": 59.920700000000004,
+          "SR": 68.3805,
+          "STEPS_TAKEN": 89.123393,
+          "SUCCESS": 68.3805
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax",
+          "alpha": -0.2,
+          "episodic": false,
+          "gamma": 0.99,
+          "lr": 1e-08,
+          "max_grad_norm": 0.0,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-feedtta-final-0001-bevbert-r2r-ce-6eaddc7323"
+      },
+      "fstta": {
+        "formal_immutable_identity_sha256": "2c61558332a2e501105243473dfec705bda06e4465bec209fcdf96145b183c04",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-fstta-final-0001-bevbert-r2r-ce-4f1f35e475-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "8e3c3f0e2805227471b51e109efd78e387dc6d27ab166c0b604ee68d3c31eb19",
+        "metrics": {
+          "COLLISIONS": 0.156389,
+          "DISTANCE_TO_GOAL": 3.619262,
+          "GHOST_CNT": 24.237789,
+          "NDTW": 68.1134,
+          "ORACLE_SUCCESS": 75.32130000000001,
+          "OSR": 75.32130000000001,
+          "PATH_LENGTH": 12.995782,
+          "SDTW": 56.592699999999994,
+          "SPL": 59.920700000000004,
+          "SR": 68.3805,
+          "STEPS_TAKEN": 89.123393,
+          "SUCCESS": 68.3805
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 3e-07,
+          "lr_slow": 1e-05,
+          "m": 16,
+          "max_grad_norm": 0.0,
+          "n": 32,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-fstta-final-0001-bevbert-r2r-ce-4f1f35e475"
+      },
+      "tent": {
+        "formal_immutable_identity_sha256": "855a511a0813b5c18ad781072b416dacf97e9509d16b9410f3a91a474f61eb6e",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-tent-final-0001-bevbert-r2r-ce-ccc3bc8133-bevbert-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "681c9e95777f7e78021a469304bd3042d8749d39dd1e31863c9e487b42bbf714",
+        "metrics": {
+          "COLLISIONS": 0.156972,
+          "DISTANCE_TO_GOAL": 3.465064,
+          "GHOST_CNT": 24.304627,
+          "NDTW": 70.8578,
+          "ORACLE_SUCCESS": 76.7352,
+          "OSR": 76.7352,
+          "PATH_LENGTH": 11.540245,
+          "SDTW": 58.7623,
+          "SPL": 62.23649999999999,
+          "SR": 69.1517,
+          "STEPS_TAKEN": 74.937018,
+          "SUCCESS": 69.1517
+        },
+        "parameters": {
+          "episodic": false,
+          "last_k_ln": 4,
+          "lr": 1.5625e-05,
+          "max_grad_norm": 0.0,
+          "norm_scope": "ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-tent-final-0001-bevbert-r2r-ce-ccc3bc8133"
+      }
+    },
+    "etpnav-r2r-ce": {
+      "atena": {
+        "formal_immutable_identity_sha256": "2bb9509a3f1946f42b97f93f6e1c520e959f87c39f2070935bd875a15e11b575",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-atena-final-0000-etpnav-r2r-ce-9729e0dd27-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "5faffbac414cf0ae721388db1339e43add892ab42283dc9ef6effbf86e0eedc1",
+        "metrics": {
+          "COLLISIONS": 0.160261,
+          "DISTANCE_TO_GOAL": 3.571933,
+          "GHOST_CNT": 23.257069,
+          "NDTW": 72.1812,
+          "ORACLE_SUCCESS": 73.3933,
+          "OSR": 73.3933,
+          "PATH_LENGTH": 10.602517,
+          "SDTW": 57.4345,
+          "SPL": 61.23030000000001,
+          "SR": 67.73780000000001,
+          "STEPS_TAKEN": 68.55527,
+          "SUCCESS": 67.73780000000001
+        },
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 5e-07,
+          "lr_self": 1e-08,
+          "max_grad_norm": 0.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.3,
+          "self_loss_weight": 0.1,
+          "weight_decay": 0.01
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-atena-final-0000-etpnav-r2r-ce-9729e0dd27"
+      },
+      "eam": {
+        "formal_immutable_identity_sha256": "1025d20a44ae709ffa31878b20720ff1f529cb9cb67de617476b73d146dbb880",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-eam-final-0000-etpnav-r2r-ce-43065d0fa9-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "5ac36a76e78209331102774ef4c4681f734559ce77c91be584a92dc2b5e06c88",
+        "metrics": {
+          "COLLISIONS": 0.166648,
+          "DISTANCE_TO_GOAL": 3.602608,
+          "GHOST_CNT": 23.730077,
+          "NDTW": 71.6208,
+          "ORACLE_SUCCESS": 74.4216,
+          "OSR": 74.4216,
+          "PATH_LENGTH": 10.786352,
+          "SDTW": 57.1194,
+          "SPL": 60.8084,
+          "SR": 67.4807,
+          "STEPS_TAKEN": 70.069409,
+          "SUCCESS": 67.4807
+        },
+        "parameters": {
+          "batch_size": 8,
+          "confidence_scale": 0.4,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 0.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 1
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-eam-final-0000-etpnav-r2r-ce-43065d0fa9"
+      },
+      "feedtta": {
+        "formal_immutable_identity_sha256": "6e4c2dd64a6ba86db385450c1352090eb1030a40c4e62e6af1458f56510851e7",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-feedtta-final-0000-etpnav-r2r-ce-6eaddc7323-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "65576171d59a10cc55b4bdce6e00e1d3fda265a8a6e8adebc088db91aeafe73c",
+        "metrics": {
+          "COLLISIONS": 0.160709,
+          "DISTANCE_TO_GOAL": 3.579145,
+          "GHOST_CNT": 23.965296,
+          "NDTW": 71.2848,
+          "ORACLE_SUCCESS": 74.4216,
+          "OSR": 74.4216,
+          "PATH_LENGTH": 11.08772,
+          "SDTW": 56.8504,
+          "SPL": 59.96939999999999,
+          "SR": 67.4807,
+          "STEPS_TAKEN": 72.262211,
+          "SUCCESS": 67.4807
+        },
+        "parameters": {
+          "action_seed": 0,
+          "action_selection": "argmax",
+          "alpha": -0.2,
+          "episodic": false,
+          "gamma": 0.99,
+          "lr": 1e-08,
+          "max_grad_norm": 0.0,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "last_crossmodal",
+          "sgr_seed": 0
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-feedtta-final-0000-etpnav-r2r-ce-6eaddc7323"
+      },
+      "fstta": {
+        "formal_immutable_identity_sha256": "a29c7405bb676d0e95cd54bab3547afd3cb574e5557ef9c9d8f57cc99fdbbe85",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-fstta-final-0000-etpnav-r2r-ce-4f1f35e475-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "bf935aefab1aca04c9b0a0e92459018d278cab4fe8c44b2234e9581b571b459e",
+        "metrics": {
+          "COLLISIONS": 0.160709,
+          "DISTANCE_TO_GOAL": 3.579145,
+          "GHOST_CNT": 23.965296,
+          "NDTW": 71.2848,
+          "ORACLE_SUCCESS": 74.4216,
+          "OSR": 74.4216,
+          "PATH_LENGTH": 11.08772,
+          "SDTW": 56.8504,
+          "SPL": 59.96939999999999,
+          "SR": 67.4807,
+          "STEPS_TAKEN": 72.249357,
+          "SUCCESS": 67.4807
+        },
+        "parameters": {
+          "a": 0.9,
+          "b": 1.1,
+          "beta1": 0.9,
+          "beta2": 0.99,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "last_k_ln": 4,
+          "lr_fast": 3e-07,
+          "lr_slow": 1e-05,
+          "m": 16,
+          "max_grad_norm": 0.0,
+          "n": 32,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "rho": 0.95,
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-fstta-final-0000-etpnav-r2r-ce-4f1f35e475"
+      },
+      "tent": {
+        "formal_immutable_identity_sha256": "93154ea7b1d10db40c5bd72cf5c7f1b39e9364bc597a3a63d2752b5ac7ca7802",
+        "formal_manifest_path": "vln/results/runs/vln-r2r-ce-small-hparam-search-v1-seed0-tent-final-0000-etpnav-r2r-ce-4592da2ae1-etpnav-r2r-ce-val_seen-v1.3-unified/manifest.json",
+        "formal_manifest_sha256": "7c8d54d2cd8a72a6658d7d9eba9a0e0c3979107c225b2761b1bfcab28377acac",
+        "metrics": {
+          "COLLISIONS": 0.160709,
+          "DISTANCE_TO_GOAL": 3.579145,
+          "GHOST_CNT": 23.965296,
+          "NDTW": 71.2848,
+          "ORACLE_SUCCESS": 74.4216,
+          "OSR": 74.4216,
+          "PATH_LENGTH": 11.08772,
+          "SDTW": 56.8504,
+          "SPL": 59.96939999999999,
+          "SR": 67.4807,
+          "STEPS_TAKEN": 72.249357,
+          "SUCCESS": 67.4807
+        },
+        "parameters": {
+          "episodic": false,
+          "last_k_ln": 4,
+          "lr": 1e-08,
+          "max_grad_norm": 0.0,
+          "norm_scope": "last_k_ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "run_tag": "vln-r2r-ce-small-hparam-search-v1-seed0-tent-final-0000-etpnav-r2r-ce-4592da2ae1"
+      }
+    }
+  },
+  "schema": "navtta.vln_r2r_ce_initial_full_candidates.v1",
+  "source_selection_files": {
+    "atena": {
+      "path": "vln/results/logs/hparam_search/atena/vln-r2r-ce-small-hparam-search-v1-seed0/FINAL_SELECTION.json",
+      "sha256": "8a32fa2d9d2fc234ca2f4be33b1fef93df58be1a9ad633444f9e27cd50a56701"
+    },
+    "eam": {
+      "path": "vln/results/logs/hparam_search/eam/vln-r2r-ce-small-hparam-search-v1-seed0/FINAL_SELECTION.json",
+      "sha256": "9c3acc0df9ac13ef592665aa465384a3f366899d0da9df44a1cf79f32d2b93e1"
+    },
+    "feedtta": {
+      "path": "vln/results/logs/hparam_search/feedtta/vln-r2r-ce-small-hparam-search-v1-seed0/FINAL_SELECTION.json",
+      "sha256": "f2e49ddd6906cef5c573adb348e55997c09160a03aadb2c39cac6ff019d052d4"
+    },
+    "fstta": {
+      "path": "vln/results/logs/hparam_search/fstta/vln-r2r-ce-small-hparam-search-v1-seed0/FINAL_SELECTION.json",
+      "sha256": "64b13c4518c991f5da7b04da3cb31e722c95b6a987f77e18ad4115f890136efe"
+    },
+    "tent": {
+      "path": "vln/results/logs/hparam_search/tent/vln-r2r-ce-small-hparam-search-v1-seed0/FINAL_SELECTION.json",
+      "sha256": "628c61491176ac566fa19139e43cfeae8b12b77459c8cd9b5384959ec4d538f5"
+    }
+  },
+  "split": "val_seen"
+}
