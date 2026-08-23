@@ -218,6 +218,47 @@ class TTAConfigCLITest(unittest.TestCase):
             {"action_seed": 3, "sgr_seed": 3}, **seed_three
         )
 
+    def test_discrete_idea_mapping(self):
+        method, tokens = self._translate(
+            "duet-r2r", "idea",
+            {"lr": 3e-3, "tau": 0.7, "opt_steps": 10, "k_max": 32,
+             "use_fisher": False, "prompt_layers": 0},
+        )
+        self.assertEqual(method, "idea")
+        self.assertEqual(tokens[tokens.index("--tta_idea_lr") + 1], "0.003")
+        self.assertEqual(tokens[tokens.index("--tta_idea_tau") + 1], "0.7")
+        self.assertEqual(tokens[tokens.index("--tta_idea_opt_steps") + 1], "10")
+        self.assertIn("--tta_idea_no_fisher", tokens)
+        # IDEA must not leak FSTTA tau naming.
+        self.assertNotIn("--tta_fstta_tau", tokens)
+
+    def test_discrete_idea_use_fisher_true_emits_no_flag(self):
+        _, tokens = self._translate(
+            "duet-r2r", "idea", {"lr": 3e-3, "use_fisher": True},
+        )
+        self.assertNotIn("--tta_idea_no_fisher", tokens)
+
+    def test_continuous_idea_mapping(self):
+        method, tokens = self._translate(
+            "etpnav-r2r-ce", "idea",
+            {"lr": 3e-3, "tau": 0.5, "lambda": 0.4, "k_max": 32,
+             "source_warmup_steps": 64},
+        )
+        self.assertEqual(method, "idea")
+        self.assertEqual(tokens[tokens.index("TTA.IDEA.LR") + 1], "0.003")
+        self.assertEqual(tokens[tokens.index("TTA.IDEA.TAU") + 1], "0.5")
+        self.assertEqual(tokens[tokens.index("TTA.IDEA.LAMBDA") + 1], "0.4")
+        self.assertEqual(
+            tokens[tokens.index("TTA.IDEA.SOURCE_WARMUP_STEPS") + 1], "64"
+        )
+
+    def test_discrete_fstta_tau_unaffected_by_idea_entry(self):
+        _, tokens = self._translate(
+            "duet-r2r", "fstta", {"lr_fast": 6e-4, "tau": 0.5},
+        )
+        self.assertEqual(tokens[tokens.index("--tta_fstta_tau") + 1], "0.5")
+        self.assertNotIn("--tta_idea_tau", tokens)
+
 
 if __name__ == "__main__":
     unittest.main()

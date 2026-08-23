@@ -1,0 +1,63 @@
+{
+  "schema": "navtta.vln_tta_consistency_search.v1",
+  "benchmark": "r2r-ce",
+  "description": "R2R-CE cross-split consistency search (continuous VLN-CE). One frozen config per (method,model) selected on both val_seen and val_unseen with a no-regression SR floor. ETPNav and BEVBert never overlap (strict model barrier). See VLN_TTA_HPARAM_METHODOLOGY.md.",
+  "splits": ["val_seen", "val_unseen"],
+  "order_seed": 0,
+  "settings": ["etpnav-r2r-ce", "bevbert-r2r-ce"],
+  "model_barrier": true,
+  "selection": {
+    "floor_metric": "SR",
+    "floor_epsilon": 0.3,
+    "gain_metric": "SR",
+    "worst_split_objective": true,
+    "tie_breakers": ["mean_gain_SR", "mean_gain_SPL", "lower_param_drift", "fewer_updates"],
+    "fallback": "paper_default_if_no_consistent_improvement"
+  },
+  "concurrency": {
+    "etpnav-r2r-ce": {"tent": 3, "fstta": 3, "eam": 3, "feedtta": 3, "atena": 3, "idea": 3},
+    "bevbert-r2r-ce": {"tent": 3, "fstta": 3, "eam": 3, "feedtta": 3, "atena": 3, "idea": 3}
+  },
+  "methods": {
+    "tent": {
+      "base": {"norm_scope": "last_k_ln", "last_k_ln": 4, "optimizer": "Adam",
+               "action_selection": "argmax"},
+      "grid": {"lr": [1e-5, 3e-5, 1e-4, 3e-4]},
+      "paper_default": {"lr": 1e-4}
+    },
+    "fstta": {
+      "base": {"m": 3, "n": 4, "q": 0.1, "rho": 0.9, "tau": 0.5, "a": 0.5, "b": 1.5,
+               "fast_grad_mode": "concordant", "action_selection": "argmax"},
+      "grid": {"lr_fast": [2e-4, 6e-4, 1e-3], "lr_slow": [5e-4, 1e-3]},
+      "paper_default": {"lr_fast": 6e-4, "lr_slow": 1e-3}
+    },
+    "eam": {
+      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8,
+               "action_selection": "argmax"},
+      "grid": {"lr": [3e-6, 1e-5, 3e-5], "update_interval": [1, 4]},
+      "paper_default": {"lr": 1e-5, "update_interval": 1}
+    },
+    "feedtta": {
+      "base": {"gamma": 0.99, "sgr_seed": 0, "scope_profile": "paper_full",
+               "action_selection": "sample", "action_seed": 0},
+      "grid": {"lr": [2e-6, 5e-6, 1e-5],
+               "pa": [{"p": 0.05, "alpha": 0.1}, {"p": 0.05, "alpha": -0.2}]},
+      "paper_default": {"lr": 5e-6, "p": 0.05, "alpha": 0.1}
+    },
+    "atena": {
+      "base": {"self_loss_weight": 0.1, "action_selection": "argmax"},
+      "grid": {"lr_query": [5e-7, 1e-6], "query_threshold": [0.0, 0.05],
+               "mix_lambda": [0.5], "lr_self": [1e-8, 1e-7]},
+      "paper_default": {"lr_query": 5e-7, "lr_self": 1e-8, "query_threshold": 0.0,
+                        "mix_lambda": 0.5}
+    },
+    "idea": {
+      "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1,
+               "use_fisher": true, "action_selection": "argmax"},
+      "grid": {"lr": [1e-3, 3e-3], "tau": [0.5, 0.7]},
+      "search_opt_steps": 10,
+      "final_opt_steps": 50,
+      "paper_default": {"lr": 3e-3, "tau": 0.7}
+    }
+  }
+}

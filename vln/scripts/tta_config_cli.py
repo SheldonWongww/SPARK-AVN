@@ -13,7 +13,7 @@ DISCRETE_SETTINGS = {
     "goat-r2r", "goat-reverie",
 }
 CONTINUOUS_SETTINGS = {"etpnav-r2r-ce", "bevbert-r2r-ce"}
-METHODS = {"source", "tent", "fstta", "eam", "feedtta", "atena"}
+METHODS = {"source", "tent", "fstta", "eam", "feedtta", "atena", "idea"}
 FEEDTTA_SCOPE_PROFILES = {
     "configured_prefixes", "paper_full", "last_crossmodal", "action_head",
 }
@@ -40,6 +40,9 @@ METHOD_KEYS = {
                 "scope_profile"},
     "atena": {"lr_query", "lr_self", "mix_lambda", "query_threshold",
               "self_loss_weight"},
+    "idea": {"lr", "prompt_length", "k_max", "lambda", "tau", "fisher_beta",
+             "opt_steps", "use_fisher", "ridge", "prompt_layers",
+             "source_warmup_steps"},
 }
 
 
@@ -179,6 +182,7 @@ def _continuous(
     prefix = {
         "fstta": "TTA.FSTTA.", "eam": "TTA.EAM.",
         "feedtta": "TTA.FEEDTTA.", "atena": "TTA.ATENA.",
+        "idea": "TTA.IDEA.",
     }.get(method)
     method_map = {
         "lr": "LR", "lr_fast": "TTA.LR", "lr_slow": "LR_SLOW", "m": "M", "n": "N",
@@ -197,10 +201,16 @@ def _continuous(
         "scope_profile": "SCOPE_PROFILE",
         "mix_lambda": "MIX_LAMBDA", "query_threshold": "QUERY_THRESHOLD",
         "self_loss_weight": "SELF_LOSS_WEIGHT",
+        # IDEA (TTA.IDEA.*). ``tau`` reuses the FSTTA-shared "TAU" suffix name.
+        "prompt_length": "PROMPT_LENGTH", "k_max": "K_MAX", "lambda": "LAMBDA",
+        "fisher_beta": "FISHER_BETA", "opt_steps": "OPT_STEPS",
+        "use_fisher": "USE_FISHER", "ridge": "RIDGE",
+        "prompt_layers": "PROMPT_LAYERS",
+        "source_warmup_steps": "SOURCE_WARMUP_STEPS",
     }
     for key, value in params.items():
         method_specific = (
-            (method in ("eam", "feedtta") and key == "lr")
+            (method in ("eam", "feedtta", "idea") and key == "lr")
             or (method == "eam" and key == "update_interval")
         )
         if key in common_map and not method_specific:
@@ -242,12 +252,14 @@ def _discrete(
         "lr_fast": "--tta_lr", "lr_slow": "--tta_fstta_lr_slow",
         "m": "--tta_fstta_m", "n": "--tta_fstta_n",
         "q": "--tta_fstta_q", "rho": "--tta_fstta_rho",
-        "tau": "--tta_fstta_tau", "a": "--tta_fstta_a",
+        "tau": "--tta_idea_tau" if method == "idea" else "--tta_fstta_tau",
+        "a": "--tta_fstta_a",
         "b": "--tta_fstta_b", "fast_grad_mode": "--tta_fstta_fast_grad_mode",
         "slow_optimizer": "--tta_fstta_slow_optimizer",
         "slow_momentum": "--tta_fstta_slow_momentum",
         "eigen_eps": "--tta_fstta_eigen_eps", "lr": {
-            "eam": "--tta_eam_lr", "feedtta": "--tta_feedtta_lr"
+            "eam": "--tta_eam_lr", "feedtta": "--tta_feedtta_lr",
+            "idea": "--tta_idea_lr",
         }.get(method, "--tta_lr"),
         "confidence_scale": "--tta_eam_confidence_scale",
         "memory_size": "--tta_eam_memory_size",
@@ -260,6 +272,14 @@ def _discrete(
         "lr_self": "--tta_atena_lr_self", "mix_lambda": "--tta_atena_mix_lambda",
         "query_threshold": "--tta_atena_query_threshold",
         "self_loss_weight": "--tta_atena_self_loss_weight",
+        # IDEA discrete CLI (--tta_idea_*). ``lr`` and ``tau`` are handled by
+        # the method-conditional entries above.
+        "prompt_length": "--tta_idea_prompt_length",
+        "k_max": "--tta_idea_k_max", "lambda": "--tta_idea_lambda",
+        "fisher_beta": "--tta_idea_fisher_beta",
+        "opt_steps": "--tta_idea_opt_steps", "ridge": "--tta_idea_ridge",
+        "prompt_layers": "--tta_idea_prompt_layers",
+        "source_warmup_steps": "--tta_idea_source_warmup_steps",
     }
     true_flags = {
         "episodic": "--tta_episodic",
@@ -272,6 +292,7 @@ def _discrete(
         "use_slow": "--tta_fstta_no_slow",
         "reset_optimizer_each_episode":
             "--tta_fstta_no_reset_optimizer_each_episode",
+        "use_fisher": "--tta_idea_no_fisher",
     }
     for key, value in params.items():
         if key in true_flags:
@@ -283,7 +304,7 @@ def _discrete(
                 tokens.append(inverse_flags[key])
             continue
         method_specific = (
-            (method in ("eam", "feedtta") and key == "lr")
+            (method in ("eam", "feedtta", "idea") and key == "lr")
             or (method == "eam" and key == "update_interval")
         )
         option = (
