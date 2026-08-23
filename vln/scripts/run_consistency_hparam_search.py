@@ -135,10 +135,12 @@ def write_job_config(job_dir, method, params):
 
 
 def build_command(setting, split, config_path, result_root, run_tag):
+    # No --order-seed: run_source_eval.sh then defaults to the canonical
+    # seed-0 episode-order manifest (the paper main-table order).  Passing
+    # --order-seed 0 would instead demand an "orders"-stage robustness config.
     return [
         "bash", str(RUNNER), setting, split,
         "--run-tag", run_tag,
-        "--order-seed", "0",
         "--tta-config", str(config_path),
         "--result-root", str(result_root),
     ]
