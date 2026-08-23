@@ -121,7 +121,7 @@ switch. Do not backfill tail slots with a different method.
 R2R same-(model,method) parallelism: Tent 10, FSTTA 12, EAM 5, FeedTTA 6
 (HAMT 5), ATENA 5. GOAT-FSTTA capped at 12.
 
-REVERIE: same-(model,method) = 1 (no high-concurrency calibration yet).
+REVERIE: same-(model,method) = 4 (per-model total 4 with one method at a time).
 
 R2R-CE: 3 per (model,method); ETPNav and BEVBert never overlap (strict model
 barrier).

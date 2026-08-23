@@ -14,9 +14,9 @@
     "fallback": "paper_default_if_no_consistent_improvement"
   },
   "concurrency": {
-    "duet-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1},
-    "hamt-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1},
-    "goat-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1}
+    "duet-reverie": {"tent": 4, "fstta": 4, "eam": 4, "feedtta": 4, "atena": 4, "idea": 4},
+    "hamt-reverie": {"tent": 4, "fstta": 4, "eam": 4, "feedtta": 4, "atena": 4, "idea": 4},
+    "goat-reverie": {"tent": 4, "fstta": 4, "eam": 4, "feedtta": 4, "atena": 4, "idea": 4}
   },
   "methods": {
     "tent": {
