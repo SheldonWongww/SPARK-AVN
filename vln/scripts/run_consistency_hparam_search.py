@@ -108,6 +108,20 @@ def candidate_tag(method, params):
     return "-".join(parts)[:80]
 
 
+def full_run_tag(run_tag, tag):
+    """The RUN_TAG passed to run_source_eval.sh (result-root must end here)."""
+    return "{}-{}".format(run_tag, tag)
+
+
+def candidate_job_dir(out_dir, setting, method, run_tag, tag):
+    """Directory holding the per-split result roots for one candidate.
+
+    ``run_source_eval.sh`` requires ``--result-root`` to end with
+    ``<RUN_TAG>/<SPLIT>``, so the split dir is nested under the full run tag.
+    """
+    return Path(out_dir) / setting / method / full_run_tag(run_tag, tag)
+
+
 # ---------------------------------------------------------------------------
 # Job config + launch
 # ---------------------------------------------------------------------------
@@ -280,13 +294,13 @@ def run_search(spec_path, run_tag, methods_filter, settings_filter, out_dir,
             jobs = []
             for params in candidates:
                 tag = candidate_tag(method, params)
-                job_dir = out_dir / setting / method / tag
+                job_dir = candidate_job_dir(out_dir, setting, method, run_tag, tag)
                 config_path = write_job_config(job_dir, method, params)
                 for split in spec["splits"]:
                     result_root = job_dir / split
                     command = build_command(
                         setting, split, config_path, result_root,
-                        "{}-{}".format(run_tag, tag),
+                        full_run_tag(run_tag, tag),
                     )
                     jobs.append((command, params, split, result_root))
             # Launch with bounded concurrency (same-(model,method) only).
@@ -317,12 +331,12 @@ def _read_source_metrics(source_root, setting, splits):
     return metrics
 
 
-def run_selection(spec_path, out_dir, source_root, methods_filter,
+def run_selection(spec_path, out_dir, source_root, run_tag, methods_filter,
                   settings_filter, final_stage):
     """Collect completed runs, apply the consistency rule, write winners.
 
     Expects the search runs and a Source eval to have completed, with results
-    under ``out_dir/<setting>/<method>/<tag>/<split>/console.log`` and
+    under ``out_dir/<setting>/<method>/<run_tag>-<tag>/<split>/console.log`` and
     ``source_root/<setting>/<split>/console.log``.  Writes
     ``out_dir/<setting>/<method>/selected_config.json`` per cell.
     """
@@ -344,7 +358,7 @@ def run_selection(spec_path, out_dir, source_root, methods_filter,
             results = []
             for params in candidates:
                 tag = candidate_tag(method, params)
-                job_dir = out_dir / setting / method / tag
+                job_dir = candidate_job_dir(out_dir, setting, method, run_tag, tag)
                 try:
                     seen = read_metrics(job_dir / "val_seen", "val_seen")
                     unseen = read_metrics(job_dir / "val_unseen", "val_unseen")
@@ -410,7 +424,7 @@ def main(argv=None):
         if not args.source_root:
             raise UserError("--select-only requires --source-root")
         run_selection(
-            args.spec, args.out_dir, args.source_root,
+            args.spec, args.out_dir, args.source_root, args.run_tag,
             set(args.methods or []), set(args.settings or []), args.final_stage,
         )
         return 0
