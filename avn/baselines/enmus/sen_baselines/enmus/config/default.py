@@ -152,10 +152,10 @@ _C.TTA.FSTTA.M = 3
 _C.TTA.FSTTA.N = 4
 _C.TTA.FSTTA.Q = 0.1
 _C.TTA.FSTTA.LR_SLOW = 1e-4
-_C.TTA.FSTTA.RHO = 0.95
-_C.TTA.FSTTA.TAU = 0.7
-_C.TTA.FSTTA.A = 0.9
-_C.TTA.FSTTA.B = 1.1
+_C.TTA.FSTTA.RHO = 0.9
+_C.TTA.FSTTA.TAU = 0.5
+_C.TTA.FSTTA.A = 0.5
+_C.TTA.FSTTA.B = 1.5
 _C.TTA.FSTTA.USE_SLOW = True
 _C.TTA.FSTTA.FAST_GRAD_MODE = "concordant"
 _C.TTA.FSTTA.USE_FAST_LR_SCALER = True
@@ -169,6 +169,9 @@ _C.TTA.FSTTA.WEIGHT_DECAY = 0.0
 _C.TTA.FSTTA.SLOW_OPTIMIZER = ""
 _C.TTA.FSTTA.SLOW_MOMENTUM = -1.0
 _C.TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE = True
+# Released FSTTA rebuilds its FAST module per rollout, so the variance EMA
+# restarts each episode.  Set False for a single test-stream variance ablation.
+_C.TTA.FSTTA.RESET_VAR_HIST_EACH_EPISODE = True
 _C.TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW = False
 _C.TTA.FSTTA.EIGEN_EPS = 1e-6
 _C.TTA.EAM = CN()
@@ -230,6 +233,32 @@ _C.TTA.ATENA.BETA1 = 0.9
 _C.TTA.ATENA.BETA2 = 0.999
 _C.TTA.ATENA.WEIGHT_DECAY = 0.01
 _C.TTA.ATENA.MAX_GRAD_NORM = 0.0
+# IDEA (ICML 2026): training-free adaptation via a historical asset library.
+# Requires a task-supplied IDEAFusionProtocol; the base policy is never updated.
+_C.TTA.IDEA = CN()
+_C.TTA.IDEA.PROMPT_LENGTH = 4
+_C.TTA.IDEA.K_MAX = 32
+_C.TTA.IDEA.LAMBDA = 0.4
+_C.TTA.IDEA.TAU = 0.7
+_C.TTA.IDEA.FISHER_BETA = 0.1
+_C.TTA.IDEA.OPT_STEPS = 50
+_C.TTA.IDEA.LR = 3e-3
+_C.TTA.IDEA.OPTIMIZER = "AdamW"
+_C.TTA.IDEA.MOMENTUM = 0.9
+_C.TTA.IDEA.BETA1 = 0.9
+_C.TTA.IDEA.BETA2 = 0.999
+_C.TTA.IDEA.WEIGHT_DECAY = 0.0
+_C.TTA.IDEA.USE_FISHER = True
+_C.TTA.IDEA.RIDGE = 1e-4
+_C.TTA.IDEA.MAX_GRAD_NORM = 0.0
+_C.TTA.IDEA.PROMPT_INIT_STD = 0.02
+_C.TTA.IDEA.SEED = 0
+# Number of aligned fusion-transformer encoder layers (0 = use all encoder
+# layers).  The MSMT encoder is shallow, so the default keeps every layer.
+_C.TTA.IDEA.PROMPT_LAYERS = 0
+# Online prompt-free warmup used to bootstrap the source anchor Gamma_S when no
+# offline precompute is supplied.
+_C.TTA.IDEA.SOURCE_WARMUP_STEPS = 64
 # -----------------------------------------------------------------------------
 # TASK CONFIG
 # -----------------------------------------------------------------------------

@@ -17,7 +17,7 @@ import torch
 from navtta_core.tta import build_adapter, module_state_sha256
 
 
-TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena")
+TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena", "idea")
 FEEDBACK_METHODS = ("feedtta", "atena")
 FEEDTTA_SCOPE_PROFILES = (
     "configured_prefixes", "paper_full", "last_crossmodal", "action_head",
@@ -56,10 +56,10 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FSTTA.N = 4
     config.FSTTA.Q = 0.1
     config.FSTTA.LR_SLOW = 1e-4
-    config.FSTTA.RHO = 0.95
-    config.FSTTA.TAU = 0.7
-    config.FSTTA.A = 0.9
-    config.FSTTA.B = 1.1
+    config.FSTTA.RHO = 0.9
+    config.FSTTA.TAU = 0.5
+    config.FSTTA.A = 0.5
+    config.FSTTA.B = 1.5
     config.FSTTA.USE_SLOW = True
     config.FSTTA.FAST_GRAD_MODE = "concordant"
     config.FSTTA.USE_FAST_LR_SCALER = True
@@ -70,6 +70,7 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FSTTA.SLOW_OPTIMIZER = ""
     config.FSTTA.SLOW_MOMENTUM = -1.0
     config.FSTTA.RESET_OPTIMIZER_EACH_EPISODE = True
+    config.FSTTA.RESET_VAR_HIST_EACH_EPISODE = True
     config.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW = False
     config.FSTTA.EIGEN_EPS = 1e-6
 
@@ -119,6 +120,27 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.ATENA.BETA2 = 0.999
     config.ATENA.WEIGHT_DECAY = 0.01
     config.ATENA.MAX_GRAD_NORM = 0.0
+
+    config.IDEA = CN()
+    config.IDEA.PROMPT_LENGTH = 4
+    config.IDEA.K_MAX = 32
+    config.IDEA.LAMBDA = 0.4
+    config.IDEA.TAU = 0.7
+    config.IDEA.FISHER_BETA = 0.1
+    config.IDEA.OPT_STEPS = 50
+    config.IDEA.LR = 3e-3
+    config.IDEA.OPTIMIZER = "AdamW"
+    config.IDEA.BETA1 = 0.9
+    config.IDEA.BETA2 = 0.999
+    config.IDEA.WEIGHT_DECAY = 0.0
+    config.IDEA.USE_FISHER = True
+    config.IDEA.RIDGE = 1e-4
+    config.IDEA.MAX_GRAD_NORM = 0.0
+    config.IDEA.PROMPT_INIT_STD = 0.02
+    config.IDEA.SEED = 0
+    # 0 aligns every fusion layer; ETPNav/BEVBert default to num_x_layers=4.
+    config.IDEA.PROMPT_LAYERS = 0
+    config.IDEA.SOURCE_WARMUP_STEPS = 64
     return config
 
 
@@ -335,10 +357,26 @@ class ContinuousVLNTTA:
             ) = _adapter_config_with_feedtta_scope(
                 tta_cfg, decision_model, self.variant
             )
+        fusion_protocol = None
+        if self.method == "idea":
+            # IDEA injects a soft prompt into the frozen cross-modal fusion
+            # branch that produces this variant's waypoint logits.
+            from .idea_fusion import ContinuousIDEAProtocol
+
+            idea_cfg = getattr(tta_cfg, "IDEA", None)
+            prompt_layers = int(getattr(idea_cfg, "PROMPT_LAYERS", 0))
+            fusion_protocol = ContinuousIDEAProtocol(
+                decision_model,
+                self._forward_policy,
+                self.variant,
+                num_layers=(prompt_layers if prompt_layers > 0 else None),
+                warmup_steps=int(getattr(idea_cfg, "SOURCE_WARMUP_STEPS", 64)),
+            )
         self.adapter = build_adapter(
             decision_model,
             adapter_cfg,
             forward_policy=self._forward_policy,
+            fusion_protocol=fusion_protocol,
         )
         if self.method == "feedtta":
             self.adapter.action_selection_protocol = (

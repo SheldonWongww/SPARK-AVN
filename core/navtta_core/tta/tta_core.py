@@ -723,10 +723,10 @@ class FSTTAAdapter(_AdapterDiagnostics):
         M=3,
         N=4,
         q=0.1,
-        rho=0.95,
-        tau=0.7,
-        a=0.9,
-        b=1.1,
+        rho=0.9,
+        tau=0.5,
+        a=0.5,
+        b=1.5,
         steps=1,
         episodic=False,
         use_slow=True,
@@ -746,6 +746,7 @@ class FSTTAAdapter(_AdapterDiagnostics):
         slow_optimizer_name=None,
         slow_momentum=None,
         reset_slow_optimizer_each_window=False,
+        reset_var_hist_each_episode=True,
     ):
         if int(steps) != 1:
             raise ValueError("FSTTA supports one policy forward/update per action")
@@ -786,6 +787,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
         )
         self.max_grad_norm = float(max_grad_norm)
         self.reset_optimizer_each_episode = bool(reset_optimizer_each_episode)
+        # The released FSTTA builds a fresh FAST module every rollout, so its
+        # historical FAST variance (Eq. 6) restarts at each episode.  Keeping
+        # this True reproduces that behavior; set it False to treat the variance
+        # EMA as a single test-stream statistic (an explicit ablation).
+        self.reset_var_hist_each_episode = bool(reset_var_hist_each_episode)
         self.eigen_eps = float(eigen_eps)
 
         self.params, self.names = configure_tta_model(
@@ -1128,9 +1134,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
         if self.episodic:
             self.reset()
         self.grad_buffer = []
-        # Paper Eq. (6) maintains the historical FAST variance over all test
-        # samples.  Episode boundaries discard only an incomplete gradient
-        # window; they must not restart the stream-level variance EMA.
+        # The released FSTTA rebuilds its FAST module every rollout, so the
+        # historical variance EMA (Eq. 6) restarts each episode.  Reproduce that
+        # by default; the stream-level reading is kept as an opt-in ablation.
+        if self.reset_var_hist_each_episode:
+            self.var_hist = None
         if self.reset_optimizer_each_episode:
             self._clear_optimizer_state()
         else:
@@ -1186,8 +1194,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
             "discarded_fast_gradients": self.discarded_fast_gradients,
             "last_sigma": self.last_sigma,
             "variance_history_lifetime": (
-                "episode" if self.episodic else "test_stream"
+                "episode"
+                if self.episodic or self.reset_var_hist_each_episode
+                else "test_stream"
             ),
+            "reset_var_hist_each_episode": self.reset_var_hist_each_episode,
             "variance_history_initialized": self.var_hist is not None,
             "lr_scale_mean": self.lr_scale_sum / scale_count,
             "lr_scale_min": (
@@ -2617,13 +2628,17 @@ class ATENAAdapter(_AdapterDiagnostics):
         return output
 
 
-def build_adapter(model, tta_cfg, forward_policy=None):
+def build_adapter(model, tta_cfg, forward_policy=None, fusion_protocol=None):
     """Build a sequential test-time adapter from a config node.
 
     ``forward_policy`` is an optional task adapter used by replay-based
     methods.  It must return ``(features, logits)`` from a detached policy
     input snapshot.  Omitting it preserves the Habitat actor-critic path used
     by AVN.
+
+    ``fusion_protocol`` is an optional task adapter required by IDEA.  It is an
+    :class:`navtta_core.tta.idea.IDEAFusionProtocol` describing how to inject a
+    soft prompt into the model's fusion module and read per-layer statistics.
     """
     method = str(getattr(tta_cfg, "METHOD", "none")).lower()
     if method in ("none", "", "source"):
@@ -2685,10 +2700,10 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             M=int(fvalue("M", 3)),
             N=int(fvalue("N", 4)),
             q=float(fvalue("Q", 0.1)),
-            rho=float(fvalue("RHO", 0.95)),
-            tau=float(fvalue("TAU", 0.7)),
-            a=float(fvalue("A", 0.9)),
-            b=float(fvalue("B", 1.1)),
+            rho=float(fvalue("RHO", 0.9)),
+            tau=float(fvalue("TAU", 0.5)),
+            a=float(fvalue("A", 0.5)),
+            b=float(fvalue("B", 1.5)),
             use_slow=bool(fvalue("USE_SLOW", True)),
             fast_grad_mode=str(fvalue("FAST_GRAD_MODE", "concordant")),
             use_fast_lr_scaler=bool(
@@ -2707,6 +2722,9 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             ),
             reset_optimizer_each_episode=bool(
                 fvalue("RESET_OPTIMIZER_EACH_EPISODE", True)
+            ),
+            reset_var_hist_each_episode=bool(
+                fvalue("RESET_VAR_HIST_EACH_EPISODE", True)
             ),
             eigen_eps=float(fvalue("EIGEN_EPS", 1e-6)),
             **common
@@ -2795,5 +2813,40 @@ def build_adapter(model, tta_cfg, forward_policy=None):
             weight_decay=float(avalue("WEIGHT_DECAY", 0.01)),
             max_grad_norm=float(avalue("MAX_GRAD_NORM", 0.0)),
             forward_policy=forward_policy,
+        ))
+    if method == "idea":
+        from .idea import IDEAAdapter
+
+        idea_cfg = getattr(tta_cfg, "IDEA", None)
+
+        def ivalue(key, default):
+            return getattr(idea_cfg, key, default) if idea_cfg is not None else default
+
+        if fusion_protocol is None:
+            raise ValueError(
+                "IDEA requires a fusion_protocol; pass build_adapter(model, "
+                "cfg, fusion_protocol=...) with the task's IDEAFusionProtocol"
+            )
+        return finalize(IDEAAdapter(
+            model,
+            fusion_protocol,
+            prompt_length=int(ivalue("PROMPT_LENGTH", 4)),
+            capacity=int(ivalue("K_MAX", 32)),
+            lam=float(ivalue("LAMBDA", 0.4)),
+            tau=float(ivalue("TAU", 0.7)),
+            fisher_beta=float(ivalue("FISHER_BETA", 0.1)),
+            opt_steps=int(ivalue("OPT_STEPS", 50)),
+            lr=float(ivalue("LR", 3e-3)),
+            optimizer_name=str(ivalue("OPTIMIZER", "AdamW")),
+            momentum=float(ivalue("MOMENTUM", 0.9)),
+            beta1=float(ivalue("BETA1", 0.9)),
+            beta2=float(ivalue("BETA2", 0.999)),
+            weight_decay=float(ivalue("WEIGHT_DECAY", 0.0)),
+            use_fisher=bool(ivalue("USE_FISHER", True)),
+            ridge=float(ivalue("RIDGE", 1e-4)),
+            max_grad_norm=float(ivalue("MAX_GRAD_NORM", 0.0)),
+            episodic=common["episodic"],
+            prompt_init_std=float(ivalue("PROMPT_INIT_STD", 0.02)),
+            seed=int(ivalue("SEED", 0)),
         ))
     raise ValueError("Unknown TTA method: {}".format(method))

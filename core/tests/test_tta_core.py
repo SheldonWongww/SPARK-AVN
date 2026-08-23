@@ -716,7 +716,7 @@ class TTACoreTest(unittest.TestCase):
         self.assertEqual(adapter.slow_attempt_count, 2)
         self.assertEqual(adapter.slow_skip_count, 0)
 
-    def test_fstta_episode_start_preserves_stream_variance_and_slow_state(self):
+    def test_fstta_episode_start_resets_variance_but_keeps_slow_state(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
             policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
@@ -738,7 +738,10 @@ class TTACoreTest(unittest.TestCase):
         adapter.var_hist = torch.tensor(2.0)
         adapter.episode_start()
 
+        # The released FSTTA rebuilds FAST every rollout, so the variance EMA
+        # and FAST optimizer restart, but the SLOW anchor/trajectory persist.
         self.assertEqual(len(adapter.optimizer.state), 0)
+        self.assertIsNone(adapter.var_hist)
         persistent_state = adapter.slow_optimizer.state[adapter.slow_anchor]
         self.assertEqual(_optimizer_step_value(persistent_state), slow_step)
         torch.testing.assert_close(persistent_state["exp_avg"], slow_exp_avg)
@@ -747,11 +750,30 @@ class TTACoreTest(unittest.TestCase):
         )
         torch.testing.assert_close(adapter.slow_anchor.detach(), slow_anchor)
         torch.testing.assert_close(adapter.slow_trajectory[0], pending)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(
+            diagnostics["variance_history_lifetime"], "episode"
+        )
+        self.assertTrue(diagnostics["reset_var_hist_each_episode"])
+        self.assertFalse(diagnostics["variance_history_initialized"])
+
+    def test_fstta_can_keep_stream_variance_across_episodes(self):
+        policy = _TinyPolicy()
+        adapter = FSTTAAdapter(
+            policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
+            last_k=1, max_grad_norm=10.0,
+            reset_optimizer_each_episode=True,
+            reset_var_hist_each_episode=False,
+        )
+        adapter.var_hist = torch.tensor(2.0)
+        adapter.episode_start()
+        # The opt-in ablation treats the variance EMA as a single test stream.
         torch.testing.assert_close(adapter.var_hist, torch.tensor(2.0))
         diagnostics = adapter.diagnostics()
         self.assertEqual(
             diagnostics["variance_history_lifetime"], "test_stream"
         )
+        self.assertFalse(diagnostics["reset_var_hist_each_episode"])
         self.assertTrue(diagnostics["variance_history_initialized"])
 
     def test_fstta_episodic_diagnostics_do_not_claim_stream_variance(self):

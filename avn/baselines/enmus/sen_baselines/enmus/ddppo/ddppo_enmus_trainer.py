@@ -794,7 +794,44 @@ class DDPPOTrainer(PPOTrainer):
                     .format(self.envs.num_envs)
                 )
             from navtta_core.tta import build_adapter
-            tta_adapter = build_adapter(self.actor_critic, tta_cfg)
+            fusion_protocol = None
+            if tta_method == "idea":
+                # IDEA injects a soft prompt into the MSMT fusion transformer and
+                # reads per-layer statistics.  The binding calls frozen
+                # sub-modules only; the policy forward is never edited.
+                from navtta_core.tta import TransformerFusionProtocol
+
+                actor_critic = self.actor_critic
+
+                def _idea_forward_logits(policy_inputs):
+                    features, _, _ = actor_critic.net(
+                        policy_inputs["observations"],
+                        policy_inputs["rnn_hidden_states"],
+                        policy_inputs["prev_actions"],
+                        policy_inputs["masks"],
+                        policy_inputs.get("ext_memory"),
+                        policy_inputs.get("ext_memory_masks"),
+                    )
+                    return actor_critic.action_distribution(features).logits
+
+                transformer = actor_critic.net.smt_state_encoder.transformer
+                idea_cfg = getattr(tta_cfg, "IDEA", None)
+                fusion_protocol = TransformerFusionProtocol(
+                    transformer,
+                    _idea_forward_logits,
+                    feature_dim=transformer.d_model,
+                    num_layers=min(
+                        int(getattr(idea_cfg, "PROMPT_LAYERS", 0)) or
+                        len(transformer.encoder.layers),
+                        len(transformer.encoder.layers),
+                    ),
+                    source_warmup_steps=int(
+                        getattr(idea_cfg, "SOURCE_WARMUP_STEPS", 64)
+                    ),
+                )
+            tta_adapter = build_adapter(
+                self.actor_critic, tta_cfg, fusion_protocol=fusion_protocol
+            )
             tta_adapter.episode_start()
             logging.info(
                 "[TTA] enabled: method=%s, episodic=%s, lr=%s, scope=%s, last_k=%s",

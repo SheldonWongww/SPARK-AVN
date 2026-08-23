@@ -18,7 +18,7 @@ import torch
 from navtta_core.tta import build_adapter, module_state_sha256
 
 
-TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena")
+TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena", "idea")
 
 
 def add_discrete_tta_args(parser):
@@ -82,10 +82,10 @@ def add_discrete_tta_args(parser):
     fstta.add_argument("--tta_fstta_m", type=int, default=3)
     fstta.add_argument("--tta_fstta_n", type=int, default=4)
     fstta.add_argument("--tta_fstta_q", type=float, default=0.1)
-    fstta.add_argument("--tta_fstta_rho", type=float, default=0.95)
-    fstta.add_argument("--tta_fstta_tau", type=float, default=0.7)
-    fstta.add_argument("--tta_fstta_a", type=float, default=0.9)
-    fstta.add_argument("--tta_fstta_b", type=float, default=1.1)
+    fstta.add_argument("--tta_fstta_rho", type=float, default=0.9)
+    fstta.add_argument("--tta_fstta_tau", type=float, default=0.5)
+    fstta.add_argument("--tta_fstta_a", type=float, default=0.5)
+    fstta.add_argument("--tta_fstta_b", type=float, default=1.5)
     fstta.add_argument(
         "--tta_fstta_fast_grad_mode",
         choices=("concordant", "mean", "last"),
@@ -148,7 +148,33 @@ def add_discrete_tta_args(parser):
     atena.add_argument("--tta_atena_mix_lambda", type=float, default=0.5)
     atena.add_argument("--tta_atena_query_threshold", type=float, default=0.1)
     atena.add_argument("--tta_atena_self_loss_weight", type=float, default=0.1)
+
+    idea = parser.add_argument_group("IDEA")
+    idea.add_argument("--tta_idea_prompt_length", type=int, default=4)
+    idea.add_argument("--tta_idea_k_max", type=int, default=32)
+    idea.add_argument("--tta_idea_lambda", type=float, default=0.4)
+    idea.add_argument("--tta_idea_tau", type=float, default=0.7)
+    idea.add_argument("--tta_idea_fisher_beta", type=float, default=0.1)
+    idea.add_argument("--tta_idea_opt_steps", type=int, default=50)
+    idea.add_argument("--tta_idea_lr", type=float, default=3e-3)
+    idea.add_argument("--tta_idea_no_fisher", action="store_true", default=False)
+    idea.add_argument("--tta_idea_ridge", type=float, default=1e-4)
+    # 0 aligns every fusion layer; DUET/HAMT/GOAT default to num_x_layers=4.
+    idea.add_argument("--tta_idea_prompt_layers", type=int, default=0)
+    idea.add_argument("--tta_idea_source_warmup_steps", type=int, default=64)
     return parser
+
+
+def _infer_discrete_family(model):
+    """Infer the discrete replay family from the policy's fusion structure."""
+    inner = getattr(model, "vln_bert", None)
+    if inner is None:
+        raise ValueError("Discrete policy does not expose a vln_bert module")
+    if hasattr(inner, "global_encoder") and hasattr(inner, "local_encoder"):
+        return "graph"
+    if hasattr(inner, "encoder") and hasattr(inner, "next_action"):
+        return "hamt_reverie" if hasattr(inner, "ref_object") else "hamt_r2r"
+    raise ValueError("Could not infer discrete fusion family for IDEA")
 
 
 def _default_trainable_prefixes(model):
@@ -342,6 +368,24 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         WEIGHT_DECAY=feedback_weight_decay,
         MAX_GRAD_NORM=replay_max_grad_norm,
     )
+    idea = SimpleNamespace(
+        PROMPT_LENGTH=args.tta_idea_prompt_length,
+        K_MAX=args.tta_idea_k_max,
+        LAMBDA=args.tta_idea_lambda,
+        TAU=args.tta_idea_tau,
+        FISHER_BETA=args.tta_idea_fisher_beta,
+        OPT_STEPS=args.tta_idea_opt_steps,
+        LR=args.tta_idea_lr,
+        OPTIMIZER="AdamW",
+        BETA1=args.tta_beta1,
+        BETA2=args.tta_beta2,
+        WEIGHT_DECAY=0.0,
+        USE_FISHER=not bool(args.tta_idea_no_fisher),
+        RIDGE=args.tta_idea_ridge,
+        MAX_GRAD_NORM=0.0,
+        PROMPT_LAYERS=args.tta_idea_prompt_layers,
+        SOURCE_WARMUP_STEPS=args.tta_idea_source_warmup_steps,
+    )
     return SimpleNamespace(
         METHOD=args.tta_method,
         AUDIT_ZERO_UPDATE=bool(args.tta_audit_zero_update),
@@ -367,6 +411,7 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         EAM=eam,
         FEEDTTA=feedtta,
         ATENA=atena,
+        IDEA=idea,
     )
 
 
@@ -650,12 +695,28 @@ class DiscreteTTAController:
                 ),
             )
         else:
+            fusion_protocol = None
+            if self.method == "idea":
+                # IDEA injects a soft prompt into the frozen cross-modal fusion
+                # stack; the family is inferred from the policy structure.
+                from .idea_fusion import make_idea_fusion_protocol
+
+                prompt_layers = int(getattr(args, "tta_idea_prompt_layers", 0))
+                fusion_protocol = make_idea_fusion_protocol(
+                    model,
+                    _infer_discrete_family(model),
+                    num_layers=(prompt_layers if prompt_layers > 0 else None),
+                    warmup_steps=int(
+                        getattr(args, "tta_idea_source_warmup_steps", 64)
+                    ),
+                )
             self.adapter = build_adapter(
                 model,
                 _adapter_config(
                     args, self.trainable_prefixes, self.action_selection
                 ),
                 forward_policy=discrete_forward_policy,
+                fusion_protocol=fusion_protocol,
             )
 
     def reset(self):
