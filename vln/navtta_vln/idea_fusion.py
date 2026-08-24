@@ -341,31 +341,54 @@ class _HAMTDirectInjector:
         self.prompt = None
         self.fisher_probe = False
 
-    def _first_pre_hook(self, module, args, kwargs):
-        args = list(args)
-        if len(args) < 4:
-            raise RuntimeError("HAMT x_layer binding requires positional inputs")
-        visual = args[2]
-        mask = args[3]
-        if self.fisher_probe:
-            visual = visual.detach().requires_grad_(True)
-        if self.prompt is not None:
-            prompt = self.prompt.to(device=visual.device, dtype=visual.dtype)
-            prompt = prompt.unsqueeze(0).expand(visual.shape[0], -1, -1)
-            visual = torch.cat([
-                visual[:, :self.hist_len], prompt, visual[:, self.hist_len:]
-            ], dim=1)
-            if mask is None or mask.ndim != 4:
-                raise ValueError("HAMT IDEA requires additive [B,1,1,N] mask")
-            keep = torch.zeros(
-                mask.shape[0], mask.shape[1], mask.shape[2], self.num_prompt,
-                dtype=mask.dtype, device=mask.device,
-            )
-            mask = torch.cat([
-                mask[..., :self.hist_len], keep, mask[..., self.hist_len:]
-            ], dim=-1)
-        args[2], args[3] = visual, mask
-        return tuple(args), kwargs
+    def _make_pre_hook(self, index):
+        def hook(module, args, kwargs):
+            args = list(args)
+            if len(args) < 4:
+                raise RuntimeError("HAMT x_layer binding requires positional inputs")
+            visual = args[2]
+            mask = args[3]
+            if self.fisher_probe and index == 0:
+                visual = visual.detach().requires_grad_(True)
+            if self.prompt is not None:
+                if index == 0:
+                    prompt = self.prompt.to(
+                        device=visual.device, dtype=visual.dtype
+                    )
+                    prompt = prompt.unsqueeze(0).expand(
+                        visual.shape[0], -1, -1
+                    )
+                    visual = torch.cat([
+                        visual[:, :self.hist_len],
+                        prompt,
+                        visual[:, self.hist_len:],
+                    ], dim=1)
+                if mask is None or mask.ndim != 4:
+                    raise ValueError(
+                        "HAMT IDEA requires additive [B,1,1,N] mask"
+                    )
+                # HAMT's navigation loop passes the same original visual mask
+                # to every x-layer.  The prompt survives between layers, so
+                # every layer invocation needs a matching expanded mask even
+                # though only layer zero inserts the prompt tokens.
+                if mask.shape[-1] == visual.shape[1] - self.num_prompt:
+                    keep = torch.zeros(
+                        mask.shape[0], mask.shape[1], mask.shape[2],
+                        self.num_prompt, dtype=mask.dtype, device=mask.device,
+                    )
+                    mask = torch.cat([
+                        mask[..., :self.hist_len],
+                        keep,
+                        mask[..., self.hist_len:],
+                    ], dim=-1)
+                elif mask.shape[-1] != visual.shape[1]:
+                    raise ValueError(
+                        "HAMT IDEA visual mask length does not match prompted tokens"
+                    )
+            args[2], args[3] = visual, mask
+            return tuple(args), kwargs
+
+        return hook
 
     def _layer_hook(self, index):
         def hook(module, inputs, output):
@@ -389,9 +412,12 @@ class _HAMTDirectInjector:
         self.hist_len = int(hist_len)
         self.fisher_probe = bool(fisher_probe)
         self.captured = {}
-        handles = [self.layers[0].register_forward_pre_hook(
-            self._first_pre_hook, with_kwargs=True
-        )]
+        handles = [
+            layer.register_forward_pre_hook(
+                self._make_pre_hook(index), with_kwargs=True
+            )
+            for index, layer in enumerate(self.layers)
+        ]
         handles.extend(
             layer.register_forward_hook(self._layer_hook(index))
             for index, layer in enumerate(self.layers)
