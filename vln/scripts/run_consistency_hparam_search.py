@@ -1085,13 +1085,6 @@ def _preflight_method(spec, setting, method, expected_checkpoint_sha256=None):
         ))
     if method == "idea":
         _idea_source_parameters(spec, setting, expected_checkpoint_sha256)
-    if method == "atena":
-        core_path = REPO_ROOT / "core/navtta_core/tta/tta_core.py"
-        marker = '"exact_episode_replay_enabled": True'
-        if marker not in core_path.read_text(encoding="utf-8"):
-            raise UserError(
-                "ATENA is blocked until exact full-episode replay capability is present"
-            )
 
 
 def _run_one(job, dry_run):

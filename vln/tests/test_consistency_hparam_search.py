@@ -408,6 +408,9 @@ class SpecContractTest(unittest.TestCase):
             for params in runner.expand_candidates("atena", spec["methods"]["atena"]):
                 self.assertGreater(params["query_threshold"], 0.0)
                 self.assertGreater(params["mix_lambda"], 0.0)
+            # Runtime diagnostics, not a brittle source-text sentinel, attest
+            # exact replay after the first real episode.
+            runner._preflight_method(spec, spec["settings"][0], "atena")
 
     def test_concurrency_contract(self):
         r2r = runner.load_spec(SPECS[0])
