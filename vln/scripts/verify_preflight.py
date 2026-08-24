@@ -16,6 +16,7 @@ if CORE_SOURCE_ROOT not in sys.path:
     sys.path.insert(0, CORE_SOURCE_ROOT)
 
 from navtta_core.experiment.episode_order import (  # noqa: E402
+    SEEDED_ORDER_POLICY,
     canonical_episode_records,
     sha256_file,
     validate_episode_order_manifest,
@@ -222,6 +223,40 @@ def check_episode_manifest(repo_root, path, errors):
     except (OSError, TypeError, ValueError) as error:
         errors.append("{} dataset verification failed: {}".format(relative, error))
 
+    if document.get("order_policy") == SEEDED_ORDER_POLICY:
+        derivation = document["derivation"]
+        parent_path = resolve_path(
+            repo_root, derivation["parent_manifest_path"]
+        )
+        if not os.path.isfile(parent_path):
+            errors.append(
+                "{} parent manifest is missing: {}".format(
+                    relative, parent_path
+                )
+            )
+        elif sha256_file(parent_path) != derivation["parent_manifest_sha256"]:
+            errors.append("{} parent manifest SHA256 mismatch".format(relative))
+        else:
+            try:
+                parent = load_json(parent_path)
+                validate_episode_order_manifest(
+                    parent,
+                    expected_split=document["split"],
+                    expected_benchmark=document["benchmark"],
+                )
+                if (
+                    parent.get("order_sha256")
+                    != derivation["parent_order_sha256"]
+                    or parent.get("dataset") != document.get("dataset")
+                ):
+                    errors.append(
+                        "{} parent manifest provenance mismatch".format(relative)
+                    )
+            except (OSError, TypeError, ValueError) as error:
+                errors.append(
+                    "{} parent manifest is invalid: {}".format(relative, error)
+                )
+
     try:
         actual_records = canonical_annotation_records(dataset_path, document)
     except (OSError, TypeError, ValueError) as error:
@@ -229,6 +264,12 @@ def check_episode_manifest(repo_root, path, errors):
         return
 
     expected_records = document["episodes"]
+    if document.get("order_policy") == SEEDED_ORDER_POLICY:
+        # A seeded manifest is intentionally a permutation of the underlying
+        # annotation records.  Compare canonicalized contents here; the core
+        # validator above independently verifies the declared seeded order and
+        # its order digest.
+        expected_records = canonical_episode_records(expected_records)
     if actual_records != expected_records:
         errors.append(
             "{} dataset episode records mismatch: {}".format(
@@ -246,7 +287,15 @@ def check_episode_manifests(repo_root, errors):
         json_names = {name for name in names if name.endswith(".json")}
         if json_names:
             manifest_directories.append(directory)
-            expected_names = {split + ".json" for split in SPLITS}
+            relative_parts = os.path.relpath(directory, root).split(os.sep)
+            is_seeded_directory = any(
+                part.startswith("order_seed_") for part in relative_parts
+            )
+            expected_splits = (
+                ("val_seen", "val_unseen")
+                if is_seeded_directory else SPLITS
+            )
+            expected_names = {split + ".json" for split in expected_splits}
             if json_names != expected_names:
                 errors.append(
                     "{} must contain exactly {}".format(

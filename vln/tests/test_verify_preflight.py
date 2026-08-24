@@ -3,11 +3,13 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from vln.scripts import verify_preflight
 
 from navtta_core.experiment.episode_order import (
     build_episode_order_manifest,
+    derive_seeded_episode_order_manifest,
     sha256_file,
 )
 
@@ -177,6 +179,62 @@ class EpisodeManifestDatasetPreflightTest(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("dataset is missing", errors[0])
+
+    def test_seeded_manifest_is_checked_as_a_dataset_permutation(self):
+        episodes = [
+            {"episode_id": str(index), "scene_id": "scene-a.glb"}
+            for index in range(12)
+        ]
+        dataset_relative = "data/seeded.json"
+        dataset_path = self._write_dataset(
+            dataset_relative, {"episodes": episodes}
+        )
+        parent = build_episode_order_manifest(
+            episodes,
+            benchmark="synthetic-vln",
+            split="val_seen",
+            dataset_path=dataset_relative,
+            dataset_sha256=sha256_file(dataset_path),
+            source_id_field="episode_id",
+        )
+        parent_path = self._path("orders/base/val_seen.json")
+        with open(parent_path, "w", encoding="utf-8") as stream:
+            json.dump(parent, stream)
+        derived = derive_seeded_episode_order_manifest(
+            parent,
+            order_seed=1,
+            parent_manifest_path="orders/base/val_seen.json",
+            parent_manifest_sha256=sha256_file(parent_path),
+        )
+        self.assertNotEqual(derived["episodes"], parent["episodes"])
+        manifest_path = self._path(
+            "vln/manifests/episode_order/order_seed_1/base/val_seen.json"
+        )
+        with open(manifest_path, "w", encoding="utf-8") as stream:
+            json.dump(derived, stream)
+
+        errors = []
+        verify_preflight.check_episode_manifest(
+            self.repo_root, manifest_path, errors
+        )
+        self.assertEqual(errors, [])
+
+    def test_seeded_manifest_directories_require_only_validation_splits(self):
+        for split in ("val_seen", "val_unseen"):
+            path = self._path(
+                "vln/manifests/episode_order/order_seed_1/base/{}.json"
+                .format(split)
+            )
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({}, stream)
+
+        errors = []
+        with mock.patch.object(verify_preflight, "check_episode_manifest"):
+            count, directory_count = verify_preflight.check_episode_manifests(
+                self.repo_root, errors
+            )
+        self.assertEqual((count, directory_count), (2, 1))
+        self.assertEqual(errors, [])
 
     def test_source_train_manifest_verifies_duplicate_install_paths(self):
         payload = [{"path_id": 1, "instructions": ["go"]}]
