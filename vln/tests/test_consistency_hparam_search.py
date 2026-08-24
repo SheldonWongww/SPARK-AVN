@@ -165,7 +165,7 @@ class RunSelectionEndToEndTest(unittest.TestCase):
             self._write_console(source_root / "duet-r2r" / "val_unseen", "val_unseen", 71.0, 60.0)
             out_dir = root / "out"
             # Candidate lr=1e-3 collapses on unseen; lr=1e-5 is consistent.
-            from run_consistency_hparam_search import candidate_tag, candidate_job_dir
+            from run_consistency_hparam_search import candidate_tag, split_result_root
             tags = {
                 (1e-3): (80.0, 68.0),   # unseen below floor
                 (1e-5): (78.4, 71.4),   # consistent
@@ -173,9 +173,12 @@ class RunSelectionEndToEndTest(unittest.TestCase):
             for lr, (sr_u_seen, sr_unseen) in tags.items():
                 params = {"norm_scope": "last_k_ln", "lr": lr}
                 tag = candidate_tag("tent", params)
-                cell = candidate_job_dir(out_dir, "duet-r2r", "tent", "c1", tag)
-                self._write_console(cell / "val_seen", "val_seen", sr_u_seen, 73.0)
-                self._write_console(cell / "val_unseen", "val_unseen", sr_unseen, 61.0)
+                self._write_console(
+                    split_result_root(out_dir, "duet-r2r", "tent", "c1", tag, "val_seen"),
+                    "val_seen", sr_u_seen, 73.0)
+                self._write_console(
+                    split_result_root(out_dir, "duet-r2r", "tent", "c1", tag, "val_unseen"),
+                    "val_unseen", sr_unseen, 61.0)
 
             run_selection(str(spec_path), str(out_dir), str(source_root), "c1",
                           set(), set(), final_stage=False)
@@ -207,12 +210,15 @@ class RunSelectionEndToEndTest(unittest.TestCase):
             self._write_console(source_root / "duet-r2r" / "val_seen", "val_seen", 78.0, 72.0)
             self._write_console(source_root / "duet-r2r" / "val_unseen", "val_unseen", 71.0, 60.0)
             out_dir = root / "out"
-            from run_consistency_hparam_search import candidate_tag, candidate_job_dir
+            from run_consistency_hparam_search import candidate_tag, split_result_root
             params = {"norm_scope": "last_k_ln", "lr": 1e-3}
             tag = candidate_tag("tent", params)
-            cell = candidate_job_dir(out_dir, "duet-r2r", "tent", "c1", tag)
-            self._write_console(cell / "val_seen", "val_seen", 70.0, 65.0)
-            self._write_console(cell / "val_unseen", "val_unseen", 60.0, 50.0)
+            self._write_console(
+                split_result_root(out_dir, "duet-r2r", "tent", "c1", tag, "val_seen"),
+                "val_seen", 70.0, 65.0)
+            self._write_console(
+                split_result_root(out_dir, "duet-r2r", "tent", "c1", tag, "val_unseen"),
+                "val_unseen", 60.0, 50.0)
 
             run_selection(str(spec_path), str(out_dir), str(source_root), "c1",
                           set(), set(), final_stage=False)

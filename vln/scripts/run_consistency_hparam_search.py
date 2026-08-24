@@ -122,6 +122,17 @@ def candidate_job_dir(out_dir, setting, method, run_tag, tag):
     return Path(out_dir) / setting / method / full_run_tag(run_tag, tag)
 
 
+def split_run_tag(run_tag, tag, split):
+    """Per-split RUN_TAG (each split needs a distinct run-tag flock)."""
+    return "{}-{}".format(full_run_tag(run_tag, tag), split)
+
+
+def split_result_root(out_dir, setting, method, run_tag, tag, split):
+    """Result root for one (candidate, split); ends with <RUN_TAG>/<SPLIT>."""
+    job_dir = candidate_job_dir(out_dir, setting, method, run_tag, tag)
+    return job_dir / split_run_tag(run_tag, tag, split) / split
+
+
 # ---------------------------------------------------------------------------
 # Job config + launch
 # ---------------------------------------------------------------------------
@@ -299,10 +310,15 @@ def run_search(spec_path, run_tag, methods_filter, settings_filter, out_dir,
                 job_dir = candidate_job_dir(out_dir, setting, method, run_tag, tag)
                 config_path = write_job_config(job_dir, method, params)
                 for split in spec["splits"]:
-                    result_root = job_dir / split
+                    # Each split gets its own RUN_TAG so run_source_eval.sh's
+                    # per-run-tag flock does not collide when both splits launch
+                    # concurrently.  result-root must end with <RUN_TAG>/<SPLIT>.
+                    tag_split = split_run_tag(run_tag, tag, split)
+                    result_root = split_result_root(
+                        out_dir, setting, method, run_tag, tag, split
+                    )
                     command = build_command(
-                        setting, split, config_path, result_root,
-                        full_run_tag(run_tag, tag),
+                        setting, split, config_path, result_root, tag_split,
                     )
                     jobs.append((command, params, split, result_root))
             # Launch with bounded concurrency (same-(model,method) only).
@@ -360,10 +376,13 @@ def run_selection(spec_path, out_dir, source_root, run_tag, methods_filter,
             results = []
             for params in candidates:
                 tag = candidate_tag(method, params)
-                job_dir = candidate_job_dir(out_dir, setting, method, run_tag, tag)
                 try:
-                    seen = read_metrics(job_dir / "val_seen", "val_seen")
-                    unseen = read_metrics(job_dir / "val_unseen", "val_unseen")
+                    seen = read_metrics(
+                        split_result_root(out_dir, setting, method, run_tag, tag,
+                                          "val_seen"), "val_seen")
+                    unseen = read_metrics(
+                        split_result_root(out_dir, setting, method, run_tag, tag,
+                                          "val_unseen"), "val_unseen")
                 except UserError as error:
                     print("[skip] {}/{}: {}".format(setting, tag, error),
                           file=sys.stderr)
@@ -372,7 +391,9 @@ def run_selection(spec_path, out_dir, source_root, run_tag, methods_filter,
                     "parameters": params,
                     "metrics_seen": seen,
                     "metrics_unseen": unseen,
-                    "diagnostics": read_adapter_diagnostics(job_dir / "val_unseen"),
+                    "diagnostics": read_adapter_diagnostics(
+                        split_result_root(out_dir, setting, method, run_tag, tag,
+                                          "val_unseen")),
                 })
             winner, ranked = select_config(
                 results, source_metrics, spec["selection"]
