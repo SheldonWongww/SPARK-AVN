@@ -66,8 +66,57 @@
       ]
     },
     "idea": {
-      "availability": {"status": "blocked", "reason": "precomputed Source-statistics artifacts and their SHA256 bindings are not yet available to the VLN launcher"},
-      "source_statistics": {},
+      "availability": {"status": "ready", "reason": "offline source-train statistics are bound by path, SHA256, checkpoint, and 128-trajectory provenance"},
+      "source_statistics": {
+        "duet-r2r": {
+          "checkpoint_sha256": "c1ed3ed27e1acbffec1fa81fbdd06e16498398809a7f80f349043ba74c21ba94",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/duet-r2r/collection_config.json",
+          "collection_config_sha256": "af2a2750cb5ba6d58a652ee5cde62ff4b4b3d16e353b002112d70aefbd6c17c0",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/duet-r2r/train/tta_diagnostics.json",
+          "diagnostics_sha256": "8b3abfcb1e298f4fbcee072a794d3e35cd658b91fdd41ca72bea4b8be4dd705d",
+          "formal_immutable_identity_sha256": "199bd14bd62372c5faf4b91177318c12d2eae08a0e991255f3702b2426ed7c86",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-duet-r2r-train-native/manifest.json",
+          "formal_manifest_sha256": "8d02d0160277ae71eecbb45531bdec17c884dbfe87c243fc1511134e242226a6",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/duet-r2r/episode_order/train.json",
+          "order_manifest_sha256": "61c969b48edb95fe18624f6a9c126c43fd6a3b5c19ff26ae1c94bd6eb060e6ed",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/duet-r2r/train/source_statistics.json",
+          "sha256": "8a487092ee8158be11870aca3be902c0c00324528a22411e8649c61f537bce57",
+          "trajectory_count": 128
+        },
+        "hamt-r2r": {
+          "checkpoint_sha256": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/hamt-r2r/collection_config.json",
+          "collection_config_sha256": "0f044de0d7da2feec3bdf1eb90c1a5cf1291e5d6d84e88ae95fcaa7193ee5587",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/train/tta_diagnostics.json",
+          "diagnostics_sha256": "b4de60acb6a658e8cf777b993f6dbf2647e222435fc4281bfb7affb6f1c181af",
+          "formal_immutable_identity_sha256": "662ed01efeb3b891e947ebb603bb2f2e9e7e76fcfb3d4842e441b467f9529b9a",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-hamt-r2r-train-native/manifest.json",
+          "formal_manifest_sha256": "f17d6e014e695762fab88d870ae404b57839a94e179c239f9ac01231b9325ad7",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/hamt-r2r/episode_order/train.json",
+          "order_manifest_sha256": "71bcc37dcbb46661fa4b93d94f89add379c4991552a60cb868ac5139d5e58360",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/train/source_statistics.json",
+          "sha256": "abfcbb9ddc1f80076d161ce9aeda9490ee785c0453a351161ebf15fd7a11d856",
+          "trajectory_count": 128
+        },
+        "goat-r2r": {
+          "checkpoint_sha256": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/goat-r2r/collection_config.json",
+          "collection_config_sha256": "443f4f47b09ad56cca8b130137c754e0439fa2121d91cd974795971918369430",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/train/tta_diagnostics.json",
+          "diagnostics_sha256": "bd42b01859f36d734eedfe292f7c45637881a1059b38b99f0f5bc01e675d801a",
+          "formal_immutable_identity_sha256": "fc0a7b1f2c88798b1f107d8587137309c670ae4178ad05c8b5af2ba4a326d533",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-goat-r2r-train-native/manifest.json",
+          "formal_manifest_sha256": "7a31927ca603e50e899f144ec010be4b008bb31d759af45542f1d16244883c92",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/goat-r2r/episode_order/train.json",
+          "order_manifest_sha256": "0db44ca3d98608941da04a3475fa033a97914a96e1f718175c5507efc1e31231",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/train/source_statistics.json",
+          "sha256": "05ae69b2000bd45bdec7a6105889852dbda3ec08757f65bdf39e461e20d63338",
+          "trajectory_count": 128
+        }
+      },
       "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1, "use_fisher": true, "opt_steps": 50, "action_selection": "argmax"},
       "candidates": [
         {"id": "lr_1em3_tau_0p5", "parameters": {"lr": 1e-3, "tau": 0.5}},

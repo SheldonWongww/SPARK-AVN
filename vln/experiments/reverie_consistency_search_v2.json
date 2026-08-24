@@ -66,8 +66,57 @@
       ]
     },
     "idea": {
-      "availability": {"status": "blocked", "reason": "precomputed Source-statistics artifacts and their SHA256 bindings are not yet available to the VLN launcher"},
-      "source_statistics": {},
+      "availability": {"status": "ready", "reason": "offline source-train statistics are bound by path, SHA256, checkpoint, and 128-trajectory provenance"},
+      "source_statistics": {
+        "duet-reverie": {
+          "checkpoint_sha256": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/duet-reverie/collection_config.json",
+          "collection_config_sha256": "7b1fff5101258b2e268e2e509d14c78b9eb81fb950037746cb248eba8c0d083c",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/duet-reverie/train/tta_diagnostics.json",
+          "diagnostics_sha256": "d03dfb6626b9a6ee22705cddcb6b0f3ebcd6f0c9b1ab0caed402af0e9dc76f65",
+          "formal_immutable_identity_sha256": "f53afbad554346844485545d4245965b245a13246f913427a44a4da29e0e05a2",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-duet-reverie-train-native/manifest.json",
+          "formal_manifest_sha256": "446a91b6474191a2e37018788a069177d7927ce74b9aee21942647ff909b6ec4",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/duet-reverie/episode_order/train.json",
+          "order_manifest_sha256": "56cd056fdcae3464604b2f44a3cd7d39ead550234cb3930bcd854288d220f25a",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/duet-reverie/train/source_statistics.json",
+          "sha256": "bfdfde3e8b0f6ceadd56cbc1ba68933a6d3ba973b91f4de224ff50f56edad025",
+          "trajectory_count": 128
+        },
+        "hamt-reverie": {
+          "checkpoint_sha256": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/hamt-reverie/collection_config.json",
+          "collection_config_sha256": "d5fd6ceacd9c186824b9ab55c822ecc4aaca3d9b357423164402655ae6564200",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/hamt-reverie/train/tta_diagnostics.json",
+          "diagnostics_sha256": "4e777479de1a8f71dd53c8f574dd57e852c0c06a73e2c4b1f38ace6f8c401fd8",
+          "formal_immutable_identity_sha256": "59a6cc7d2933cc6ca4052fc438402fb61793920f03e77a7643f17cd65f7c13be",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-hamt-reverie-train-native/manifest.json",
+          "formal_manifest_sha256": "2f35370f219ad7657159a93afbeb3eb5c4dacf991b2eec980b2f48de8ccc2430",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/hamt-reverie/episode_order/train.json",
+          "order_manifest_sha256": "c3639e07a13bf95a1c6710df44908529b15b6a178e675b3b4d39f744136c5104",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/hamt-reverie/train/source_statistics.json",
+          "sha256": "78bc9feec319cc10645d06526ffe23fd774baebeb914fac681b15ba807a627bd",
+          "trajectory_count": 128
+        },
+        "goat-reverie": {
+          "checkpoint_sha256": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/goat-reverie/collection_config.json",
+          "collection_config_sha256": "d9c5aa4b0c1a8a5b0e58615e93579d965e121dd28cfb024375e3ad1adc333186",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/train/tta_diagnostics.json",
+          "diagnostics_sha256": "ebff821d9c82df11389c9a61e30734deb6d3604427f8ef32d55250771206be1b",
+          "formal_immutable_identity_sha256": "5e60c8f576bfd9c8223753ed9cee6ac9ddc32d49ae06cf514527a3642ff89097",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-goat-reverie-train-native/manifest.json",
+          "formal_manifest_sha256": "ad74bfb24fa8b7712901340c43a881fb491e36887306d0ffe417cfcd7713061b",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/goat-reverie/episode_order/train.json",
+          "order_manifest_sha256": "caa4167356afc29c9d4a443a1b40c59ab645e848ac8a58f35358f0c7887f7a30",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/train/source_statistics.json",
+          "sha256": "15657320bed1ea30396ff623446ae01defd3d36b6baecec00d5435fe5b8dafcd",
+          "trajectory_count": 128
+        }
+      },
       "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1, "use_fisher": true, "opt_steps": 50, "action_selection": "argmax"},
       "candidates": [
         {"id": "lr_1em3_tau_0p5", "parameters": {"lr": 1e-3, "tau": 0.5}},

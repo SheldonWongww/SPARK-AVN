@@ -89,9 +89,12 @@ or unauthenticated job aborts the stage.
 
 ATENA additionally requires exact full-episode replay diagnostics and honest
 task-level evidence for the replay-reachable high-level policy scope; it must
-not call that limited scope a full end-to-end policy update. IDEA remains prelaunch-blocked until precomputed
-Source-statistics artifacts are available per model, SHA256-pinned, accepted by
-the launcher, and attested in run diagnostics. StreamVLN is not added: the
+not call that limited scope a full end-to-end policy update. IDEA can launch
+only when precomputed Source-statistics artifacts are available per model,
+SHA256-pinned, accepted by the launcher, and attested in run diagnostics. The
+current v2 specifications bind the eight validated `idea-source-train128-v1`
+artifacts; because those artifacts are intentionally untracked, a checkout
+without them still fails closed. StreamVLN is not added: the
 current launcher rejects shuffled order seeds for it and the TTA translator has
 no StreamVLN adapter. These are explicit blocked capabilities, not skipped
 results.

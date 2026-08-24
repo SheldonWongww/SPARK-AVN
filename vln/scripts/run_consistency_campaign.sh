@@ -12,9 +12,11 @@ RUN_TAG="${RUN_TAG:-consistency-v2}"
 OUT_ROOT="${OUT_ROOT:-${REPO_ROOT}/vln/results/tuning/consistency_v2}"
 GPU="${GPU:-0}"
 PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
-# IDEA is intentionally not in the default set while its precomputed Source
-# statistics have no pinned artifacts. Requesting CAMPAIGN_METHODS=idea fails
-# closed in the Python runner instead of launching the warmup approximation.
+# IDEA remains opt-in because its SHA256-pinned Source-statistics artifacts are
+# intentionally untracked and therefore are not present on every checkout.
+# A prepared experiment host can include ``idea`` in CAMPAIGN_METHODS; the
+# Python runner fails closed if any local artifact or provenance binding is
+# missing or changed.
 CAMPAIGN_METHODS="${CAMPAIGN_METHODS:-tent fstta eam feedtta atena}"
 LOG_DIR="${OUT_ROOT}/_campaign_logs"
 RUNNER="${REPO_ROOT}/vln/scripts/run_consistency_hparam_search.py"
