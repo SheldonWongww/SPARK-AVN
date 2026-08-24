@@ -1,0 +1,80 @@
+{
+  "schema": "navtta.vln_tta_consistency_search.v2",
+  "experiment_id": "vln-reverie-consistency-search-v2",
+  "benchmark": "reverie",
+  "description": "Development-only selection on complete val_unseen global shuffles 1/2/3, followed by winner-only val_seen retention. RGSPL is primary and RGS secondary.",
+  "protocol": {
+    "development_split": "val_unseen",
+    "retention_split": "val_seen",
+    "order_seeds": [1, 2, 3],
+    "primary_metric": "RGSPL",
+    "secondary_metric": "RGS",
+    "selection_score": "mean_delta_minus_sample_std_delta",
+    "positive_result_required": false,
+    "source_policy": "reuse_authenticated_order_invariant_argmax"
+  },
+  "settings": ["duet-reverie", "hamt-reverie", "goat-reverie"],
+  "concurrency": {
+    "duet-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1},
+    "hamt-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1},
+    "goat-reverie": {"tent": 1, "fstta": 1, "eam": 1, "feedtta": 1, "atena": 1, "idea": 1}
+  },
+  "methods": {
+    "tent": {
+      "base": {"norm_scope": "ln", "optimizer": "Adam", "action_selection": "argmax", "update_interval": 1, "max_grad_norm": 0.0},
+      "candidates": [
+        {"id": "lr_3em6", "parameters": {"lr": 3e-6}},
+        {"id": "lr_1em5", "parameters": {"lr": 1e-5}},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 1.5625e-5}},
+        {"id": "lr_3em5", "parameters": {"lr": 3e-5}}
+      ]
+    },
+    "fstta": {
+      "base": {"m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "reset_var_hist_each_episode": false, "last_k_ln": 4, "norm_scope": "last_k_ln", "slow_optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "fast_grad_mode": "concordant", "action_selection": "argmax", "max_grad_norm": 0.0},
+      "candidates": [
+        {"id": "scale_0p1", "parameters": {"lr_fast": 6e-5, "lr_slow": 1e-4}},
+        {"id": "scale_0p3", "parameters": {"lr_fast": 1.8e-4, "lr_slow": 3e-4}},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr_fast": 6e-4, "lr_slow": 1e-3}}
+      ]
+    },
+    "eam": {
+      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8, "update_interval": 1, "optimizer": "Adam", "action_selection": "argmax"},
+      "candidates": [
+        {"id": "lr_1em6", "parameters": {"lr": 1e-6}},
+        {"id": "lr_3em6", "parameters": {"lr": 3e-6}},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 1e-5}}
+      ]
+    },
+    "feedtta": {
+      "base": {"gamma": 0.99, "p": 0.05, "alpha": -0.2, "sgr_mode": "paper_main", "normalize_gradient": false, "optimizer_eps": 1e-5, "scope_profile": "paper_full", "action_selection": "argmax"},
+      "candidates": [
+        {"id": "lr_2em6", "parameters": {"lr": 2e-6}},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 5e-6}},
+        {"id": "lr_1em5", "parameters": {"lr": 1e-5}}
+      ]
+    },
+    "atena": {
+      "base": {"action_selection": "argmax", "update_scope": "replay_reachable_high_level_navigation", "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.999, "weight_decay": 0.01, "episodic": false, "max_grad_norm": 0.0, "self_loss_weight": 0.25},
+      "required_diagnostics": {"exact_episode_replay_enabled": true, "gradient_reconstruction": "exact_step_replay_in_eval_mode", "retains_episode_graph": false, "requires_task_policy_scope_verification": true, "task_scope_evidence": "replay_reachable_high_level_navigation"},
+      "candidates": [
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr_query": 5e-6, "lr_self": 1e-7, "query_threshold": 0.1, "mix_lambda": 0.5}},
+        {"id": "lr_half", "parameters": {"lr_query": 2.5e-6, "lr_self": 5e-8, "query_threshold": 0.1, "mix_lambda": 0.5}},
+        {"id": "lr_double", "parameters": {"lr_query": 1e-5, "lr_self": 2e-7, "query_threshold": 0.1, "mix_lambda": 0.5}},
+        {"id": "delta_0p05", "parameters": {"lr_query": 5e-6, "lr_self": 1e-7, "query_threshold": 0.05, "mix_lambda": 0.5}},
+        {"id": "delta_0p2", "parameters": {"lr_query": 5e-6, "lr_self": 1e-7, "query_threshold": 0.2, "mix_lambda": 0.5}},
+        {"id": "lambda_0p75", "parameters": {"lr_query": 5e-6, "lr_self": 1e-7, "query_threshold": 0.1, "mix_lambda": 0.75}}
+      ]
+    },
+    "idea": {
+      "availability": {"status": "blocked", "reason": "precomputed Source-statistics artifacts and their SHA256 bindings are not yet available to the VLN launcher"},
+      "source_statistics": {},
+      "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1, "use_fisher": true, "opt_steps": 50, "action_selection": "argmax"},
+      "candidates": [
+        {"id": "lr_1em3_tau_0p5", "parameters": {"lr": 1e-3, "tau": 0.5}},
+        {"id": "lr_1em3_tau_0p7", "parameters": {"lr": 1e-3, "tau": 0.7}},
+        {"id": "lr_3em3_tau_0p5", "parameters": {"lr": 3e-3, "tau": 0.5}},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 3e-3, "tau": 0.7}}
+      ]
+    }
+  }
+}

@@ -456,7 +456,7 @@ class GMapNavAgent(Seq2SeqAgent):
         else:
             obs = self.env._get_obs()
         self._update_scanvp_cands(obs)
-        self.tta_episode_start()
+        self.tta_episode_start(trajectory_id=obs[0]['instr_id'])
 
         batch_size = len(obs)
 

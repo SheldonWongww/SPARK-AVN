@@ -1,7 +1,8 @@
-from copy import deepcopy
-from types import SimpleNamespace
+import math
 import random
 import unittest
+from copy import deepcopy
+from types import SimpleNamespace
 from unittest import mock
 
 import torch
@@ -318,6 +319,24 @@ class TTACoreTest(unittest.TestCase):
         self.assertEqual(diagnostics["skipped_updates_by_budget"], 2)
         self.assertEqual(diagnostics["updates"], 0)
 
+    def test_tent_labels_interval_schedule_as_noncanonical_ablation(self):
+        with self.assertLogs(level="WARNING"):
+            adapter = TentAdapter(
+                _TinyPolicy(), scope="last_ln", update_interval=2
+            )
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["update_interval"], 2)
+        self.assertEqual(diagnostics["update_interval_unit"], "policy_forward")
+        self.assertFalse(diagnostics["canonical_update_interval"])
+        self.assertEqual(
+            diagnostics["tent_schedule"],
+            "noncanonical_interval_ablation",
+        )
+
+    def test_tent_rejects_nonpositive_update_interval(self):
+        with self.assertRaisesRegex(ValueError, "UPDATE_INTERVAL"):
+            TentAdapter(_TinyPolicy(), scope="last_ln", update_interval=0)
+
     def test_fstta_audit_shadow_reaches_fast_and_slow_boundaries(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
@@ -444,6 +463,7 @@ class TTACoreTest(unittest.TestCase):
         before = [parameter.detach().clone() for parameter in adapter.params]
         _, logits = _forward(policy, _inputs())
         adapter.adapt(logits)
+        self.assertEqual(adapter.diagnostics()["max_grad_norm"], 0.0)
         self.assertTrue(any(
             not torch.equal(old, parameter)
             for old, parameter in zip(before, adapter.params)
@@ -458,6 +478,39 @@ class TTACoreTest(unittest.TestCase):
         self.assertAlmostEqual(
             concordant.norm().item(), mean_grad.norm().item(), places=5
         )
+
+    def test_fstta_low_rank_gda_matches_full_inverse_in_nullspace(self):
+        mean = torch.tensor([1.0, 0.0, 1.0, 0.0], dtype=torch.float64)
+        delta = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float64)
+        gradients = [mean + delta, mean - delta]
+        eigen_floor = 0.25
+
+        actual, trace = _concordant_grad_and_trace(
+            gradients, eigen_eps=eigen_floor
+        )
+
+        stacked = torch.stack(gradients)
+        centered = stacked - stacked.mean(dim=0, keepdim=True)
+        covariance = centered.t() @ centered / (len(gradients) - 1)
+        eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+        expected = eigenvectors @ (
+            (eigenvectors.t() @ mean)
+            / eigenvalues.clamp_min(eigen_floor)
+        )
+        expected = expected * (mean.norm() / expected.norm())
+
+        torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+        torch.testing.assert_close(trace, torch.tensor(2.0, dtype=trace.dtype))
+        # The old truncated implementation discarded coordinate 2 entirely.
+        self.assertGreater(abs(float(actual[2])), abs(float(actual[0])))
+
+    def test_fstta_validates_low_rank_inverse_floor_and_windows(self):
+        with self.assertRaisesRegex(ValueError, "EIGEN_EPS"):
+            FSTTAAdapter(
+                _TinyPolicy(), use_slow=False, last_k=1, eigen_eps=0.0
+            )
+        with self.assertRaisesRegex(ValueError, "FSTTA.M"):
+            FSTTAAdapter(_TinyPolicy(), use_slow=False, last_k=1, M=0)
 
     def test_fstta_fast_gradient_modes_select_expected_values_and_trace(self):
         grads = [
@@ -716,12 +769,13 @@ class TTACoreTest(unittest.TestCase):
         self.assertEqual(adapter.slow_attempt_count, 2)
         self.assertEqual(adapter.slow_skip_count, 0)
 
-    def test_fstta_episode_start_resets_variance_but_keeps_slow_state(self):
+    def test_fstta_explicit_episode_variance_reset_keeps_slow_state(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
             policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
             last_k=1, max_grad_norm=10.0,
             reset_optimizer_each_episode=True,
+            reset_var_hist_each_episode=True,
         )
         _run_nondegenerate_slow_window(adapter)
         _run_fast_update(adapter, policy)
@@ -757,22 +811,22 @@ class TTACoreTest(unittest.TestCase):
         self.assertTrue(diagnostics["reset_var_hist_each_episode"])
         self.assertFalse(diagnostics["variance_history_initialized"])
 
-    def test_fstta_can_keep_stream_variance_across_episodes(self):
+    def test_fstta_paper_default_keeps_stream_variance_across_episodes(self):
         policy = _TinyPolicy()
         adapter = FSTTAAdapter(
             policy, M=1, N=2, lr_fast=1e-3, lr_slow=1e-3,
             last_k=1, max_grad_norm=10.0,
             reset_optimizer_each_episode=True,
-            reset_var_hist_each_episode=False,
         )
         adapter.var_hist = torch.tensor(2.0)
         adapter.episode_start()
-        # The opt-in ablation treats the variance EMA as a single test stream.
+        # Paper Eq. (6) treats the variance EMA as a single test stream.
         torch.testing.assert_close(adapter.var_hist, torch.tensor(2.0))
         diagnostics = adapter.diagnostics()
         self.assertEqual(
             diagnostics["variance_history_lifetime"], "test_stream"
         )
+        self.assertEqual(diagnostics["max_grad_norm"], 10.0)
         self.assertFalse(diagnostics["reset_var_hist_each_episode"])
         self.assertTrue(diagnostics["variance_history_initialized"])
 
@@ -934,6 +988,95 @@ class TTACoreTest(unittest.TestCase):
         source_only, use_aux = adapter._combine(source_logits, uncertain_aux)
         self.assertFalse(bool(use_aux.item()))
         torch.testing.assert_close(source_only.exp(), source_logits.softmax(dim=-1))
+
+    def test_eam_gate_uses_per_sample_valid_action_count(self):
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            confidence_scale=0.4,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        source_logits = torch.tensor([
+            [3.0, 1.0, 0.0, -1.0],
+            [3.0, 1.0, 0.0, -1.0],
+        ])
+        auxiliary_logits = torch.tensor([
+            [2.0, 0.0, -10.0, -10.0],
+            [2.0, 0.0, -10.0, -10.0],
+        ])
+
+        combined, use_aux = adapter._combine(
+            source_logits,
+            auxiliary_logits,
+            valid_action_count=torch.tensor([2, 4]),
+        )
+
+        torch.testing.assert_close(use_aux, torch.tensor([False, True]))
+        self.assertTrue(torch.isneginf(combined[0, 2:]).all())
+        expected_source = source_logits[0, :2].softmax(dim=-1)
+        torch.testing.assert_close(combined[0, :2].exp(), expected_source)
+
+    def test_eam_valid_action_mask_is_snapshotted_for_replay(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=1,
+            memory_size=2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+        valid_mask = torch.tensor([[True, True, False, False]])
+        adapter.before_inference(
+            policy_inputs=inputs,
+            valid_action_mask=valid_mask,
+        )
+        with torch.no_grad():
+            _, source_logits = _forward(policy, inputs)
+        prepared = adapter.prepare_action(source_logits, policy_inputs=inputs)
+        self.assertTrue(torch.isneginf(prepared[:, 2:]).all())
+        adapter.adapt(source_logits, action=torch.tensor([[0]]))
+
+        torch.testing.assert_close(
+            adapter.replay[0]["valid_action_mask"], valid_mask
+        )
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["valid_action_metadata_steps"], 1)
+        self.assertEqual(diagnostics["valid_action_fallback_steps"], 0)
+        self.assertEqual(diagnostics["masked_invalid_action_slots"], 2)
+        self.assertEqual(
+            diagnostics["reliability_action_space"],
+            "per_sample_valid_action_count_or_mask",
+        )
+
+    def test_eam_rejects_ambiguous_or_invalid_action_metadata(self):
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        logits = torch.zeros(1, 4)
+        with self.assertRaisesRegex(ValueError, "either valid_action_count"):
+            adapter._combine(
+                logits,
+                logits,
+                valid_action_count=2,
+                valid_action_mask=torch.ones_like(logits, dtype=torch.bool),
+            )
+        with self.assertRaisesRegex(ValueError, "values must be in"):
+            adapter._combine(logits, logits, valid_action_count=5)
+        with self.assertRaisesRegex(ValueError, "at least one action"):
+            adapter._combine(
+                logits,
+                logits,
+                valid_action_mask=torch.zeros_like(logits, dtype=torch.bool),
+            )
+        padded_logits = torch.tensor([[2.0, 0.0, -math.inf, -math.inf]])
+        combined, _ = adapter._combine(
+            padded_logits, padded_logits, valid_action_count=2
+        )
+        self.assertTrue(torch.isneginf(combined[:, 2:]).all())
+        with self.assertRaisesRegex(ValueError, "padded decisions"):
+            adapter._combine(padded_logits, padded_logits)
 
     def test_eam_identical_initial_branches_preserve_source_distribution(self):
         policy = _TinyPolicy()
@@ -1507,8 +1650,55 @@ class TTACoreTest(unittest.TestCase):
             actual, torch.tensor([-0.2, 5.0, -0.6, 10.0])
         )
         self.assertEqual(adapter.regularizer_variant, "stochastic_gradient_reversion")
+        self.assertEqual(adapter.sgr_mode, "paper_main")
+        self.assertEqual(adapter.diagnostics()["sgr_mode"], "paper_main")
+        self.assertFalse(adapter.diagnostics()["sgr_expectation_preserving"])
         self.assertEqual(adapter.last_sgr_selected_dimensions, 2)
         self.assertEqual(adapter.last_sgr_selected_fraction, 0.5)
+
+    def test_feedtta_appendix_b1_mode_normalizes_all_coordinates(self):
+        adapter = FEEDTTAAdapter(
+            _TinyPolicy(),
+            reversal_probability=0.5,
+            reversal_scale=-0.2,
+            sgr_mode="appendix_b1",
+            trainable_prefixes=("action_distribution",),
+        )
+        gradient = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        selected = torch.tensor([True, False, True, False])
+        with mock.patch.object(
+            adapter, "_sample_sgr_mask", return_value=selected
+        ):
+            actual = adapter._apply_sgr(gradient)
+
+        torch.testing.assert_close(
+            actual, torch.tensor([-0.5, 5.0, -1.5, 10.0])
+        )
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["sgr_mode"], "appendix_b1")
+        self.assertEqual(
+            diagnostics["sgr_rule"],
+            "appendix_b1_all_coordinates_scaled",
+        )
+        self.assertTrue(diagnostics["sgr_expectation_preserving"])
+
+    def test_feedtta_factory_exposes_and_validates_sgr_mode(self):
+        config = SimpleNamespace(
+            METHOD="feedtta",
+            EPISODIC=False,
+            FEEDTTA=SimpleNamespace(
+                SGR_MODE="appendix_b1",
+                TRAINABLE_PREFIXES=["action_distribution"],
+            ),
+        )
+        adapter = build_adapter(_TinyPolicy(), config)
+        self.assertEqual(adapter.sgr_mode, "appendix_b1")
+        with self.assertRaisesRegex(ValueError, "SGR_MODE"):
+            FEEDTTAAdapter(
+                _TinyPolicy(),
+                sgr_mode="hybrid",
+                trainable_prefixes=("action_distribution",),
+            )
 
     def test_feedtta_sgr_does_not_advance_global_torch_rng(self):
         adapter = FEEDTTAAdapter(
@@ -1596,6 +1786,7 @@ class TTACoreTest(unittest.TestCase):
         self.assertIsNotNone(adapter.optimizer)
         self.assertEqual(adapter.trajectory_mixture_entropies, [])
         self.assertFalse(adapter.diagnostics()["retains_episode_graph"])
+        self.assertTrue(adapter.diagnostics()["exact_episode_replay_enabled"])
         self.assertEqual(
             adapter.diagnostics()["gradient_reconstruction"],
             "exact_step_replay_in_eval_mode",
@@ -1685,6 +1876,127 @@ class TTACoreTest(unittest.TestCase):
         adapter = ATENAAdapter(policy)
         self.assertTrue(adapter.names)
         self.assertFalse(any(name.startswith("critic.") for name in adapter.names))
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(
+            diagnostics["update_scope_semantics"],
+            "preexisting_trainable_noncritic_policy_parameters",
+        )
+        self.assertGreater(
+            diagnostics["excluded_top_level_critic_parameter_count"], 0
+        )
+        self.assertTrue(
+            diagnostics["all_noncritic_parameters_preexisting_trainable"]
+        )
+        self.assertFalse(diagnostics["requires_task_trainability_wiring"])
+        self.assertTrue(diagnostics["requires_task_policy_scope_verification"])
+        self.assertFalse(diagnostics["exact_episode_replay_enabled"])
+        self.assertEqual(
+            diagnostics["replay_reachability_validation_result"], "not_run"
+        )
+
+    def test_atena_preflight_filters_callback_unreachable_parameters(self):
+        policy = _ReplayPolicy()
+        policy.unused_navigation_head = nn.Linear(8, 3)
+        adapter = ATENAAdapter(
+            policy, lr_query=1e-2, query_threshold=0.0,
+            optimizer_name="SGD", momentum=0.0, weight_decay=0.0,
+        )
+        before = {
+            name: parameter.detach().clone()
+            for name, parameter in policy.named_parameters()
+        }
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        action = adapter.select_action(policy.action_distribution(features))
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+
+        diagnostics = adapter.diagnostics()
+        self.assertIsNone(adapter.optimizer)
+        self.assertTrue(diagnostics["replay_reachability_validated"])
+        self.assertEqual(
+            diagnostics["replay_reachability_validation_result"], "passed"
+        )
+        self.assertIn(
+            "unused_navigation_head.weight",
+            diagnostics["replay_unreachable_parameter_names"],
+        )
+        self.assertNotIn(
+            "unused_navigation_head.weight",
+            diagnostics["optimizer_policy_parameter_names"],
+        )
+        self.assertTrue(
+            diagnostics["optimizer_policy_scope_matches_reachable"]
+        )
+        for name, parameter in policy.named_parameters():
+            torch.testing.assert_close(parameter.detach(), before[name])
+
+        adapter.episode_end({"success": 1.0})
+        model_parameter_ids = {id(parameter) for parameter in policy.parameters()}
+        optimized_model_ids = {
+            id(parameter)
+            for group in adapter.optimizer.param_groups
+            for parameter in group["params"]
+            if id(parameter) in model_parameter_ids
+        }
+        self.assertEqual(optimized_model_ids, {id(p) for p in adapter.params})
+
+    def test_atena_preflight_fails_closed_for_detached_callback(self):
+        policy = _ReplayPolicy()
+
+        def detached_forward(model, inputs):
+            features, logits = _forward(model, inputs)
+            return features.detach(), logits.detach()
+
+        adapter = ATENAAdapter(policy, forward_policy=detached_forward)
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        action = adapter.select_action(policy.action_distribution(features))
+        with self.assertRaisesRegex(RuntimeError, "detached"):
+            adapter.adapt(
+                logits,
+                action=action,
+                features=features,
+                policy_inputs=inputs,
+            )
+        self.assertIsNone(adapter.optimizer)
+        diagnostics = adapter.diagnostics()
+        self.assertFalse(diagnostics["replay_reachability_validated"])
+        self.assertEqual(
+            diagnostics["replay_reachability_validation_result"], "failed"
+        )
+
+    def test_atena_diagnoses_frozen_policy_parameters_requiring_task_wiring(self):
+        policy = _TinyPolicy()
+        policy.net.norms[0].weight.requires_grad_(False)
+        with self.assertLogs(level="WARNING"):
+            adapter = ATENAAdapter(policy)
+
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(
+            diagnostics["preexisting_frozen_policy_parameter_count"],
+            policy.net.norms[0].weight.numel(),
+        )
+        self.assertFalse(
+            diagnostics["all_noncritic_parameters_preexisting_trainable"]
+        )
+        self.assertTrue(diagnostics["requires_task_trainability_wiring"])
+
+    def test_atena_rejects_overlapping_episode_lifecycle(self):
+        policy = _TinyPolicy()
+        adapter = ATENAAdapter(policy)
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        action = adapter.select_action(policy.action_distribution(features))
+        adapter.adapt(
+            logits, action=action, features=features, policy_inputs=inputs
+        )
+        with self.assertRaisesRegex(RuntimeError, "previous episode ended"):
+            adapter.episode_start()
 
     def test_atena_step_replay_matches_joint_episode_gradient(self):
         policy = _TinyPolicy()

@@ -60,7 +60,7 @@ python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --extra "$@"
 
 cd "${BASELINE_ROOT}"
-export PYTHONPATH="${REPO_ROOT}/core:${BASELINE_ROOT}:${PYTHONPATH:-}"
+export PYTHONPATH="${REPO_ROOT}/avn:${REPO_ROOT}/core:${BASELINE_ROOT}:${PYTHONPATH:-}"
 set +e
 python3 ss_baselines/savi/run.py \
     --run-type eval \

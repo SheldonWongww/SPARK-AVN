@@ -1,0 +1,14 @@
+BASE_TASK_CONFIG_PATH: "configs/single_source_scenario/enmus/mp3d/semantic_audiogoal.yaml"
+TRAINER_NAME: "ddppo_enmus"
+NUM_PROCESSES: 1
+VIDEO_OPTION: []
+VISUALIZATION_OPTION: []
+TEST_EPISODE_COUNT: 128
+EVAL:
+  SPLIT: "train"
+  USE_CKPT_CONFIG: False
+  ACTION_SELECTION: "argmax"
+TTA:
+  METHOD: "source"
+  IDEA:
+    SOURCE_COLLECTION: True

@@ -1,96 +1,158 @@
 #!/usr/bin/env bash
-# Unattended cross-split consistency hyperparameter search campaign.
+# Fail-closed staged VLN TTA campaign for one 32 GiB GPU.
 #
-# Runs the phases sequentially (one benchmark's one (model,method) at a time),
-# reusing the existing formal Source evals as the selection reference.  Each
-# phase's candidates run at the spec's same-(model,method) concurrency.  After a
-# benchmark's phases finish it writes selected_config.json per cell.
-#
-# Designed to be launched once under nohup on the AutoDL server; every phase
-# appends to a single campaign log so progress can be tailed remotely.
-#
-# Usage:
-#   bash vln/scripts/run_consistency_campaign.sh [BENCHMARK ...]
-#     BENCHMARK in {r2r, reverie, r2r-ce}; default runs all three in order.
-set -uo pipefail
+# Per cell: val_unseen search (seeds 1/2/3) -> freeze -> winner-only
+# val_seen retention (seeds 1/2/3) -> report.  A failed command stops the
+# campaign.  R2R-CE completes every ETPNav cell before starting BEVBert.
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PY="/root/autodl-tmp/conda/envs/duet/bin/python"   # stdlib-only runner
-RUN_TAG="consistency-v1"
-OUT_ROOT="${REPO_ROOT}/vln/results/tuning/consistency_v1"
-# Fast methods for the main pass.  IDEA is deferred (one candidate takes hours
-# at opt_steps>=10); override e.g. CAMPAIGN_METHODS="idea" for a dedicated pass.
+PY="${PYTHON:-/root/autodl-tmp/conda/envs/duet/bin/python}"
+RUN_TAG="${RUN_TAG:-consistency-v2}"
+OUT_ROOT="${OUT_ROOT:-${REPO_ROOT}/vln/results/tuning/consistency_v2}"
+GPU="${GPU:-0}"
+PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
+# IDEA is intentionally not in the default set while its precomputed Source
+# statistics have no pinned artifacts. Requesting CAMPAIGN_METHODS=idea fails
+# closed in the Python runner instead of launching the warmup approximation.
 CAMPAIGN_METHODS="${CAMPAIGN_METHODS:-tent fstta eam feedtta atena}"
 LOG_DIR="${OUT_ROOT}/_campaign_logs"
-mkdir -p "${LOG_DIR}"
 RUNNER="${REPO_ROOT}/vln/scripts/run_consistency_hparam_search.py"
 
-# Existing formal Source roots (already on disk; verified to match checkpoints
-# used by run_source_eval.sh).  HAMT-r2r uses the e2e Source, the checkpoint the
-# launcher actually loads.
-SOURCE_GROUPED="${REPO_ROOT}/vln/results/source/grouped-source-20260810T080743Z"
-SOURCE_HAMT_R2R="${REPO_ROOT}/vln/results/source/hamt-r2r-e2e-source-20260810T152328Z"
+mkdir -p "${LOG_DIR}"
 
-log() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "${LOG_DIR}/campaign.log"; }
+log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "${LOG_DIR}/campaign.log"; }
 
-# Build a per-benchmark source root symlinked into the layout the selector
-# expects: <source_root>/<setting>/<split>/console.log
-prepare_source_root() {
-    local benchmark="$1"; shift
-    local settings=("$@")
-    local sroot="${OUT_ROOT}/_source/${benchmark}"
-    mkdir -p "${sroot}"
-    for setting in "${settings[@]}"; do
-        local src="${SOURCE_GROUPED}/${setting}"
-        [[ "${setting}" == "hamt-r2r" ]] && src="${SOURCE_HAMT_R2R}/hamt-r2r"
-        ln -sfn "${src}" "${sroot}/${setting}"
-    done
-    echo "${sroot}"
+run_stage() {
+    local benchmark="$1"
+    local setting="$2"
+    local method="$3"
+    local stage="$4"
+    local spec="$5"
+    local logfile="${LOG_DIR}/${benchmark}-${setting}-${method}.log"
+    local args=(
+        "${PY}" "${RUNNER}"
+        --spec "${spec}" --run-tag "${RUN_TAG}" --out-dir "${OUT_ROOT}"
+        --gpu "${GPU}" --settings "${setting}" --methods "${method}"
+        --stage "${stage}"
+    )
+    log "START ${benchmark} ${setting} ${method} ${stage}"
+    if ! "${args[@]}" >> "${logfile}" 2>&1; then
+        log "FAILED ${benchmark} ${setting} ${method} ${stage}; see ${logfile}"
+        return 1
+    fi
+    log "DONE ${benchmark} ${setting} ${method} ${stage}"
+}
+
+preflight_cell() {
+    local benchmark="$1"
+    local setting="$2"
+    local method="$3"
+    local spec="$4"
+    local logfile="${LOG_DIR}/${benchmark}-${setting}-${method}-preflight.log"
+    log "PREFLIGHT ${benchmark} ${setting} ${method}"
+    "${PY}" "${RUNNER}" \
+        --spec "${spec}" --run-tag "${RUN_TAG}" --out-dir "${OUT_ROOT}" \
+        --gpu "${GPU}" --settings "${setting}" --methods "${method}" \
+        --stage search --dry-run --launcher-preflight \
+        >> "${logfile}" 2>&1
 }
 
 run_benchmark() {
     local benchmark="$1"
-    local spec settings
+    local spec
+    local -a settings
     case "${benchmark}" in
         r2r)
-            spec="${REPO_ROOT}/vln/experiments/r2r_consistency_search_v1.json"
-            settings=(duet-r2r hamt-r2r goat-r2r) ;;
+            spec="${REPO_ROOT}/vln/experiments/r2r_consistency_search_v2.json"
+            settings=(duet-r2r hamt-r2r goat-r2r)
+            ;;
         reverie)
-            spec="${REPO_ROOT}/vln/experiments/reverie_consistency_search_v1.json"
-            settings=(duet-reverie hamt-reverie goat-reverie) ;;
+            spec="${REPO_ROOT}/vln/experiments/reverie_consistency_search_v2.json"
+            settings=(duet-reverie hamt-reverie goat-reverie)
+            ;;
         r2r-ce)
-            spec="${REPO_ROOT}/vln/experiments/r2r_ce_consistency_search_v1.json"
-            settings=(etpnav-r2r-ce bevbert-r2r-ce) ;;
-        *) log "unknown benchmark ${benchmark}"; return 1 ;;
+            spec="${REPO_ROOT}/vln/experiments/r2r_ce_consistency_search_v2.json"
+            settings=(etpnav-r2r-ce bevbert-r2r-ce)
+            ;;
+        *)
+            log "FAILED unknown benchmark ${benchmark}"
+            return 1
+            ;;
     esac
-    local sroot
-    sroot="$(prepare_source_root "${benchmark}" "${settings[@]}")"
 
-    local methods
+    local -a methods
     read -r -a methods <<< "${CAMPAIGN_METHODS}"
+    local setting method stage
+    # Settings are the outer barrier.  This is required for R2R-CE and is kept
+    # for the discrete benchmarks to make phase ownership unambiguous.
     for setting in "${settings[@]}"; do
         for method in "${methods[@]}"; do
-            log "START ${benchmark} ${setting} ${method}"
-            "${PY}" "${RUNNER}" \
-                --spec "${spec}" --run-tag "${RUN_TAG}" --out-dir "${OUT_ROOT}" \
-                --settings "${setting}" --methods "${method}" \
-                >> "${LOG_DIR}/${benchmark}-${setting}-${method}.log" 2>&1
-            log "DONE  ${benchmark} ${setting} ${method} (exit $?)"
+            if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
+                preflight_cell \
+                    "${benchmark}" "${setting}" "${method}" "${spec}"
+                continue
+            fi
+            for stage in search select retention report; do
+                run_stage \
+                    "${benchmark}" "${setting}" "${method}" "${stage}" \
+                    "${spec}"
+            done
         done
     done
-
-    log "SELECT ${benchmark}"
-    "${PY}" "${RUNNER}" --spec "${spec}" --run-tag "${RUN_TAG}" \
-        --out-dir "${OUT_ROOT}" --source-root "${sroot}" --select-only \
-        --methods ${CAMPAIGN_METHODS} \
-        >> "${LOG_DIR}/${benchmark}-select.log" 2>&1
-    log "SELECTED ${benchmark} -> ${OUT_ROOT}/<setting>/<method>/selected_config.json"
 }
 
 BENCHMARKS=("$@")
 [[ ${#BENCHMARKS[@]} -gt 0 ]] || BENCHMARKS=(r2r reverie r2r-ce)
-log "CAMPAIGN START benchmarks=${BENCHMARKS[*]}"
+[[ "${GPU}" =~ ^[0-9]+$ ]] || { printf 'error: GPU must be a nonnegative integer\n' >&2; exit 2; }
+case "${PREFLIGHT_ONLY}" in
+    0|1) ;;
+    *) printf 'error: PREFLIGHT_ONLY must be 0 or 1\n' >&2; exit 2 ;;
+esac
+read -r -a REQUESTED_METHODS <<< "${CAMPAIGN_METHODS}"
+[[ ${#REQUESTED_METHODS[@]} -gt 0 ]] || { printf 'error: CAMPAIGN_METHODS is empty\n' >&2; exit 2; }
+SEEN_METHODS=" "
+for method in "${REQUESTED_METHODS[@]}"; do
+    case "${method}" in
+        tent|fstta|eam|feedtta|atena|idea) ;;
+        *) printf 'error: unknown campaign method: %s\n' "${method}" >&2; exit 2 ;;
+    esac
+    case "${SEEN_METHODS}" in
+        *" ${method} "*)
+            printf 'error: duplicate campaign method: %s\n' "${method}" >&2
+            exit 2
+            ;;
+    esac
+    SEEN_METHODS="${SEEN_METHODS}${method} "
+done
+SEEN_BENCHMARKS=" "
+for benchmark in "${BENCHMARKS[@]}"; do
+    case "${benchmark}" in
+        r2r|reverie|r2r-ce) ;;
+        *) printf 'error: unknown benchmark: %s\n' "${benchmark}" >&2; exit 2 ;;
+    esac
+    case "${SEEN_BENCHMARKS}" in
+        *" ${benchmark} "*)
+            printf 'error: duplicate benchmark: %s\n' "${benchmark}" >&2
+            exit 2
+            ;;
+    esac
+    SEEN_BENCHMARKS="${SEEN_BENCHMARKS}${benchmark} "
+done
+[[ -x "${PY}" ]] || { printf 'error: missing campaign Python: %s\n' "${PY}" >&2; exit 2; }
+if [[ "${PREFLIGHT_ONLY}" == "0" ]]; then
+    if ! CUDA_VISIBLE_DEVICES="${GPU}" "${PY}" -c \
+        'import torch; assert torch.cuda.is_available(), "no CUDA device"'; then
+        printf 'error: GPU preflight failed; no experiment was launched\n' >&2
+        exit 2
+    fi
+fi
+log "CAMPAIGN START benchmarks=${BENCHMARKS[*]} methods=${CAMPAIGN_METHODS} preflight_only=${PREFLIGHT_ONLY}"
 for benchmark in "${BENCHMARKS[@]}"; do
     run_benchmark "${benchmark}"
 done
-log "CAMPAIGN COMPLETE"
+if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
+    log "CAMPAIGN PREFLIGHT COMPLETE; no simulator was started"
+else
+    log "CAMPAIGN COMPLETE"
+fi

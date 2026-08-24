@@ -16,6 +16,7 @@ Usage: vln/scripts/run_source_eval.sh SETTING SPLIT [GPU] [--run-tag TAG]
                                       [--tta-config FILE]
                                       [--result-root DIR]
                                       [--order-seed 0|1|2|3]
+                                      [--source-order-manifest DIR]
                                       [--adapter-parity-audit]
                                       [--episode-limit N] [--dry-run]
 
@@ -23,7 +24,9 @@ SETTING:
   duet-r2r duet-reverie hamt-r2r hamt-reverie goat-r2r goat-reverie
   etpnav-r2r-ce bevbert-r2r-ce streamvln-r2r-ce
 
-SPLIT is val_seen, val_unseen, test, or all.  "all" always runs in the
+SPLIT is val_seen, val_unseen, test, train, or all.  `train` is accepted only
+for an IDEA offline source-statistics collection config and an exact 128-item
+--source-order-manifest.  "all" always runs in the
 canonical val_seen -> val_unseen -> test order, using a fresh process and
 output directory for each split.  Test produces submission trajectories; it
 does not produce a local test score.
@@ -75,6 +78,7 @@ EPISODE_LIMIT=""
 ORDER_SEED=""
 ORDER_SEED_SET=0
 ADAPTER_PARITY_AUDIT=0
+SOURCE_ORDER_MANIFEST=""
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         --dry-run)
@@ -139,6 +143,13 @@ while [[ "$#" -gt 0 ]]; do
                 die "duplicate option: --adapter-parity-audit"
             ADAPTER_PARITY_AUDIT=1
             shift
+            ;;
+        --source-order-manifest)
+            [[ "$#" -ge 2 ]] || die "--source-order-manifest requires a value"
+            [[ -z "${SOURCE_ORDER_MANIFEST}" ]] || \
+                die "source order manifest specified more than once"
+            SOURCE_ORDER_MANIFEST="$2"
+            shift 2
             ;;
         ''|*[!0-9]*)
             die "unknown option or invalid GPU index: $1"
@@ -240,6 +251,16 @@ BOOTSTRAP_PYTHON="/root/autodl-tmp/conda/envs/${BOOTSTRAP_ENV_NAME}/bin/python"
 TTA_METHOD=source
 TTA_NAMESPACE=tuning
 TTA_TRANSLATOR="${REPO_ROOT}/vln/scripts/tta_config_cli.py"
+IDEA_SOURCE_STATS_PATH=""
+IDEA_SOURCE_STATS_SHA256=""
+IDEA_SOURCE_STATS_OUTPUT=""
+IDEA_SOURCE_CHECKPOINT_SHA256=""
+IDEA_SOURCE_DATASET=""
+IDEA_SOURCE_DATASET_VERSION=""
+IDEA_SOURCE_SPLIT=""
+IDEA_SOURCE_TRAJECTORIES=""
+IDEA_SOURCE_COLLECTION_POLICY=""
+IDEA_SOURCE_COLLECTION=0
 if [[ -n "${TTA_CONFIG}" ]]; then
     [[ "${TTA_CONFIG}" = /* ]] || TTA_CONFIG="${REPO_ROOT}/${TTA_CONFIG}"
     [[ -f "${TTA_CONFIG}" ]] || die "missing TTA config: ${TTA_CONFIG}"
@@ -259,9 +280,117 @@ if [[ -n "${TTA_CONFIG}" ]]; then
         die "cannot resolve TTA result namespace: ${TTA_CONFIG}"
     fi
     case "${TTA_NAMESPACE}" in
-        tuning|adapter_parity_audit) ;;
+        tuning|adapter_parity_audit|idea_source_statistics) ;;
         *) die "unsupported TTA result namespace: ${TTA_NAMESPACE}" ;;
     esac
+    if [[ "${TTA_METHOD}" == "idea" ]]; then
+        if ! IDEA_SOURCE_STATS_BINDING_TEXT="$(
+            "${BOOTSTRAP_PYTHON}" - "${TTA_CONFIG}" <<'PY'
+import hashlib
+import json
+import os
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as stream:
+    parameters = json.load(stream).get("parameters", {})
+collecting = parameters.get("collect_source_stats", False)
+if type(collecting) is not bool:
+    raise SystemExit("IDEA collect_source_stats must be boolean")
+if collecting:
+    output = parameters.get("source_stats_output")
+    checkpoint = parameters.get("source_checkpoint_sha256")
+    if not isinstance(output, str) or not os.path.isabs(output):
+        raise SystemExit("IDEA source_stats_output must be absolute")
+    if not isinstance(checkpoint, str) or len(checkpoint) != 64:
+        raise SystemExit("IDEA source_checkpoint_sha256 is invalid")
+    try:
+        int(checkpoint, 16)
+    except ValueError:
+        raise SystemExit("IDEA source_checkpoint_sha256 is invalid")
+    print("collection")
+    print(output)
+    print(checkpoint.lower())
+    print(parameters["source_dataset"])
+    print(parameters["source_dataset_version"])
+    print(parameters["source_split"])
+    print(parameters.get("source_trajectories", 128))
+    print(parameters["collection_policy"])
+    raise SystemExit(0)
+path = parameters.get("source_stats_path")
+expected = parameters.get("source_stats_sha256")
+if not isinstance(path, str) or not os.path.isabs(path):
+    raise SystemExit("IDEA source_stats_path must be absolute")
+if not isinstance(expected, str) or len(expected) != 64:
+    raise SystemExit("IDEA source_stats_sha256 is invalid")
+try:
+    int(expected, 16)
+except ValueError:
+    raise SystemExit("IDEA source_stats_sha256 is invalid")
+if not os.path.isfile(path):
+    raise SystemExit("IDEA source-statistics artifact is missing: {}".format(path))
+digest = hashlib.sha256()
+with open(path, "rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+actual = digest.hexdigest()
+if actual != expected.lower():
+    raise SystemExit(
+        "IDEA source-statistics SHA256 mismatch: expected {}, got {}"
+        .format(expected, actual)
+    )
+print("evaluation")
+print(path)
+print(actual)
+PY
+        )"; then
+            die "invalid IDEA source-statistics binding"
+        fi
+        mapfile -t IDEA_SOURCE_STATS_BINDING <<< "${IDEA_SOURCE_STATS_BINDING_TEXT}"
+        if [[ "${IDEA_SOURCE_STATS_BINDING[0]}" == "collection" ]]; then
+            [[ "${#IDEA_SOURCE_STATS_BINDING[@]}" -eq 8 ]] || \
+                die "invalid IDEA source-collection binding"
+            IDEA_SOURCE_COLLECTION=1
+            IDEA_SOURCE_STATS_OUTPUT="${IDEA_SOURCE_STATS_BINDING[1]}"
+            IDEA_SOURCE_CHECKPOINT_SHA256="${IDEA_SOURCE_STATS_BINDING[2]}"
+            IDEA_SOURCE_DATASET="${IDEA_SOURCE_STATS_BINDING[3]}"
+            IDEA_SOURCE_DATASET_VERSION="${IDEA_SOURCE_STATS_BINDING[4]}"
+            IDEA_SOURCE_SPLIT="${IDEA_SOURCE_STATS_BINDING[5]}"
+            IDEA_SOURCE_TRAJECTORIES="${IDEA_SOURCE_STATS_BINDING[6]}"
+            IDEA_SOURCE_COLLECTION_POLICY="${IDEA_SOURCE_STATS_BINDING[7]}"
+        else
+            [[ "${#IDEA_SOURCE_STATS_BINDING[@]}" -eq 3 ]] || \
+                die "invalid IDEA source-statistics binding"
+            IDEA_SOURCE_STATS_PATH="${IDEA_SOURCE_STATS_BINDING[1]}"
+            IDEA_SOURCE_STATS_SHA256="${IDEA_SOURCE_STATS_BINDING[2]}"
+        fi
+    fi
+fi
+if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+    [[ "${TTA_NAMESPACE}" == "idea_source_statistics" ]] || \
+        die "IDEA source collection requires namespace=idea_source_statistics"
+    [[ "${SPLIT}" == "train" ]] || \
+        die "IDEA source collection requires split train"
+    [[ "${IDEA_SOURCE_SPLIT}" == "train" ]] || \
+        die "IDEA source collection config requires source_split=train"
+    [[ "${IDEA_SOURCE_TRAJECTORIES}" == "128" ]] || \
+        die "IDEA source collection requires exactly 128 trajectories"
+    [[ "${IDEA_SOURCE_COLLECTION_POLICY}" == \
+       "frozen_source_argmax_rollout" ]] || \
+        die "IDEA source collection policy must be frozen_source_argmax_rollout"
+    [[ "${ORDER_SEED_SET}" -eq 0 ]] || \
+        die "IDEA source collection cannot use --order-seed"
+    [[ -z "${SMOKE_EPISODES}" && -z "${EPISODE_LIMIT}" ]] || \
+        die "IDEA source collection cannot use smoke/prefix episode limits"
+    [[ -n "${SOURCE_ORDER_MANIFEST}" ]] || \
+        die "IDEA source collection requires --source-order-manifest"
+    [[ "${SOURCE_ORDER_MANIFEST}" = /* ]] || \
+        SOURCE_ORDER_MANIFEST="${REPO_ROOT}/${SOURCE_ORDER_MANIFEST}"
+    [[ -d "${SOURCE_ORDER_MANIFEST}" && \
+       -f "${SOURCE_ORDER_MANIFEST}/train.json" ]] || \
+        die "missing IDEA source-order manifest: ${SOURCE_ORDER_MANIFEST}/train.json"
+elif [[ "${SPLIT}" == "train" || -n "${SOURCE_ORDER_MANIFEST}" || \
+        "${TTA_NAMESPACE}" == "idea_source_statistics" ]]; then
+    die "train/source-order collection options require an IDEA source-collection config"
 fi
 if [[ "${TTA_NAMESPACE}" == "adapter_parity_audit" && \
       "${ADAPTER_PARITY_AUDIT}" -ne 1 ]]; then
@@ -344,12 +473,18 @@ fi
 if [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
     [[ -n "${TTA_CONFIG}" ]] || \
         die "--result-root is reserved for TTA search jobs"
-    [[ "${TTA_NAMESPACE}" == "tuning" ]] || \
-        die "--result-root cannot override a non-tuning namespace"
-    case "${SPLIT}" in
-        val_seen|val_unseen) ;;
-        *) die "--result-root is restricted to val_seen or val_unseen tuning jobs" ;;
-    esac
+    [[ "${TTA_NAMESPACE}" == "tuning" || \
+       "${TTA_NAMESPACE}" == "idea_source_statistics" ]] || \
+        die "--result-root cannot override this result namespace"
+    if [[ "${TTA_NAMESPACE}" == "idea_source_statistics" ]]; then
+        [[ "${SPLIT}" == "train" ]] || \
+            die "IDEA source-statistics result roots require split train"
+    else
+        case "${SPLIT}" in
+            val_seen|val_unseen) ;;
+            *) die "--result-root is restricted to val_seen or val_unseen tuning jobs" ;;
+        esac
+    fi
     [[ "${RESULT_ROOT_OVERRIDE}" = /* ]] || \
         die "--result-root must be absolute"
 fi
@@ -392,7 +527,7 @@ if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && \
 fi
 
 case "${SPLIT}" in
-    val_seen|val_unseen|test) ;;
+    val_seen|val_unseen|test|train) ;;
     all)
         for ordered_split in val_seen val_unseen test; do
             child_args=(
@@ -418,18 +553,40 @@ elif [[ -n "${TTA_CONFIG}" && "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; t
     RESULT_ROOT="${REPO_ROOT}/vln/results/audits/adapter_parity/runs/${RUN_TAG}/${SETTING}/${SPLIT}"
 elif [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
     RESULT_ROOT="$(realpath -m -- "${RESULT_ROOT_OVERRIDE}")"
-    case "${RESULT_ROOT}" in
-        "${REPO_ROOT}/vln/results/tuning/"*) ;;
-        *) die "--result-root must stay inside vln/results/tuning" ;;
-    esac
+    if [[ "${TTA_NAMESPACE}" == "idea_source_statistics" ]]; then
+        case "${RESULT_ROOT}" in
+            "${REPO_ROOT}/vln/results/idea_source_statistics/"*) ;;
+            *) die "IDEA collection result root must stay inside vln/results/idea_source_statistics" ;;
+        esac
+    else
+        case "${RESULT_ROOT}" in
+            "${REPO_ROOT}/vln/results/tuning/"*) ;;
+            *) die "--result-root must stay inside vln/results/tuning" ;;
+        esac
+    fi
     case "${RESULT_ROOT}" in
         */"${RUN_TAG}"/"${SPLIT}") ;;
         *) die "--result-root must end with RUN_TAG/SPLIT" ;;
     esac
 elif [[ -n "${TTA_CONFIG}" ]]; then
-    RESULT_ROOT="${REPO_ROOT}/vln/results/tuning/${RUN_TAG}/${SETTING}/${SPLIT}"
+    if [[ "${TTA_NAMESPACE}" == "idea_source_statistics" ]]; then
+        RESULT_ROOT="${REPO_ROOT}/vln/results/idea_source_statistics/${RUN_TAG}/${SETTING}/${SPLIT}"
+    else
+        RESULT_ROOT="${REPO_ROOT}/vln/results/tuning/${RUN_TAG}/${SETTING}/${SPLIT}"
+    fi
 else
     RESULT_ROOT="${REPO_ROOT}/vln/results/source/${RUN_TAG}/${SETTING}/${SPLIT}"
+fi
+if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+    CANONICAL_IDEA_SOURCE_STATS_OUTPUT="$(realpath -m -- "${IDEA_SOURCE_STATS_OUTPUT}")"
+    [[ "${IDEA_SOURCE_STATS_OUTPUT}" == "${CANONICAL_IDEA_SOURCE_STATS_OUTPUT}" ]] || \
+        die "IDEA source_stats_output must be a canonical absolute path"
+    case "${IDEA_SOURCE_STATS_OUTPUT}" in
+        "${RESULT_ROOT}/"*) ;;
+        *) die "IDEA source_stats_output must stay inside the collection result root" ;;
+    esac
+    [[ ! -e "${IDEA_SOURCE_STATS_OUTPUT}" ]] || \
+        die "refusing to overwrite IDEA source-statistics artifact"
 fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
 MATTERSIM_MODULE="${MATTERSIM_ROOT}/build/MatterSim.cpython-38-x86_64-linux-gnu.so"
@@ -457,6 +614,69 @@ REVERIE_DUET_HAMT_MANIFEST="$(manifest_for_family reverie_duet_hamt)"
 R2R_GOAT_MANIFEST="$(manifest_for_family r2r_goat)"
 REVERIE_GOAT_MANIFEST="$(manifest_for_family reverie_goat)"
 R2R_CE_UNIFIED_MANIFEST="$(manifest_for_family r2r_ce_v1_3_unified)"
+if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+    R2R_DUET_HAMT_MANIFEST="${SOURCE_ORDER_MANIFEST}"
+    REVERIE_DUET_HAMT_MANIFEST="${SOURCE_ORDER_MANIFEST}"
+    R2R_GOAT_MANIFEST="${SOURCE_ORDER_MANIFEST}"
+    REVERIE_GOAT_MANIFEST="${SOURCE_ORDER_MANIFEST}"
+    R2R_CE_UNIFIED_MANIFEST="${SOURCE_ORDER_MANIFEST}"
+    "${BOOTSTRAP_PYTHON}" - \
+        "${SOURCE_ORDER_MANIFEST}/train.json" "${SETTING}" \
+        "${IDEA_SOURCE_DATASET}" "${IDEA_SOURCE_DATASET_VERSION}" <<'PY'
+import hashlib
+import json
+import re
+import sys
+
+manifest_path, setting, configured_dataset, configured_version = sys.argv[1:]
+with open(manifest_path, "r", encoding="utf-8") as stream:
+    manifest = json.load(stream)
+expected_benchmarks = {
+    "duet-r2r": "r2r_discrete_duet_hamt",
+    "hamt-r2r": "r2r_discrete_duet_hamt",
+    "goat-r2r": "r2r_discrete_goat",
+    "duet-reverie": "reverie_discrete_duet_hamt",
+    "hamt-reverie": "reverie_discrete_duet_hamt",
+    "goat-reverie": "reverie_discrete_goat",
+    "etpnav-r2r-ce": "r2r_ce_v1_3_unified_etpnav_bevbert",
+    "bevbert-r2r-ce": "r2r_ce_v1_3_unified_etpnav_bevbert",
+}
+if manifest.get("schema") != "navtta.episode_order.v1":
+    raise SystemExit("invalid IDEA source-order schema")
+if manifest.get("split") != "train" or manifest.get("split_ordinal") != -1:
+    raise SystemExit("IDEA source-order manifest must describe train")
+if manifest.get("benchmark") != expected_benchmarks[setting]:
+    raise SystemExit("IDEA source-order benchmark does not match the setting")
+episodes = manifest.get("episodes")
+if type(manifest.get("episode_count")) is not int or manifest["episode_count"] != 128:
+    raise SystemExit("IDEA source-order manifest must contain exactly 128 episodes")
+if not isinstance(episodes, list) or len(episodes) != 128:
+    raise SystemExit("IDEA source-order episode list is incomplete")
+keys = [(str(item.get("scene_id")), str(item.get("episode_id"))) for item in episodes]
+if len(set(keys)) != 128:
+    raise SystemExit("IDEA source-order manifest contains duplicate episodes")
+encoded = json.dumps(
+    [{"episode_id": episode, "scene_id": scene} for scene, episode in keys],
+    sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+).encode("utf-8")
+if hashlib.sha256(encoded).hexdigest() != manifest.get("order_sha256"):
+    raise SystemExit("IDEA source-order digest is invalid")
+dataset = manifest.get("dataset", {})
+if dataset.get("path") != configured_dataset:
+    raise SystemExit("IDEA collection config and source-order dataset differ")
+if configured_version != "sha256:" + str(dataset.get("sha256", "")):
+    raise SystemExit("IDEA source_dataset_version must pin the dataset SHA256")
+selection = manifest.get("selection", {})
+if (
+    selection.get("algorithm") != "sha256_rank_without_replacement_v1"
+    or selection.get("setting") != setting
+    or selection.get("sample_count") != 128
+):
+    raise SystemExit("IDEA source-order selection provenance is invalid")
+if not re.fullmatch(r"[0-9a-f]{64}", str(dataset.get("sha256", ""))):
+    raise SystemExit("IDEA source-order dataset SHA256 is invalid")
+PY
+fi
 if [[ "${ORDER_SEED_SET}" -eq 1 && "${ORDER_SEED}" != "0" ]]; then
     [[ -n "${ORDER_FAMILY}" ]] || die "cannot resolve order-manifest family"
     "${BOOTSTRAP_PYTHON}" \
@@ -593,6 +813,18 @@ set_run_identity() {
     RUN_CONFIG_REF="$4"
     shift 4
     RUN_AUX_CHECKPOINTS=("$@")
+    if [[ -n "${TTA_CONFIG}" && ( "${TTA_NAMESPACE}" == "tuning" || \
+         "${TTA_NAMESPACE}" == "idea_source_statistics" ) ]]; then
+        RUN_AUX_CHECKPOINTS+=("tta_job_config=${TTA_CONFIG}")
+    fi
+    if [[ "${TTA_METHOD}" == "idea" && "${IDEA_SOURCE_COLLECTION}" -eq 0 ]]; then
+        [[ -n "${IDEA_SOURCE_STATS_PATH}" && \
+           -n "${IDEA_SOURCE_STATS_SHA256}" ]] || \
+            die "IDEA source-statistics binding was not validated"
+        RUN_AUX_CHECKPOINTS+=(
+            "idea_source_statistics=${IDEA_SOURCE_STATS_PATH}"
+        )
+    fi
     case "${RUN_MODEL}" in
         duet|hamt|goat)
             # The discrete evaluators import this ignored native module at
@@ -608,6 +840,12 @@ validate_run_identity_paths() {
         die "missing episode-order manifest for ${SPLIT}"
     [[ -f "${RUN_PRIMARY_CHECKPOINT}" ]] || \
         die "missing primary checkpoint: ${RUN_PRIMARY_CHECKPOINT}"
+    if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+        local checkpoint_sha256
+        checkpoint_sha256="$(sha256sum "${RUN_PRIMARY_CHECKPOINT}" | awk '{print $1}')"
+        [[ "${checkpoint_sha256}" == "${IDEA_SOURCE_CHECKPOINT_SHA256}" ]] || \
+            die "IDEA collection checkpoint SHA256 does not match the loaded policy"
+    fi
     if [[ "${RUN_CONFIG_REF}" != *'#'* ]]; then
         local config_path="${RUN_CONFIG_REF}"
         [[ "${config_path}" = /* ]] || config_path="${REPO_ROOT}/${config_path}"
@@ -745,6 +983,10 @@ PY
         auxiliary_args+=(--aux-checkpoint "${name}=${path}")
     done
 
+    local asset_manifest="${REPO_ROOT}/vln/manifests/assets/eval_assets.json"
+    if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+        asset_manifest="${REPO_ROOT}/vln/manifests/assets/source_train_assets.json"
+    fi
     "${PYTHON}" "${REPO_ROOT}/tools/create_run_manifest.py" \
         --output "${RUN_MANIFEST_PATH}" --run-id "${run_id}" \
         --task vln --benchmark "${RUN_BENCHMARK}" --model "${RUN_MODEL}" \
@@ -755,7 +997,7 @@ PY
         --dataset-version "${RUN_BENCHMARK}" \
         --stream-order-sha256 "${RUN_ORDER_SHA256}" \
         --stream-content-sha256 "${RUN_DATASET_SHA256}" \
-        --asset-manifest "${REPO_ROOT}/vln/manifests/assets/eval_assets.json" \
+        --asset-manifest "${asset_manifest}" \
         --environment-manifest "${REPO_ROOT}/vln/manifests/environments/eval_environments.json" \
         --episode-order-manifest "${order_file}" --extra "$@"
     RUN_MANIFEST_ACTIVE=1
@@ -1101,7 +1343,19 @@ case "${SETTING}" in
             RESULTS_DIR "${RESULT_ROOT}/metrics/" VIDEO_DIR "${RESULT_ROOT}/videos/"
             LOG_FILE "${RESULT_ROOT}/run.log"
         )
-        if [[ "${SPLIT}" == "test" ]]; then
+        if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
+            # IDEA statistics need observations and policy rollouts, not
+            # validation labels.  The inference path reads episode IDs from
+            # DATA_PATH and avoids the upstream v1.2 train_gt dependency.
+            COMMAND=(
+                "${PYTHON}" run.py --exp_name idea_source_statistics --run-type inference
+                --exp-config run_r2r/iter_train.yaml "${COMMON[@]}"
+                INFERENCE.SPLIT train INFERENCE.CKPT_PATH "${CHECKPOINT}"
+                INFERENCE.PREDICTIONS_FILE "${RESULT_ROOT}/source_rollouts.json"
+                INFERENCE.EPISODE_COUNT "${CE_EPISODE_COUNT}"
+                INFERENCE.EPISODE_ORDER_MANIFEST "${CE_MANIFEST}"
+            )
+        elif [[ "${SPLIT}" == "test" ]]; then
             COMMAND=(
                 "${PYTHON}" run.py --exp_name source_test --run-type inference
                 --exp-config run_r2r/iter_train.yaml "${COMMON[@]}"
@@ -1197,6 +1451,130 @@ case "${SETTING}" in
         die "invalid setting: ${SETTING}"
         ;;
 esac
+
+if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then
+    [[ -f "${IDEA_SOURCE_STATS_OUTPUT}" ]] || \
+        die "IDEA source collection did not produce its statistics artifact"
+    [[ -f "${RESULT_ROOT}/tta_diagnostics.json" ]] || \
+        die "IDEA source collection did not produce TTA diagnostics"
+    IDEA_SOURCE_MODEL="${SETTING%%-*}"
+    ACTUAL_SOURCE_CHECKPOINT_SHA256="$(
+        sha256sum "${RUN_PRIMARY_CHECKPOINT}" | awk '{print $1}'
+    )"
+    "${PYTHON}" - \
+        "${IDEA_SOURCE_STATS_OUTPUT}" \
+        "${RESULT_ROOT}/tta_diagnostics.json" \
+        "${SOURCE_ORDER_MANIFEST}/train.json" \
+        "${SETTING}" "${IDEA_SOURCE_MODEL}" \
+        "${ACTUAL_SOURCE_CHECKPOINT_SHA256}" \
+        "${IDEA_SOURCE_DATASET}" "${IDEA_SOURCE_DATASET_VERSION}" \
+        "${IDEA_SOURCE_COLLECTION_POLICY}" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+(
+    artifact_name, diagnostics_name, order_name, setting, model,
+    checkpoint_sha256, dataset_name, dataset_version, collection_policy,
+) = sys.argv[1:]
+artifact_path = Path(artifact_name).resolve()
+diagnostics_path = Path(diagnostics_name).resolve()
+with artifact_path.open("r", encoding="utf-8") as stream:
+    artifact = json.load(stream)
+with diagnostics_path.open("r", encoding="utf-8") as stream:
+    diagnostics = json.load(stream)
+with open(order_name, "r", encoding="utf-8") as stream:
+    order = json.load(stream)
+
+digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+if diagnostics.get("schema") == "navtta.vln_discrete_tta.v1":
+    collection = diagnostics.get("adapter")
+elif diagnostics.get("schema") == "navtta.vln_ce_tta.v1":
+    collection = diagnostics.get("idea_source_collection")
+else:
+    raise SystemExit("IDEA collection diagnostics use an unknown schema")
+if not isinstance(collection, dict):
+    raise SystemExit("IDEA collection diagnostics are missing")
+expected_collection = {
+    "mode": "idea_source_statistics_collection",
+    "collection_scope": "all_steps_all_valid_tokens",
+    "trajectory_count": 128,
+    "expected_trajectory_count": 128,
+    "complete": True,
+    "output_path": str(artifact_path),
+    "artifact_sha256": digest,
+}
+for key, expected in expected_collection.items():
+    actual = collection.get(key)
+    if key == "output_path":
+        actual = str(Path(str(actual)).resolve())
+    if actual != expected:
+        raise SystemExit(
+            "IDEA collection diagnostic {} mismatch: {!r} != {!r}"
+            .format(key, actual, expected)
+        )
+if diagnostics.get("method") != "idea" or diagnostics.get("episode_count") != 128:
+    raise SystemExit("IDEA collection diagnostics do not account for 128 episodes")
+
+provenance = artifact.get("provenance")
+if not isinstance(provenance, dict):
+    raise SystemExit("IDEA artifact provenance is missing")
+# The session diagnostics intentionally contain the configured provenance;
+# generated trajectory fields are added only while serialising the artifact.
+configured = collection.get("provenance")
+expected_configured = {
+    key: provenance.get(key) for key in (
+        "checkpoint_sha256", "dataset", "dataset_version", "split",
+        "model", "setting",
+        "collection_policy",
+    )
+}
+if configured != expected_configured:
+    raise SystemExit("IDEA collection provenance changed during serialization")
+expected_provenance = {
+    "checkpoint_sha256": checkpoint_sha256,
+    "dataset": dataset_name,
+    "dataset_version": dataset_version,
+    "split": "train",
+    "model": model,
+    "setting": setting,
+    "trajectory_count": 128,
+    "collection_scope": "all_steps_all_valid_tokens",
+    "collection_policy": collection_policy,
+}
+for key, expected in expected_provenance.items():
+    if provenance.get(key) != expected:
+        raise SystemExit(
+            "IDEA artifact provenance {} mismatch: {!r} != {!r}"
+            .format(key, provenance.get(key), expected)
+        )
+expected_ids = sorted(str(item["episode_id"]) for item in order["episodes"])
+if provenance.get("trajectory_ids") != expected_ids:
+    raise SystemExit("IDEA artifact trajectory IDs differ from the train-128 manifest")
+ids_bytes = json.dumps(
+    expected_ids, ensure_ascii=False, separators=(",", ":")
+).encode("utf-8")
+if hashlib.sha256(ids_bytes).hexdigest() != provenance.get("trajectory_ids_sha256"):
+    raise SystemExit("IDEA artifact trajectory-ID digest is invalid")
+if (
+    artifact.get("schema") != "navtta.idea.source_statistics"
+    or artifact.get("version") != 1
+    or artifact.get("moment_estimator")
+    != "global_sum_sumsq_count_sample_std"
+    or type(artifact.get("feature_dim")) is not int
+    or artifact["feature_dim"] <= 0
+    or type(artifact.get("num_layers")) is not int
+    or artifact["num_layers"] <= 0
+    or not isinstance(artifact.get("layers"), list)
+    or len(artifact["layers"]) != artifact["num_layers"]
+    or any(type(layer.get("count")) is not int or layer["count"] <= 0
+           for layer in artifact["layers"])
+):
+    raise SystemExit("IDEA source-statistics artifact payload is incomplete")
+print("IDEA source statistics validated: {}".format(digest))
+PY
+fi
 
 if [[ -n "${SMOKE_EPISODES}" && "${DRY_RUN}" -eq 0 ]]; then
     "${PYTHON}" "${REPO_ROOT}/vln/scripts/validate_smoke_output.py" \

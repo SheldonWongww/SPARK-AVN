@@ -8,6 +8,8 @@ closed-form bridge weights, the capacity-bounded library, the Fisher-guided
 weighting, and -- most importantly -- that IDEA never mutates the base policy.
 """
 from types import SimpleNamespace
+from pathlib import Path
+import tempfile
 import unittest
 
 import torch
@@ -19,7 +21,15 @@ from navtta_core.tta.idea import (
     IDEAFusionProtocol,
     solve_bridge_weights,
 )
-from navtta_core.tta.fusion import TransformerFusionProtocol
+from navtta_core.tta.fusion import (
+    SourceStatisticsAccumulator,
+    SourceStatisticsArtifact,
+    SourceStatisticsCollectionSession,
+    TransformerFusionProtocol,
+    build_multiscale_memory_key_padding_mask,
+    collect_source_statistics,
+    pool_tokens_to_stats,
+)
 from navtta_core.tta.tta_core import module_state_sha256
 
 
@@ -55,10 +65,10 @@ class _PromptableFusion(nn.Module):
         layer_features = []
         hidden = tokens
         for block in self.blocks:
-            hidden = block(hidden)
-            # Exclude prompt rows so statistics describe the node tokens only.
-            layer_features.append(hidden[num_prompt:])
-        pooled = layer_features[-1].mean(dim=0, keepdim=True)
+            # Cross-token mixing makes the external prompt influence real nodes.
+            hidden = block(hidden + hidden.mean(dim=0, keepdim=True))
+            layer_features.append(hidden)
+        pooled = layer_features[-1][num_prompt:].mean(dim=0, keepdim=True)
         logits = self.head(pooled)
         return layer_features, logits
 
@@ -69,12 +79,11 @@ class _TinyIDEAPolicy(nn.Module):
         self.fusion = _PromptableFusion()
 
 
-def _layer_stats(layer_features):
+def _layer_stats(layer_features, num_prompt=0):
     stats = []
     for feature in layer_features:
-        mu = feature.mean(dim=0)
-        sigma = feature.std(dim=0, unbiased=True)
-        stats.append((mu, sigma))
+        feature = feature[num_prompt:]
+        stats.append(pool_tokens_to_stats(feature))
     return stats
 
 
@@ -89,6 +98,13 @@ class _TinyProtocol(IDEAFusionProtocol):
         self._source_stats = [
             (mu.detach(), sigma.detach()) for mu, sigma in _layer_stats(features)
         ]
+        self._source_metadata = {
+            "mode": "offline_artifact",
+            "schema": "navtta.idea.source_statistics",
+            "sha256": "0" * 64,
+            "trajectory_count": 128,
+            "provenance": {},
+        }
 
     @property
     def feature_dim(self):
@@ -97,6 +113,10 @@ class _TinyProtocol(IDEAFusionProtocol):
     @property
     def num_layers(self):
         return NUM_LAYERS
+
+    @property
+    def source_statistics_metadata(self):
+        return dict(self._source_metadata)
 
     def source_statistics(self, device, dtype):
         return [
@@ -110,13 +130,14 @@ class _TinyProtocol(IDEAFusionProtocol):
         features, logits = self.policy.fusion(
             tokens, prompt=prompt, num_prompt=num_prompt
         )
-        return _layer_stats(features), logits
+        return _layer_stats(features, num_prompt=num_prompt), logits
 
     def fisher_forward(self, policy_inputs):
         tokens = policy_inputs["tokens"].clone().requires_grad_(True)
         features, logits = self.policy.fusion(tokens)
         # Return graph-connected per-layer features for the Fisher trace.
-        return features, logits
+        valid = torch.ones(NUM_NODES, dtype=torch.bool, device=tokens.device)
+        return features, logits, [valid] * NUM_LAYERS
 
 
 def _inputs(shift=0.0):
@@ -237,6 +258,8 @@ class IDEAAdapterTest(unittest.TestCase):
             adapter.episode_end({"success": 1.0})
         after = module_state_sha256(self.policy)
         self.assertEqual(before, after)
+        self.assertTrue(all(not p.requires_grad for p in self.policy.parameters()))
+        self.assertTrue(all(p.grad is None for p in self.policy.parameters()))
 
     def test_fisher_weights_stay_normalised_and_respond(self):
         adapter = _make_adapter(self.policy, self.protocol, tau=1e-9)
@@ -288,6 +311,20 @@ class IDEAAdapterTest(unittest.TestCase):
         diag = adapter.diagnostics()
         self.assertTrue(diag["primary_model_state_hash_match"])
 
+    def test_asset_round_trip_is_digest_pinned(self):
+        adapter = _make_adapter(self.policy, self.protocol, tau=1e-9)
+        adapter.prepare_action(
+            torch.zeros(1, NUM_ACTIONS), policy_inputs=_inputs(shift=2.0)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "assets.json"
+            digest = adapter.save_assets(path, {"run": "unit-test"})
+            restored = _make_adapter(self.policy, self.protocol, tau=1e-9)
+            restored.load_assets(path, digest)
+            self.assertEqual(len(restored.library), len(adapter.library))
+            with self.assertRaises(ValueError):
+                restored.load_assets(path, "f" * 64)
+
 
 class IDEAFactoryTest(unittest.TestCase):
     def test_build_adapter_requires_fusion_protocol(self):
@@ -336,7 +373,13 @@ class _NNTransformerPolicy(nn.Module):
 
     def forward_logits(self, policy_inputs):
         memory = policy_inputs["memory"]  # [S, 1, C]
-        decoded = self.transformer(memory, memory[-1:])
+        padding = policy_inputs.get("padding")
+        decoded = self.transformer(
+            memory,
+            memory[:1],
+            src_key_padding_mask=padding,
+            memory_key_padding_mask=padding,
+        )
         return self.head(decoded[-1])
 
 
@@ -351,12 +394,36 @@ class TransformerFusionProtocolTest(unittest.TestCase):
         torch.manual_seed(11)
         self.policy = _NNTransformerPolicy()
         self.policy.eval()
+        self._tempdir = tempfile.TemporaryDirectory()
+        collector_protocol = TransformerFusionProtocol.for_source_collection(
+            self.policy.transformer,
+            self.policy.forward_logits,
+            feature_dim=FEATURE_DIM,
+        )
+        self.source_path = Path(self._tempdir.name) / "source.json"
+        self.source_sha = collect_source_statistics(
+            collector_protocol,
+            [("source-trajectory", [_seq_inputs()])],
+            self.source_path,
+            {
+                "checkpoint_sha256": "a" * 64,
+                "dataset": "unit",
+                "dataset_version": "v1",
+                "split": "train",
+            },
+            expected_trajectory_count=1,
+        )
         self.protocol = TransformerFusionProtocol(
             self.policy.transformer,
             self.policy.forward_logits,
             feature_dim=FEATURE_DIM,
-            source_warmup_steps=1,
+            source_stats_path=self.source_path,
+            source_stats_sha256=self.source_sha,
+            expected_source_trajectories=1,
         )
+
+    def tearDown(self):
+        self._tempdir.cleanup()
 
     def test_prompt_injection_changes_logits_but_not_prompt_free_pass(self):
         inputs = _seq_inputs(shift=1.0)
@@ -381,8 +448,10 @@ class TransformerFusionProtocolTest(unittest.TestCase):
     def test_fisher_features_are_grad_connected(self):
         # The adapter calls fisher_forward under enable_grad; do the same here.
         with torch.enable_grad():
-            features, logits = self.protocol.fisher_forward(_seq_inputs())
+            features, logits, valid_masks = self.protocol.fisher_forward(_seq_inputs())
             self.assertEqual(len(features), NUM_LAYERS)
+            self.assertEqual(len(valid_masks), NUM_LAYERS)
+            self.assertEqual(tuple(valid_masks[0].shape), tuple(features[0].shape[:-1]))
             grads = torch.autograd.grad(
                 logits.log_softmax(-1)[0, 0], features, allow_unused=True,
                 retain_graph=True,
@@ -404,15 +473,148 @@ class TransformerFusionProtocolTest(unittest.TestCase):
         self.assertGreaterEqual(len(adapter.library), 1)
 
     def test_align_last_m_layers_when_fewer_requested(self):
-        protocol = TransformerFusionProtocol(
+        collector_protocol = TransformerFusionProtocol.for_source_collection(
             self.policy.transformer,
             self.policy.forward_logits,
             feature_dim=FEATURE_DIM,
             num_layers=2,
         )
+        collector = SourceStatisticsAccumulator(2, FEATURE_DIM)
+        collector.begin_trajectory("source-trajectory")
+        collector_protocol.collect_source_step(_seq_inputs(), collector)
+        path = Path(self._tempdir.name) / "source-two.json"
+        digest = collector.save(
+            path,
+            {
+                "checkpoint_sha256": "a" * 64,
+                "dataset": "unit",
+                "dataset_version": "v1",
+                "split": "train",
+            },
+            expected_trajectory_count=1,
+        )
+        protocol = TransformerFusionProtocol(
+            self.policy.transformer,
+            self.policy.forward_logits,
+            feature_dim=FEATURE_DIM,
+            num_layers=2,
+            source_stats_path=path,
+            source_stats_sha256=digest,
+            expected_source_trajectories=1,
+        )
         self.assertEqual(protocol.num_layers, 2)
         stats, _ = protocol.fused_forward(_seq_inputs(), None)
         self.assertEqual(len(stats), 2)
+
+    def test_missing_offline_artifact_fails_closed(self):
+        with self.assertRaises(ValueError):
+            TransformerFusionProtocol(
+                self.policy.transformer,
+                self.policy.forward_logits,
+                feature_dim=FEATURE_DIM,
+            )
+
+    def test_padding_is_excluded_from_layer_statistics(self):
+        inputs = _seq_inputs()
+        inputs["padding"] = torch.tensor([[False, False, False, True, True]])
+        inputs["memory"][3:] = 10000.0
+        stats, _ = self.protocol.fused_forward(inputs, None)
+        for mu, sigma in stats:
+            self.assertTrue(torch.isfinite(mu).all())
+            self.assertTrue(torch.isfinite(sigma).all())
+
+
+class SourceStatisticsArtifactTest(unittest.TestCase):
+    def test_global_moments_are_not_an_average_of_step_means(self):
+        collector = SourceStatisticsAccumulator(1, 1)
+        collector.begin_trajectory("a")
+        collector.update([torch.tensor([[0.0]])])
+        collector.begin_trajectory("b")
+        collector.update([torch.tensor([[2.0], [4.0], [6.0]])])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stats.json"
+            digest = collector.save(
+                path,
+                {
+                    "checkpoint_sha256": "b" * 64,
+                    "dataset": "unit",
+                    "dataset_version": "v1",
+                    "split": "source_train",
+                },
+                expected_trajectory_count=2,
+            )
+            artifact = SourceStatisticsArtifact.load(
+                path,
+                digest,
+                expected_feature_dim=1,
+                expected_num_layers=1,
+                expected_trajectory_count=2,
+            )
+            (mean, sigma), = artifact.statistics("cpu", torch.float32)
+            torch.testing.assert_close(mean, torch.tensor([3.0]))
+            torch.testing.assert_close(
+                sigma,
+                torch.tensor([20.0 / 3.0 + 1e-6]).sqrt(),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+            with self.assertRaises(ValueError):
+                SourceStatisticsArtifact.load(path, "f" * 64)
+
+    def test_pooling_uses_only_valid_tokens_across_batch(self):
+        tokens = torch.tensor([
+            [[1.0], [100.0]],
+            [[3.0], [5.0]],
+        ])
+        valid = torch.tensor([[True, False], [True, True]])
+        mean, _ = pool_tokens_to_stats(tokens, valid)
+        torch.testing.assert_close(mean, torch.tensor([3.0]))
+
+    def test_pooling_uses_paper_epsilon_for_constant_features(self):
+        _, sigma = pool_tokens_to_stats(torch.ones(3, 2))
+        torch.testing.assert_close(sigma, torch.full((2,), 1e-3))
+
+    def test_multiscale_mask_matches_enmus_lengths(self):
+        padding = torch.zeros(1, 32, dtype=torch.bool)
+        padding[:, -1] = True
+        result = build_multiscale_memory_key_padding_mask(padding)
+        self.assertEqual(result.shape, (1, 32 + 8 + 4 + 2 + 1))
+        # The last padded base token contaminates the final window at each scale.
+        self.assertTrue(result[0, 31])
+        self.assertTrue(result[0, -1])
+
+    def test_collection_session_writes_only_after_128_real_ids(self):
+        class Protocol:
+            source_collection = True
+            num_layers = 1
+            feature_dim = 1
+
+            @staticmethod
+            def collect_source_step(policy_inputs, accumulator):
+                accumulator.update([policy_inputs["tokens"]])
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.json"
+            session = SourceStatisticsCollectionSession(
+                Protocol(),
+                path,
+                {
+                    "checkpoint_sha256": "d" * 64,
+                    "dataset": "unit",
+                    "dataset_version": "v1",
+                    "split": "train",
+                },
+            )
+            for index in range(127):
+                session.begin_trajectory("trajectory-{}".format(index))
+                session.observe_step({"tokens": torch.tensor([[float(index)]])})
+                self.assertIsNone(session.end_trajectory())
+            self.assertFalse(path.exists())
+            session.begin_trajectory("trajectory-127")
+            session.observe_step({"tokens": torch.tensor([[127.0]])})
+            digest = session.end_trajectory()
+            self.assertTrue(path.is_file())
+            self.assertEqual(len(digest), 64)
 
 
 if __name__ == "__main__":

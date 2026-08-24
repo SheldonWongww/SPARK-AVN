@@ -42,10 +42,19 @@ def construct_envs(
     tta_episodes_per_scene = int(
         getattr(config.TASK_CONFIG.DATASET, "TTA_EPISODES_PER_SCENE", -1)
     )
+    idea_source_manifest = str(getattr(
+        config.TASK_CONFIG.DATASET,
+        "IDEA_SOURCE_EPISODE_MANIFEST",
+        "",
+    ))
     if tta_episodes_per_scene > 0 and num_processes != 1:
         raise ValueError(
             "The online TTA episode stream requires NUM_PROCESSES=1 so that "
             "one global episode order is preserved."
+        )
+    if idea_source_manifest and num_processes != 1:
+        raise ValueError(
+            "IDEA source-statistics collection requires NUM_PROCESSES=1"
         )
     configs = []
     env_classes = [env_class for _ in range(num_processes)]

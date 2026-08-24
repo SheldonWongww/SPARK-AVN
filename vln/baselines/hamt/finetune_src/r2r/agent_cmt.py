@@ -267,7 +267,7 @@ class Seq2SeqCMTAgent(DiscreteTTAAgentMixin, BaseAgent):
             obs = self.env.reset()
         else:
             obs = self.env._get_obs(t=0)
-        self.tta_episode_start()
+        self.tta_episode_start(trajectory_id=obs[0]['instr_id'])
 
         batch_size = len(obs)
 

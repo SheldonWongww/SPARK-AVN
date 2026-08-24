@@ -16,6 +16,11 @@ from .idea import (
 from .fusion import (
     TransformerFusionProtocol,
     SourceStatisticsAccumulator,
+    SourceStatisticsArtifact,
+    SourceStatisticsCollectionSession,
+    build_multiscale_memory_key_padding_mask,
+    collect_source_statistics,
+    load_source_statistics_artifact,
     pool_tokens_to_stats,
 )
 from .vln_fusion import CrossmodalPromptInjector
@@ -31,6 +36,11 @@ __all__ = [
     "TransformerFusionProtocol",
     "CrossmodalPromptInjector",
     "SourceStatisticsAccumulator",
+    "SourceStatisticsArtifact",
+    "SourceStatisticsCollectionSession",
+    "build_multiscale_memory_key_padding_mask",
+    "collect_source_statistics",
+    "load_source_statistics_artifact",
     "pool_tokens_to_stats",
     "solve_bridge_weights",
     "configure_tta_model",

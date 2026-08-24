@@ -76,6 +76,9 @@ def build_dataset(args, rank=0):
     train_env = None
     aug_env = None
     train_instr_data = None
+    idea_source_collection = bool(
+        getattr(args, 'tta_idea_collect_source_stats', False)
+    ) and str(getattr(args, 'tta_method', '')).lower() == 'idea'
 
     if not args.test:
         # Use augmented features
@@ -127,7 +130,9 @@ def build_dataset(args, rank=0):
             val_env_names = list(args.eval_splits)
 
         disallowed_splits = {'train', 'val_train_seen'}.intersection(val_env_names)
-        if disallowed_splits:
+        if disallowed_splits and not (
+            idea_source_collection and val_env_names == ['train']
+        ):
             raise ValueError(
                 'Training splits are not allowed in evaluation-only mode: '
                 + ', '.join(sorted(disallowed_splits))
@@ -149,7 +154,13 @@ def build_dataset(args, rank=0):
             raise ValueError(
                 'episode_order_manifest requires --test, world_size=1, and batch_size=1'
             )
-        val_env_names = canonicalize_eval_splits(val_env_names)
+        if idea_source_collection:
+            if val_env_names != ['train']:
+                raise ValueError(
+                    'IDEA source collection requires exactly eval_splits=train'
+                )
+        else:
+            val_env_names = canonicalize_eval_splits(val_env_names)
 
     val_envs = {}
     for split in val_env_names:
@@ -171,7 +182,9 @@ def build_dataset(args, rank=0):
             manifest = load_episode_order_manifest(
                 manifest_path, expected_split=split
             )
-            configure_exact_episode_env(val_env, manifest)
+            configure_exact_episode_env(
+                val_env, manifest, allow_subset=idea_source_collection
+            )
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env, bert_tok, speaker_tok, z_dicts, train_instr_data, front_feat_loader

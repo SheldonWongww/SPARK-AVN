@@ -183,7 +183,7 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
             obs = self.env.reset()
         else:
             obs = self.env._get_obs()
-        self.tta_episode_start()
+        self.tta_episode_start(trajectory_id=obs[0]['instr_id'])
 
         batch_size = len(obs)
 
@@ -293,6 +293,7 @@ class NavRefCMTAgent(Seq2SeqCMTAgent):
             act_logits = self.tta_prepare_action(
                 act_logits, tta_policy_inputs
             )
+            obj_logits = self.tta_prompted_object_logits(obj_logits)
 
             if train_ml is not None:
                 # Supervised training

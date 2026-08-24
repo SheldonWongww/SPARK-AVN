@@ -46,8 +46,16 @@ def add_discrete_tta_args(parser):
         choices=("auto", "argmax", "sample"),
         default="auto",
         help=(
-            "auto preserves the discrete VLN evaluator's native argmax "
-            "policy; explicit sample is retained only for controlled ablations"
+            "auto preserves each discrete VLN evaluator's native argmax "
+            "policy; explicit FeedTTA sampling is retained as a labelled "
+            "paper-protocol ablation"
+        ),
+    )
+    group.add_argument(
+        "--tta_matched_feedtta_source", action="store_true", default=False,
+        help=(
+            "mark a Source run as a matched sampled-policy ablation control; "
+            "this also makes action_selection=auto resolve to sample"
         ),
     )
     group.add_argument("--tta_action_seed", type=int, default=0)
@@ -82,10 +90,10 @@ def add_discrete_tta_args(parser):
     fstta.add_argument("--tta_fstta_m", type=int, default=3)
     fstta.add_argument("--tta_fstta_n", type=int, default=4)
     fstta.add_argument("--tta_fstta_q", type=float, default=0.1)
-    fstta.add_argument("--tta_fstta_rho", type=float, default=0.9)
-    fstta.add_argument("--tta_fstta_tau", type=float, default=0.5)
-    fstta.add_argument("--tta_fstta_a", type=float, default=0.5)
-    fstta.add_argument("--tta_fstta_b", type=float, default=1.5)
+    fstta.add_argument("--tta_fstta_rho", type=float, default=0.95)
+    fstta.add_argument("--tta_fstta_tau", type=float, default=0.7)
+    fstta.add_argument("--tta_fstta_a", type=float, default=0.9)
+    fstta.add_argument("--tta_fstta_b", type=float, default=1.1)
     fstta.add_argument(
         "--tta_fstta_fast_grad_mode",
         choices=("concordant", "mean", "last"),
@@ -111,6 +119,15 @@ def add_discrete_tta_args(parser):
         action="store_true",
         default=False,
     )
+    fstta.add_argument(
+        "--tta_fstta_reset_var_hist_each_episode",
+        action="store_true",
+        default=False,
+        help=(
+            "released-code rollout-reset ablation; canonical paper Eq. (6) "
+            "retains the historical variance EMA across the test stream"
+        ),
+    )
     fstta.add_argument("--tta_fstta_eigen_eps", type=float, default=1e-6)
 
     eam = parser.add_argument_group("EAM")
@@ -125,6 +142,11 @@ def add_discrete_tta_args(parser):
     feed.add_argument("--tta_feedtta_p", type=float, default=0.05)
     feed.add_argument("--tta_feedtta_alpha", type=float, default=-0.2)
     feed.add_argument("--tta_feedtta_sgr_seed", type=int, default=0)
+    feed.add_argument(
+        "--tta_feedtta_sgr_mode",
+        choices=("paper_main", "appendix_b1"),
+        default="paper_main",
+    )
     feed.add_argument("--tta_feedtta_gamma", type=float, default=0.99)
     feed.add_argument(
         "--tta_feedtta_scope_profile",
@@ -148,6 +170,16 @@ def add_discrete_tta_args(parser):
     atena.add_argument("--tta_atena_mix_lambda", type=float, default=0.5)
     atena.add_argument("--tta_atena_query_threshold", type=float, default=0.1)
     atena.add_argument("--tta_atena_self_loss_weight", type=float, default=0.1)
+    atena.add_argument(
+        "--tta_atena_update_scope",
+        choices=("replay_reachable_high_level_navigation", "full_policy"),
+        default="replay_reachable_high_level_navigation",
+        help=(
+            "the discrete callback can replay only the high-level navigation "
+            "model; full_policy is rejected instead of making an end-to-end "
+            "replay claim"
+        ),
+    )
 
     idea = parser.add_argument_group("IDEA")
     idea.add_argument("--tta_idea_prompt_length", type=int, default=4)
@@ -161,7 +193,20 @@ def add_discrete_tta_args(parser):
     idea.add_argument("--tta_idea_ridge", type=float, default=1e-4)
     # 0 aligns every fusion layer; DUET/HAMT/GOAT default to num_x_layers=4.
     idea.add_argument("--tta_idea_prompt_layers", type=int, default=0)
-    idea.add_argument("--tta_idea_source_warmup_steps", type=int, default=64)
+    idea.add_argument("--tta_idea_source_stats_path", default="")
+    idea.add_argument("--tta_idea_source_stats_sha256", default="")
+    idea.add_argument(
+        "--tta_idea_source_trajectories", type=int, default=128
+    )
+    idea.add_argument(
+        "--tta_idea_collect_source_stats", action="store_true", default=False
+    )
+    idea.add_argument("--tta_idea_source_stats_output", default="")
+    idea.add_argument("--tta_idea_source_checkpoint_sha256", default="")
+    idea.add_argument("--tta_idea_source_dataset", default="")
+    idea.add_argument("--tta_idea_source_dataset_version", default="")
+    idea.add_argument("--tta_idea_source_split", default="train")
+    idea.add_argument("--tta_idea_collection_policy", default="")
     return parser
 
 
@@ -175,6 +220,25 @@ def _infer_discrete_family(model):
     if hasattr(inner, "encoder") and hasattr(inner, "next_action"):
         return "hamt_reverie" if hasattr(inner, "ref_object") else "hamt_r2r"
     raise ValueError("Could not infer discrete fusion family for IDEA")
+
+
+def _infer_discrete_model_id(model):
+    """Return the public baseline name used in artifact provenance.
+
+    DUET and GOAT share the high-level ``graph`` replay family, so the family
+    identifier is not sufficient for provenance.  Distinguish their concrete
+    local cross-modal stacks and keep HAMT's task-specific family internal.
+    """
+    family = _infer_discrete_family(model)
+    if family.startswith("hamt_"):
+        return "hamt"
+    inner = model.vln_bert
+    encoder = getattr(getattr(inner, "local_encoder", None), "encoder", None)
+    if hasattr(encoder, "x_layers"):
+        return "duet"
+    if hasattr(encoder, "crossattention"):
+        return "goat"
+    raise ValueError("Could not infer graph baseline identity for IDEA")
 
 
 def _default_trainable_prefixes(model):
@@ -318,6 +382,9 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         RESET_OPTIMIZER_EACH_EPISODE=(
             not args.tta_fstta_no_reset_optimizer_each_episode
         ),
+        RESET_VAR_HIST_EACH_EPISODE=(
+            args.tta_fstta_reset_var_hist_each_episode
+        ),
         EIGEN_EPS=args.tta_fstta_eigen_eps,
     )
     eam = SimpleNamespace(
@@ -340,6 +407,7 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         P=args.tta_feedtta_p,
         ALPHA=args.tta_feedtta_alpha,
         SGR_SEED=args.tta_feedtta_sgr_seed,
+        SGR_MODE=args.tta_feedtta_sgr_mode,
         GAMMA=args.tta_feedtta_gamma,
         NORMALIZE_GRADIENT=args.tta_feedtta_normalize_gradient,
         PARAM_SCOPE="module_prefixes",
@@ -362,6 +430,7 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         QUERY_THRESHOLD=args.tta_atena_query_threshold,
         SELF_LOSS_WEIGHT=args.tta_atena_self_loss_weight,
         PARAM_SCOPE="all",
+        TASK_UPDATE_SCOPE=args.tta_atena_update_scope,
         OPTIMIZER="AdamW",
         BETA1=args.tta_beta1,
         BETA2=args.tta_beta2,
@@ -384,7 +453,14 @@ def _adapter_config(args, trainable_prefixes, action_selection="argmax"):
         RIDGE=args.tta_idea_ridge,
         MAX_GRAD_NORM=0.0,
         PROMPT_LAYERS=args.tta_idea_prompt_layers,
-        SOURCE_WARMUP_STEPS=args.tta_idea_source_warmup_steps,
+        SOURCE_STATS_PATH=getattr(args, "tta_idea_source_stats_path", ""),
+        SOURCE_STATS_SHA256=getattr(args, "tta_idea_source_stats_sha256", ""),
+        SOURCE_TRAJECTORIES=int(
+            getattr(args, "tta_idea_source_trajectories", 128)
+        ),
+        COLLECT_SOURCE_STATS=bool(
+            getattr(args, "tta_idea_collect_source_stats", False)
+        ),
     )
     return SimpleNamespace(
         METHOD=args.tta_method,
@@ -525,7 +601,12 @@ def discrete_forward_policy(model, policy_inputs):
         replay_inputs = dict(model_inputs)
         replay_inputs["return_states"] = True
         outputs = model(**replay_inputs)
-        object_stop_logits = outputs["obj_logits"].max(dim=1).values.unsqueeze(1)
+        # Preserve HAMT-REVERIE's native agent contract exactly: its stop
+        # slot is the argmax object *index* (the second torch.max return), not
+        # the maximum object-logit value.
+        object_stop_logits = (
+            outputs["obj_logits"].max(dim=1).indices.unsqueeze(1)
+        )
         logits = torch.cat([outputs["act_logits"], object_stop_logits], dim=1)
         features = outputs["states"]
     else:
@@ -633,9 +714,32 @@ class DiscreteTTAController:
         ) <= 0:
             raise ValueError("adapter audit requires expected episodes > 0")
         requested_selection = str(args.tta_action_selection).lower()
+        declared_matched_source = bool(
+            getattr(args, "tta_matched_feedtta_source", False)
+        )
+        if declared_matched_source and self.method != "source":
+            raise ValueError(
+                "--tta_matched_feedtta_source is valid only for method=source"
+            )
+        if declared_matched_source and requested_selection == "argmax":
+            raise ValueError(
+                "a matched FeedTTA Source control must use policy sampling"
+            )
+        # ``sample`` is itself an explicit ablation request.  Normalize legacy
+        # sampled-Source configs to the matched-control marker so diagnostics
+        # cannot describe a sampled Source as an ordinary Source baseline.
+        self.matched_feedtta_source = bool(
+            declared_matched_source
+            or (self.method == "source" and requested_selection == "sample")
+        )
         self.action_selection = (
-            "argmax"
-        ) if requested_selection == "auto" else requested_selection
+            "sample"
+            if requested_selection == "auto" and self.matched_feedtta_source
+            else (
+                "argmax" if requested_selection == "auto"
+                else requested_selection
+            )
+        )
         if (
             self.method not in ("source", "feedtta")
             and self.action_selection != "argmax"
@@ -654,6 +758,7 @@ class DiscreteTTAController:
         self.binary_feedback_endpoint = None
         self._trajectory_hasher = hashlib.sha256()
         self.trajectory_steps = 0
+        self.idea_source_collection = None
         self.diagnostics_path = args.tta_diagnostics or os.path.join(
             args.output_dir, "tta_diagnostics.json"
         )
@@ -665,6 +770,24 @@ class DiscreteTTAController:
             )
             if self.method == "feedtta" else None
         )
+        self.feedtta_sgr_mode = (
+            str(args.tta_feedtta_sgr_mode).lower()
+            if self.method == "feedtta" else None
+        )
+        self.feedtta_native_action_protocol = (
+            self.method == "feedtta"
+            and self.action_selection == "argmax"
+        )
+        self.feedtta_paper_sampling_protocol = (
+            self.method == "feedtta"
+            and self.action_selection == "sample"
+        )
+        # Backward-compatible field: canonical means the paper's on-policy
+        # sampling action protocol, never the task-adapted VLN argmax port.
+        self.feedtta_canonical_protocol = (
+            self.feedtta_paper_sampling_protocol
+        )
+        self.atena_update_scope = None
         if self.method == "eam":
             self.trainable_prefixes = tuple(
                 args.tta_trainable_prefixes
@@ -695,6 +818,24 @@ class DiscreteTTAController:
                 ),
             )
         else:
+            if self.method == "atena":
+                self.atena_update_scope = str(
+                    args.tta_atena_update_scope
+                ).lower()
+                if self.atena_update_scope != (
+                    "replay_reachable_high_level_navigation"
+                ):
+                    raise ValueError(
+                        "discrete VLN ATENA cannot replay the upstream visual "
+                        "feature extractors; request "
+                        "replay_reachable_high_level_navigation instead of "
+                        "claiming full_policy"
+                    )
+                # These are candidates only. The first real replay callback
+                # differentiates its features/logits and removes unreachable
+                # parameters before any episode optimizer is constructed.
+                for parameter in self.model.parameters():
+                    parameter.requires_grad_(True)
             fusion_protocol = None
             if self.method == "idea":
                 # IDEA injects a soft prompt into the frozen cross-modal fusion
@@ -702,25 +843,114 @@ class DiscreteTTAController:
                 from .idea_fusion import make_idea_fusion_protocol
 
                 prompt_layers = int(getattr(args, "tta_idea_prompt_layers", 0))
+                collect_source = bool(
+                    getattr(args, "tta_idea_collect_source_stats", False)
+                )
+                if collect_source and (
+                    not self.stream_name
+                    or "train" not in str(self.stream_name).lower()
+                ):
+                    raise ValueError(
+                        "IDEA source statistics can only be collected on a "
+                        "source-training stream"
+                    )
+                idea_family = _infer_discrete_family(model)
+                idea_model_id = _infer_discrete_model_id(model)
+                idea_setting = "{}-{}".format(
+                    idea_model_id, self.benchmark
+                )
                 fusion_protocol = make_idea_fusion_protocol(
                     model,
-                    _infer_discrete_family(model),
+                    idea_family,
                     num_layers=(prompt_layers if prompt_layers > 0 else None),
-                    warmup_steps=int(
-                        getattr(args, "tta_idea_source_warmup_steps", 64)
+                    source_stats_path=(None if collect_source else (
+                        getattr(args, "tta_idea_source_stats_path", "") or None
+                    )),
+                    source_stats_sha256=(None if collect_source else (
+                        getattr(args, "tta_idea_source_stats_sha256", "") or None
+                    )),
+                    expected_source_trajectories=int(
+                        getattr(args, "tta_idea_source_trajectories", 128)
                     ),
+                    expected_source_provenance=(
+                        None if collect_source else {
+                            "model": idea_model_id,
+                            "setting": idea_setting,
+                            "collection_policy": (
+                                "frozen_source_argmax_rollout"
+                            ),
+                        }
+                    ),
+                    source_collection=collect_source,
                 )
-            self.adapter = build_adapter(
-                model,
-                _adapter_config(
-                    args, self.trainable_prefixes, self.action_selection
-                ),
-                forward_policy=discrete_forward_policy,
-                fusion_protocol=fusion_protocol,
-            )
+                if collect_source:
+                    from navtta_core.tta import SourceStatisticsCollectionSession
+
+                    if self.action_selection != "argmax":
+                        raise ValueError(
+                            "VLN IDEA source collection requires native argmax actions"
+                        )
+                    collection_policy = getattr(
+                        args, "tta_idea_collection_policy", ""
+                    )
+                    if collection_policy != "frozen_source_argmax_rollout":
+                        raise ValueError(
+                            "VLN IDEA source collection requires "
+                            "collection_policy=frozen_source_argmax_rollout"
+                        )
+                    self.model.eval()
+                    self.model.requires_grad_(False)
+                    self.idea_source_collection = SourceStatisticsCollectionSession(
+                        fusion_protocol,
+                        getattr(args, "tta_idea_source_stats_output", ""),
+                        {
+                            "checkpoint_sha256": getattr(
+                                args, "tta_idea_source_checkpoint_sha256", ""
+                            ),
+                            "dataset": getattr(
+                                args, "tta_idea_source_dataset", ""
+                            ),
+                            "dataset_version": getattr(
+                                args, "tta_idea_source_dataset_version", ""
+                            ),
+                            "split": getattr(
+                                args, "tta_idea_source_split", "train"
+                            ),
+                            "collection_policy": collection_policy,
+                            "model": idea_model_id,
+                            "setting": idea_setting,
+                        },
+                        expected_trajectory_count=int(
+                            getattr(args, "tta_idea_source_trajectories", 128)
+                        ),
+                    )
+            if self.idea_source_collection is not None:
+                self.adapter = _SourceAdapter(
+                    model, control="idea_source_statistics_collection"
+                )
+            else:
+                self.adapter = build_adapter(
+                    model,
+                    _adapter_config(
+                        args, self.trainable_prefixes, self.action_selection
+                    ),
+                    forward_policy=discrete_forward_policy,
+                    fusion_protocol=fusion_protocol,
+                )
+            if self.method == "atena":
+                atena_diagnostics = self.adapter.diagnostics()
+                if atena_diagnostics.get(
+                    "requires_task_trainability_wiring", False
+                ):
+                    raise RuntimeError(
+                        "ATENA high-level navigation parameters are not all "
+                        "trainable after task-level wiring"
+                    )
 
     def reset(self):
         self.adapter.reset()
+        if self.idea_source_collection is not None:
+            self.idea_source_collection.reset()
         self.episode_count = 0
         self.current_action_seed = self.action_seed
         self._action_generator.manual_seed(self.action_seed)
@@ -731,9 +961,12 @@ class DiscreteTTAController:
         self.trajectory_steps = 0
 
     def diagnostics(self):
-        return self.adapter.diagnostics()
+        output = self.adapter.diagnostics()
+        if self.idea_source_collection is not None:
+            output.update(self.idea_source_collection.diagnostics())
+        return output
 
-    def begin_episode(self):
+    def begin_episode(self, trajectory_id=None):
         if self._episode_open:
             raise RuntimeError("TTA episode_start called twice")
         # Explicit sampling ablations use an independent per-episode stream so
@@ -744,6 +977,10 @@ class DiscreteTTAController:
             )
             self._action_generator.manual_seed(self.current_action_seed)
         self.adapter.episode_start()
+        if self.idea_source_collection is not None:
+            if trajectory_id is None:
+                raise ValueError("IDEA source collection requires a trajectory id")
+            self.idea_source_collection.begin_trajectory(trajectory_id)
         self._trajectory_hasher.update(
             "episode:{}\0".format(self.episode_count).encode("ascii")
         )
@@ -780,14 +1017,27 @@ class DiscreteTTAController:
         # Preserve the exact native action space for EAM/ATENA replay. This is
         # redundant for DUET/GOAT (their model inputs regenerate the masks),
         # but essential for HAMT's runner-level visited-candidate mask.
-        policy_inputs["invalid_action_mask"] = (~torch.isfinite(
-            source_logits.detach()
-        )).detach()
-        self.adapter.before_inference(policy_inputs=policy_inputs)
+        valid_action_mask = torch.isfinite(source_logits.detach()).detach()
+        policy_inputs["invalid_action_mask"] = (~valid_action_mask).detach()
+        if self.method == "eam":
+            # EAM's entropy gate is defined against each decision's real
+            # candidate set, not the padded tensor width.
+            policy_inputs["valid_action_mask"] = valid_action_mask
+            self.adapter.before_inference(
+                policy_inputs=policy_inputs,
+                valid_action_mask=valid_action_mask,
+            )
+        else:
+            self.adapter.before_inference(policy_inputs=policy_inputs)
         source_logits = _sanitize_action_logits(source_logits)
-        prepared = self.adapter.prepare_action(
-            source_logits, policy_inputs=policy_inputs
-        )
+        prepare_kwargs = {"policy_inputs": policy_inputs}
+        if self.method == "eam":
+            prepare_kwargs["valid_action_mask"] = valid_action_mask
+        if self.idea_source_collection is not None:
+            self.idea_source_collection.observe_step(policy_inputs)
+            prepared = source_logits
+        else:
+            prepared = self.adapter.prepare_action(source_logits, **prepare_kwargs)
         self._pending_policy_inputs = None
         return _sanitize_action_logits(prepared)
 
@@ -812,6 +1062,25 @@ class DiscreteTTAController:
         )
         self.trajectory_steps += len(values)
         return selected
+
+    def prompted_object_logits(self, source_object_logits):
+        """Return IDEA's prompt-conditioned REVERIE logits when available."""
+        if self.method != "idea" or self.idea_source_collection is not None:
+            return source_object_logits
+        protocol = getattr(self.adapter, "protocol", None)
+        prompted = getattr(protocol, "prompted_object_logits", None)
+        if prompted is None:
+            raise RuntimeError(
+                "REVERIE IDEA binding did not produce prompt-conditioned "
+                "object logits"
+            )
+        if prompted.shape != source_object_logits.shape:
+            raise RuntimeError(
+                "prompted REVERIE object-logit shape changed: {} vs {}".format(
+                    tuple(prompted.shape), tuple(source_object_logits.shape)
+                )
+            )
+        return prompted.detach()
 
     def adapt_step(self, logits, action=None, **context):
         if not self._episode_open:
@@ -883,13 +1152,25 @@ class DiscreteTTAController:
                         "once per submitted trajectory"
                     )
         self.adapter.episode_end(episode_stats=episode_stats)
+        if self.idea_source_collection is not None:
+            self.idea_source_collection.end_trajectory()
         self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
         self.episode_count += 1
         self.write_diagnostics()
 
     def write_diagnostics(self):
-        diagnostics = self.adapter.diagnostics()
+        diagnostics = self.diagnostics()
+        atena_reachability_validated = (
+            self.method == "atena"
+            and diagnostics.get("replay_reachability_validated") is True
+        )
+        atena_replay_validated = (
+            atena_reachability_validated
+            and int(diagnostics.get(
+                "replay_determinism_validated_episodes", 0
+            )) > 0
+        )
         payload = {
             "schema": "navtta.vln_discrete_tta.v1",
             "method": self.method,
@@ -905,9 +1186,13 @@ class DiscreteTTAController:
             "batch_size": 1,
             "tta_step_unit": "high_level_navigation_decision",
             "action_selection": (
+                "matched_policy_sampling_source_control"
+                if self.method == "source" and self.matched_feedtta_source
+                else (
                 "policy_sampling"
                 if self.action_selection == "sample"
                 else "target_native_argmax"
+                )
             ),
             "action_seed": (
                 self.action_seed if self.action_selection == "sample" else None
@@ -936,6 +1221,78 @@ class DiscreteTTAController:
             "binary_feedback_endpoint": self.binary_feedback_endpoint,
             "trainable_prefixes": list(self.trainable_prefixes),
             "feedtta_scope_profile": self.feedtta_scope_profile,
+            "feedtta_sgr_mode": self.feedtta_sgr_mode,
+            "feedtta_protocol": (
+                "task_adapted_target_native_argmax"
+                if self.feedtta_native_action_protocol else (
+                    "paper_policy_sampling_ablation"
+                    if self.method == "feedtta" else None
+                )
+            ),
+            "feedtta_native_action_protocol": (
+                self.feedtta_native_action_protocol
+                if self.method == "feedtta" else None
+            ),
+            "feedtta_paper_sampling_protocol": (
+                self.feedtta_paper_sampling_protocol
+                if self.method == "feedtta" else None
+            ),
+            "feedtta_canonical_protocol": (
+                self.feedtta_canonical_protocol
+                if self.method == "feedtta" else None
+            ),
+            "matched_feedtta_source": self.matched_feedtta_source,
+            "tent_canonical_update_interval": (
+                int(self.args.tta_update_interval) == 1
+                if self.method == "tent" else None
+            ),
+            "fstta_reset_var_hist_each_episode": (
+                bool(self.args.tta_fstta_reset_var_hist_each_episode)
+                if self.method == "fstta" else None
+            ),
+            "fstta_variance_history_profile": (
+                "released_code_rollout_reset_ablation"
+                if self.method == "fstta"
+                and self.args.tta_fstta_reset_var_hist_each_episode
+                else (
+                    "paper_eq6_test_stream_history"
+                    if self.method == "fstta" else None
+                )
+            ),
+            "atena_update_scope": self.atena_update_scope,
+            "atena_exact_replay_within_declared_scope": (
+                atena_replay_validated if self.method == "atena" else None
+            ),
+            "atena_replay_reachability_validation_result": (
+                diagnostics.get("replay_reachability_validation_result")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_reachable_parameter_count": (
+                diagnostics.get("replay_reachable_parameter_count")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_reachable_parameter_names": (
+                diagnostics.get("replay_reachable_parameter_names")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_unreachable_parameter_count": (
+                diagnostics.get("replay_unreachable_parameter_count")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_unreachable_parameter_names": (
+                diagnostics.get("replay_unreachable_parameter_names")
+                if self.method == "atena" else None
+            ),
+            "atena_optimizer_scope_matches_reachable": (
+                diagnostics.get("optimizer_policy_scope_matches_reachable")
+                if self.method == "atena" else None
+            ),
+            "atena_full_end_to_end_policy_claimed": (
+                False if self.method == "atena" else None
+            ),
+            "atena_upstream_feature_extractors_adapted": (
+                False if self.method == "atena" else None
+            ),
             "adapter": diagnostics,
         }
         path = Path(self.diagnostics_path)
@@ -956,7 +1313,15 @@ class DiscreteTTAAgentMixin:
             getattr(self.args, "tta_action_selection", "auto")
         ).lower()
         audit_control = bool(getattr(self.args, "tta_audit_control", False))
-        if method == "source" and action_selection != "sample" and not audit_control:
+        matched_source = bool(
+            getattr(self.args, "tta_matched_feedtta_source", False)
+        )
+        if (
+            method == "source"
+            and action_selection != "sample"
+            and not matched_source
+            and not audit_control
+        ):
             return
         if not bool(getattr(self.args, "test", False)):
             raise ValueError("Discrete TTA is evaluation-only and requires --test")
@@ -988,10 +1353,10 @@ class DiscreteTTAAgentMixin:
         else:
             self.tta_controller.stream_name = stream_name
 
-    def tta_episode_start(self):
+    def tta_episode_start(self, trajectory_id=None):
         controller = getattr(self, "tta_controller", None)
         if controller is not None:
-            controller.begin_episode()
+            controller.begin_episode(trajectory_id=trajectory_id)
 
     def tta_detach_state(self, value):
         controller = getattr(self, "tta_controller", None)
@@ -1013,6 +1378,12 @@ class DiscreteTTAAgentMixin:
         if controller is None:
             return source_logits
         return controller.prepare_action(source_logits, policy_inputs)
+
+    def tta_prompted_object_logits(self, source_object_logits):
+        controller = getattr(self, "tta_controller", None)
+        if controller is None:
+            return source_object_logits
+        return controller.prompted_object_logits(source_object_logits)
 
     def tta_graph_features(self, outputs):
         return _graph_decision_features(outputs)

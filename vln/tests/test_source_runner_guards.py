@@ -243,6 +243,16 @@ class SourceRunnerGuardTest(unittest.TestCase):
             source,
         )
 
+    def test_formal_tta_inputs_are_hashed_as_auxiliary_artifacts(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn('"tta_job_config=${TTA_CONFIG}"', source)
+        self.assertIn(
+            '"idea_source_statistics=${IDEA_SOURCE_STATS_PATH}"', source
+        )
+        self.assertIn("IDEA source-statistics SHA256 mismatch", source)
+        self.assertIn("IDEA source_stats_path must be absolute", source)
+
     def test_order_seed_is_narrow_and_controls_runtime_and_manifest_seed(self):
         source = RUNNER.read_text(encoding="utf-8")
 

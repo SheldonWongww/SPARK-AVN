@@ -23,6 +23,7 @@ if torch is not None:
     from navtta_vln.continuous_tta import (
         ContinuousVLNTTA,
         _feedtta_trainable_prefixes,
+        make_continuous_tta_config,
     )
 
 
@@ -110,6 +111,7 @@ def _config(method):
             SLOW_OPTIMIZER="SGD",
             SLOW_MOMENTUM=0.0,
             RESET_OPTIMIZER_EACH_EPISODE=True,
+            RESET_VAR_HIST_EACH_EPISODE=False,
             RESET_SLOW_OPTIMIZER_EACH_WINDOW=False,
             EIGEN_EPS=1e-6,
         ),
@@ -133,10 +135,12 @@ def _config(method):
             P=0.0,
             ALPHA=-0.2,
             SGR_SEED=0,
+            SGR_MODE="paper_main",
             GAMMA=0.99,
             NORMALIZE_GRADIENT=False,
             PARAM_SCOPE="module_prefixes",
             TRAINABLE_PREFIXES=prefixes,
+            SCOPE_PROFILE="configured_prefixes",
             OPTIMIZER="SGD",
             BETA1=0.9,
             BETA2=0.999,
@@ -151,6 +155,7 @@ def _config(method):
             QUERY_THRESHOLD=0.0,
             SELF_LOSS_WEIGHT=0.1,
             PARAM_SCOPE="all",
+            TASK_UPDATE_SCOPE="replay_reachable_high_level_navigation",
             OPTIMIZER="SGD",
             BETA1=0.9,
             BETA2=0.999,
@@ -207,6 +212,18 @@ class ContinuousVLNTTATest(unittest.TestCase):
             Path(self.temporary_directory.name) / "diagnostics.json",
             stream_name="unit-test",
         )
+
+    def test_config_defaults_record_canonical_method_protocols(self):
+        config = make_continuous_tta_config(
+            SimpleNamespace, ("global_encoder", "global_sap_head")
+        )
+        self.assertEqual(config.FSTTA.RHO, 0.95)
+        self.assertEqual(config.FSTTA.TAU, 0.7)
+        self.assertEqual(config.FSTTA.A, 0.9)
+        self.assertEqual(config.FSTTA.B, 1.1)
+        self.assertFalse(config.FSTTA.RESET_VAR_HIST_EACH_EPISODE)
+        self.assertEqual(config.FEEDTTA.SGR_MODE, "paper_main")
+        self.assertEqual(config.FEEDTTA.SCOPE_PROFILE, "paper_full")
 
     def test_source_compacts_masked_actions_and_maps_back_to_native_index(self):
         controller = self._controller("source")
@@ -276,9 +293,14 @@ class ContinuousVLNTTATest(unittest.TestCase):
         controller.end_episode({"success": 1.0})
         diagnostics = controller.adapter.diagnostics()
         self.assertEqual(diagnostics["action_steps"], 2)
-        self.assertEqual(diagnostics["replayed_steps"], 3)
+        # The first decision is reservoir warm-up only.  On the second
+        # decision Algorithm 3 forms B from one sampled history item plus the
+        # explicitly appended current item, so exactly two rows are replayed.
+        self.assertEqual(diagnostics["replayed_steps"], 2)
+        self.assertEqual(diagnostics["valid_action_metadata_steps"], 2)
+        self.assertEqual(diagnostics["masked_invalid_action_slots"], 0)
 
-    def test_feedtta_defaults_to_target_native_argmax(self):
+    def test_feedtta_argmax_port_is_native_and_not_paper_sampling(self):
         controller = self._controller("feedtta")
         controller.begin_episode()
         _, logits, action = controller.step(_nav_inputs())
@@ -291,6 +313,19 @@ class ContinuousVLNTTATest(unittest.TestCase):
         self.assertEqual(
             controller.adapter.diagnostics()["action_selection_protocol"],
             "target_native_argmax",
+        )
+        self.assertFalse(
+            controller.diagnostics()["feedtta_canonical_protocol"]
+        )
+        self.assertTrue(
+            controller.diagnostics()["feedtta_native_action_protocol"]
+        )
+        self.assertFalse(
+            controller.diagnostics()["feedtta_paper_sampling_protocol"]
+        )
+        self.assertEqual(
+            controller.diagnostics()["feedtta_protocol"],
+            "task_adapted_target_native_argmax",
         )
 
     def test_feedtta_continuous_scope_profiles_are_model_aware(self):
@@ -360,10 +395,22 @@ class ContinuousVLNTTATest(unittest.TestCase):
             first.diagnostics()["action_selection"],
             "policy_sampling",
         )
+        self.assertFalse(
+            first.diagnostics()["feedtta_native_action_protocol"]
+        )
+        self.assertTrue(
+            first.diagnostics()["feedtta_paper_sampling_protocol"]
+        )
+        self.assertTrue(first.diagnostics()["feedtta_canonical_protocol"])
+        self.assertEqual(
+            first.diagnostics()["feedtta_protocol"],
+            "paper_policy_sampling_ablation",
+        )
 
     def test_matched_source_control_samples_identically_without_updates(self):
         source_model = TinyDecisionModel()
         config = _config("source")
+        config.ACTION_SELECTION = "sample"
         config.MATCHED_FEEDTTA_SOURCE = True
         first_model = copy.deepcopy(source_model)
         second_model = copy.deepcopy(source_model)
@@ -403,6 +450,40 @@ class ContinuousVLNTTATest(unittest.TestCase):
             "matched_policy_sampling_source_control",
         )
 
+    def test_legacy_sampled_source_is_normalized_to_matched_control(self):
+        config = _config("source")
+        config.ACTION_SELECTION = "sample"
+        config.MATCHED_FEEDTTA_SOURCE = False
+        if not hasattr(self, "temporary_directory"):
+            self.temporary_directory = tempfile.TemporaryDirectory()
+            self.addCleanup(self.temporary_directory.cleanup)
+        controller = ContinuousVLNTTA(
+            TinyDecisionModel(),
+            config,
+            "etpnav",
+            Path(self.temporary_directory.name) / "legacy-source.json",
+        )
+        self.assertTrue(controller.matched_feedtta_source)
+        self.assertEqual(
+            controller.diagnostics()["action_selection"],
+            "matched_policy_sampling_source_control",
+        )
+        self.assertTrue(controller.diagnostics()["matched_feedtta_source"])
+
+    def test_matched_source_marker_rejects_argmax(self):
+        config = _config("source")
+        config.MATCHED_FEEDTTA_SOURCE = True
+        if not hasattr(self, "temporary_directory"):
+            self.temporary_directory = tempfile.TemporaryDirectory()
+            self.addCleanup(self.temporary_directory.cleanup)
+        with self.assertRaisesRegex(ValueError, "must use policy sampling"):
+            ContinuousVLNTTA(
+                TinyDecisionModel(),
+                config,
+                "etpnav",
+                Path(self.temporary_directory.name) / "bad-source.json",
+            )
+
     def test_atena_replays_high_level_inputs_at_episode_end(self):
         controller = self._controller("atena")
         controller.begin_episode()
@@ -414,6 +495,64 @@ class ContinuousVLNTTATest(unittest.TestCase):
         self.assertEqual(diagnostics["max_trajectory_steps"], 2)
         self.assertEqual(diagnostics["gradient_reconstruction"],
                          "exact_step_replay_in_eval_mode")
+        task_diagnostics = controller.diagnostics()
+        self.assertEqual(
+            task_diagnostics["atena_update_scope"],
+            "replay_reachable_high_level_navigation",
+        )
+        self.assertFalse(
+            task_diagnostics["atena_full_end_to_end_policy_claimed"]
+        )
+
+    def test_atena_optimizer_is_limited_to_continuous_replay_reachability(self):
+        model = TinyDecisionModel()
+        model.unused_navigation_head = nn.Linear(4, 2)
+        controller = self._controller("atena", model=model)
+        controller.begin_episode()
+        controller.step(_nav_inputs())
+        diagnostics = controller.adapter.diagnostics()
+        self.assertIsNone(controller.adapter.optimizer)
+        self.assertEqual(
+            diagnostics["replay_reachability_validation_result"], "passed"
+        )
+        self.assertIn(
+            "unused_navigation_head.weight",
+            diagnostics["replay_unreachable_parameter_names"],
+        )
+        self.assertNotIn(
+            "unused_navigation_head.weight",
+            diagnostics["optimizer_policy_parameter_names"],
+        )
+        controller.end_episode({"success": 1.0})
+        task_diagnostics = controller.diagnostics()
+        self.assertGreater(
+            task_diagnostics["atena_replay_unreachable_parameter_count"], 0
+        )
+        self.assertTrue(
+            task_diagnostics["atena_optimizer_scope_matches_reachable"]
+        )
+        self.assertTrue(
+            task_diagnostics["atena_exact_replay_within_declared_scope"]
+        )
+
+    def test_atena_enables_declared_high_level_stack_and_rejects_full_policy(self):
+        model = TinyDecisionModel()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        controller = self._controller("atena", model=model)
+        self.assertTrue(all(
+            parameter.requires_grad for parameter in model.parameters()
+        ))
+
+        config = _config("atena")
+        config.ATENA.TASK_UPDATE_SCOPE = "full_policy"
+        with self.assertRaisesRegex(ValueError, "full_policy"):
+            ContinuousVLNTTA(
+                TinyDecisionModel(),
+                config,
+                "etpnav",
+                Path(self.temporary_directory.name) / "bad-atena.json",
+            )
 
 
 class ContinuousTTAWiringTest(unittest.TestCase):

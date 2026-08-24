@@ -5,8 +5,9 @@ ETPNav and BEVBert consume the BERT-indexed v1.2 files, while StreamVLN
 consumes the public v1.3 files.  The episode identities and instructions are
 the same, but every episode has a different start rotation.  This utility
 keeps every v1.3 episode field and replaces only the instruction vocabulary
-and token IDs with the pinned v1.2 BERT encoding.  It intentionally builds
-evaluation splits only; training data is out of scope.
+and token IDs with the pinned v1.2 BERT encoding.  Evaluation splits remain
+the default; ``--include-train`` additionally builds the source-training split
+needed for offline IDEA source-statistics collection.
 """
 
 import argparse
@@ -17,7 +18,7 @@ import json
 import os
 
 
-SPLITS = ("val_seen", "val_unseen", "test")
+EVALUATION_SPLITS = ("val_seen", "val_unseen", "test")
 
 
 def read_gzip_json(path):
@@ -104,13 +105,22 @@ def parse_args():
     parser.add_argument("--v13-root", required=True)
     parser.add_argument("--v12-bert-root", required=True)
     parser.add_argument("--output-root", required=True)
+    parser.add_argument(
+        "--include-train",
+        action="store_true",
+        help="also build train/train_bertidx.json.gz for IDEA source statistics",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     summary = {}
-    for split in SPLITS:
+    splits = (
+        ("train",) + EVALUATION_SPLITS
+        if args.include_train else EVALUATION_SPLITS
+    )
+    for split in splits:
         summary[split] = build_split(
             os.path.join(args.v13_root, split, split + ".json.gz"),
             os.path.join(

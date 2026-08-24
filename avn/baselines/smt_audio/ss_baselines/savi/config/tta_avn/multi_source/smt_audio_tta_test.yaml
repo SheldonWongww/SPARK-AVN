@@ -60,10 +60,11 @@ TTA:
     SLOW_OPTIMIZER: "AdamW"
     SLOW_MOMENTUM: 0.0
     RESET_OPTIMIZER_EACH_EPISODE: True
+    RESET_VAR_HIST_EACH_EPISODE: False
     RESET_SLOW_OPTIMIZER_EACH_WINDOW: False
     EIGEN_EPS: 1.0e-6
   EAM:
-    # Strict Algorithm 3: |M| < K uses B=x and still performs the gated update.
+    # Strict Algorithm 3: warm up without updates until |M| reaches batch K.
     LR: 1.0e-5
     CONFIDENCE_SCALE: 0.4
     MEMORY_SIZE: 32
@@ -79,6 +80,7 @@ TTA:
     # REVERIE val-unseen true-SGR anchor; +0.1 is retained for later GS control.
     ALPHA: -0.2
     SGR_SEED: 0
+    SGR_MODE: "paper_main"
     GAMMA: 0.99
     NORMALIZE_GRADIENT: False
     PARAM_SCOPE: "module_prefixes"
@@ -95,6 +97,7 @@ TTA:
     QUERY_THRESHOLD: 0.1
     SELF_LOSS_WEIGHT: 0.1
     PARAM_SCOPE: "all"
+    TASK_UPDATE_SCOPE: "replay_reachable_actor_navigation_policy"
     OPTIMIZER: "AdamW"
     WEIGHT_DECAY: 0.01
     MAX_GRAD_NORM: 0.0

@@ -49,6 +49,76 @@ def load_annotation_episodes(path):
     return payload
 
 
+def check_source_train_assets(repo_root, errors):
+    """Verify the separately tracked inputs used to build IDEA source anchors."""
+    manifest_path = os.path.join(
+        repo_root,
+        "vln",
+        "manifests",
+        "assets",
+        "source_train_assets.json",
+    )
+    try:
+        manifest = load_json(manifest_path)
+    except (OSError, ValueError) as error:
+        errors.append("cannot read source-train asset manifest: {}".format(error))
+        return 0
+
+    checked = 0
+    for asset in manifest.get("assets", []):
+        paths = asset.get("paths")
+        if paths is None:
+            paths = [asset.get("path")]
+        if not paths or any(not item for item in paths):
+            errors.append("source-train asset {} has no path".format(asset.get("id")))
+            continue
+        for relative in paths:
+            path = resolve_path(repo_root, relative)
+            checked += 1
+            if not os.path.isfile(path):
+                errors.append("missing source-train asset {}: {}".format(
+                    asset.get("id"), path
+                ))
+                continue
+            size = os.path.getsize(path)
+            if size != int(asset["size"]):
+                errors.append(
+                    "source-train size mismatch for {}: expected {}, got {}"
+                    .format(asset.get("id"), asset["size"], size)
+                )
+                continue
+            if sha256_file(path) != asset["sha256"]:
+                errors.append(
+                    "source-train SHA256 mismatch for {}".format(asset.get("id"))
+                )
+                continue
+            try:
+                count = len(load_annotation_episodes(path))
+            except (OSError, TypeError, ValueError) as error:
+                errors.append(
+                    "source-train annotation {} is invalid: {}".format(
+                        asset.get("id"), error
+                    )
+                )
+                continue
+            expected_count = asset.get("episodes", asset.get("records"))
+            if count != int(expected_count):
+                errors.append(
+                    "source-train record count mismatch for {}: expected {}, got {}"
+                    .format(asset.get("id"), expected_count, count)
+                )
+
+    scene_root = os.path.join(
+        repo_root, "vln", "data", "scene_datasets", "mp3d"
+    )
+    for scene in manifest.get("train_only_mp3d_scenes_extracted", []):
+        for suffix in (".glb", ".navmesh"):
+            path = os.path.join(scene_root, scene, scene + suffix)
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                errors.append("missing train-only scene asset: {}".format(path))
+    return checked
+
+
 def canonical_annotation_records(path, manifest):
     episodes = load_annotation_episodes(path)
     source_id_field = manifest["source_id_field"]
@@ -218,15 +288,21 @@ def check_scene_subset(repo_root, expected, errors):
         if os.path.isdir(os.path.join(scenes_root, name))
     }
     source_scenes = collect_ce_scenes(repo_root)
-    if actual != source_scenes:
+    if not source_scenes.issubset(actual):
         errors.append(
-            "CE scene directory differs from val/test union (missing={}, extra={})".format(
-                sorted(source_scenes - actual), sorted(actual - source_scenes)
+            "CE scene directory misses val/test scenes: {}".format(
+                sorted(source_scenes - actual)
             )
         )
-    if len(actual) != expected:
-        errors.append("expected {} CE scenes, found {}".format(expected, len(actual)))
-    for scene in sorted(actual):
+    if len(source_scenes) != expected:
+        errors.append(
+            "expected {} val/test CE scenes, found {}".format(
+                expected, len(source_scenes)
+            )
+        )
+    # Extra scene directories are valid: IDEA source-statistics collection
+    # additionally needs the eight train-only MP3D scenes.
+    for scene in sorted(source_scenes):
         directory = os.path.join(scenes_root, scene)
         for suffix in (".glb", ".navmesh"):
             path = os.path.join(directory, scene + suffix)
@@ -238,14 +314,19 @@ def resolve_path(repo_root, path):
     return path if os.path.isabs(path) else os.path.join(repo_root, path)
 
 
-def tree_digest(root):
+def tree_digest(root, include_top_level=None):
     digest = hashlib.sha256()
     relative_paths = []
     for directory, _, names in os.walk(root):
         for name in names:
-            relative_paths.append(
-                os.path.relpath(os.path.join(directory, name), root).replace(os.sep, "/")
-            )
+            relative = os.path.relpath(
+                os.path.join(directory, name), root
+            ).replace(os.sep, "/")
+            if (
+                include_top_level is None
+                or relative.split("/", 1)[0] in include_top_level
+            ):
+                relative_paths.append(relative)
     for relative in sorted(relative_paths):
         path = os.path.join(root, *relative.split("/"))
         digest.update(
@@ -421,6 +502,7 @@ def main():
             elif sha256_file(binary) != expected_sha256:
                 errors.append("native module SHA256 mismatch: {}".format(binary))
 
+    source_train_asset_count = check_source_train_assets(repo_root, errors)
     manifest_count, manifest_directory_count = check_episode_manifests(
         repo_root, errors
     )
@@ -428,7 +510,9 @@ def main():
     check_scene_subset(repo_root, scene_check["scene_count"], errors)
     scene_path = resolve_path(repo_root, scene_check["path"])
     if os.path.isdir(scene_path):
-        if tree_digest(scene_path) != scene_check["tree_digest_sha256"]:
+        if tree_digest(
+            scene_path, include_top_level=collect_ce_scenes(repo_root)
+        ) != scene_check["tree_digest_sha256"]:
             errors.append("derived tree digest mismatch: ce_scene_set")
 
     for check_name in ("discrete_connectivity", "goat_connectivity_mirror"):
@@ -444,9 +528,10 @@ def main():
             print("ERROR: " + error)
         return 1
     print(
-        "VLN preflight passed: {} assets ({} bulk-hashed), {} links, {} order manifests + source datasets verified in {} families, {} environments".format(
+        "VLN preflight passed: {} eval assets ({} bulk-hashed), {} source-train paths, {} links, {} order manifests + source datasets verified in {} families, {} environments".format(
             len(asset_manifest["assets"]),
             hashed,
+            source_train_asset_count,
             len(asset_manifest.get("runtime_links", [])),
             manifest_count,
             manifest_directory_count,

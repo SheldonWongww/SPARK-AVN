@@ -140,6 +140,56 @@ class SoundEventNavDataset(Dataset):
         episodes_per_scene = int(
             getattr(config, "TTA_EPISODES_PER_SCENE", -1)
         )
+        source_manifest_path = str(
+            getattr(config, "IDEA_SOURCE_EPISODE_MANIFEST", "") or ""
+        )
+        source_manifest_sha256 = str(
+            getattr(config, "IDEA_SOURCE_EPISODE_MANIFEST_SHA256", "") or ""
+        )
+        if bool(source_manifest_path) != bool(source_manifest_sha256):
+            raise ValueError(
+                "IDEA source manifest path and SHA256 must be supplied together"
+            )
+        if source_manifest_path and episodes_per_scene > 0:
+            raise ValueError(
+                "IDEA source selection and target TTA stream sampling are "
+                "mutually exclusive"
+            )
+        # ``get_scenes_to_load`` constructs a temporary dataset with an empty
+        # CONTENT_SCENES list.  Apply the pinned order only to the real dataset
+        # instance after its scene content has been loaded.
+        if scenes and source_manifest_path:
+            from navtta_avn.idea_source import (
+                load_source_manifest,
+                select_manifest_episodes,
+            )
+
+            if str(config.SPLIT).lower() != "train":
+                raise ValueError(
+                    "IDEA source episode manifests are valid only on train"
+                )
+            data_path = str(config.DATA_PATH).lower()
+            if "multi_source" in data_path:
+                source_setting = "multi_source"
+            elif "single_source" in data_path:
+                source_setting = "single_source"
+            else:
+                raise ValueError(
+                    "cannot infer ENMuS source setting from DATA_PATH"
+                )
+            manifest, _ = load_source_manifest(
+                source_manifest_path,
+                source_manifest_sha256,
+                model="enmus",
+                source_setting=source_setting,
+            )
+            self.episodes = select_manifest_episodes(self.episodes, manifest)
+            logging.info(
+                "Loaded digest-pinned IDEA source order with %d episodes "
+                "(%s).",
+                len(self.episodes),
+                manifest["episode_order_sha256"],
+            )
         if scenes and episodes_per_scene > 0:
             expected_scenes = int(config.TTA_EXPECTED_SCENES)
             episode_seed = int(config.TTA_EPISODE_SEED)

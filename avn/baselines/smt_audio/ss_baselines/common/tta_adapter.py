@@ -194,6 +194,43 @@ class TTAAudioNavDataset(Dataset):
                 len(scenes),
             )
 
+        source_manifest_path = str(
+            getattr(config, "IDEA_SOURCE_EPISODE_MANIFEST", "")
+        )
+        if source_manifest_path and scenes:
+            from navtta_avn.idea_source import (
+                load_source_manifest,
+                select_manifest_episodes,
+            )
+
+            if episodes_per_scene > 0:
+                raise ValueError(
+                    "IDEA source selection cannot be combined with the target "
+                    "TTA per-scene stream"
+                )
+            data_path = str(config.DATA_PATH).lower()
+            if "multi_source" in data_path:
+                source_setting = "multi_source"
+            elif "single_source" in data_path:
+                source_setting = "single_source"
+            else:
+                raise ValueError(
+                    "cannot infer SMT+Audio source setting from DATA_PATH"
+                )
+            source_manifest, _ = load_source_manifest(
+                source_manifest_path,
+                str(getattr(config, "IDEA_SOURCE_EPISODE_MANIFEST_SHA256", "")),
+                model="smt_audio",
+                source_setting=source_setting,
+            )
+            self.episodes = select_manifest_episodes(
+                self.episodes, source_manifest
+            )
+            logging.info(
+                "Loaded the digest-pinned IDEA source stream (%d episodes).",
+                len(self.episodes),
+            )
+
     @staticmethod
     def __deserialize_goal(serialized_goal: Dict[str, Any]) -> TTAAudioGoal:
         g = TTAAudioGoal(**serialized_goal)

@@ -69,6 +69,27 @@ class EpisodeOrderTest(unittest.TestCase):
         ordered = reorder_episodes(self.episodes, loaded)
         self.assertEqual([item["instr_id"] for item in ordered], ["3_0", "2_0", "10_0"])
 
+    def test_train_manifest_can_select_an_exact_source_subset(self):
+        manifest = build_episode_order_manifest(
+            self.episodes[:2],
+            benchmark="synthetic-r2r",
+            split="train",
+            dataset_path="vln/data/synthetic_train.json",
+            dataset_sha256=self.dataset_digest,
+            source_id_field="instr_id",
+        )
+        self.assertEqual(manifest["split"], "train")
+        self.assertEqual(manifest["split_ordinal"], -1)
+        with self.assertRaisesRegex(ValueError, "manifest/dataset mismatch"):
+            reorder_episodes(self.episodes, manifest)
+        ordered = reorder_episodes(
+            self.episodes, manifest, allow_subset=True
+        )
+        self.assertEqual(
+            [item["instr_id"] for item in ordered],
+            [item["episode_id"] for item in manifest["episodes"]],
+        )
+
     def test_seeded_manifest_is_domain_separated_and_reproducible(self):
         parent = self._manifest()
         parent_file_sha = hashlib.sha256(b"parent manifest bytes").hexdigest()

@@ -538,7 +538,7 @@ class GMapObjectNavAgent(Seq2SeqAgent):
         else:
             obs = self.env._get_obs()
         self._update_scanvp_cands(obs)
-        self.tta_episode_start()
+        self.tta_episode_start(trajectory_id=obs[0]['instr_id'])
 
         batch_size = len(obs)
 
@@ -685,7 +685,7 @@ class GMapObjectNavAgent(Seq2SeqAgent):
                 nav_logits, tta_policy_inputs
             )
             nav_probs = torch.softmax(nav_logits, 1)
-            obj_logits = nav_outs['obj_logits']
+            obj_logits = self.tta_prompted_object_logits(nav_outs['obj_logits'])
             
             # update graph
             for i, gmap in enumerate(gmaps):

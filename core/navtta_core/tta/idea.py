@@ -22,6 +22,10 @@ task binds by *calling frozen sub-modules of its own model* -- no edit to the
 model's ``forward`` is required.  The same adapter therefore serves the AVN
 policies (SMT+Audio, ENMuS) and the VLN policies (DUET, HAMT, ...).
 """
+import hashlib
+import json
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 
@@ -40,8 +44,11 @@ class IDEAFusionProtocol:
 
     A task implements this by *calling* its (frozen) fusion sub-modules; it must
     not require any change to the underlying model definition.  Every method
-    operates on a single streaming step (batch size 1) and pools statistics over
-    the ``N`` candidate/navigable-node dimension, matching the online setting.
+    operates on a streaming step and pools statistics over every valid
+    candidate/navigable-node token.  Offline source statistics use global
+    ``sum/sumsq/count`` moments across every valid token of every step; averaging
+    per-step means or standard deviations is not the same estimator and is not
+    accepted.
 
     Shapes (``C`` = feature dim, ``L`` = prompt length, ``M`` = #align layers,
     ``A`` = action dimension, ``N`` = #candidate nodes for this step):
@@ -72,6 +79,17 @@ class IDEAFusionProtocol:
         """
         raise NotImplementedError
 
+    @property
+    def source_statistics_metadata(self):
+        """Describe the validated offline artifact used by this protocol.
+
+        Evaluation protocols must return a mapping with
+        ``mode='offline_artifact'``, its file ``sha256``, schema, trajectory
+        count and provenance.  IDEA deliberately has no target-stream warmup
+        fallback.
+        """
+        raise NotImplementedError
+
     def fused_forward(self, policy_inputs, prompt):
         """Run the fusion with an optional soft prompt.
 
@@ -91,13 +109,14 @@ class IDEAFusionProtocol:
     def fisher_forward(self, policy_inputs):
         """Return prompt-free per-layer features connected to the logits.
 
-        Returns ``(layer_features, logits)`` where ``layer_features`` is a list
-        of ``M`` tensors of shape ``[N, C]`` and ``logits`` has shape ``[1, A]``.
-        Each layer feature must be part of the autograd graph of ``logits`` so
-        that IDEA can form ``grad(log pi(a), Z_l)`` for the Fisher trace
-        (Eq. 7-8).  A binding typically enables grad on the fused token
-        embedding and captures the per-layer activations with forward hooks --
-        no model edit and no parameter unfreezing is needed.
+        Returns ``(layer_features, logits, valid_masks)``. ``layer_features``
+        is a list of ``M`` tensors whose final dimension is ``C``;
+        ``valid_masks`` contains one boolean mask per layer with exactly the
+        corresponding feature tensor's leading shape.  The masks identify the
+        real navigable-node tokens used by Eq. (7), excluding padding, history,
+        object-only and other non-action tokens.  Each layer feature must be
+        part of the autograd graph of ``logits`` so that IDEA can form
+        ``grad(log pi(a), Z_l)`` for the Fisher trace (Eq. 7-8).
         """
         raise NotImplementedError
 
@@ -242,6 +261,75 @@ class _AssetLibrary:
         self.prompts = []
         self.gammas = []
         self.uncertainties = []
+        self.merge_count = 0
+        self.add_count = 0
+
+    def payload(self, prompt_length, feature_dim, metadata=None):
+        """Return a portable, versioned representation of the asset library."""
+        return {
+            "schema": "navtta.idea.asset_library",
+            "version": 1,
+            "capacity": self.capacity,
+            "prompt_length": int(prompt_length),
+            "feature_dim": int(feature_dim),
+            "metadata": dict(metadata or {}),
+            "assets": [
+                {
+                    "prompt": prompt.tolist(),
+                    "gamma": gamma.tolist(),
+                    "uncertainty": float(uncertainty),
+                }
+                for prompt, gamma, uncertainty in zip(
+                    self.prompts, self.gammas, self.uncertainties
+                )
+            ],
+        }
+
+    @staticmethod
+    def payload_sha256(payload):
+        encoded = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def digest(self, prompt_length, feature_dim):
+        return self.payload_sha256(self.payload(prompt_length, feature_dim))
+
+    def load_payload(self, payload, prompt_length, feature_dim):
+        if payload.get("schema") != "navtta.idea.asset_library":
+            raise ValueError("invalid IDEA asset-library schema")
+        if int(payload.get("version", -1)) != 1:
+            raise ValueError("unsupported IDEA asset-library version")
+        if int(payload.get("capacity", -1)) != self.capacity:
+            raise ValueError("IDEA asset-library capacity mismatch")
+        if int(payload.get("prompt_length", -1)) != int(prompt_length):
+            raise ValueError("IDEA asset prompt-length mismatch")
+        if int(payload.get("feature_dim", -1)) != int(feature_dim):
+            raise ValueError("IDEA asset feature-dimension mismatch")
+        assets = payload.get("assets")
+        if not isinstance(assets, list) or len(assets) > self.capacity:
+            raise ValueError("invalid IDEA asset list")
+        prompts, gammas, uncertainties = [], [], []
+        for asset in assets:
+            prompt = torch.as_tensor(asset.get("prompt"), dtype=torch.float32)
+            gamma = torch.as_tensor(asset.get("gamma"), dtype=torch.float32)
+            uncertainty = float(asset.get("uncertainty"))
+            if tuple(prompt.shape) != (int(prompt_length), int(feature_dim)):
+                raise ValueError("invalid IDEA asset prompt shape")
+            if tuple(gamma.shape) != (2 * int(feature_dim),):
+                raise ValueError("invalid IDEA asset descriptor shape")
+            if not bool(torch.isfinite(prompt).all() and torch.isfinite(gamma).all()):
+                raise ValueError("IDEA asset tensors must be finite")
+            if not torch.isfinite(torch.tensor(uncertainty)):
+                raise ValueError("IDEA asset uncertainty must be finite")
+            prompts.append(prompt)
+            gammas.append(gamma)
+            uncertainties.append(uncertainty)
+        self.prompts = prompts
+        self.gammas = gammas
+        self.uncertainties = uncertainties
+        self.add_count = len(prompts)
+        self.merge_count = 0
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +390,26 @@ class IDEAAdapter(_AdapterDiagnostics):
                 "TTA.EPISODIC=False"
             )
 
+        try:
+            source_metadata = getattr(
+                fusion_protocol, "source_statistics_metadata", None
+            )
+        except NotImplementedError:
+            source_metadata = None
+        if not isinstance(source_metadata, dict) or (
+            source_metadata.get("mode") != "offline_artifact"
+        ):
+            raise ValueError(
+                "IDEA evaluation requires a validated offline source-statistics "
+                "artifact; target-stream warmup is forbidden"
+            )
+        source_digest = source_metadata.get("sha256")
+        if not isinstance(source_digest, str) or len(source_digest) != 64:
+            raise ValueError("IDEA source-statistics artifact SHA256 is missing")
+
         self.model = model
         self.protocol = fusion_protocol
+        self.source_statistics_metadata = dict(source_metadata)
         self.feature_dim = int(fusion_protocol.feature_dim)
         self.num_layers = int(fusion_protocol.num_layers)
         self.prompt_length = int(prompt_length)
@@ -332,6 +438,14 @@ class IDEAAdapter(_AdapterDiagnostics):
         self.names = []
         self._source_flat = torch.zeros(0)
 
+        # IDEA is prompt-only adaptation.  Freeze every base parameter eagerly
+        # and clear stale gradients so both accidental optimizer inclusion and
+        # silent gradient accumulation fail the invariant checks below.
+        self.model.eval()
+        for parameter in self.model.parameters():
+            parameter.requires_grad_(False)
+            parameter.grad = None
+
         self.library = _AssetLibrary(capacity)
         # Fisher-guided layer weights alpha (Eq. 8), initialised uniform.
         self.alpha = torch.full(
@@ -350,6 +464,17 @@ class IDEAAdapter(_AdapterDiagnostics):
         self.alignment_loss_sum = 0.0
         self.alignment_step_count = 0
         self._init_diagnostics()
+
+    def _assert_base_policy_frozen(self):
+        trainable = [name for name, parameter in self.model.named_parameters()
+                     if parameter.requires_grad]
+        gradients = [name for name, parameter in self.model.named_parameters()
+                     if parameter.grad is not None]
+        if trainable or gradients:
+            raise RuntimeError(
+                "IDEA base policy must remain frozen with grad=None; trainable={}, "
+                "gradients={}".format(trainable[:3], gradients[:3])
+            )
 
     # -- prompt helpers -----------------------------------------------------
     def _new_prompt(self, device, dtype, warm_start=None):
@@ -379,11 +504,37 @@ class IDEAAdapter(_AdapterDiagnostics):
     def _update_fisher_weights(self, policy_inputs):
         if not self.use_fisher:
             return
-        features, logits = self.protocol.fisher_forward(policy_inputs)
+        fisher_result = self.protocol.fisher_forward(policy_inputs)
+        if not isinstance(fisher_result, (tuple, list)) or len(fisher_result) != 3:
+            raise ValueError(
+                "IDEA fisher_forward must return "
+                "(layer_features, logits, valid_masks)"
+            )
+        features, logits, valid_masks = fisher_result
         if len(features) != self.num_layers:
             raise ValueError(
                 "IDEA fisher_forward returned {} layers, expected {}".format(
                     len(features), self.num_layers
+                )
+            )
+        if torch.is_tensor(valid_masks):
+            valid_masks = [valid_masks] * self.num_layers
+        if not isinstance(valid_masks, (tuple, list)) or len(valid_masks) != (
+            self.num_layers
+        ):
+            raise ValueError(
+                "IDEA Fisher valid-mask count must match aligned layers"
+            )
+        if not logits.requires_grad:
+            raise RuntimeError("IDEA Fisher logits are not gradient-connected")
+        disconnected = [
+            index for index, feature in enumerate(features)
+            if not torch.is_tensor(feature) or not feature.requires_grad
+        ]
+        if disconnected:
+            raise RuntimeError(
+                "IDEA Fisher activations lack gradients at layers {}".format(
+                    disconnected
                 )
             )
         log_probs = logits.log_softmax(dim=-1).reshape(-1)
@@ -396,15 +547,43 @@ class IDEAAdapter(_AdapterDiagnostics):
                 retain_graph=True,
                 allow_unused=True,
             )
+            missing = [index for index, grad in enumerate(grads) if grad is None]
+            if missing:
+                raise RuntimeError(
+                    "IDEA Fisher logits are disconnected from aligned layers {}"
+                    .format(missing)
+                )
             weight = float(probs[action_index].item())
-            for layer_index, grad in enumerate(grads):
+            for layer_index, (grad, valid_mask) in enumerate(
+                zip(grads, valid_masks)
+            ):
                 if grad is not None:
+                    if not torch.is_tensor(valid_mask):
+                        raise ValueError("IDEA Fisher valid masks must be tensors")
+                    expected_shape = tuple(grad.shape[:-1])
+                    if tuple(valid_mask.shape) != expected_shape:
+                        raise ValueError(
+                            "IDEA Fisher valid mask shape {} does not match "
+                            "activation shape {} at layer {}".format(
+                                tuple(valid_mask.shape), tuple(grad.shape),
+                                layer_index,
+                            )
+                        )
+                    valid_mask = valid_mask.to(
+                        device=grad.device, dtype=torch.bool
+                    )
+                    if not bool(valid_mask.any()):
+                        raise ValueError(
+                            "IDEA Fisher layer {} has no valid navigable tokens"
+                            .format(layer_index)
+                        )
+                    squared_norm = grad.detach().pow(2).sum(dim=-1)
                     traces[layer_index] += weight * float(
-                        grad.detach().pow(2).sum().item()
+                        squared_norm[valid_mask].sum().item()
                     )
         total = float(traces.sum().item())
         if total <= 1e-12:
-            return
+            raise RuntimeError("IDEA Fisher trace is zero for every aligned layer")
         normalized = traces / total
         # Eq. (8): exponential moving average of the normalised Fisher trace.
         self.alpha = (
@@ -426,7 +605,15 @@ class IDEAAdapter(_AdapterDiagnostics):
             optimizer.zero_grad(set_to_none=True)
             target_stats, _ = self.protocol.fused_forward(policy_inputs, prompt)
             loss = _alignment_discrepancy(source_stats, target_stats, alpha)
+            if not loss.requires_grad:
+                raise RuntimeError(
+                    "IDEA alignment loss is disconnected from the soft prompt"
+                )
             loss.backward()
+            if prompt.grad is None:
+                raise RuntimeError("IDEA soft prompt did not receive a gradient")
+            if not bool(torch.isfinite(prompt.grad).all()):
+                raise FloatingPointError("IDEA soft-prompt gradient is non-finite")
             if self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_([prompt], self.max_grad_norm)
             optimizer.step()
@@ -439,21 +626,32 @@ class IDEAAdapter(_AdapterDiagnostics):
     def prepare_action(self, source_logits, policy_inputs=None, **kwargs):
         if policy_inputs is None:
             raise ValueError("IDEA requires policy_inputs to drive its fusion")
-        device = source_logits.device if torch.is_tensor(source_logits) else None
-        dtype = (
-            source_logits.dtype if torch.is_tensor(source_logits) else None
-        )
+        self._assert_base_policy_frozen()
 
-        # Line 4: observe the prompt-free target statistics Gamma_t first, so a
-        # protocol that bootstraps its source anchor from streamed prompt-free
-        # passes has seen at least this step before we query the anchor.
+        # Line 4: measure the target prompt-free.  This pass can never update the
+        # offline source anchor; protocols are required to be read-only here.
         with torch.no_grad():
             base_stats, base_logits = self.protocol.fused_forward(
                 policy_inputs, None
             )
         gamma_target = self._final_gamma(base_stats)
 
-        source_stats = self.protocol.source_statistics(device, dtype)
+        source_stats = self.protocol.source_statistics(
+            gamma_target.device, gamma_target.dtype
+        )
+        if len(source_stats) != self.num_layers:
+            raise ValueError(
+                "IDEA source artifact returned {} layers, expected {}".format(
+                    len(source_stats), self.num_layers
+                )
+            )
+        for mu, sigma in source_stats:
+            if tuple(mu.shape) != (self.feature_dim,) or tuple(sigma.shape) != (
+                self.feature_dim,
+            ):
+                raise ValueError("IDEA source-statistics feature shape mismatch")
+            if not bool(torch.isfinite(mu).all() and torch.isfinite(sigma).all()):
+                raise ValueError("IDEA source statistics must be finite")
         gamma_source = self._final_gamma(source_stats)
 
         chosen_prompt = None
@@ -532,6 +730,7 @@ class IDEAAdapter(_AdapterDiagnostics):
             )
 
         self._record_loss(softmax_entropy(final_logits).mean())
+        self._assert_base_policy_frozen()
         return final_logits.detach()
 
     def adapt(self, logits, **kwargs):
@@ -560,6 +759,47 @@ class IDEAAdapter(_AdapterDiagnostics):
 
     def episode_end(self, episode_stats=None):
         self.episode_count += 1
+
+    def save_assets(self, path, metadata=None):
+        """Serialize the asset library and return the artifact file SHA256."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.library.payload(
+            self.prompt_length, self.feature_dim, metadata=metadata
+        )
+        if path.suffix.lower() == ".json":
+            path.write_text(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+        elif path.suffix.lower() in (".pt", ".pth"):
+            torch.save(payload, path)
+        else:
+            raise ValueError("IDEA asset artifact must end in .json or .pt")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return digest
+
+    def load_assets(self, path, expected_sha256):
+        """Load an asset artifact only after verifying its external digest."""
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError("IDEA asset artifact is missing: {}".format(path))
+        if not isinstance(expected_sha256, str) or len(expected_sha256) != 64:
+            raise ValueError("IDEA asset expected SHA256 is required")
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual.lower() != expected_sha256.lower():
+            raise ValueError("IDEA asset artifact SHA256 mismatch")
+        if path.suffix.lower() == ".json":
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        elif path.suffix.lower() in (".pt", ".pth"):
+            try:
+                payload = torch.load(path, map_location="cpu", weights_only=True)
+            except TypeError:  # pragma: no cover - older supported torch
+                payload = torch.load(path, map_location="cpu")
+        else:
+            raise ValueError("IDEA asset artifact must end in .json or .pt")
+        self.library.load_payload(payload, self.prompt_length, self.feature_dim)
+        return actual
 
     def diagnostics(self):
         output = {
@@ -590,6 +830,34 @@ class IDEAAdapter(_AdapterDiagnostics):
             "opt_steps": self.opt_steps,
             "use_fisher": self.use_fisher,
             "trains_base_policy": False,
+            "base_parameter_grads_none": all(
+                parameter.grad is None for parameter in self.model.parameters()
+            ),
+            "source_statistics_mode": "offline_artifact",
+            "source_statistics_schema": self.source_statistics_metadata.get(
+                "schema"
+            ),
+            "source_statistics_sha256": self.source_statistics_metadata.get(
+                "sha256"
+            ),
+            "source_statistics_trajectory_count": (
+                self.source_statistics_metadata.get("trajectory_count")
+            ),
+            "source_statistics_moment_estimator": (
+                self.source_statistics_metadata.get("moment_estimator")
+            ),
+            "source_statistics_provenance": dict(
+                self.source_statistics_metadata.get("provenance", {})
+            ),
+            "asset_library_digest": self.library.digest(
+                self.prompt_length, self.feature_dim
+            ),
+            "coverage_gate": "d_prompt < tau * d_zero",
+            "coverage_gate_interpretation": (
+                "prompted-vs-source over prompt-free-vs-source; Algorithm 1 "
+                "overloads Gamma_t/Gamma_b, so the paper prose is canonical"
+            ),
+            "bridge_simplex_correction": "paper_clip_then_renormalize",
         }
         if self.zero_update_audit:
             # IDEA never writes policy parameters, so a frozen base model is the

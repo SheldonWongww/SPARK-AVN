@@ -5,6 +5,7 @@ import random
 import time
 import logging
 import json
+import re
 import torch
 import torch.distributed as distrib
 import torch.nn as nn
@@ -778,8 +779,168 @@ class DDPPOTrainer(PPOTrainer):
         # ---- Test-time adaptation (TTA) setup ----
         tta_adapter = None
         tta_cfg = getattr(self.config, "TTA", None)
-        if tta_cfg is not None and str(getattr(tta_cfg, "METHOD", "none")).lower() not in ("none", ""):
-            tta_method = str(getattr(tta_cfg, "METHOD", "none")).lower()
+        tta_method = str(
+            getattr(tta_cfg, "METHOD", "none") if tta_cfg is not None else "none"
+        ).lower()
+        idea_cfg = getattr(tta_cfg, "IDEA", None) if tta_cfg is not None else None
+        idea_source_collection = None
+        source_model_state_sha256 = None
+        source_collection_requested = bool(
+            getattr(idea_cfg, "SOURCE_COLLECTION", False)
+        ) if idea_cfg is not None else False
+        if source_collection_requested:
+            if bool(self.config.EVAL.USE_CKPT_CONFIG):
+                raise ValueError(
+                    "ENMuS IDEA source collection requires "
+                    "EVAL.USE_CKPT_CONFIG=False"
+                )
+            if tta_method != "source":
+                raise ValueError(
+                    "ENMuS IDEA source collection requires TTA.METHOD=source"
+                )
+            if str(config.EVAL.SPLIT).lower() != "train":
+                raise ValueError(
+                    "ENMuS IDEA source collection requires EVAL.SPLIT=train"
+                )
+            if action_selection != "argmax":
+                raise ValueError(
+                    "ENMuS IDEA source collection requires native argmax actions"
+                )
+            if self.envs.num_envs != 1:
+                raise ValueError(
+                    "ENMuS IDEA source collection requires NUM_PROCESSES=1"
+                )
+            if int(self.config.TEST_EPISODE_COUNT) != 128:
+                raise ValueError(
+                    "canonical ENMuS IDEA source collection requires exactly "
+                    "128 episodes"
+                )
+            if (
+                str(getattr(idea_cfg, "SOURCE_STATS_PATH", "") or "")
+                or str(getattr(idea_cfg, "SOURCE_STATS_SHA256", "") or "")
+            ):
+                raise ValueError(
+                    "source collection cannot consume an IDEA source artifact"
+                )
+
+            from navtta_avn.idea_source import (
+                collection_provenance,
+                file_sha256,
+                load_source_manifest,
+                stable_episode_id,
+                verify_manifest_assets,
+            )
+            from navtta_core.tta import (
+                SourceStatisticsCollectionSession,
+                TransformerFusionProtocol,
+                build_multiscale_memory_key_padding_mask,
+                module_state_sha256,
+            )
+
+            dataset_path = str(config.TASK_CONFIG.DATASET.DATA_PATH).lower()
+            if "multi_source" in dataset_path:
+                source_setting = "multi_source"
+            elif "single_source" in dataset_path:
+                source_setting = "single_source"
+            else:
+                raise ValueError(
+                    "cannot infer ENMuS source setting from DATA_PATH"
+                )
+            manifest_path = str(
+                getattr(idea_cfg, "SOURCE_EPISODE_MANIFEST", "") or ""
+            )
+            manifest_sha256 = str(getattr(
+                idea_cfg, "SOURCE_EPISODE_MANIFEST_SHA256", ""
+            ) or "")
+            task_manifest_path = str(getattr(
+                config.TASK_CONFIG.DATASET, "IDEA_SOURCE_EPISODE_MANIFEST", ""
+            ) or "")
+            task_manifest_sha256 = str(getattr(
+                config.TASK_CONFIG.DATASET,
+                "IDEA_SOURCE_EPISODE_MANIFEST_SHA256",
+                "",
+            ) or "")
+            if (
+                manifest_path != task_manifest_path
+                or manifest_sha256.lower() != task_manifest_sha256.lower()
+            ):
+                raise ValueError(
+                    "TTA and task dataset must bind the same source manifest"
+                )
+            manifest, actual_manifest_sha256 = load_source_manifest(
+                manifest_path,
+                manifest_sha256,
+                model="enmus",
+                source_setting=source_setting,
+            )
+            dataset_index = config.TASK_CONFIG.DATASET.DATA_PATH.format(
+                version=config.TASK_CONFIG.DATASET.VERSION,
+                split=config.TASK_CONFIG.DATASET.SPLIT,
+            )
+            verify_manifest_assets(manifest, dataset_index, checkpoint_path)
+            actual_checkpoint_sha256 = file_sha256(checkpoint_path)
+            if manifest["checkpoint"]["sha256"] != actual_checkpoint_sha256:
+                raise ValueError(
+                    "loaded ENMuS checkpoint does not match source manifest"
+                )
+
+            actor_critic = self.actor_critic
+
+            def _idea_source_forward_logits(policy_inputs):
+                features, _, _ = actor_critic.net(
+                    policy_inputs["observations"],
+                    policy_inputs["rnn_hidden_states"],
+                    policy_inputs["prev_actions"],
+                    policy_inputs["masks"],
+                    policy_inputs.get("ext_memory"),
+                    policy_inputs.get("ext_memory_masks"),
+                )
+                return actor_critic.action_distribution(features).logits
+
+            transformer = actor_critic.net.smt_state_encoder.transformer
+            prompt_layers = int(getattr(idea_cfg, "PROMPT_LAYERS", 0))
+            source_protocol = TransformerFusionProtocol.for_source_collection(
+                transformer,
+                _idea_source_forward_logits,
+                feature_dim=transformer.d_model,
+                num_layers=min(
+                    prompt_layers or len(transformer.encoder.layers),
+                    len(transformer.encoder.layers),
+                ),
+                pad_to_multiple=32,
+                memory_key_padding_mask_builder=(
+                    build_multiscale_memory_key_padding_mask
+                ),
+            )
+            self.actor_critic.eval()
+            self.actor_critic.requires_grad_(False)
+            source_model_state_sha256 = module_state_sha256(self.actor_critic)
+            provenance = collection_provenance(
+                manifest,
+                actual_manifest_sha256,
+                source_model_state_sha256,
+            )
+            idea_source_collection = SourceStatisticsCollectionSession(
+                source_protocol,
+                str(getattr(
+                    idea_cfg, "SOURCE_COLLECTION_OUTPUT", ""
+                ) or ""),
+                provenance,
+                expected_trajectory_count=128,
+            )
+            logging.info(
+                "[IDEA source] frozen argmax collection enabled: setting=%s "
+                "manifest=%s order=%s",
+                source_setting,
+                actual_manifest_sha256,
+                manifest["episode_order_sha256"],
+            )
+        elif tta_cfg is not None and tta_method not in ("none", "", "source"):
+            if tta_method == "feedtta" and action_selection != "sample":
+                raise ValueError(
+                    "FeedTTA REINFORCE requires actions sampled from the policy; "
+                    "set EVAL.ACTION_SELECTION=sample"
+                )
             if tta_method == "atena" and not bool(
                 getattr(getattr(tta_cfg, "ATENA", None), "PREFLIGHT_APPROVED", False)
             ):
@@ -788,6 +949,22 @@ class DDPPOTrainer(PPOTrainer):
                     "avn/experiments/ATENA_PRE_RUN_REVIEW.md and set "
                     "TTA.ATENA.PREFLIGHT_APPROVED=True only for the reviewed run."
                 )
+            if tta_method == "atena":
+                atena_task_scope = str(getattr(
+                    getattr(tta_cfg, "ATENA", None),
+                    "TASK_UPDATE_SCOPE",
+                    "replay_reachable_actor_navigation_policy",
+                )).lower()
+                if atena_task_scope != (
+                    "replay_reachable_actor_navigation_policy"
+                ):
+                    raise ValueError(
+                        "ENMuS ATENA can replay the actor navigation graph but "
+                        "not an end-to-end full policy"
+                    )
+                for name, parameter in self.actor_critic.named_parameters():
+                    if not name.startswith("critic."):
+                        parameter.requires_grad_(True)
             if self.envs.num_envs != 1:
                 raise ValueError(
                     "Sequential TTA requires NUM_PROCESSES=1; got {}"
@@ -799,7 +976,12 @@ class DDPPOTrainer(PPOTrainer):
                 # IDEA injects a soft prompt into the MSMT fusion transformer and
                 # reads per-layer statistics.  The binding calls frozen
                 # sub-modules only; the policy forward is never edited.
-                from navtta_core.tta import TransformerFusionProtocol
+                from navtta_core.tta.fusion import (
+                    TransformerFusionProtocol,
+                    build_multiscale_memory_key_padding_mask,
+                )
+                from navtta_core.tta import module_state_sha256
+                from navtta_avn.idea_source import file_sha256
 
                 actor_critic = self.actor_critic
 
@@ -815,7 +997,22 @@ class DDPPOTrainer(PPOTrainer):
                     return actor_critic.action_distribution(features).logits
 
                 transformer = actor_critic.net.smt_state_encoder.transformer
-                idea_cfg = getattr(tta_cfg, "IDEA", None)
+                dataset_path = str(config.TASK_CONFIG.DATASET.DATA_PATH).lower()
+                if "multi_source" in dataset_path:
+                    source_setting = "multi_source"
+                elif "single_source" in dataset_path:
+                    source_setting = "single_source"
+                else:
+                    raise ValueError(
+                        "cannot infer ENMuS source setting from DATA_PATH"
+                    )
+                source_manifest_sha256 = str(getattr(
+                    idea_cfg, "SOURCE_EPISODE_MANIFEST_SHA256", ""
+                ) or "").lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", source_manifest_sha256):
+                    raise ValueError(
+                        "IDEA evaluation requires the source episode-manifest SHA256"
+                    )
                 fusion_protocol = TransformerFusionProtocol(
                     transformer,
                     _idea_forward_logits,
@@ -825,13 +1022,39 @@ class DDPPOTrainer(PPOTrainer):
                         len(transformer.encoder.layers),
                         len(transformer.encoder.layers),
                     ),
-                    source_warmup_steps=int(
-                        getattr(idea_cfg, "SOURCE_WARMUP_STEPS", 64)
+                    source_stats_path=(
+                        getattr(idea_cfg, "SOURCE_STATS_PATH", "") or None
+                    ),
+                    source_stats_sha256=(
+                        getattr(idea_cfg, "SOURCE_STATS_SHA256", "") or None
+                    ),
+                    expected_source_trajectories=int(
+                        getattr(idea_cfg, "SOURCE_TRAJECTORIES", 128)
+                    ),
+                    expected_source_provenance={
+                        "checkpoint_sha256": file_sha256(checkpoint_path),
+                        "model_state_sha256": module_state_sha256(actor_critic),
+                        "episode_selection_manifest_sha256": (
+                            source_manifest_sha256
+                        ),
+                        "model": "enmus",
+                        "source_setting": source_setting,
+                    },
+                    pad_to_multiple=32,
+                    memory_key_padding_mask_builder=(
+                        build_multiscale_memory_key_padding_mask
                     ),
                 )
             tta_adapter = build_adapter(
                 self.actor_critic, tta_cfg, fusion_protocol=fusion_protocol
             )
+            if tta_method == "atena" and tta_adapter.diagnostics().get(
+                "requires_task_trainability_wiring", False
+            ):
+                raise RuntimeError(
+                    "ENMuS ATENA actor navigation parameters are not all "
+                    "trainable after task-level wiring"
+                )
             tta_adapter.episode_start()
             logging.info(
                 "[TTA] enabled: method=%s, episodic=%s, lr=%s, scope=%s, last_k=%s",
@@ -843,6 +1066,7 @@ class DDPPOTrainer(PPOTrainer):
             )
 
         tta_action_counts = [0 for _ in range(self.envs.action_spaces[0].n)]
+        tta_valid_action_count = len(tta_action_counts)
         tta_max_prob_sum = 0.0
         tta_probability_steps = 0
         tta_window_stats = []
@@ -856,6 +1080,19 @@ class DDPPOTrainer(PPOTrainer):
             and self.envs.num_envs > 0
         ):
             current_episodes = self.envs.current_episodes()
+            if (
+                idea_source_collection is not None
+                and idea_source_collection.current_trajectory is None
+            ):
+                ordinal = idea_source_collection.accumulator.trajectory_count
+                actual_id = stable_episode_id(current_episodes[0])
+                expected_id = manifest["episodes"][ordinal]["trajectory_id"]
+                if actual_id != expected_id:
+                    raise RuntimeError(
+                        "ENMuS IDEA source episode order mismatch: expected "
+                        "{}, got {}".format(expected_id, actual_id)
+                    )
+                idea_source_collection.begin_trajectory(actual_id)
 
             if ppo_cfg.use_external_memory:
                 em_memory = test_em.memory[:, 0]
@@ -871,6 +1108,19 @@ class DDPPOTrainer(PPOTrainer):
                     em_masks = torch.cat([em_masks[:, test_em.idx-test_em.capacity:], em_masks[:, :test_em.idx]], dim=1)
             
             if tta_adapter is None:
+                if idea_source_collection is not None:
+                    idea_source_collection.observe_step({
+                        "observations": batch,
+                        "rnn_hidden_states": test_recurrent_hidden_states,
+                        "prev_actions": prev_actions,
+                        "masks": not_done_masks,
+                        "ext_memory": (
+                            em_memory if ppo_cfg.use_external_memory else None
+                        ),
+                        "ext_memory_masks": (
+                            em_masks if ppo_cfg.use_external_memory else None
+                        ),
+                    })
                 with torch.no_grad():
                     _, actions, _, test_recurrent_hidden_states, test_em_features = self.actor_critic.act(
                         batch,
@@ -895,9 +1145,18 @@ class DDPPOTrainer(PPOTrainer):
                         em_masks if ppo_cfg.use_external_memory else None
                     ),
                 }
+                valid_action_count = tta_valid_action_count
+                if tta_method == "eam":
+                    policy_inputs["valid_action_count"] = valid_action_count
                 # EAM Algorithm 3 updates/samples its replay buffer before the
                 # original and auxiliary policy inference for this action.
-                tta_adapter.before_inference(policy_inputs=policy_inputs)
+                tta_adapter.before_inference(
+                    policy_inputs=policy_inputs,
+                    **(
+                        {"valid_action_count": valid_action_count}
+                        if tta_method == "eam" else {}
+                    )
+                )
                 with torch.set_grad_enabled(tta_adapter.requires_source_grad):
                     features, test_recurrent_hidden_states, test_em_features = self.actor_critic.net(
                         policy_inputs["observations"],
@@ -912,6 +1171,10 @@ class DDPPOTrainer(PPOTrainer):
                         source_distribution.logits,
                         features=features,
                         policy_inputs=policy_inputs,
+                        **(
+                            {"valid_action_count": valid_action_count}
+                            if tta_method == "eam" else {}
+                        )
                     )
                     distribution = source_distribution.__class__(logits=action_logits)
                 with torch.no_grad():
@@ -929,7 +1192,7 @@ class DDPPOTrainer(PPOTrainer):
                 prev_actions.copy_(actions)
 
             actions = [a[0].item() for a in actions]
-            if tta_adapter is not None:
+            if tta_adapter is not None or idea_source_collection is not None:
                 for action in actions:
                     tta_action_counts[action] += 1
             outputs = self.envs.step(actions)
@@ -1022,7 +1285,9 @@ class DDPPOTrainer(PPOTrainer):
                     ] = episode_stats
                     t.update()
 
-                    if tta_adapter is not None:
+                    if idea_source_collection is not None:
+                        idea_source_collection.end_trajectory()
+                    elif tta_adapter is not None:
                         tta_adapter.episode_end(episode_stats=episode_stats)
                         tta_window_stats.append(episode_stats)
                         if len(tta_window_stats) >= tta_log_interval:
@@ -1115,12 +1380,81 @@ class DDPPOTrainer(PPOTrainer):
         with open(stats_file, 'w') as fo:
             json.dump({','.join(key): value for key, value in stats_episodes.items()}, fo, cls=NpEncoder)
 
-        if tta_adapter is not None:
-            diagnostics = tta_adapter.diagnostics()
+        if idea_source_collection is not None:
+            if not idea_source_collection.complete:
+                raise RuntimeError(
+                    "IDEA source collection ended without exactly 128 "
+                    "completed trajectories"
+                )
+            final_model_state_sha256 = module_state_sha256(self.actor_critic)
+            if final_model_state_sha256 != source_model_state_sha256:
+                raise RuntimeError(
+                    "frozen source policy state changed during IDEA collection"
+                )
+            diagnostics = idea_source_collection.diagnostics()
+            diagnostics["source_policy_frozen"] = True
+            diagnostics["source_model_state_sha256"] = source_model_state_sha256
+            diagnostics["action_selection"] = action_selection
             diagnostics["action_counts"] = tta_action_counts
-            diagnostics["mean_max_action_probability"] = (
-                tta_max_prob_sum / max(1, tta_probability_steps)
+        elif tta_adapter is not None:
+            diagnostics = tta_adapter.diagnostics()
+        else:
+            diagnostics = None
+
+        if diagnostics is not None:
+            diagnostics["task_action_space_contract"] = (
+                "fixed_discrete_all_actions_valid"
             )
+            diagnostics["task_valid_action_count"] = tta_valid_action_count
+            diagnostics["tent_canonical_update_interval"] = (
+                int(getattr(tta_cfg, "UPDATE_INTERVAL", 1)) == 1
+                if tta_method == "tent" else None
+            )
+            diagnostics["fstta_reset_var_hist_each_episode"] = (
+                bool(getattr(
+                    getattr(tta_cfg, "FSTTA", None),
+                    "RESET_VAR_HIST_EACH_EPISODE",
+                    False,
+                )) if tta_method == "fstta" else None
+            )
+            diagnostics["fstta_variance_history_profile"] = (
+                (
+                    "released_code_rollout_reset_ablation"
+                    if diagnostics["fstta_reset_var_hist_each_episode"]
+                    else "paper_eq6_test_stream_history"
+                ) if tta_method == "fstta" else None
+            )
+            diagnostics["feedtta_sgr_mode"] = (
+                str(getattr(
+                    getattr(tta_cfg, "FEEDTTA", None),
+                    "SGR_MODE",
+                    "paper_main",
+                )).lower() if tta_method == "feedtta" else None
+            )
+            diagnostics["feedtta_canonical_protocol"] = (
+                action_selection == "sample"
+                and diagnostics["feedtta_sgr_mode"] == "paper_main"
+                if tta_method == "feedtta" else None
+            )
+            diagnostics["feedtta_requires_matched_sampled_source"] = (
+                True if tta_method == "feedtta" else None
+            )
+            diagnostics["atena_task_update_scope"] = (
+                "replay_reachable_actor_navigation_policy"
+                if tta_method == "atena" else None
+            )
+            diagnostics["atena_exact_replay_within_declared_scope"] = (
+                True if tta_method == "atena" else None
+            )
+            diagnostics["atena_full_end_to_end_policy_claimed"] = (
+                False if tta_method == "atena" else None
+            )
+            diagnostics["action_counts"] = tta_action_counts
+            if idea_source_collection is None:
+                diagnostics["action_counts"] = tta_action_counts
+                diagnostics["mean_max_action_probability"] = (
+                    tta_max_prob_sum / max(1, tta_probability_steps)
+                )
             diagnostics_file = os.path.join(
                 config.TENSORBOARD_DIR,
                 "tta_diagnostics_{}.json".format(config.SEED),

@@ -373,7 +373,20 @@ def _small_row_svd(matrix):
 
 
 def _concordant_grad_and_trace(grad_list, eigen_eps=1e-6):
-    """Low-rank GDA with the length calibration from FSTTA Eq. (5)."""
+    """Low-rank GDA with the length calibration from FSTTA Eq. (5).
+
+    The released full-matrix implementation clamps *every* covariance
+    eigenvalue before applying inverse-variance weighting.  In the usual
+    ``D >> M`` setting, most of those eigenvalues belong to the covariance
+    nullspace.  A truncated SVD therefore cannot simply sum the returned
+    nonzero eigendirections: doing so silently discards the mean-gradient
+    component in that nullspace.  The residual below is exactly that omitted
+    component, weighted by the same eigenvalue floor as a full ``D x D``
+    eigendecomposition.
+    """
+    eigen_eps = float(eigen_eps)
+    if not math.isfinite(eigen_eps) or eigen_eps <= 0.0:
+        raise ValueError("FSTTA.EIGEN_EPS must be finite and positive")
     gradients = torch.stack(grad_list, dim=0)
     mean_grad = gradients.mean(dim=0)
     if len(grad_list) < 2:
@@ -387,15 +400,24 @@ def _concordant_grad_and_trace(grad_list, eigen_eps=1e-6):
     if eigenvalues.numel() == 0:
         return mean_grad, sigma
 
-    threshold = eigenvalues.max().clamp_min(1e-12) * float(eigen_eps)
-    valid = eigenvalues > threshold
-    if not bool(valid.any()):
-        return mean_grad, sigma
-
-    basis = vh[valid]                              # [rank, D]
-    values = eigenvalues[valid]                   # [rank]
-    projections = basis @ mean_grad               # [rank]
-    concordant = ((projections / values).unsqueeze(1) * basis).sum(dim=0)
+    # Eigenvalues at or below the floor all receive 1 / eigen_eps.  This set
+    # includes both numerically tiny returned directions and the unreturned
+    # D-rank orthogonal complement of the small-row SVD.
+    valid = eigenvalues > eigen_eps
+    if bool(valid.any()):
+        basis = vh[valid]                          # [rank, D]
+        values = eigenvalues[valid]               # [rank]
+        projections = basis @ mean_grad           # [rank]
+        covariance_component = (
+            projections.unsqueeze(1) * basis
+        ).sum(dim=0)
+        nullspace_component = mean_grad - covariance_component
+        concordant = nullspace_component / eigen_eps
+        concordant = concordant + (
+            (projections / values).unsqueeze(1) * basis
+        ).sum(dim=0)
+    else:
+        concordant = mean_grad / eigen_eps
 
     # Eq. (5): keep the new direction, restore the mean-gradient magnitude.
     concordant_norm = concordant.norm()
@@ -529,6 +551,10 @@ class _AdapterDiagnostics:
             "last_entropy": self.last_loss,
             "last_grad_norm": self.last_grad_norm,
             "current_lr": self.current_lr,
+            "max_grad_norm": (
+                float(self.max_grad_norm)
+                if hasattr(self, "max_grad_norm") else None
+            ),
             "relative_param_drift": _relative_drift(current, self._source_flat),
             "adapted_parameter_names": list(self.names),
         }
@@ -625,10 +651,20 @@ class TentAdapter(_AdapterDiagnostics):
                 "TTA.STEPS != 1 requires a new policy forward after every update; "
                 "the navigation adapter intentionally supports STEPS=1 only."
             )
+        update_interval = int(update_interval)
+        if update_interval < 1:
+            raise ValueError("Tent UPDATE_INTERVAL must be positive")
         self.model = model
         self.episodic = bool(episodic)
         self.base_lr = float(lr)
-        self.update_interval = max(1, int(update_interval))
+        self.update_interval = update_interval
+        self.canonical_update_interval = self.update_interval == 1
+        if not self.canonical_update_interval:
+            logging.warning(
+                "Tent UPDATE_INTERVAL=%d is a non-canonical schedule ablation; "
+                "canonical Tent updates after every policy forward",
+                self.update_interval,
+            )
         self.max_updates_per_episode = int(max_updates_per_episode)
         if self.max_updates_per_episode < -1:
             raise ValueError(
@@ -706,6 +742,14 @@ class TentAdapter(_AdapterDiagnostics):
         output = super().diagnostics()
         output.update({
             "episode_updates": self.episode_update_count,
+            "update_interval": self.update_interval,
+            "update_interval_unit": "policy_forward",
+            "canonical_update_interval": self.canonical_update_interval,
+            "tent_schedule": (
+                "canonical_per_forward"
+                if self.canonical_update_interval
+                else "noncanonical_interval_ablation"
+            ),
             "max_updates_per_episode": self.max_updates_per_episode,
             "skipped_updates_by_budget": self.skipped_updates_by_budget,
         })
@@ -723,10 +767,10 @@ class FSTTAAdapter(_AdapterDiagnostics):
         M=3,
         N=4,
         q=0.1,
-        rho=0.9,
-        tau=0.5,
-        a=0.5,
-        b=1.5,
+        rho=0.95,
+        tau=0.7,
+        a=0.9,
+        b=1.1,
         steps=1,
         episodic=False,
         use_slow=True,
@@ -746,12 +790,37 @@ class FSTTAAdapter(_AdapterDiagnostics):
         slow_optimizer_name=None,
         slow_momentum=None,
         reset_slow_optimizer_each_window=False,
-        reset_var_hist_each_episode=True,
+        reset_var_hist_each_episode=False,
     ):
         if int(steps) != 1:
             raise ValueError("FSTTA supports one policy forward/update per action")
+        if int(M) < 1:
+            raise ValueError("FSTTA.M must be positive")
+        if int(N) < 1:
+            raise ValueError("FSTTA.N must be positive")
         if not 0.0 < float(q) < 1.0:
             raise ValueError("FSTTA.Q must be in (0, 1)")
+        if not 0.0 <= float(rho) <= 1.0:
+            raise ValueError("FSTTA.RHO must be in [0, 1]")
+        numeric_values = {
+            "LR": float(lr_fast),
+            "LR_SLOW": float(lr_slow),
+            "TAU": float(tau),
+            "A": float(a),
+            "B": float(b),
+            "MAX_GRAD_NORM": float(max_grad_norm),
+            "EIGEN_EPS": float(eigen_eps),
+        }
+        if any(not math.isfinite(value) for value in numeric_values.values()):
+            raise ValueError("FSTTA numeric hyperparameters must be finite")
+        if float(lr_fast) <= 0.0 or float(lr_slow) <= 0.0:
+            raise ValueError("FSTTA learning rates must be positive")
+        if float(a) <= 0.0 or float(b) < float(a):
+            raise ValueError("FSTTA LR scale bounds require 0 < A <= B")
+        if float(max_grad_norm) < 0.0:
+            raise ValueError("FSTTA.MAX_GRAD_NORM must be nonnegative")
+        if float(eigen_eps) <= 0.0:
+            raise ValueError("FSTTA.EIGEN_EPS must be positive")
         if bool(episodic) and bool(use_slow):
             raise ValueError(
                 "FSTTA slow adaptation requires TTA.EPISODIC=False so its "
@@ -766,8 +835,8 @@ class FSTTAAdapter(_AdapterDiagnostics):
                 )
             )
         self.model = model
-        self.M = max(1, int(M))
-        self.N = max(1, int(N))
+        self.M = int(M)
+        self.N = int(N)
         self.q = float(q)
         self.rho = float(rho)
         self.tau = float(tau)
@@ -787,10 +856,9 @@ class FSTTAAdapter(_AdapterDiagnostics):
         )
         self.max_grad_norm = float(max_grad_norm)
         self.reset_optimizer_each_episode = bool(reset_optimizer_each_episode)
-        # The released FSTTA builds a fresh FAST module every rollout, so its
-        # historical FAST variance (Eq. 6) restarts at each episode.  Keeping
-        # this True reproduces that behavior; set it False to treat the variance
-        # EMA as a single test-stream statistic (an explicit ablation).
+        # Paper Eq. (6) maintains historical variance over the complete test
+        # stream.  The released code rebuilds FAST per rollout and therefore
+        # resets this value; ``True`` is retained as that code-path ablation.
         self.reset_var_hist_each_episode = bool(reset_var_hist_each_episode)
         self.eigen_eps = float(eigen_eps)
 
@@ -1134,9 +1202,8 @@ class FSTTAAdapter(_AdapterDiagnostics):
         if self.episodic:
             self.reset()
         self.grad_buffer = []
-        # The released FSTTA rebuilds its FAST module every rollout, so the
-        # historical variance EMA (Eq. 6) restarts each episode.  Reproduce that
-        # by default; the stream-level reading is kept as an opt-in ablation.
+        # The paper-level default retains Eq. (6)'s history across episodes.
+        # Resetting here reproduces the released per-rollout construction only.
         if self.reset_var_hist_each_episode:
             self.var_hist = None
         if self.reset_optimizer_each_episode:
@@ -1167,6 +1234,11 @@ class FSTTAAdapter(_AdapterDiagnostics):
             "fast_lr": self.base_lr,
             "fast_window": self.M,
             "fast_grad_mode": self.fast_grad_mode,
+            "gda_inverse_variance": (
+                "full_covariance_with_clamped_nullspace"
+            ),
+            "gda_eigenvalue_floor": self.eigen_eps,
+            "gda_preserves_covariance_nullspace": True,
             "use_fast_lr_scaler": self.use_fast_lr_scaler,
             "use_slow": self.use_slow,
             "slow_window": self.N,
@@ -1299,6 +1371,8 @@ class EAMAdapter(_AdapterDiagnostics):
                 "explicitly; got {!r}".format(self.param_scope)
             )
         self.trainable_prefixes = tuple(str(item) for item in trainable_prefixes)
+        if forward_policy is not None and not callable(forward_policy):
+            raise TypeError("EAM forward_policy must be callable")
         self.forward_policy_callback = forward_policy
         self.memory_size = int(memory_size)
         self.batch_size = int(batch_size)
@@ -1314,6 +1388,19 @@ class EAMAdapter(_AdapterDiagnostics):
             )
         if self.update_interval < 1:
             raise ValueError("EAM.UPDATE_INTERVAL must be positive")
+        numeric_values = {
+            "LR": float(lr),
+            "CONFIDENCE_SCALE": float(confidence_scale),
+            "MAX_GRAD_NORM": float(max_grad_norm),
+        }
+        if any(not math.isfinite(value) for value in numeric_values.values()):
+            raise ValueError("EAM numeric hyperparameters must be finite")
+        if float(lr) <= 0.0:
+            raise ValueError("EAM.LR must be positive")
+        if float(confidence_scale) < 0.0:
+            raise ValueError("EAM.CONFIDENCE_SCALE must be nonnegative")
+        if float(max_grad_norm) < 0.0:
+            raise ValueError("EAM.MAX_GRAD_NORM must be nonnegative")
 
         self.source_model = model
         self.source_model.eval()
@@ -1362,6 +1449,9 @@ class EAMAdapter(_AdapterDiagnostics):
         self.replay_aux_used_steps = 0
         self.current_replay_duplicates = 0
         self.warmup_no_update_steps = 0
+        self.valid_action_metadata_steps = 0
+        self.valid_action_fallback_steps = 0
+        self.masked_invalid_action_slots = 0
         # Deprecated compatibility counter.  It counts warm-up action steps,
         # not training batches or optimizer updates.
         self.current_only_batches = 0
@@ -1420,15 +1510,164 @@ class EAMAdapter(_AdapterDiagnostics):
         with torch.no_grad():
             return self._forward_policy(self.source_model, policy_inputs)
 
-    def _threshold(self, action_dim):
-        return self.confidence_scale * math.log(max(2, int(action_dim)))
+    @staticmethod
+    def _extract_valid_action_spec(
+        policy_inputs,
+        valid_action_count=None,
+        valid_action_mask=None,
+    ):
+        """Return detached action-space metadata supplied by task glue.
 
-    def _combine(self, source_logits, aux_logits):
-        threshold = self._threshold(source_logits.shape[-1])
-        aux_entropy = softmax_entropy(aux_logits)
+        The explicit keyword API is preferred.  Mirroring the same keys inside
+        ``policy_inputs`` is supported so replay callbacks can keep all
+        per-sample state in one snapshot.
+        """
+        if isinstance(policy_inputs, dict):
+            if valid_action_count is None:
+                valid_action_count = policy_inputs.get("valid_action_count")
+            if valid_action_mask is None:
+                valid_action_mask = policy_inputs.get("valid_action_mask")
+        if valid_action_count is not None and valid_action_mask is not None:
+            raise ValueError(
+                "EAM accepts either valid_action_count or valid_action_mask, "
+                "not both"
+            )
+        return (
+            _tree_to_cpu(valid_action_count),
+            _tree_to_cpu(valid_action_mask),
+        )
+
+    @staticmethod
+    def _valid_action_mask(
+        logits,
+        valid_action_count=None,
+        valid_action_mask=None,
+    ):
+        """Normalize and validate per-sample valid-action metadata."""
+        if valid_action_count is not None and valid_action_mask is not None:
+            raise ValueError(
+                "EAM accepts either valid_action_count or valid_action_mask, "
+                "not both"
+            )
+        action_dim = int(logits.shape[-1])
+        sample_shape = tuple(logits.shape[:-1])
+        if valid_action_count is not None:
+            if isinstance(valid_action_count, bool):
+                raise ValueError("EAM valid_action_count must contain integers")
+            counts = torch.as_tensor(
+                valid_action_count, device=logits.device
+            )
+            if counts.dtype == torch.bool or not bool(torch.isfinite(
+                counts.to(torch.float64)
+            ).all()):
+                raise ValueError(
+                    "EAM valid_action_count must contain finite integers"
+                )
+            rounded = counts.to(torch.float64).round()
+            if not bool((counts.to(torch.float64) == rounded).all()):
+                raise ValueError("EAM valid_action_count must contain integers")
+            expected_samples = math.prod(sample_shape)
+            if counts.numel() == 1:
+                counts = rounded.to(torch.long).expand(sample_shape)
+            elif counts.numel() == expected_samples:
+                counts = rounded.to(torch.long).reshape(sample_shape)
+            else:
+                raise ValueError(
+                    "EAM valid_action_count shape {} does not match logits "
+                    "sample shape {}".format(tuple(counts.shape), sample_shape)
+                )
+            if bool(((counts < 1) | (counts > action_dim)).any()):
+                raise ValueError(
+                    "EAM valid_action_count values must be in [1, {}]".format(
+                        action_dim
+                    )
+                )
+            indices = torch.arange(action_dim, device=logits.device)
+            mask = indices < counts.unsqueeze(-1)
+        elif valid_action_mask is not None:
+            mask = torch.as_tensor(valid_action_mask, device=logits.device)
+            if mask.dtype != torch.bool:
+                if not bool(((mask == 0) | (mask == 1)).all()):
+                    raise ValueError(
+                        "EAM valid_action_mask must be boolean or binary"
+                    )
+                mask = mask.bool()
+            try:
+                mask = torch.broadcast_to(mask, logits.shape)
+            except RuntimeError as error:
+                raise ValueError(
+                    "EAM valid_action_mask shape {} is not broadcastable to "
+                    "logits shape {}".format(
+                        tuple(mask.shape), tuple(logits.shape)
+                    )
+                ) from error
+            if not bool(mask.any(dim=-1).all()):
+                raise ValueError(
+                    "EAM valid_action_mask must retain at least one action "
+                    "per sample"
+                )
+        else:
+            mask = torch.ones_like(logits, dtype=torch.bool)
+
+        if not bool(torch.isfinite(logits.masked_select(mask)).all()):
+            raise ValueError(
+                "EAM logits contain a non-finite value in a valid action slot; "
+                "pass the per-sample valid_action_count or valid_action_mask "
+                "for padded decisions"
+            )
+        return mask
+
+    @staticmethod
+    def _masked_log_probs(logits, valid_action_mask):
+        floor = torch.finfo(logits.dtype).min
+        return logits.masked_fill(~valid_action_mask, floor).log_softmax(dim=-1)
+
+    @classmethod
+    def _masked_entropy(cls, logits, valid_action_mask):
+        log_probs = cls._masked_log_probs(logits, valid_action_mask)
+        probs = log_probs.exp()
+        valid_log_probs = log_probs.masked_fill(~valid_action_mask, 0.0)
+        return -(probs * valid_log_probs).sum(dim=-1)
+
+    def _threshold(self, valid_action_count):
+        if torch.is_tensor(valid_action_count):
+            counts = valid_action_count.to(dtype=torch.float32).clamp_min(2.0)
+            return self.confidence_scale * counts.log()
+        return self.confidence_scale * math.log(
+            max(2, int(valid_action_count))
+        )
+
+    def _combine(
+        self,
+        source_logits,
+        aux_logits,
+        valid_action_count=None,
+        valid_action_mask=None,
+    ):
+        if source_logits.shape != aux_logits.shape:
+            raise ValueError(
+                "EAM source and auxiliary logits must have identical shapes"
+            )
+        valid_mask = self._valid_action_mask(
+            source_logits,
+            valid_action_count=valid_action_count,
+            valid_action_mask=valid_action_mask,
+        )
+        # Validate the auxiliary branch independently; invalid padded slots are
+        # intentionally ignored even when they contain arbitrary sentinels.
+        if not bool(torch.isfinite(aux_logits.masked_select(valid_mask)).all()):
+            raise ValueError(
+                "EAM auxiliary logits contain a non-finite value in a valid "
+                "action slot"
+            )
+        valid_counts = valid_mask.sum(dim=-1)
+        threshold = self._threshold(valid_counts)
+        aux_entropy = self._masked_entropy(aux_logits, valid_mask)
         use_aux = aux_entropy < threshold
-        source_probs = source_logits.softmax(dim=-1)
-        aux_probs = aux_logits.softmax(dim=-1)
+        source_probs = self._masked_log_probs(
+            source_logits, valid_mask
+        ).exp()
+        aux_probs = self._masked_log_probs(aux_logits, valid_mask).exp()
         combined_probs = (
             source_probs
             + use_aux.to(aux_probs.dtype).unsqueeze(-1) * aux_probs
@@ -1438,9 +1677,17 @@ class EAMAdapter(_AdapterDiagnostics):
         ).clamp_min(1e-8)
         # Return log-probabilities so the trainer can reconstruct its native
         # categorical distribution without changing action tensor shapes.
-        return combined_probs.clamp_min(1e-8).log(), use_aux
+        combined_log_probs = combined_probs.clamp_min(1e-8).log()
+        combined_log_probs = combined_log_probs.masked_fill(~valid_mask, -math.inf)
+        return combined_log_probs, use_aux
 
-    def before_inference(self, policy_inputs=None, **kwargs):
+    def before_inference(
+        self,
+        policy_inputs=None,
+        valid_action_count=None,
+        valid_action_mask=None,
+        **kwargs
+    ):
         """Perform Algorithm 3's buffer update and replay before inference."""
         if policy_inputs is None:
             raise ValueError("EAM requires policy_inputs before inference")
@@ -1449,7 +1696,16 @@ class EAMAdapter(_AdapterDiagnostics):
                 "EAM.before_inference called twice without completing the step"
             )
 
-        current_entry = self._reservoir_add(policy_inputs)
+        valid_action_count, valid_action_mask = self._extract_valid_action_spec(
+            policy_inputs,
+            valid_action_count=valid_action_count,
+            valid_action_mask=valid_action_mask,
+        )
+        current_entry = self._reservoir_add(
+            policy_inputs,
+            valid_action_count=valid_action_count,
+            valid_action_mask=valid_action_mask,
+        )
         if len(self.replay) < self.batch_size:
             # Algorithm 3 performs inference but does not form B or update the
             # auxiliary model until the updated reservoir reaches K entries.
@@ -1461,10 +1717,22 @@ class EAMAdapter(_AdapterDiagnostics):
                 random.sample(self.replay, self.batch_size - 1)
                 if self.batch_size > 1 else []
             )
-        self._pending_replay = (current_entry, replay_entries)
+        self._pending_replay = (
+            current_entry,
+            replay_entries,
+            valid_action_count,
+            valid_action_mask,
+        )
 
     @torch.enable_grad()
-    def prepare_action(self, source_logits, policy_inputs=None, **kwargs):
+    def prepare_action(
+        self,
+        source_logits,
+        policy_inputs=None,
+        valid_action_count=None,
+        valid_action_mask=None,
+        **kwargs
+    ):
         if policy_inputs is None:
             raise ValueError("EAM requires policy_inputs for its auxiliary branch")
         if self._cached_current is not None:
@@ -1479,8 +1747,45 @@ class EAMAdapter(_AdapterDiagnostics):
             raise RuntimeError(
                 "EAM.before_inference must run before the source policy forward"
             )
-        current_entry, replay_entries = self._pending_replay
+        (
+            current_entry,
+            replay_entries,
+            pending_valid_action_count,
+            pending_valid_action_mask,
+        ) = self._pending_replay
         self._pending_replay = None
+        supplied_count, supplied_mask = self._extract_valid_action_spec(
+            policy_inputs,
+            valid_action_count=valid_action_count,
+            valid_action_mask=valid_action_mask,
+        )
+        if supplied_count is not None or supplied_mask is not None:
+            if (
+                pending_valid_action_count is not None
+                or pending_valid_action_mask is not None
+            ):
+                pending_mask = self._valid_action_mask(
+                    source_current,
+                    valid_action_count=pending_valid_action_count,
+                    valid_action_mask=pending_valid_action_mask,
+                )
+                supplied_valid_mask = self._valid_action_mask(
+                    source_current,
+                    valid_action_count=supplied_count,
+                    valid_action_mask=supplied_mask,
+                )
+                if not torch.equal(pending_mask, supplied_valid_mask):
+                    raise ValueError(
+                        "EAM valid-action metadata changed between "
+                        "before_inference and prepare_action"
+                    )
+            pending_valid_action_count = supplied_count
+            pending_valid_action_mask = supplied_mask
+            if current_entry is not None:
+                current_entry["valid_action_count"] = _tree_to_cpu(
+                    supplied_count
+                )
+                current_entry["valid_action_mask"] = _tree_to_cpu(supplied_mask)
 
         # Both branches always infer x so the online action remains available
         # during replay warm-up.  Algorithm 3 forms the training batch B only
@@ -1491,13 +1796,15 @@ class EAMAdapter(_AdapterDiagnostics):
             # Variable-length navigation memories make a physical tensor batch
             # impractical, so old entries are forwarded separately.  This is
             # numerically the same mini-batch in eval mode.
-            source_batch, aux_batch = [], []
+            source_batch, aux_batch, valid_mask_batch = [], [], []
             for entry in replay_entries:
                 if entry is current_entry:
                     # B_h may contain x because sampling uses the updated M.
                     # Reuse the deterministic forward while retaining x twice.
                     source_replay = source_current
                     aux_replay = aux_current
+                    replay_count = pending_valid_action_count
+                    replay_mask = pending_valid_action_mask
                     self.current_replay_duplicates += 1
                 else:
                     replay_inputs = _tree_to_device(
@@ -1505,21 +1812,36 @@ class EAMAdapter(_AdapterDiagnostics):
                     )
                     source_replay = self._forward_source(replay_inputs)
                     aux_replay = self._forward_aux(replay_inputs)
+                    replay_count = entry.get("valid_action_count")
+                    replay_mask = entry.get("valid_action_mask")
                 source_batch.append(source_replay)
                 aux_batch.append(aux_replay)
+                valid_mask_batch.append(self._valid_action_mask(
+                    source_replay,
+                    valid_action_count=replay_count,
+                    valid_action_mask=replay_mask,
+                ))
 
             # The explicit current x is the last element of B = B_h union x.
             source_batch.append(source_current)
             aux_batch.append(aux_current)
+            current_valid_mask = self._valid_action_mask(
+                source_current,
+                valid_action_count=pending_valid_action_count,
+                valid_action_mask=pending_valid_action_mask,
+            )
+            valid_mask_batch.append(current_valid_mask)
 
             # Candidate navigation sets are variable-length in VLN.  Keep B as
             # a logical list and evaluate each row in its own action space.
             combined_batch, use_aux_batch = [], []
-            for source_decision, auxiliary_decision in zip(
-                source_batch, aux_batch
+            for source_decision, auxiliary_decision, decision_valid_mask in zip(
+                source_batch, aux_batch, valid_mask_batch
             ):
                 combined_decision, use_aux = self._combine(
-                    source_decision, auxiliary_decision
+                    source_decision,
+                    auxiliary_decision,
+                    valid_action_mask=decision_valid_mask,
                 )
                 combined_batch.append(combined_decision)
                 use_aux_batch.append(use_aux)
@@ -1528,18 +1850,39 @@ class EAMAdapter(_AdapterDiagnostics):
         else:
             # Warm-up is inference-only: do not represent x as a one-item
             # replay batch, because adapt() must not treat it as trainable B.
+            current_valid_mask = self._valid_action_mask(
+                source_current,
+                valid_action_count=pending_valid_action_count,
+                valid_action_mask=pending_valid_action_mask,
+            )
             combined_current, current_use_aux = self._combine(
-                source_current, aux_current
+                source_current,
+                aux_current,
+                valid_action_mask=current_valid_mask,
             )
             source_batch = None
             aux_batch = None
             combined_batch = None
             use_aux_batch = None
+            valid_mask_batch = None
 
         self.aux_used_steps += int(current_use_aux.sum().item())
-        threshold = self._threshold(source_current.shape[-1])
-        source_reliable = softmax_entropy(source_current) < threshold
+        current_valid_counts = current_valid_mask.sum(dim=-1)
+        threshold = self._threshold(current_valid_counts)
+        source_reliable = (
+            self._masked_entropy(source_current, current_valid_mask) < threshold
+        )
         self.source_confident_steps += int(source_reliable.sum().item())
+        if (
+            pending_valid_action_count is not None
+            or pending_valid_action_mask is not None
+        ):
+            self.valid_action_metadata_steps += 1
+        else:
+            self.valid_action_fallback_steps += 1
+        self.masked_invalid_action_slots += int(
+            (~current_valid_mask).sum().item()
+        )
         if current_entry is not None:
             # The paper describes memory units as observations plus action
             # decisions.  These snapshots are diagnostic/reconstructive only;
@@ -1555,13 +1898,24 @@ class EAMAdapter(_AdapterDiagnostics):
             "aux_batch": aux_batch,
             "combined_batch": combined_batch,
             "use_aux": use_aux_batch,
+            "valid_action_masks": valid_mask_batch,
         }
-        self._record_loss(softmax_entropy(combined_current).mean())
+        self._record_loss(
+            self._masked_entropy(combined_current, current_valid_mask).mean()
+        )
         return combined_current
 
-    def _reservoir_add(self, policy_inputs, action=None):
+    def _reservoir_add(
+        self,
+        policy_inputs,
+        action=None,
+        valid_action_count=None,
+        valid_action_mask=None,
+    ):
         entry = {
             "policy_inputs": _tree_to_cpu(policy_inputs),
+            "valid_action_count": _tree_to_cpu(valid_action_count),
+            "valid_action_mask": _tree_to_cpu(valid_action_mask),
             "source_decision": None,
             "auxiliary_decision": None,
             "final_decision": None,
@@ -1599,6 +1953,7 @@ class EAMAdapter(_AdapterDiagnostics):
             aux_batch = cached["aux_batch"]
             combined_batch = cached["combined_batch"]
             use_aux_batch = cached["use_aux"]
+            valid_mask_batch = cached["valid_action_masks"]
             self.update_attempt_count += 1
             self.replayed_step_count += sum(
                 int(decision.shape[0]) for decision in source_batch
@@ -1608,16 +1963,33 @@ class EAMAdapter(_AdapterDiagnostics):
             )
             reliable_losses = []
             reliable_count = 0
-            for source_decision, auxiliary_decision, combined_decision in zip(
-                source_batch, aux_batch, combined_batch
+            for (
+                source_decision,
+                auxiliary_decision,
+                combined_decision,
+                decision_valid_mask,
+            ) in zip(
+                source_batch, aux_batch, combined_batch, valid_mask_batch
             ):
-                threshold = self._threshold(source_decision.shape[-1])
-                reliable = softmax_entropy(source_decision) < threshold
+                threshold = self._threshold(decision_valid_mask.sum(dim=-1))
+                reliable = (
+                    self._masked_entropy(
+                        source_decision, decision_valid_mask
+                    ) < threshold
+                )
                 if not bool(reliable.any()):
                     continue
                 pseudo = combined_decision.detach().argmax(dim=-1)
+                masked_auxiliary = auxiliary_decision.masked_fill(
+                    ~decision_valid_mask,
+                    torch.finfo(auxiliary_decision.dtype).min,
+                )
+                flat_reliable = reliable.reshape(-1)
                 reliable_losses.append(F.cross_entropy(
-                    auxiliary_decision[reliable], pseudo[reliable],
+                    masked_auxiliary.reshape(
+                        -1, masked_auxiliary.shape[-1]
+                    )[flat_reliable],
+                    pseudo.reshape(-1)[flat_reliable],
                     reduction="sum",
                 ))
                 reliable_count += int(reliable.sum().item())
@@ -1665,6 +2037,9 @@ class EAMAdapter(_AdapterDiagnostics):
         self.replay_aux_used_steps = 0
         self.current_replay_duplicates = 0
         self.warmup_no_update_steps = 0
+        self.valid_action_metadata_steps = 0
+        self.valid_action_fallback_steps = 0
+        self.masked_invalid_action_slots = 0
         self.current_only_batches = 0
         self.train_loss_sum = 0.0
         self.last_train_loss = 0.0
@@ -1729,6 +2104,15 @@ class EAMAdapter(_AdapterDiagnostics):
             "update_interval": self.update_interval,
             "update_interval_unit": "action_step",
             "loss_reduction": "mean_over_reliable_replay_steps",
+            "reliability_action_space": (
+                "per_sample_valid_action_count_or_mask"
+            ),
+            "valid_action_api": (
+                "valid_action_count_or_valid_action_mask"
+            ),
+            "valid_action_metadata_steps": self.valid_action_metadata_steps,
+            "valid_action_fallback_steps": self.valid_action_fallback_steps,
+            "masked_invalid_action_slots": self.masked_invalid_action_slots,
         })
         if self.zero_update_audit:
             before = self.audit_model_states_before_sha256 or {}
@@ -1787,12 +2171,21 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         optimizer_eps=1e-5,
         max_grad_norm=0.0,
         action_selection_protocol="sample_from_policy",
+        sgr_mode="paper_main",
     ):
         self.model = model
         self.base_lr = float(lr)
         self.reversal_probability = float(reversal_probability)
         self.reversal_scale = float(reversal_scale)
         self.sgr_seed = int(sgr_seed)
+        self.sgr_mode = str(sgr_mode).lower()
+        valid_sgr_modes = ("paper_main", "appendix_b1")
+        if self.sgr_mode not in valid_sgr_modes:
+            raise ValueError(
+                "Unknown FEEDTTA.SGR_MODE {!r}; expected one of {}".format(
+                    sgr_mode, valid_sgr_modes
+                )
+            )
         self.gamma = float(gamma)
         self.normalize_gradient = bool(normalize_gradient)
         self.action_selection_protocol = str(action_selection_protocol)
@@ -1811,8 +2204,14 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             raise ValueError("FEEDTTA reversal probability must be in [0, 1)")
         if not math.isfinite(self.reversal_scale):
             raise ValueError("FEEDTTA reversal scale must be finite")
+        if not math.isfinite(self.base_lr) or self.base_lr <= 0.0:
+            raise ValueError("FEEDTTA learning rate must be finite and positive")
         if not math.isfinite(self.gamma) or not 0.0 <= self.gamma <= 1.0:
             raise ValueError("FEEDTTA gamma must be finite and in [0, 1]")
+        if not math.isfinite(self.max_grad_norm) or self.max_grad_norm < 0.0:
+            raise ValueError(
+                "FEEDTTA max grad norm must be finite and nonnegative"
+            )
         denominator = (
             self.reversal_scale * self.reversal_probability
             + (1.0 - self.reversal_probability)
@@ -1949,14 +2348,22 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.last_sgr_selected_fraction = selected_count / max(1, dimension_count)
         self.sgr_selected_dimensions += selected_count
         self.sgr_sampled_dimensions += dimension_count
-        # This follows main-text Eq. (5): only the non-selected coordinates
-        # receive the denominator. Appendix B.1 describes a different fully
-        # normalized variant; that paper ambiguity is intentionally not mixed
-        # into the canonical implementation.
-        return torch.where(
+        transformed = torch.where(
             selected,
             self.reversal_scale * grad,
-            grad / self._sgr_denominator,
+            grad,
+        )
+        if self.sgr_mode == "appendix_b1":
+            # Appendix B.1 derives expectation preservation by normalizing the
+            # complete masked gradient, including selected coordinates.
+            return transformed / self._sgr_denominator
+        # Canonical paper-main mode follows Eq. (5), where only unselected
+        # coordinates receive the denominator.  It is deliberately explicit
+        # because this formula is not the unbiased appendix transformation.
+        return torch.where(
+            selected,
+            transformed,
+            transformed / self._sgr_denominator,
         )
 
     def reset(self):
@@ -1995,8 +2402,9 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
         self.failed_episodes += int(not success)
         if self._trajectory_gradient is None:
             return
-        # Optimizer performs descent on NLL. Success reinforces the sampled
-        # trajectory; failure applies the opposite direction.
+        # Optimizer performs descent on NLL. Success reinforces the executed
+        # trajectory; failure applies the opposite direction. The task glue
+        # records whether that trajectory was sampled or selected by argmax.
         grad = self._aggregate_trajectory()
         grad = grad if success else -grad
         grad = self._apply_sgr(grad)
@@ -2030,7 +2438,13 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             "sgr_seed": self.sgr_seed,
             "sgr_rng": "dedicated_torch_generator",
             "sgr_denominator": self._sgr_denominator,
-            "sgr_rule": "main_text_eq5_unselected_coordinates_scaled",
+            "sgr_mode": self.sgr_mode,
+            "sgr_rule": (
+                "main_text_eq5_unselected_coordinates_scaled"
+                if self.sgr_mode == "paper_main"
+                else "appendix_b1_all_coordinates_scaled"
+            ),
+            "sgr_expectation_preserving": self.sgr_mode == "appendix_b1",
             "regularizer_variant": self.regularizer_variant,
             "last_sgr_selected_dimensions": self.last_sgr_selected_dimensions,
             "last_sgr_selected_fraction": self.last_sgr_selected_fraction,
@@ -2137,7 +2551,29 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.episodic = False
         self.max_grad_norm = float(max_grad_norm)
         self.param_scope = str(scope).lower()
+        if forward_policy is not None and not callable(forward_policy):
+            raise TypeError("ATENA forward_policy must be callable")
         self.forward_policy_callback = forward_policy
+
+        named_parameters = list(self.model.named_parameters())
+        noncritic_parameters = [
+            (name, param) for name, param in named_parameters
+            if not name.startswith("critic.")
+        ]
+        critic_parameters = [
+            (name, param) for name, param in named_parameters
+            if name.startswith("critic.")
+        ]
+        self.policy_parameter_count = sum(
+            param.numel() for _, param in noncritic_parameters
+        )
+        self.preexisting_frozen_policy_parameter_count = sum(
+            param.numel() for _, param in noncritic_parameters
+            if not param.requires_grad
+        )
+        self.excluded_top_level_critic_parameter_count = sum(
+            param.numel() for _, param in critic_parameters
+        )
 
         if self.param_scope == "all":
             # Match the official implementation's optimizer over the complete
@@ -2154,6 +2590,14 @@ class ATENAAdapter(_AdapterDiagnostics):
                 raise ValueError("ATENA found no trainable policy parameters")
             self.names = [name for name, _ in selected]
             self.params = [param for _, param in selected]
+            if self.preexisting_frozen_policy_parameter_count:
+                logging.warning(
+                    "ATENA scope='all' can only update pre-existing trainable "
+                    "non-critic parameters; %d frozen policy scalars require "
+                    "task-level trainability wiring before replay reachability "
+                    "can be verified",
+                    self.preexisting_frozen_policy_parameter_count,
+                )
         else:
             # Retained only for explicitly named parameter-efficient ablations.
             self.params, self.names = configure_tta_model(
@@ -2203,10 +2647,28 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.query_gate_evaluation_count = 0
         self.self_prediction_evaluation_count = 0
         self.replayed_step_count = 0
+        # ``scope='all'`` is only a candidate scope until a real task replay
+        # callback has been differentiated.  Task models often expose modules
+        # (for example pretraining/object heads) that are not on the deployed
+        # navigation path.  They must never be silently placed in ATENA's
+        # episode optimizer.
+        self.replay_reachability_preflight_performed = False
+        self.replay_reachability_validated = False
+        self.replay_reachability_validation_result = "not_run"
+        self.replay_reachability_candidate_names = list(self.names)
+        self.replay_reachable_parameter_names = []
+        self.replay_unreachable_parameter_names = []
+        self.replay_determinism_validated_episodes = 0
         self._init_diagnostics()
 
     def _ensure_head(self, feature_dim, device, dtype):
         if self.self_prediction_head is not None:
+            expected = int(self.self_prediction_head[0].in_features)
+            if int(feature_dim) != expected:
+                raise ValueError(
+                    "ATENA policy feature dimension changed from {} to {}"
+                    .format(expected, int(feature_dim))
+                )
             return
         feature_dim = int(feature_dim)
         self.self_prediction_head = nn.Sequential(
@@ -2234,6 +2696,14 @@ class ATENAAdapter(_AdapterDiagnostics):
     def _build_episode_optimizer(self, lr):
         # The official code constructs a fresh AdamW after each episode, so no
         # optimizer moments are shared between queried and self-labelled data.
+        if (
+            not self.replay_reachability_validated
+            or self.names != self.replay_reachable_parameter_names
+        ):
+            raise RuntimeError(
+                "ATENA refuses to construct an optimizer before replay "
+                "reachability is validated"
+            )
         parameters = self.params + list(self.self_prediction_head.parameters())
         return _make_optimizer(
             parameters,
@@ -2281,6 +2751,113 @@ class ATENAAdapter(_AdapterDiagnostics):
             )
         return features, logits
 
+    @torch.enable_grad()
+    def _preflight_replay_reachability(self, policy_inputs):
+        """Bind the optimizer scope to the real replay computation graph.
+
+        This runs exactly once, on the first real navigation input, before an
+        episode optimizer exists.  Both callback outputs are differentiated:
+        logits carry ATENA's mixture-entropy loss and features carry the
+        auxiliary self-prediction loss.  A non-critic candidate is retained
+        only when at least one of those outputs is connected to it.
+        """
+        if self.replay_reachability_preflight_performed:
+            if not self.replay_reachability_validated:
+                raise RuntimeError("ATENA replay reachability preflight failed")
+            return
+        if self.optimizer is not None or self.action_steps or self.update_count:
+            raise RuntimeError(
+                "ATENA replay reachability must be verified before adaptation"
+            )
+
+        candidate_params = list(self.params)
+        candidate_names = list(self.names)
+        if not candidate_params:
+            raise RuntimeError("ATENA has no replay reachability candidates")
+        if any(not parameter.requires_grad for parameter in candidate_params):
+            raise RuntimeError(
+                "ATENA replay reachability candidates must require gradients"
+            )
+
+        self.replay_reachability_validation_result = "running"
+        try:
+            replay_inputs = _tree_to_device(
+                policy_inputs, candidate_params[0].device
+            )
+            replay_features, replay_logits = self._forward_policy(
+                self.model, replay_inputs
+            )
+            # Use both true callback outputs. Replacing masked non-finite
+            # logits keeps the scalar finite without changing connectivity.
+            objective = replay_features.float().sum()
+            finite_logits = torch.where(
+                torch.isfinite(replay_logits),
+                replay_logits,
+                torch.zeros_like(replay_logits),
+            )
+            objective = objective + finite_logits.float().sum()
+            if not objective.requires_grad:
+                raise RuntimeError(
+                    "ATENA replay callback outputs are detached from every "
+                    "candidate policy parameter"
+                )
+            # None, rather than numerical magnitude, is the structural
+            # reachability test; locally zero gradients remain valid.
+            gradients = torch.autograd.grad(
+                objective,
+                candidate_params,
+                allow_unused=True,
+            )
+        except Exception:
+            self.replay_reachability_preflight_performed = True
+            self.replay_reachability_validation_result = "failed"
+            raise
+        reachable = [
+            (name, parameter)
+            for name, parameter, gradient in zip(
+                candidate_names, candidate_params, gradients
+            )
+            if gradient is not None
+        ]
+        unreachable = [
+            (name, parameter)
+            for name, parameter, gradient in zip(
+                candidate_names, candidate_params, gradients
+            )
+            if gradient is None
+        ]
+        self.replay_reachability_preflight_performed = True
+        self.replay_reachable_parameter_names = [
+            name for name, _ in reachable
+        ]
+        self.replay_unreachable_parameter_names = [
+            name for name, _ in unreachable
+        ]
+        if not reachable:
+            self.replay_reachability_validation_result = "failed"
+            raise RuntimeError(
+                "ATENA replay callback reaches no non-critic policy parameter"
+            )
+
+        # This changes autograd bookkeeping only; no parameter value and no
+        # optimizer state is written during the preflight.
+        for _, parameter in unreachable:
+            parameter.requires_grad_(False)
+            parameter.grad = None
+        self.names = [name for name, _ in reachable]
+        self.params = [parameter for _, parameter in reachable]
+        self._source_flat = _flatten_params(self.params).clone()
+        if self.zero_update_audit:
+            # Audit mode is enabled at adapter construction time, before task
+            # inputs exist. Rebind its parameter digest to the now-validated
+            # effective optimizer scope; the complete model digest is unchanged.
+            self.audit_parameter_state_before_sha256 = (
+                _parameter_state_sha256(self.params, self.names)
+            )
+            self.audit_parameter_state_after_sha256 = None
+        self.replay_reachability_validated = True
+        self.replay_reachability_validation_result = "passed"
+
     def _mixture_entropy(self, logits, action):
         probs = logits.softmax(dim=-1)
         one_hot = F.one_hot(
@@ -2315,6 +2892,7 @@ class ATENAAdapter(_AdapterDiagnostics):
                 "ATENA requires executed actions, policy features, and "
                 "policy_inputs for exact episode-end gradient replay"
             )
+        self._preflight_replay_reachability(policy_inputs)
         self.action_dim = int(logits.shape[-1])
         self._ensure_head(features.shape[-1], features.device, features.dtype)
         pseudo_action = logits.detach().argmax(dim=-1)
@@ -2380,9 +2958,14 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.query_gate_evaluation_count = 0
         self.self_prediction_evaluation_count = 0
         self.replayed_step_count = 0
+        self.replay_determinism_validated_episodes = 0
         self._init_diagnostics()
 
     def episode_start(self):
+        if self.trajectory:
+            raise RuntimeError(
+                "ATENA episode_start called before the previous episode ended"
+            )
         self.trajectory = []
         self.trajectory_mixture_entropies = []
         self.trajectory_features = []
@@ -2497,6 +3080,7 @@ class ATENAAdapter(_AdapterDiagnostics):
                         "ATENA episode replay is not deterministic "
                         "(feature max abs error {:.6g})".format(replay_error)
                     )
+                self.replay_determinism_validated_episodes += 1
 
         self._install_accumulated_gradients(
             self.params, accumulated, gradient_seen
@@ -2528,6 +3112,10 @@ class ATENAAdapter(_AdapterDiagnostics):
 
     def diagnostics(self):
         output = super().diagnostics()
+        exact_replay_validated = (
+            self.replay_reachability_validated
+            and self.replay_determinism_validated_episodes > 0
+        )
         output.update({
             "queries": self.query_count,
             "query_rate": self.query_count / max(1, self.episode_count),
@@ -2565,6 +3153,67 @@ class ATENAAdapter(_AdapterDiagnostics):
             "lr_self": self.lr_self,
             "self_loss_weight": self.self_loss_weight,
             "param_scope": self.param_scope,
+            "update_scope_semantics": (
+                "preexisting_trainable_noncritic_policy_parameters"
+                if self.param_scope == "all"
+                else "normalization_affine_ablation"
+            ),
+            "policy_parameter_count": self.policy_parameter_count,
+            "preexisting_frozen_policy_parameter_count": (
+                self.preexisting_frozen_policy_parameter_count
+            ),
+            "excluded_top_level_critic_parameter_count": (
+                self.excluded_top_level_critic_parameter_count
+            ),
+            "all_noncritic_parameters_preexisting_trainable": (
+                self.param_scope == "all"
+                and self.preexisting_frozen_policy_parameter_count == 0
+            ),
+            "requires_task_trainability_wiring": (
+                self.param_scope == "all"
+                and self.preexisting_frozen_policy_parameter_count > 0
+            ),
+            # Core can report Python parameter flags, but only task glue knows
+            # whether those tensors are the complete action-policy path used by
+            # its forward callback.
+            "requires_task_policy_scope_verification": (
+                self.param_scope == "all"
+            ),
+            "replay_reachability_preflight_performed": (
+                self.replay_reachability_preflight_performed
+            ),
+            "replay_reachability_validated": (
+                self.replay_reachability_validated
+            ),
+            "replay_reachability_validation_result": (
+                self.replay_reachability_validation_result
+            ),
+            "replay_reachability_candidate_parameter_count": len(
+                self.replay_reachability_candidate_names
+            ),
+            "replay_reachability_candidate_parameter_names": list(
+                self.replay_reachability_candidate_names
+            ),
+            "replay_reachable_parameter_count": len(
+                self.replay_reachable_parameter_names
+            ),
+            "replay_reachable_parameter_names": list(
+                self.replay_reachable_parameter_names
+            ),
+            "replay_unreachable_parameter_count": len(
+                self.replay_unreachable_parameter_names
+            ),
+            "replay_unreachable_parameter_names": list(
+                self.replay_unreachable_parameter_names
+            ),
+            "optimizer_policy_parameter_names": list(self.names),
+            "optimizer_policy_scope_matches_reachable": (
+                self.replay_reachability_validated
+                and self.names == self.replay_reachable_parameter_names
+            ),
+            "replay_determinism_validated_episodes": (
+                self.replay_determinism_validated_episodes
+            ),
             "action_selection": "argmax",
             "feedback": "binary_episode_success_or_self_prediction",
             "adapted_parameter_count": sum(
@@ -2588,7 +3237,18 @@ class ATENAAdapter(_AdapterDiagnostics):
                 if self.optimizer is not None else self._optimizer_args["name"]
             ),
             "retains_episode_graph": False,
-            "gradient_reconstruction": "exact_step_replay_in_eval_mode",
+            "exact_episode_replay_enabled": exact_replay_validated,
+            "exact_episode_replay_validated": exact_replay_validated,
+            "gradient_reconstruction": (
+                "exact_step_replay_in_eval_mode"
+                if exact_replay_validated else
+                "pending_reachability_and_determinism_validation"
+            ),
+            "replay_determinism_validation": (
+                "first_step_feature_max_abs_error_le_1e-5"
+                if self.replay_determinism_validated_episodes > 0 else
+                "pending"
+            ),
             "max_trajectory_steps": self.max_trajectory_steps,
             "last_trajectory_storage_bytes": self.last_trajectory_storage_bytes,
             "max_trajectory_storage_bytes": self.max_trajectory_storage_bytes,
@@ -2700,10 +3360,10 @@ def build_adapter(model, tta_cfg, forward_policy=None, fusion_protocol=None):
             M=int(fvalue("M", 3)),
             N=int(fvalue("N", 4)),
             q=float(fvalue("Q", 0.1)),
-            rho=float(fvalue("RHO", 0.9)),
-            tau=float(fvalue("TAU", 0.5)),
-            a=float(fvalue("A", 0.5)),
-            b=float(fvalue("B", 1.5)),
+            rho=float(fvalue("RHO", 0.95)),
+            tau=float(fvalue("TAU", 0.7)),
+            a=float(fvalue("A", 0.9)),
+            b=float(fvalue("B", 1.1)),
             use_slow=bool(fvalue("USE_SLOW", True)),
             fast_grad_mode=str(fvalue("FAST_GRAD_MODE", "concordant")),
             use_fast_lr_scaler=bool(
@@ -2724,7 +3384,7 @@ def build_adapter(model, tta_cfg, forward_policy=None, fusion_protocol=None):
                 fvalue("RESET_OPTIMIZER_EACH_EPISODE", True)
             ),
             reset_var_hist_each_episode=bool(
-                fvalue("RESET_VAR_HIST_EACH_EPISODE", True)
+                fvalue("RESET_VAR_HIST_EACH_EPISODE", False)
             ),
             eigen_eps=float(fvalue("EIGEN_EPS", 1e-6)),
             **common
@@ -2768,6 +3428,7 @@ def build_adapter(model, tta_cfg, forward_policy=None, fusion_protocol=None):
             reversal_probability=float(fdvalue("P", 0.05)),
             reversal_scale=float(fdvalue("ALPHA", -0.2)),
             sgr_seed=int(fdvalue("SGR_SEED", 0)),
+            sgr_mode=str(fdvalue("SGR_MODE", "paper_main")),
             gamma=float(fdvalue("GAMMA", 0.99)),
             normalize_gradient=bool(fdvalue("NORMALIZE_GRADIENT", False)),
             episodic=common["episodic"],

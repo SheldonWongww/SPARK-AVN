@@ -33,6 +33,8 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.AUDIT_EXPECTED_EPISODES = -1
     config.DIAGNOSTICS_FILE = ""
     config.ACTION_SELECTION = "argmax"
+    # Explicit sampling control for the paper-protocol ablation only.  Formal
+    # VLN reproduction keeps both FeedTTA and Source on native argmax.
     config.MATCHED_FEEDTTA_SOURCE = False
     config.ACTION_SEED = 0
     config.EPISODIC = False
@@ -56,10 +58,10 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FSTTA.N = 4
     config.FSTTA.Q = 0.1
     config.FSTTA.LR_SLOW = 1e-4
-    config.FSTTA.RHO = 0.9
-    config.FSTTA.TAU = 0.5
-    config.FSTTA.A = 0.5
-    config.FSTTA.B = 1.5
+    config.FSTTA.RHO = 0.95
+    config.FSTTA.TAU = 0.7
+    config.FSTTA.A = 0.9
+    config.FSTTA.B = 1.1
     config.FSTTA.USE_SLOW = True
     config.FSTTA.FAST_GRAD_MODE = "concordant"
     config.FSTTA.USE_FAST_LR_SCALER = True
@@ -70,7 +72,9 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FSTTA.SLOW_OPTIMIZER = ""
     config.FSTTA.SLOW_MOMENTUM = -1.0
     config.FSTTA.RESET_OPTIMIZER_EACH_EPISODE = True
-    config.FSTTA.RESET_VAR_HIST_EACH_EPISODE = True
+    # Paper Eq. (6) maintains historical variance over the test stream.
+    # True is retained only as a released-code rollout-reset ablation.
+    config.FSTTA.RESET_VAR_HIST_EACH_EPISODE = False
     config.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW = False
     config.FSTTA.EIGEN_EPS = 1e-6
 
@@ -94,13 +98,14 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.FEEDTTA.P = 0.05
     config.FEEDTTA.ALPHA = -0.2
     config.FEEDTTA.SGR_SEED = 0
+    config.FEEDTTA.SGR_MODE = "paper_main"
     config.FEEDTTA.GAMMA = 0.99
     config.FEEDTTA.NORMALIZE_GRADIENT = False
     config.FEEDTTA.PARAM_SCOPE = "module_prefixes"
     config.FEEDTTA.TRAINABLE_PREFIXES = list(trainable_prefixes)
-    # Preserve the pre-profile scope unless a job explicitly selects one of
-    # the paper-aligned model-aware profiles below.
-    config.FEEDTTA.SCOPE_PROFILE = "configured_prefixes"
+    # The paper-aligned FeedTTA scope adapts the full cross-modal decision
+    # stack. Narrower profiles remain explicitly labelled port ablations.
+    config.FEEDTTA.SCOPE_PROFILE = "paper_full"
     config.FEEDTTA.OPTIMIZER = "Adam"
     config.FEEDTTA.BETA1 = 0.9
     config.FEEDTTA.BETA2 = 0.999
@@ -115,6 +120,9 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.ATENA.QUERY_THRESHOLD = 0.1
     config.ATENA.SELF_LOSS_WEIGHT = 0.1
     config.ATENA.PARAM_SCOPE = "all"
+    config.ATENA.TASK_UPDATE_SCOPE = (
+        "replay_reachable_high_level_navigation"
+    )
     config.ATENA.OPTIMIZER = "AdamW"
     config.ATENA.BETA1 = 0.9
     config.ATENA.BETA2 = 0.999
@@ -140,7 +148,16 @@ def make_continuous_tta_config(CN, trainable_prefixes):
     config.IDEA.SEED = 0
     # 0 aligns every fusion layer; ETPNav/BEVBert default to num_x_layers=4.
     config.IDEA.PROMPT_LAYERS = 0
-    config.IDEA.SOURCE_WARMUP_STEPS = 64
+    config.IDEA.SOURCE_STATS_PATH = ""
+    config.IDEA.SOURCE_STATS_SHA256 = ""
+    config.IDEA.SOURCE_TRAJECTORIES = 128
+    config.IDEA.COLLECT_SOURCE_STATS = False
+    config.IDEA.SOURCE_STATS_OUTPUT = ""
+    config.IDEA.SOURCE_CHECKPOINT_SHA256 = ""
+    config.IDEA.SOURCE_DATASET = ""
+    config.IDEA.SOURCE_DATASET_VERSION = ""
+    config.IDEA.SOURCE_SPLIT = "train"
+    config.IDEA.COLLECTION_POLICY = ""
     return config
 
 
@@ -320,12 +337,25 @@ class ContinuousVLNTTA:
             raise ValueError(
                 "TTA.ACTION_SELECTION must be argmax, sample, or matched_sample"
             )
-        matched_source = bool(
+        declared_matched_source = bool(
             getattr(tta_cfg, "MATCHED_FEEDTTA_SOURCE", False)
         )
+        if declared_matched_source and self.method != "source":
+            raise ValueError(
+                "TTA.MATCHED_FEEDTTA_SOURCE is valid only for method=source"
+            )
+        if declared_matched_source and requested_selection == "argmax":
+            raise ValueError(
+                "a matched FeedTTA Source control must use policy sampling"
+            )
         self.sample_actions = requested_selection in ("sample", "matched_sample")
-        if self.method == "source" and matched_source:
+        if self.method == "source" and declared_matched_source:
             self.sample_actions = True
+        # Normalize legacy ``Source + sample`` configs to the explicit matched
+        # control identity without changing their action behavior.
+        self.matched_feedtta_source = bool(
+            self.method == "source" and self.sample_actions
+        )
         if (
             requested_selection != "argmax"
             and self.method not in ("source", "feedtta")
@@ -348,6 +378,10 @@ class ContinuousVLNTTA:
 
         adapter_cfg = tta_cfg
         self.feedtta_scope_profile = None
+        self.feedtta_sgr_mode = None
+        self.feedtta_native_action_protocol = False
+        self.feedtta_paper_sampling_protocol = False
+        self.feedtta_canonical_protocol = False
         self.trainable_prefixes = ()
         if self.method == "feedtta":
             (
@@ -357,7 +391,38 @@ class ContinuousVLNTTA:
             ) = _adapter_config_with_feedtta_scope(
                 tta_cfg, decision_model, self.variant
             )
+            self.feedtta_sgr_mode = str(
+                getattr(feed_cfg, "SGR_MODE", "paper_main")
+            ).lower()
+            self.feedtta_native_action_protocol = not self.sample_actions
+            self.feedtta_paper_sampling_protocol = self.sample_actions
+            # Backward-compatible field: canonical means the paper's on-policy
+            # sampling action protocol, never the task-adapted VLN argmax port.
+            self.feedtta_canonical_protocol = (
+                self.feedtta_paper_sampling_protocol
+            )
+        self.atena_update_scope = None
+        if self.method == "atena":
+            atena_cfg = getattr(tta_cfg, "ATENA", None)
+            self.atena_update_scope = str(getattr(
+                atena_cfg,
+                "TASK_UPDATE_SCOPE",
+                "replay_reachable_high_level_navigation",
+            )).lower()
+            if self.atena_update_scope != (
+                "replay_reachable_high_level_navigation"
+            ):
+                raise ValueError(
+                    "VLN-CE ATENA can replay only the high-level waypoint "
+                    "decision model; full_policy is not a valid claim"
+                )
+            # Treat these as candidates. The first real replay callback
+            # differentiates its features/logits and removes unreachable
+            # parameters before any episode optimizer is constructed.
+            for parameter in decision_model.parameters():
+                parameter.requires_grad_(True)
         fusion_protocol = None
+        self.idea_source_collection = None
         if self.method == "idea":
             # IDEA injects a soft prompt into the frozen cross-modal fusion
             # branch that produces this variant's waypoint logits.
@@ -365,19 +430,93 @@ class ContinuousVLNTTA:
 
             idea_cfg = getattr(tta_cfg, "IDEA", None)
             prompt_layers = int(getattr(idea_cfg, "PROMPT_LAYERS", 0))
+            collect_source = bool(
+                getattr(idea_cfg, "COLLECT_SOURCE_STATS", False)
+            )
+            if collect_source and (
+                not self.stream_name
+                or "train" not in str(self.stream_name).lower()
+            ):
+                raise ValueError(
+                    "IDEA source statistics can only be collected on a "
+                    "source-training stream"
+                )
             fusion_protocol = ContinuousIDEAProtocol(
                 decision_model,
                 self._forward_policy,
                 self.variant,
                 num_layers=(prompt_layers if prompt_layers > 0 else None),
-                warmup_steps=int(getattr(idea_cfg, "SOURCE_WARMUP_STEPS", 64)),
+                source_stats_path=(None if collect_source else (
+                    getattr(idea_cfg, "SOURCE_STATS_PATH", "") or None
+                )),
+                source_stats_sha256=(None if collect_source else (
+                    getattr(idea_cfg, "SOURCE_STATS_SHA256", "") or None
+                )),
+                expected_source_trajectories=int(
+                    getattr(idea_cfg, "SOURCE_TRAJECTORIES", 128)
+                ),
+                expected_source_provenance=(
+                    None if collect_source else {
+                        "model": self.variant,
+                        "setting": "{}-r2r-ce".format(self.variant),
+                        "collection_policy": "frozen_source_argmax_rollout",
+                    }
+                ),
+                source_collection=collect_source,
             )
-        self.adapter = build_adapter(
-            decision_model,
-            adapter_cfg,
-            forward_policy=self._forward_policy,
-            fusion_protocol=fusion_protocol,
+            if collect_source:
+                from navtta_core.tta import SourceStatisticsCollectionSession
+
+                if self.sample_actions:
+                    raise ValueError(
+                        "VLN IDEA source collection requires native argmax actions"
+                    )
+                collection_policy = getattr(
+                    idea_cfg, "COLLECTION_POLICY", ""
+                )
+                if collection_policy != "frozen_source_argmax_rollout":
+                    raise ValueError(
+                        "VLN IDEA source collection requires "
+                        "collection_policy=frozen_source_argmax_rollout"
+                    )
+                self.model.eval()
+                self.model.requires_grad_(False)
+                self.idea_source_collection = SourceStatisticsCollectionSession(
+                    fusion_protocol,
+                    getattr(idea_cfg, "SOURCE_STATS_OUTPUT", ""),
+                    {
+                        "checkpoint_sha256": getattr(
+                            idea_cfg, "SOURCE_CHECKPOINT_SHA256", ""
+                        ),
+                        "dataset": getattr(idea_cfg, "SOURCE_DATASET", ""),
+                        "dataset_version": getattr(
+                            idea_cfg, "SOURCE_DATASET_VERSION", ""
+                        ),
+                        "split": getattr(idea_cfg, "SOURCE_SPLIT", "train"),
+                        "collection_policy": collection_policy,
+                        "model": self.variant,
+                        "setting": "{}-r2r-ce".format(self.variant),
+                    },
+                    expected_trajectory_count=int(
+                        getattr(idea_cfg, "SOURCE_TRAJECTORIES", 128)
+                    ),
+                )
+        self.adapter = (
+            None if self.idea_source_collection is not None else
+            build_adapter(
+                decision_model,
+                adapter_cfg,
+                forward_policy=self._forward_policy,
+                fusion_protocol=fusion_protocol,
+            )
         )
+        if self.method == "atena" and self.adapter.diagnostics().get(
+            "requires_task_trainability_wiring", False
+        ):
+            raise RuntimeError(
+                "ATENA high-level navigation parameters are not all "
+                "trainable after task-level wiring"
+            )
         if self.method == "feedtta":
             self.adapter.action_selection_protocol = (
                 "sample_from_policy"
@@ -432,7 +571,7 @@ class ContinuousVLNTTA:
         features, logits, _ = self._compact_decision(outputs)
         return features, logits
 
-    def begin_episode(self):
+    def begin_episode(self, trajectory_id=None):
         if self._episode_open:
             raise RuntimeError("TTA episode_start called twice")
         if self.sample_actions:
@@ -442,6 +581,10 @@ class ContinuousVLNTTA:
             self._action_generator.manual_seed(episode_seed)
         if self.adapter is not None:
             self.adapter.episode_start()
+        if self.idea_source_collection is not None:
+            if trajectory_id is None:
+                raise ValueError("IDEA source collection requires an episode id")
+            self.idea_source_collection.begin_trajectory(trajectory_id)
         self._trajectory_hasher.update(
             "episode:{}\0".format(self.episode_count).encode("ascii")
         )
@@ -486,8 +629,15 @@ class ContinuousVLNTTA:
                     source_logits,
                     features=features,
                     policy_inputs=nav_inputs,
+                    **(
+                        {"valid_action_count": int(source_logits.shape[-1])}
+                        if self.method == "eam" else {}
+                    ),
                 )
             )
+            if self.idea_source_collection is not None:
+                self.idea_source_collection.observe_step(nav_inputs)
+                action_logits = source_logits
 
         if action_logits.shape != source_logits.shape:
             raise RuntimeError(
@@ -535,6 +685,8 @@ class ContinuousVLNTTA:
             raise RuntimeError("TTA episode_end called without episode_start")
         if self.adapter is not None:
             self.adapter.episode_end(episode_stats=episode_stats)
+        if self.idea_source_collection is not None:
+            self.idea_source_collection.end_trajectory()
         self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
         self.episode_count += 1
@@ -565,7 +717,23 @@ class ContinuousVLNTTA:
                     == self.model_state_before_sha256
                 ),
             }
-        return {
+        adapter_diagnostics = (
+            source_control if self.adapter is None else
+            self.adapter.diagnostics()
+        )
+        atena_reachability_validated = (
+            self.method == "atena"
+            and adapter_diagnostics.get(
+                "replay_reachability_validated"
+            ) is True
+        )
+        atena_replay_validated = (
+            atena_reachability_validated
+            and int(adapter_diagnostics.get(
+                "replay_determinism_validated_episodes", 0
+            )) > 0
+        )
+        output = {
             "schema": "navtta.vln_ce_tta.v1",
             "baseline": self.variant,
             "method": self.method,
@@ -596,8 +764,93 @@ class ContinuousVLNTTA:
                 "binary_episode_success" if self.feedback_supervised else "none"
             ),
             "feedtta_scope_profile": self.feedtta_scope_profile,
+            "feedtta_sgr_mode": self.feedtta_sgr_mode,
+            "feedtta_protocol": (
+                "task_adapted_target_native_argmax"
+                if self.feedtta_native_action_protocol else (
+                    "paper_policy_sampling_ablation"
+                    if self.method == "feedtta" else None
+                )
+            ),
+            "feedtta_native_action_protocol": (
+                self.feedtta_native_action_protocol
+                if self.method == "feedtta" else None
+            ),
+            "feedtta_paper_sampling_protocol": (
+                self.feedtta_paper_sampling_protocol
+                if self.method == "feedtta" else None
+            ),
+            "feedtta_canonical_protocol": (
+                self.feedtta_canonical_protocol
+                if self.method == "feedtta" else None
+            ),
+            "matched_feedtta_source": (
+                self.matched_feedtta_source
+                if self.method == "source" else False
+            ),
             "trainable_prefixes": list(self.trainable_prefixes),
             "masked_action_entropy": "finite_logits_only",
+            "eam_valid_action_contract": (
+                "compact_logits_all_actions_valid"
+                if self.method == "eam" else None
+            ),
+            "tent_canonical_update_interval": (
+                int(getattr(self.tta_cfg, "UPDATE_INTERVAL", 1)) == 1
+                if self.method == "tent" else None
+            ),
+            "fstta_reset_var_hist_each_episode": (
+                bool(getattr(
+                    getattr(self.tta_cfg, "FSTTA", None),
+                    "RESET_VAR_HIST_EACH_EPISODE",
+                    False,
+                )) if self.method == "fstta" else None
+            ),
+            "fstta_variance_history_profile": (
+                (
+                    "released_code_rollout_reset_ablation"
+                    if bool(getattr(
+                        getattr(self.tta_cfg, "FSTTA", None),
+                        "RESET_VAR_HIST_EACH_EPISODE",
+                        False,
+                    )) else "paper_eq6_test_stream_history"
+                ) if self.method == "fstta" else None
+            ),
+            "atena_update_scope": self.atena_update_scope,
+            "atena_exact_replay_within_declared_scope": (
+                atena_replay_validated if self.method == "atena" else None
+            ),
+            "atena_replay_reachability_validation_result": (
+                adapter_diagnostics.get(
+                    "replay_reachability_validation_result"
+                ) if self.method == "atena" else None
+            ),
+            "atena_replay_reachable_parameter_count": (
+                adapter_diagnostics.get("replay_reachable_parameter_count")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_reachable_parameter_names": (
+                adapter_diagnostics.get("replay_reachable_parameter_names")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_unreachable_parameter_count": (
+                adapter_diagnostics.get("replay_unreachable_parameter_count")
+                if self.method == "atena" else None
+            ),
+            "atena_replay_unreachable_parameter_names": (
+                adapter_diagnostics.get("replay_unreachable_parameter_names")
+                if self.method == "atena" else None
+            ),
+            "atena_optimizer_scope_matches_reachable": (
+                adapter_diagnostics.get(
+                    "optimizer_policy_scope_matches_reachable"
+                ) if self.method == "atena" else None
+            ),
+            "atena_full_end_to_end_policy_claimed": (
+                False if self.method == "atena" else None
+            ),
+            "atena_upstream_feature_extractors_adapted": (
+                False if self.method == "atena" else None
+            ),
             "action_steps": self.action_steps,
             "trajectory_steps": self.trajectory_steps,
             "trajectory_sha256": self._trajectory_hasher.hexdigest(),
@@ -606,11 +859,13 @@ class ContinuousVLNTTA:
             "mean_max_action_probability": (
                 self.max_probability_sum / max(1, self.action_steps)
             ),
-            "adapter": (
-                source_control if self.adapter is None else
-                self.adapter.diagnostics()
-            ),
+            "adapter": adapter_diagnostics,
         }
+        if self.idea_source_collection is not None:
+            output["idea_source_collection"] = (
+                self.idea_source_collection.diagnostics()
+            )
+        return output
 
     def write_diagnostics(self):
         path = Path(self.diagnostics_path)

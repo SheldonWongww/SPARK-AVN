@@ -19,6 +19,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Seque
 
 EPISODE_ORDER_SCHEMA = "navtta.episode_order.v1"
 CANONICAL_SPLIT_ORDER = ("val_seen", "val_unseen", "test")
+SOURCE_COLLECTION_SPLIT = "train"
 CANONICAL_ORDER_POLICY = "scene_id_then_natural_episode_id_v1"
 SEEDED_ORDER_POLICY = "domain_separated_sha256_rank_v1"
 SEEDED_ORDER_ALGORITHM = "sha256_rank_v1"
@@ -220,10 +221,10 @@ def build_episode_order_manifest(
     while ``dataset_sha256`` must describe the exact annotation file consumed
     by the evaluator, including compression when the input is compressed.
     """
-    if split not in CANONICAL_SPLIT_ORDER:
+    if split not in (SOURCE_COLLECTION_SPLIT,) + CANONICAL_SPLIT_ORDER:
         raise ValueError(
-            "Unsupported evaluation split {!r}; expected one of {}".format(
-                split, CANONICAL_SPLIT_ORDER
+            "Unsupported episode split {!r}; expected one of {}".format(
+                split, (SOURCE_COLLECTION_SPLIT,) + CANONICAL_SPLIT_ORDER
             )
         )
     if not re.fullmatch(r"[0-9a-fA-F]{64}", dataset_sha256):
@@ -233,7 +234,10 @@ def build_episode_order_manifest(
         "schema": EPISODE_ORDER_SCHEMA,
         "benchmark": str(benchmark),
         "split": split,
-        "split_ordinal": CANONICAL_SPLIT_ORDER.index(split),
+        "split_ordinal": (
+            -1 if split == SOURCE_COLLECTION_SPLIT
+            else CANONICAL_SPLIT_ORDER.index(split)
+        ),
         "order_policy": CANONICAL_ORDER_POLICY,
         "source_id_field": str(source_id_field),
         "dataset": {
@@ -256,7 +260,7 @@ def validate_episode_order_manifest(
     if manifest.get("schema") != EPISODE_ORDER_SCHEMA:
         raise ValueError("Unsupported episode-order manifest schema")
     split = manifest.get("split")
-    if split not in CANONICAL_SPLIT_ORDER:
+    if split not in (SOURCE_COLLECTION_SPLIT,) + CANONICAL_SPLIT_ORDER:
         raise ValueError("Manifest contains an unsupported split")
     if expected_split is not None and split != expected_split:
         raise ValueError(
@@ -264,7 +268,11 @@ def validate_episode_order_manifest(
                 split, expected_split
             )
         )
-    if manifest.get("split_ordinal") != CANONICAL_SPLIT_ORDER.index(split):
+    expected_ordinal = (
+        -1 if split == SOURCE_COLLECTION_SPLIT
+        else CANONICAL_SPLIT_ORDER.index(split)
+    )
+    if manifest.get("split_ordinal") != expected_ordinal:
         raise ValueError("Manifest split_ordinal is inconsistent")
     order_policy = manifest.get("order_policy")
     if order_policy not in (CANONICAL_ORDER_POLICY, SEEDED_ORDER_POLICY):
@@ -405,7 +413,7 @@ def verify_manifest_dataset(
 
 
 def reorder_episodes(
-    episodes: Sequence[Any], manifest: Mapping[str, Any]
+    episodes: Sequence[Any], manifest: Mapping[str, Any], *, allow_subset=False
 ) -> List[Any]:
     """Return exactly the manifest episodes, in order, with no extras/missing IDs."""
     validate_episode_order_manifest(manifest)
@@ -425,7 +433,7 @@ def reorder_episodes(
             missing.append("{}/{}".format(*key))
         else:
             ordered.append(item)
-    if missing or indexed:
+    if missing or (indexed and not allow_subset):
         extras = ["{}/{}".format(*key) for key in sorted(indexed)]
         raise ValueError(
             "Episode manifest/dataset mismatch; missing=[{}], extra=[{}]".format(
@@ -482,7 +490,7 @@ def select_allowed_episodes_in_order(
 
 
 def configure_exact_episode_env(
-    env: Any, manifest: Mapping[str, Any]
+    env: Any, manifest: Mapping[str, Any], *, allow_subset=False
 ) -> None:
     """Install a manifest order on a simple batched evaluator environment.
 
@@ -501,7 +509,9 @@ def configure_exact_episode_env(
         )
     if not hasattr(env, "data") or not hasattr(env, "reset_epoch"):
         raise ValueError("Environment does not expose the exact-evaluation protocol")
-    ordered_data = reorder_episodes(list(env.data), manifest)
+    ordered_data = reorder_episodes(
+        list(env.data), manifest, allow_subset=allow_subset
+    )
     runtime_manifest = manifest
     smoke_count = os.environ.get("NAVTTA_SMOKE_EPISODES")
     if smoke_count:

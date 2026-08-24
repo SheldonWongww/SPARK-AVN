@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-24T00:00:00+08:00",
+  "scope": "Source-training annotations and train-only MP3D scenes required for offline IDEA source-statistics collection",
+  "path_base": "/root/autodl-tmp/code/NavTTA",
+  "sources": {
+    "duet_assets": {
+      "url": "https://www.dropbox.com/sh/u3lhng7t2gq36td/AABAIdFnJxhhCg2ItpAhMtUBa?dl=0",
+      "upstream_documentation": "vln/baselines/duet/README.md",
+      "revision": null
+    },
+    "goat_assets": {
+      "url": "https://huggingface.co/crystal61/VLN-GOAT",
+      "upstream_documentation": "vln/baselines/goat/readme.md",
+      "revision": "7f63623d928ce8b014ee1837683d4a937fc330e4"
+    },
+    "etpnav_assets": {
+      "url": "https://modelscope.cn/models/admagic/ETPNav/files",
+      "upstream_documentation": "vln/baselines/etpnav/README.md",
+      "revision": "e52100afe12ed22d85aa19baba259c4022b22cb6"
+    },
+    "r2r_vlnce_v1_3": {
+      "url": "https://drive.google.com/file/d/1T9SjqZWyR2PCLSXYkFckfDeIs6Un0Rjm/view",
+      "archive_sha256": "e2a81331524a6ca9a987d014a1affcb3b7174240cfae3647532bbaf68ef18404"
+    },
+    "mp3d_habitat": {
+      "url": "https://kaldir.vc.in.tum.de/matterport/v1/tasks/mp3d_habitat.zip",
+      "archive_sha256": "470948ee78ff4d6dc4c4870395d1e790a0f15c72065d1f62cdd229b2bcbe0d36"
+    }
+  },
+  "assets": [
+    {
+      "id": "duet_hamt_r2r_train_bert",
+      "paths": [
+        "vln/data/duet/R2R/annotations/R2R_train_enc.json",
+        "vln/data/hamt/R2R/annotations/R2R_train_enc.json"
+      ],
+      "source": "duet_assets",
+      "source_member": "R2R/annotations/R2R_train_enc.json",
+      "size": 10502738,
+      "sha256": "8ffdfd5a5c5efeef56af7883ebac28d854a64161f1d0a3d0e52ba75086b726b8",
+      "records": 4675
+    },
+    {
+      "id": "duet_hamt_reverie_train_bert",
+      "paths": [
+        "vln/data/duet/REVERIE/annotations/REVERIE_train_enc.json",
+        "vln/data/hamt/REVERIE/annotations/REVERIE_train_enc.json"
+      ],
+      "source": "duet_assets",
+      "source_member": "REVERIE/annotations/REVERIE_train_enc.json",
+      "size": 5851327,
+      "sha256": "94141a48c1700f7932c28acd0902580fadd3b0e569150ba6609fce5faee3fee8",
+      "records": 4150
+    },
+    {
+      "id": "goat_r2r_train_roberta",
+      "path": "vln/data/goat/R2R/annotations/R2R_train_roberta_enc.json",
+      "source": "goat_assets",
+      "source_member": "R2R/annotations/R2R_train_roberta_enc.json",
+      "size": 7804186,
+      "sha256": "ab10119f3852ab961495d7f3bfd6b12cbac0707dfee24a19fa213127d6ba8b4f",
+      "records": 4675
+    },
+    {
+      "id": "goat_reverie_train_roberta",
+      "path": "vln/data/goat/REVERIE/annotations/REVERIE_train_roberta_enc.json",
+      "source": "goat_assets",
+      "source_member": "REVERIE/annotations/REVERIE_train_roberta_enc.json",
+      "size": 6851021,
+      "sha256": "375b56ab2390597947a0a78f4ed9dbcedc163e097fc663bfcfc5b018fd1aa897",
+      "records": 4150
+    },
+    {
+      "id": "r2r_ce_v1_3_train",
+      "path": "vln/data/datasets/r2r/train/train.json.gz",
+      "source": "r2r_vlnce_v1_3",
+      "source_member": "R2R_VLNCE_v1-3/train/train.json.gz",
+      "size": 1772932,
+      "sha256": "f411066b53f96d1241c045fd05a6a9e01b484c2ed9369f5b6f41806969056a34",
+      "episodes": 10819
+    },
+    {
+      "id": "r2r_ce_v1_2_train_bertidx",
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-2_preprocessed_BERTidx/train/train_bertidx.json.gz",
+      "source": "etpnav_assets",
+      "source_member": "datasets/R2R_VLNCE_v1-2_preprocessed_BERTidx/train/train_bertidx.json.gz",
+      "size": 2500100,
+      "sha256": "b43db098cbf6bdf05fdccd9992b87a9aee58eef5c74adc62d92cfe636baf2f4d",
+      "episodes": 10819
+    },
+    {
+      "id": "r2r_ce_v1_3_train_bertidx",
+      "path": "vln/data/etpnav/datasets/R2R_VLNCE_v1-3_preprocessed_BERTidx/train/train_bertidx.json.gz",
+      "derived_by": "vln/scripts/build_r2r_ce_v1_3_bertidx.py --include-train",
+      "episode_fields_source": "r2r_ce_v1_3_train",
+      "bert_token_source": "r2r_ce_v1_2_train_bertidx",
+      "size": 2386222,
+      "sha256": "95ea20d5c68d35b9b2baa705824e1c9cf14c004f90f03579b8cdee9f20e4b786",
+      "episodes": 10819
+    }
+  ],
+  "train_only_mp3d_scenes_extracted": [
+    "D7G3Y4RVNrH",
+    "GdvgFV5R1Z5",
+    "HxpKQynjfin",
+    "JmbYfDe2QKZ",
+    "PuKPg4mmafe",
+    "VVfe2KiqLaN",
+    "YmJkqBEsHnH",
+    "gZ6f7yhEvPG"
+  ],
+  "server_inventory_after_install": {
+    "mp3d_glb_count": 90,
+    "mp3d_navmesh_count": 90
+  }
+}

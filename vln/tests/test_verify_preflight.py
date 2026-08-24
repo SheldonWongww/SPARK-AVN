@@ -178,6 +178,56 @@ class EpisodeManifestDatasetPreflightTest(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("dataset is missing", errors[0])
 
+    def test_source_train_manifest_verifies_duplicate_install_paths(self):
+        payload = [{"path_id": 1, "instructions": ["go"]}]
+        first = self._write_dataset("data/a/train.json", payload)
+        second = self._write_dataset("data/b/train.json", payload)
+        manifest_path = self._path(
+            "vln/manifests/assets/source_train_assets.json"
+        )
+        manifest = {
+            "assets": [{
+                "id": "shared_train",
+                "paths": ["data/a/train.json", "data/b/train.json"],
+                "size": os.path.getsize(first),
+                "sha256": sha256_file(first),
+                "records": 1,
+            }],
+            "train_only_mp3d_scenes_extracted": [],
+        }
+        with open(manifest_path, "w", encoding="utf-8") as stream:
+            json.dump(manifest, stream)
+
+        errors = []
+        checked = verify_preflight.check_source_train_assets(
+            self.repo_root, errors
+        )
+
+        self.assertEqual(checked, 2)
+        self.assertEqual(errors, [])
+        self.assertEqual(sha256_file(first), sha256_file(second))
+
+    def test_tree_digest_can_ignore_train_only_scene_directories(self):
+        eval_file = self._path("scenes/eval/eval.glb")
+        train_file = self._path("scenes/train/train.glb")
+        with open(eval_file, "wb") as stream:
+            stream.write(b"eval")
+        with open(train_file, "wb") as stream:
+            stream.write(b"train")
+
+        before = verify_preflight.tree_digest(
+            os.path.join(self.repo_root, "scenes"),
+            include_top_level={"eval"},
+        )
+        with open(train_file, "ab") as stream:
+            stream.write(b"-changed")
+        after = verify_preflight.tree_digest(
+            os.path.join(self.repo_root, "scenes"),
+            include_top_level={"eval"},
+        )
+
+        self.assertEqual(before, after)
+
 
 if __name__ == "__main__":
     unittest.main()

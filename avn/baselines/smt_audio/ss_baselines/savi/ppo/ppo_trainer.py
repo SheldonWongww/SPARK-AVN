@@ -14,6 +14,7 @@ from typing import Dict, List, Any
 import json
 import random
 import glob
+import re
 
 import numpy as np
 import torch
@@ -816,14 +817,139 @@ class PPOTrainer(BaseRLTrainer):
         if self.config.RL.PPO.use_belief_predictor:
             self.belief_predictor.eval()
 
+        # IDEA source anchors are collected in a separate, fail-closed mode.
+        # This is never enabled during target evaluation and never constructs
+        # a TTA adapter.
+        source_collection = None
+        source_manifest = None
+        source_model_state_sha256 = None
+        tta_cfg = getattr(config, "TTA", None)
+        tta_method = str(
+            getattr(tta_cfg, "METHOD", "none") if tta_cfg is not None else "none"
+        ).lower()
+        idea_cfg = getattr(tta_cfg, "IDEA", None) if tta_cfg is not None else None
+        idea_source_collection = bool(
+            getattr(idea_cfg, "SOURCE_COLLECTION", False)
+        )
+        if idea_source_collection:
+            from navtta_core.tta import (
+                SourceStatisticsCollectionSession,
+                TransformerFusionProtocol,
+                module_state_sha256,
+            )
+            from navtta_avn.idea_source import (
+                collection_provenance,
+                load_source_manifest,
+                verify_manifest_assets,
+            )
+
+            if bool(config.EVAL.USE_CKPT_CONFIG):
+                raise ValueError(
+                    "SMT+Audio IDEA source collection requires "
+                    "EVAL.USE_CKPT_CONFIG=False"
+                )
+            if tta_method != "source":
+                raise ValueError("IDEA source collection requires TTA.METHOD=source")
+            if str(config.EVAL.SPLIT).lower() != "train":
+                raise ValueError("IDEA source collection requires EVAL.SPLIT=train")
+            if action_selection != "argmax":
+                raise ValueError("IDEA source collection requires native argmax actions")
+            if int(config.NUM_PROCESSES) != 1 or int(config.TEST_EPISODE_COUNT) != 128:
+                raise ValueError(
+                    "IDEA source collection requires one environment and exactly 128 episodes"
+                )
+            if (
+                str(getattr(idea_cfg, "SOURCE_STATS_PATH", "") or "")
+                or str(getattr(idea_cfg, "SOURCE_STATS_SHA256", "") or "")
+            ):
+                raise ValueError(
+                    "source collection cannot consume an IDEA source artifact"
+                )
+            dataset_path = str(config.TASK_CONFIG.DATASET.DATA_PATH).lower()
+            if "multi_source" in dataset_path:
+                source_setting = "multi_source"
+            elif "single_source" in dataset_path:
+                source_setting = "single_source"
+            else:
+                raise ValueError(
+                    "cannot infer SMT+Audio source setting from DATA_PATH"
+                )
+            manifest_path = str(getattr(idea_cfg, "SOURCE_EPISODE_MANIFEST", ""))
+            manifest_sha = str(getattr(
+                idea_cfg, "SOURCE_EPISODE_MANIFEST_SHA256", ""
+            ))
+            source_manifest, manifest_sha = load_source_manifest(
+                manifest_path,
+                manifest_sha,
+                model="smt_audio",
+                source_setting=source_setting,
+            )
+            dataset_index = config.TASK_CONFIG.DATASET.DATA_PATH.format(
+                version=config.TASK_CONFIG.DATASET.VERSION,
+                split=config.TASK_CONFIG.DATASET.SPLIT,
+            )
+            verify_manifest_assets(
+                source_manifest, dataset_index, checkpoint_path
+            )
+            task_manifest_path = str(getattr(
+                config.TASK_CONFIG.DATASET,
+                "IDEA_SOURCE_EPISODE_MANIFEST",
+                "",
+            ))
+            task_manifest_sha = str(getattr(
+                config.TASK_CONFIG.DATASET,
+                "IDEA_SOURCE_EPISODE_MANIFEST_SHA256",
+                "",
+            ))
+            if task_manifest_path != manifest_path or task_manifest_sha != manifest_sha:
+                raise ValueError(
+                    "IDEA trainer and dataset must consume the same source manifest"
+                )
+            for parameter in self.actor_critic.parameters():
+                parameter.requires_grad_(False)
+            source_model_state_sha256 = module_state_sha256(self.actor_critic)
+
+            actor_critic = self.actor_critic
+
+            def _idea_source_forward_logits(policy_inputs):
+                features, _, _ = actor_critic.net(
+                    policy_inputs["observations"],
+                    policy_inputs["rnn_hidden_states"],
+                    policy_inputs["prev_actions"],
+                    policy_inputs["masks"],
+                    policy_inputs.get("ext_memory"),
+                    policy_inputs.get("ext_memory_masks"),
+                )
+                return actor_critic.action_distribution(features).logits
+
+            transformer = actor_critic.net.smt_state_encoder.transformer
+            protocol = TransformerFusionProtocol.for_source_collection(
+                transformer,
+                _idea_source_forward_logits,
+                feature_dim=transformer.d_model,
+                num_layers=min(
+                    int(getattr(idea_cfg, "PROMPT_LAYERS", 0))
+                    or len(transformer.encoder.layers),
+                    len(transformer.encoder.layers),
+                ),
+            )
+            source_collection = SourceStatisticsCollectionSession(
+                protocol,
+                str(getattr(idea_cfg, "SOURCE_COLLECTION_OUTPUT", "")),
+                collection_provenance(
+                    source_manifest,
+                    manifest_sha,
+                    source_model_state_sha256,
+                ),
+                expected_trajectory_count=128,
+            )
+
         # ---- Test-time adaptation (TTA) setup ----
         # Continual (no per-episode reset) online adaptation by default; each
         # adapter selects its declared parameter scope inside build_adapter().
         # Belief predictor stays frozen.
         tta_adapter = None
-        tta_cfg = getattr(self.config, "TTA", None)
-        if tta_cfg is not None and str(getattr(tta_cfg, "METHOD", "none")).lower() not in ("none", ""):
-            tta_method = str(getattr(tta_cfg, "METHOD", "none")).lower()
+        if tta_cfg is not None and tta_method not in ("none", "", "source"):
             if tta_method == "feedtta" and action_selection != "sample":
                 raise ValueError(
                     "FeedTTA REINFORCE requires actions sampled from the policy; "
@@ -837,6 +963,25 @@ class PPOTrainer(BaseRLTrainer):
                     "avn/experiments/ATENA_PRE_RUN_REVIEW.md and set "
                     "TTA.ATENA.PREFLIGHT_APPROVED=True only for the reviewed run."
                 )
+            if tta_method == "atena":
+                atena_task_scope = str(getattr(
+                    getattr(tta_cfg, "ATENA", None),
+                    "TASK_UPDATE_SCOPE",
+                    "replay_reachable_actor_navigation_policy",
+                )).lower()
+                if atena_task_scope != (
+                    "replay_reachable_actor_navigation_policy"
+                ):
+                    raise ValueError(
+                        "SMT+Audio ATENA can replay the actor navigation graph "
+                        "but not an end-to-end full policy"
+                    )
+                # Core scope='all' respects existing requires_grad flags.  The
+                # task binding must therefore enable the complete replayed
+                # actor path explicitly while leaving the value-only critic out.
+                for name, parameter in self.actor_critic.named_parameters():
+                    if not name.startswith("critic."):
+                        parameter.requires_grad_(True)
             from navtta_core.tta import build_adapter
             if self.envs.num_envs != 1:
                 raise ValueError(
@@ -849,7 +994,11 @@ class PPOTrainer(BaseRLTrainer):
                 # IDEA injects a soft prompt into the SMT fusion transformer and
                 # reads per-layer statistics.  The binding calls frozen
                 # sub-modules only; the policy forward is never edited.
-                from navtta_core.tta import TransformerFusionProtocol
+                from navtta_core.tta import (
+                    TransformerFusionProtocol,
+                    module_state_sha256,
+                )
+                from navtta_avn.idea_source import file_sha256
 
                 actor_critic = self.actor_critic
 
@@ -866,6 +1015,22 @@ class PPOTrainer(BaseRLTrainer):
 
                 transformer = actor_critic.net.smt_state_encoder.transformer
                 idea_cfg = getattr(tta_cfg, "IDEA", None)
+                dataset_path = str(config.TASK_CONFIG.DATASET.DATA_PATH).lower()
+                if "multi_source" in dataset_path:
+                    source_setting = "multi_source"
+                elif "single_source" in dataset_path:
+                    source_setting = "single_source"
+                else:
+                    raise ValueError(
+                        "cannot infer SMT+Audio source setting from DATA_PATH"
+                    )
+                source_manifest_sha256 = str(getattr(
+                    idea_cfg, "SOURCE_EPISODE_MANIFEST_SHA256", ""
+                ) or "").lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", source_manifest_sha256):
+                    raise ValueError(
+                        "IDEA evaluation requires the source episode-manifest SHA256"
+                    )
                 fusion_protocol = TransformerFusionProtocol(
                     transformer,
                     _idea_forward_logits,
@@ -875,13 +1040,35 @@ class PPOTrainer(BaseRLTrainer):
                         len(transformer.encoder.layers),
                         len(transformer.encoder.layers),
                     ),
-                    source_warmup_steps=int(
-                        getattr(idea_cfg, "SOURCE_WARMUP_STEPS", 64)
+                    source_stats_path=(
+                        getattr(idea_cfg, "SOURCE_STATS_PATH", "") or None
                     ),
+                    source_stats_sha256=(
+                        getattr(idea_cfg, "SOURCE_STATS_SHA256", "") or None
+                    ),
+                    expected_source_trajectories=int(
+                        getattr(idea_cfg, "SOURCE_TRAJECTORIES", 128)
+                    ),
+                    expected_source_provenance={
+                        "checkpoint_sha256": file_sha256(checkpoint_path),
+                        "model_state_sha256": module_state_sha256(actor_critic),
+                        "episode_selection_manifest_sha256": (
+                            source_manifest_sha256
+                        ),
+                        "model": "smt_audio",
+                        "source_setting": source_setting,
+                    },
                 )
             tta_adapter = build_adapter(
                 self.actor_critic, tta_cfg, fusion_protocol=fusion_protocol
             )
+            if tta_method == "atena" and tta_adapter.diagnostics().get(
+                "requires_task_trainability_wiring", False
+            ):
+                raise RuntimeError(
+                    "SMT+Audio ATENA actor navigation parameters are not all "
+                    "trainable after task-level wiring"
+                )
             tta_adapter.episode_start()
             logging.info(
                 "[TTA] enabled: method=%s, episodic=%s, lr=%s, scope=%s, last_k=%s",
@@ -893,6 +1080,7 @@ class PPOTrainer(BaseRLTrainer):
             )
 
         tta_action_counts = [0 for _ in range(self.envs.action_spaces[0].n)]
+        tta_valid_action_count = len(tta_action_counts)
         tta_max_prob_sum = 0.0
         tta_probability_steps = 0
         tta_window_stats = []
@@ -907,7 +1095,45 @@ class PPOTrainer(BaseRLTrainer):
         ):
             current_episodes = self.envs.current_episodes()
 
-            if tta_adapter is None:
+            if source_collection is not None and source_collection.current_trajectory is None:
+                from navtta_avn.idea_source import stable_episode_id
+                ordinal = source_collection.accumulator.trajectory_count
+                actual_id = stable_episode_id(current_episodes[0])
+                expected_id = source_manifest["episodes"][ordinal]["trajectory_id"]
+                if actual_id != expected_id:
+                    raise RuntimeError(
+                        "IDEA source episode order mismatch: expected {}, got {}"
+                        .format(expected_id, actual_id)
+                    )
+                source_collection.begin_trajectory(actual_id)
+
+            if source_collection is not None:
+                policy_inputs = {
+                    "observations": batch,
+                    "rnn_hidden_states": test_recurrent_hidden_states,
+                    "prev_actions": prev_actions,
+                    "masks": not_done_masks,
+                    "ext_memory": (
+                        test_em.memory[:, 0]
+                        if ppo_cfg.use_external_memory else None
+                    ),
+                    "ext_memory_masks": (
+                        test_em.masks if ppo_cfg.use_external_memory else None
+                    ),
+                }
+                source_collection.observe_step(policy_inputs)
+                with torch.no_grad():
+                    _, actions, _, test_recurrent_hidden_states, test_em_features = self.actor_critic.act(
+                        batch,
+                        test_recurrent_hidden_states,
+                        prev_actions,
+                        not_done_masks,
+                        test_em.memory[:, 0] if ppo_cfg.use_external_memory else None,
+                        test_em.masks if ppo_cfg.use_external_memory else None,
+                        deterministic=True,
+                    )
+                    prev_actions.copy_(actions)
+            elif tta_adapter is None:
                 with torch.no_grad():
                     _, actions, _, test_recurrent_hidden_states, test_em_features = self.actor_critic.act(
                         batch,
@@ -937,9 +1163,19 @@ class PPOTrainer(BaseRLTrainer):
                         test_em.masks if ppo_cfg.use_external_memory else None
                     ),
                 }
+                valid_action_count = tta_valid_action_count
+                if tta_method == "eam":
+                    # AVN has one fixed, unpadded discrete action space.
+                    policy_inputs["valid_action_count"] = valid_action_count
                 # EAM Algorithm 3 updates/samples its replay buffer before the
                 # original and auxiliary policy inference for this action.
-                tta_adapter.before_inference(policy_inputs=policy_inputs)
+                tta_adapter.before_inference(
+                    policy_inputs=policy_inputs,
+                    **(
+                        {"valid_action_count": valid_action_count}
+                        if tta_method == "eam" else {}
+                    )
+                )
                 with torch.set_grad_enabled(tta_adapter.requires_source_grad):
                     features, test_recurrent_hidden_states, test_em_features = self.actor_critic.net(
                         policy_inputs["observations"],
@@ -954,6 +1190,10 @@ class PPOTrainer(BaseRLTrainer):
                         source_distribution.logits,
                         features=features,
                         policy_inputs=policy_inputs,
+                        **(
+                            {"valid_action_count": valid_action_count}
+                            if tta_method == "eam" else {}
+                        )
                     )
                     distribution = source_distribution.__class__(logits=action_logits)
                 with torch.no_grad():
@@ -977,7 +1217,7 @@ class PPOTrainer(BaseRLTrainer):
                 prev_actions.copy_(actions)
 
             actions = [a[0].item() for a in actions]
-            if tta_adapter is not None:
+            if tta_adapter is not None or source_collection is not None:
                 for action in actions:
                     tta_action_counts[action] += 1
             outputs = self.envs.step(actions)
@@ -1075,6 +1315,15 @@ class PPOTrainer(BaseRLTrainer):
                     ] = episode_stats
                     t.update()
 
+                    if source_collection is not None:
+                        artifact_sha = source_collection.end_trajectory()
+                        if artifact_sha is not None:
+                            logging.info(
+                                "[IDEA] wrote frozen source statistics: %s sha256=%s",
+                                source_collection.output_path,
+                                artifact_sha,
+                            )
+
                     if tta_adapter is not None:
                         tta_adapter.episode_end(episode_stats=episode_stats)
                         tta_window_stats.append(episode_stats)
@@ -1165,17 +1414,83 @@ class PPOTrainer(BaseRLTrainer):
             )
 
         # dump stats for each episode
+        if source_collection is not None and not source_collection.complete:
+            raise RuntimeError(
+                "IDEA source collection ended before all 128 episodes completed"
+            )
+        if source_collection is not None:
+            if module_state_sha256(self.actor_critic) != source_model_state_sha256:
+                raise RuntimeError(
+                    "frozen SMT+Audio source policy changed during collection"
+                )
         stats_file = os.path.join(config.TENSORBOARD_DIR,
                                   '{}_stats_{}.json'.format(config.EVAL.SPLIT, config.SEED))
         with open(stats_file, 'w') as fo:
             json.dump({','.join(key): value for key, value in stats_episodes.items()}, fo, cls=NpEncoder)
 
-        if tta_adapter is not None:
+        if source_collection is not None:
+            diagnostics = source_collection.diagnostics()
+            diagnostics["source_policy_frozen"] = True
+            diagnostics["source_model_state_sha256"] = source_model_state_sha256
+            diagnostics["action_selection"] = action_selection
+        elif tta_adapter is not None:
             diagnostics = tta_adapter.diagnostics()
-            diagnostics["action_counts"] = tta_action_counts
-            diagnostics["mean_max_action_probability"] = (
-                tta_max_prob_sum / max(1, tta_probability_steps)
+        else:
+            diagnostics = None
+
+        if diagnostics is not None:
+            diagnostics["task_action_space_contract"] = (
+                "fixed_discrete_all_actions_valid"
             )
+            diagnostics["task_valid_action_count"] = tta_valid_action_count
+            diagnostics["tent_canonical_update_interval"] = (
+                int(getattr(tta_cfg, "UPDATE_INTERVAL", 1)) == 1
+                if tta_method == "tent" else None
+            )
+            diagnostics["fstta_reset_var_hist_each_episode"] = (
+                bool(getattr(
+                    getattr(tta_cfg, "FSTTA", None),
+                    "RESET_VAR_HIST_EACH_EPISODE",
+                    False,
+                )) if tta_method == "fstta" else None
+            )
+            diagnostics["fstta_variance_history_profile"] = (
+                (
+                    "released_code_rollout_reset_ablation"
+                    if diagnostics["fstta_reset_var_hist_each_episode"]
+                    else "paper_eq6_test_stream_history"
+                ) if tta_method == "fstta" else None
+            )
+            diagnostics["feedtta_sgr_mode"] = (
+                str(getattr(
+                    getattr(tta_cfg, "FEEDTTA", None),
+                    "SGR_MODE",
+                    "paper_main",
+                )).lower() if tta_method == "feedtta" else None
+            )
+            diagnostics["feedtta_canonical_protocol"] = (
+                action_selection == "sample"
+                and diagnostics["feedtta_sgr_mode"] == "paper_main"
+                if tta_method == "feedtta" else None
+            )
+            diagnostics["feedtta_requires_matched_sampled_source"] = (
+                True if tta_method == "feedtta" else None
+            )
+            diagnostics["atena_task_update_scope"] = (
+                "replay_reachable_actor_navigation_policy"
+                if tta_method == "atena" else None
+            )
+            diagnostics["atena_exact_replay_within_declared_scope"] = (
+                True if tta_method == "atena" else None
+            )
+            diagnostics["atena_full_end_to_end_policy_claimed"] = (
+                False if tta_method == "atena" else None
+            )
+            diagnostics["action_counts"] = tta_action_counts
+            if source_collection is None:
+                diagnostics["mean_max_action_probability"] = (
+                    tta_max_prob_sum / max(1, tta_probability_steps)
+                )
             diagnostics_file = os.path.join(
                 config.TENSORBOARD_DIR,
                 "tta_diagnostics_{}.json".format(config.SEED),

@@ -965,7 +965,23 @@ class RLTrainer(BaseVLNCETrainer):
             expected_ids = [
                 record["episode_id"] for record in episode_order["episodes"]
             ]
-            if set(map(str, self.traj)) != set(expected_ids):
+            idea_cfg = getattr(getattr(self.config, "TTA", None), "IDEA", None)
+            source_collection = bool(
+                getattr(idea_cfg, "COLLECT_SOURCE_STATS", False)
+            )
+            available_ids = set(map(str, self.traj))
+            expected_set = set(expected_ids)
+            if source_collection and (
+                self.config.INFERENCE.SPLIT != "train"
+                or len(expected_ids) != 128
+            ):
+                raise ValueError(
+                    "IDEA source collection requires exactly 128 train episodes"
+                )
+            if (
+                not expected_set.issubset(available_ids)
+                if source_collection else available_ids != expected_set
+            ):
                 raise ValueError(
                     "Inference episode IDs do not match the episode-order manifest"
                 )
@@ -1082,7 +1098,9 @@ class RLTrainer(BaseVLNCETrainer):
                     self.inst_ids[ep_id] = int(k)
 
         if self.tta_controller is not None:
-            self.tta_controller.begin_episode()
+            self.tta_controller.begin_episode(
+                trajectory_id=self.envs.current_episodes()[0].episode_id
+            )
 
         # encode instructions
         all_txt_ids = batch['instruction']

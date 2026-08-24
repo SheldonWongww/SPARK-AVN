@@ -148,6 +148,7 @@ _C.RL.DDPPO.reset_critic = True
 _C.TTA = CN()
 # none | tent | fstta | eam | feedtta | atena
 _C.TTA.METHOD = "none"
+_C.TTA.MATCHED_FEEDTTA_SOURCE = False
 _C.TTA.EPISODIC = False
 # Conservative AVN default. Tune on a dedicated TTA-dev stream.
 _C.TTA.LR = 1e-6
@@ -172,12 +173,11 @@ _C.TTA.FSTTA.M = 3
 _C.TTA.FSTTA.N = 4
 _C.TTA.FSTTA.Q = 0.1
 _C.TTA.FSTTA.LR_SLOW = 1e-4
-# Dynamic FAST-LR band aligned with the released FSTTA (Eq. 6): rho=0.9,
-# tau=0.5, clamp scale to [0.5, 1.5].
-_C.TTA.FSTTA.RHO = 0.9
-_C.TTA.FSTTA.TAU = 0.5
-_C.TTA.FSTTA.A = 0.5
-_C.TTA.FSTTA.B = 1.5
+# Paper FAST-LR band: rho=0.95, tau=0.7, scale [0.9, 1.1].
+_C.TTA.FSTTA.RHO = 0.95
+_C.TTA.FSTTA.TAU = 0.7
+_C.TTA.FSTTA.A = 0.9
+_C.TTA.FSTTA.B = 1.1
 _C.TTA.FSTTA.USE_SLOW = True
 _C.TTA.FSTTA.FAST_GRAD_MODE = "concordant"
 _C.TTA.FSTTA.USE_FAST_LR_SCALER = True
@@ -191,9 +191,9 @@ _C.TTA.FSTTA.WEIGHT_DECAY = 0.0
 _C.TTA.FSTTA.SLOW_OPTIMIZER = ""
 _C.TTA.FSTTA.SLOW_MOMENTUM = -1.0
 _C.TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE = True
-# Released FSTTA rebuilds its FAST module per rollout, so the variance EMA
-# restarts each episode.  Set False for a single test-stream variance ablation.
-_C.TTA.FSTTA.RESET_VAR_HIST_EACH_EPISODE = True
+# Paper Eq. (6) keeps historical variance across the test stream.  ``True``
+# remains available only as a released-code rollout-reset ablation.
+_C.TTA.FSTTA.RESET_VAR_HIST_EACH_EPISODE = False
 _C.TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW = False
 _C.TTA.FSTTA.EIGEN_EPS = 1e-6
 _C.TTA.EAM = CN()
@@ -202,7 +202,7 @@ _C.TTA.EAM.CONFIDENCE_SCALE = 0.4
 # Replay units are online action-step snapshots.
 _C.TTA.EAM.MEMORY_SIZE = 32
 _C.TTA.EAM.BATCH_SIZE = 8
-# Action-step interval; 1 updates every step (current-only while |M| < K).
+# Action-step interval; replay updates start only after |M| reaches batch K.
 _C.TTA.EAM.UPDATE_INTERVAL = 1
 # AVN mapping: freeze all pre-Transformer sensory/state encoders and update the
 # auxiliary Transformer plus action-decision head.
@@ -225,6 +225,7 @@ _C.TTA.FEEDTTA.P = 0.05
 # (+0.1) is gradient scaling rather than reversion; AVN must sweep both signs.
 _C.TTA.FEEDTTA.ALPHA = -0.2
 _C.TTA.FEEDTTA.SGR_SEED = 0
+_C.TTA.FEEDTTA.SGR_MODE = "paper_main"
 _C.TTA.FEEDTTA.GAMMA = 0.99
 # Eq. (3) sums discounted trajectory gradients; it does not length-normalize.
 _C.TTA.FEEDTTA.NORMALIZE_GRADIENT = False
@@ -250,6 +251,11 @@ _C.TTA.ATENA.MIX_LAMBDA = 0.5
 _C.TTA.ATENA.QUERY_THRESHOLD = 0.1
 _C.TTA.ATENA.SELF_LOSS_WEIGHT = 0.1
 _C.TTA.ATENA.PARAM_SCOPE = "all"
+# AVN replays the actor navigation graph but excludes the value-only critic.
+# A requested end-to-end/full-policy claim is rejected by the trainer.
+_C.TTA.ATENA.TASK_UPDATE_SCOPE = (
+    "replay_reachable_actor_navigation_policy"
+)
 _C.TTA.ATENA.OPTIMIZER = "AdamW"
 _C.TTA.ATENA.BETA1 = 0.9
 _C.TTA.ATENA.BETA2 = 0.999
@@ -278,9 +284,17 @@ _C.TTA.IDEA.SEED = 0
 # Number of aligned fusion-transformer encoder layers (0 = use all encoder
 # layers).  The SMT encoder is shallow, so the default keeps every layer.
 _C.TTA.IDEA.PROMPT_LAYERS = 0
-# Online prompt-free warmup used to bootstrap the source anchor Gamma_S when no
-# offline precompute is supplied.
-_C.TTA.IDEA.SOURCE_WARMUP_STEPS = 64
+# Digest-pinned global moments collected from 128 source-training trajectories.
+# IDEA evaluation fails closed while either field is empty.
+_C.TTA.IDEA.SOURCE_STATS_PATH = ""
+_C.TTA.IDEA.SOURCE_STATS_SHA256 = ""
+_C.TTA.IDEA.SOURCE_TRAJECTORIES = 128
+_C.TTA.IDEA.SOURCE_COLLECTION = False
+_C.TTA.IDEA.SOURCE_COLLECTION_OUTPUT = ""
+_C.TTA.IDEA.SOURCE_EPISODE_MANIFEST = ""
+# Target evaluation also requires this digest so an artifact cannot be swapped
+# across source selections; the manifest path itself is collection-only.
+_C.TTA.IDEA.SOURCE_EPISODE_MANIFEST_SHA256 = ""
 # -----------------------------------------------------------------------------
 # TASK CONFIG
 # -----------------------------------------------------------------------------
@@ -330,6 +344,8 @@ _TC.DATASET.TTA_EPISODES_PER_SCENE = -1
 _TC.DATASET.TTA_EXPECTED_SCENES = -1
 _TC.DATASET.TTA_EPISODE_SEED = 0
 _TC.DATASET.TTA_GLOBAL_SHUFFLE = False
+_TC.DATASET.IDEA_SOURCE_EPISODE_MANIFEST = ""
+_TC.DATASET.IDEA_SOURCE_EPISODE_MANIFEST_SHA256 = ""
 # -----------------------------------------------------------------------------
 # NumberOfAction Measure
 # -----------------------------------------------------------------------------
