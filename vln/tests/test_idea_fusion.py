@@ -33,6 +33,7 @@ from navtta_vln.idea_fusion import (  # noqa: E402
     HAMTIDEAProtocol,
     make_idea_fusion_protocol,
 )
+from navtta_vln.discrete_tta import _sanitize_action_logits  # noqa: E402
 
 
 HID = 6
@@ -451,6 +452,9 @@ class HAMTIDEAProtocolTest(unittest.TestCase):
                 native_outputs["act_logits"],
                 native_outputs["obj_logits"].max(dim=1).indices.unsqueeze(1),
             ], dim=1)
+            # The controller normalizes native ``-inf`` mask sentinels to
+            # finite ``-1e4`` before either Source or IDEA consumes logits.
+            native = _sanitize_action_logits(native)
             _, base = protocol.fused_forward(inputs, None)
             torch.testing.assert_close(base, native)
             base_objects = protocol.prompted_object_logits.detach().clone()
