@@ -97,8 +97,11 @@ gives the cross-split floor real winning candidates to choose among while still
 probing toward generalization.  Concretely the grids fold in the winners'
 choices that the first pass missed:
 
-- Tent: scope is a grid axis (`ln`, `last_k_ln=9`, `last_k_ln=4`); LR stays
-  small (high LR already shown to collapse).
+- Tent: scope is **fixed to `ln`** (adapt all LayerNorm affine parameters), the
+  original paper's design choice -- the unfrozen-parameter set is not a
+  hyperparameter to tune.  Only the LR is swept, and it stays small (high LR
+  already shown to collapse).  (A prior val_seen search preferred `last_k_ln=9`,
+  but that is exactly the in-distribution overfitting this methodology removes.)
 - FSTTA: the winners' band `rho=0.95, tau=0.7, a=0.9, b=1.1` with
   `slow_optimizer=AdamW`, `lr_fast in {6e-4,1.8e-3}`, and `m in {1,2,3,8}`.
 - EAM: `memory_size in {32,64}`, `update_interval in {4,8}`, `confidence_scale

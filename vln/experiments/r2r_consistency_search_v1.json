@@ -20,11 +20,9 @@
   },
   "methods": {
     "tent": {
-      "base": {"optimizer": "Adam", "action_selection": "argmax", "update_interval": 1},
-      "grid": {"lr": [1e-5, 3e-5],
-               "scope": [{"norm_scope": "ln"},
-                         {"norm_scope": "last_k_ln", "last_k_ln": 9},
-                         {"norm_scope": "last_k_ln", "last_k_ln": 4}]},
+      "base": {"norm_scope": "ln", "optimizer": "Adam",
+               "action_selection": "argmax", "update_interval": 1},
+      "grid": {"lr": [1e-6, 3e-6, 1e-5, 3e-5]},
       "paper_default": {"lr": 1e-5, "norm_scope": "ln"}
     },
     "fstta": {
