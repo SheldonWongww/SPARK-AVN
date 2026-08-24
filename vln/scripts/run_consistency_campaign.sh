@@ -18,6 +18,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PY="/root/autodl-tmp/conda/envs/duet/bin/python"   # stdlib-only runner
 RUN_TAG="consistency-v1"
 OUT_ROOT="${REPO_ROOT}/vln/results/tuning/consistency_v1"
+# Fast methods for the main pass.  IDEA is deferred (one candidate takes hours
+# at opt_steps>=10); override e.g. CAMPAIGN_METHODS="idea" for a dedicated pass.
+CAMPAIGN_METHODS="${CAMPAIGN_METHODS:-tent fstta eam feedtta atena}"
 LOG_DIR="${OUT_ROOT}/_campaign_logs"
 mkdir -p "${LOG_DIR}"
 RUNNER="${REPO_ROOT}/vln/scripts/run_consistency_hparam_search.py"
@@ -63,7 +66,8 @@ run_benchmark() {
     local sroot
     sroot="$(prepare_source_root "${benchmark}" "${settings[@]}")"
 
-    local methods=(tent fstta eam feedtta atena idea)
+    local methods
+    read -r -a methods <<< "${CAMPAIGN_METHODS}"
     for setting in "${settings[@]}"; do
         for method in "${methods[@]}"; do
             log "START ${benchmark} ${setting} ${method}"
@@ -78,6 +82,7 @@ run_benchmark() {
     log "SELECT ${benchmark}"
     "${PY}" "${RUNNER}" --spec "${spec}" --run-tag "${RUN_TAG}" \
         --out-dir "${OUT_ROOT}" --source-root "${sroot}" --select-only \
+        --methods ${CAMPAIGN_METHODS} \
         >> "${LOG_DIR}/${benchmark}-select.log" 2>&1
     log "SELECTED ${benchmark} -> ${OUT_ROOT}/<setting>/<method>/selected_config.json"
 }
