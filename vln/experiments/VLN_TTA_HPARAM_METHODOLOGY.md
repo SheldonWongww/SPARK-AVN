@@ -85,11 +85,36 @@ is a later, optional confirmation — not required to fill the table.
 
 ---
 
-## 3. Search space (small, anchored to published values)
+## 3. Search space (anchored to the prior val_seen winners)
 
-Grids are anchored near the papers' defaults and vary mainly the one knob that
-governs streaming stability (learning rate), plus at most one secondary knob.
-This is deliberately a handful of points per cell, not hundreds.
+An initial run with generic small grids left most methods below Source (only
+EAM cleared it), because the grids were not centered on each method's productive
+region.  The revised grids (v2) are **centered on the prior val_seen winners**
+recorded in `vln/results/final/{r2r,reverie,r2r-ce}/selected_winners.json` --
+which all beat Source on val_seen -- **plus one or two more-conservative
+low-LR / narrower-scope points** as val_unseen-robustness candidates.  This
+gives the cross-split floor real winning candidates to choose among while still
+probing toward generalization.  Concretely the grids fold in the winners'
+choices that the first pass missed:
+
+- Tent: scope is a grid axis (`ln`, `last_k_ln=9`, `last_k_ln=4`); LR stays
+  small (high LR already shown to collapse).
+- FSTTA: the winners' band `rho=0.95, tau=0.7, a=0.9, b=1.1` with
+  `slow_optimizer=AdamW`, `lr_fast in {6e-4,1.8e-3}`, and `m in {1,2,3,8}`.
+- EAM: `memory_size in {32,64}`, `update_interval in {4,8}`, `confidence_scale
+  in {0.3,0.4,0.5}`.
+- FeedTTA: `gamma=0.8` with `scope_profile in {last_crossmodal, action_head}`
+  (discrete); continuous keeps `gamma=0.99`.
+- ATENA: `query_threshold in {0.0,0.1(,0.3 for CE)}`, `mix_lambda in {0.25,0.5}`.
+- R2R-CE (continuous) uses **much smaller LRs** than discrete (e.g. Tent down to
+  3e-7, FSTTA `lr_fast=3e-7`), matching the CE winners; the earlier CE grid's
+  1e-3-scale LRs were far too large.
+
+The prior winners were selected on val_seen only (the defect we are fixing), so
+they are used as *evidence of the productive region*, not adopted blindly: the
+final choice is still made by the Section 2.2 cross-split rule.
+
+### Method knobs (shared grid, per-benchmark values in the spec JSON)
 
 | Method  | Primary knob                          | Secondary knob                         | ~configs/cell |
 |---------|---------------------------------------|----------------------------------------|---------------|

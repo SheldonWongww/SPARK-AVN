@@ -1,7 +1,7 @@
 {
   "schema": "navtta.vln_tta_consistency_search.v1",
   "benchmark": "reverie",
-  "description": "REVERIE cross-split consistency search. One frozen config per (method,model) selected on both val_seen and val_unseen; floor on SR, gain/selection on RGSPL. See VLN_TTA_HPARAM_METHODOLOGY.md.",
+  "description": "REVERIE cross-split consistency search v2. Grids centered on prior val_seen winners (vln/results/final/reverie/selected_winners.json) plus conservative points. Floor on SR, gain/selection on RGSPL. See VLN_TTA_HPARAM_METHODOLOGY.md.",
   "splits": ["val_seen", "val_unseen"],
   "order_seed": 0,
   "settings": ["duet-reverie", "hamt-reverie", "goat-reverie"],
@@ -20,36 +20,42 @@
   },
   "methods": {
     "tent": {
-      "base": {"norm_scope": "last_k_ln", "last_k_ln": 4, "optimizer": "Adam",
-               "action_selection": "argmax"},
-      "grid": {"lr": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3]},
-      "paper_default": {"lr": 1e-4}
+      "base": {"optimizer": "Adam", "action_selection": "argmax", "update_interval": 1},
+      "grid": {"lr": [1.5625e-5, 3e-6],
+               "scope": [{"norm_scope": "ln"},
+                         {"norm_scope": "last_k_ln", "last_k_ln": 9},
+                         {"norm_scope": "last_k_ln", "last_k_ln": 4}]},
+      "paper_default": {"lr": 1.5625e-5, "norm_scope": "ln"}
     },
     "fstta": {
-      "base": {"m": 3, "n": 4, "q": 0.1, "rho": 0.9, "tau": 0.5, "a": 0.5, "b": 1.5,
+      "base": {"q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1,
+               "last_k_ln": 4, "norm_scope": "last_k_ln", "slow_optimizer": "AdamW",
                "fast_grad_mode": "concordant", "action_selection": "argmax"},
-      "grid": {"lr_fast": [2e-4, 6e-4, 1e-3], "lr_slow": [5e-4, 1e-3]},
-      "paper_default": {"lr_fast": 6e-4, "lr_slow": 1e-3}
+      "grid": {"lr_fast": [6e-4, 1.8e-3], "lr_slow": [3e-4, 1e-3],
+               "mn": [{"m": 8, "n": 4}, {"m": 3, "n": 32}, {"m": 2, "n": 4}]},
+      "paper_default": {"lr_fast": 1.8e-3, "lr_slow": 3e-4, "m": 8, "n": 4}
     },
     "eam": {
-      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8,
-               "action_selection": "argmax"},
-      "grid": {"lr": [3e-6, 1e-5, 3e-5], "update_interval": [1, 4]},
-      "paper_default": {"lr": 1e-5, "update_interval": 1}
+      "base": {"batch_size": 8, "action_selection": "argmax"},
+      "grid": {"lr": [1e-6, 3e-6, 1e-5],
+               "cfg": [{"confidence_scale": 0.5, "memory_size": 64, "update_interval": 8},
+                       {"confidence_scale": 0.3, "memory_size": 32, "update_interval": 4}]},
+      "paper_default": {"lr": 1e-5, "confidence_scale": 0.5, "memory_size": 64, "update_interval": 8}
     },
     "feedtta": {
-      "base": {"gamma": 0.99, "sgr_seed": 0, "scope_profile": "paper_full",
-               "action_selection": "sample", "action_seed": 0},
-      "grid": {"lr": [2e-6, 5e-6, 1e-5],
-               "pa": [{"p": 0.01, "alpha": -0.2}, {"p": 0.05, "alpha": -0.2}]},
-      "paper_default": {"lr": 5e-6, "p": 0.05, "alpha": -0.2}
+      "base": {"gamma": 0.8, "sgr_seed": 0, "normalize_gradient": false,
+               "optimizer_eps": 1e-5, "action_selection": "sample", "action_seed": 0},
+      "grid": {"lr": [2e-6, 5e-6],
+               "block": [{"p": 0.05, "alpha": 0.1, "scope_profile": "last_crossmodal"},
+                         {"p": 0.1, "alpha": -0.1, "scope_profile": "action_head"}]},
+      "paper_default": {"lr": 5e-6, "p": 0.05, "alpha": 0.1, "scope_profile": "last_crossmodal"}
     },
     "atena": {
-      "base": {"self_loss_weight": 0.5, "action_selection": "argmax"},
-      "grid": {"lr_query": [5e-6, 1e-6], "query_threshold": [0.05, 0.1],
-               "mix_lambda": [0.5, 0.75], "lr_self": [1e-7]},
-      "paper_default": {"lr_query": 5e-6, "lr_self": 1e-7, "query_threshold": 0.1,
-                        "mix_lambda": 0.5}
+      "base": {"self_loss_weight": 0.1, "action_selection": "argmax"},
+      "grid": {"lr_query": [1e-6, 1.6e-6, 3.2e-6],
+               "block": [{"query_threshold": 0.0, "mix_lambda": 0.5, "lr_self": 2e-7},
+                         {"query_threshold": 0.1, "mix_lambda": 0.25, "lr_self": 4e-7}]},
+      "paper_default": {"lr_query": 1.6e-6, "lr_self": 2e-7, "query_threshold": 0.0, "mix_lambda": 0.5}
     },
     "idea": {
       "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1,

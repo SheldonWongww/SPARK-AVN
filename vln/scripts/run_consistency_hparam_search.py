@@ -20,6 +20,7 @@ runs happen on the AutoDL server.
 """
 import argparse
 import concurrent.futures
+import hashlib
 import itertools
 import json
 import re
@@ -98,14 +99,26 @@ def expand_candidates(method, method_spec, *, for_search):
 
 
 def candidate_tag(method, params):
+    # Constant/plumbing keys carry no information across a method's grid; drop
+    # them so the discriminative knobs stay visible before the length cap.  A
+    # short hash of the full params guarantees uniqueness even if the readable
+    # prefix is truncated.
+    skip = {
+        "action_selection", "norm_scope", "fast_grad_mode", "optimizer",
+        "sgr_seed", "action_seed", "normalize_gradient", "optimizer_eps",
+        "self_loss_weight", "batch_size", "slow_optimizer", "beta1", "beta2",
+        "q", "eigen_eps", "use_fisher", "use_fast_lr_scaler", "use_slow",
+    }
     parts = [method]
     for key in sorted(params):
-        value = params[key]
-        if key in ("action_selection", "norm_scope", "fast_grad_mode",
-                   "scope_profile"):
+        if key in skip:
             continue
-        parts.append("{}{}".format(_slug(key), _slug(value)))
-    return "-".join(parts)[:80]
+        parts.append("{}{}".format(_slug(key), _slug(params[key])))
+    readable = "-".join(parts)[:72]
+    digest = hashlib.sha1(
+        json.dumps(params, sort_keys=True, default=str).encode()
+    ).hexdigest()[:6]
+    return "{}-{}".format(readable, digest)
 
 
 def full_run_tag(run_tag, tag):
