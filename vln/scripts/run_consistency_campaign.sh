@@ -18,12 +18,28 @@ PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
 # Python runner fails closed if any local artifact or provenance binding is
 # missing or changed.
 CAMPAIGN_METHODS="${CAMPAIGN_METHODS:-tent fstta eam feedtta atena}"
+# Optional whitespace-separated allowlist of model/benchmark settings.  An
+# empty value keeps the historical behavior (all settings for each requested
+# benchmark).  This is intentionally an allowlist rather than a positional
+# "start from" flag so interrupted campaigns can resume without touching
+# already completed cells.
+CAMPAIGN_SETTINGS="${CAMPAIGN_SETTINGS:-}"
 LOG_DIR="${OUT_ROOT}/_campaign_logs"
 RUNNER="${REPO_ROOT}/vln/scripts/run_consistency_hparam_search.py"
 
 mkdir -p "${LOG_DIR}"
 
 log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "${LOG_DIR}/campaign.log"; }
+
+setting_requested() {
+    local candidate="$1"
+    [[ ${#REQUESTED_SETTINGS[@]} -eq 0 ]] && return 0
+    local requested
+    for requested in "${REQUESTED_SETTINGS[@]}"; do
+        [[ "${requested}" == "${candidate}" ]] && return 0
+    done
+    return 1
+}
 
 run_stage() {
     local benchmark="$1"
@@ -83,9 +99,22 @@ run_benchmark() {
             ;;
     esac
 
+    local -a filtered_settings=()
+    local setting
+    for setting in "${settings[@]}"; do
+        if setting_requested "${setting}"; then
+            filtered_settings+=("${setting}")
+        fi
+    done
+    if [[ ${#filtered_settings[@]} -eq 0 ]]; then
+        log "SKIP ${benchmark}; no requested settings"
+        return 0
+    fi
+    settings=("${filtered_settings[@]}")
+
     local -a methods
     read -r -a methods <<< "${CAMPAIGN_METHODS}"
-    local setting method stage
+    local method stage
     # Settings are the outer barrier.  This is required for R2R-CE and is kept
     # for the discrete benchmarks to make phase ownership unambiguous.
     for setting in "${settings[@]}"; do
@@ -141,6 +170,43 @@ for benchmark in "${BENCHMARKS[@]}"; do
     esac
     SEEN_BENCHMARKS="${SEEN_BENCHMARKS}${benchmark} "
 done
+declare -a REQUESTED_SETTINGS=()
+if [[ -n "${CAMPAIGN_SETTINGS}" ]]; then
+    read -r -a REQUESTED_SETTINGS <<< "${CAMPAIGN_SETTINGS}"
+fi
+SEEN_SETTINGS=" "
+for setting in "${REQUESTED_SETTINGS[@]}"; do
+    case "${setting}" in
+        duet-r2r|hamt-r2r|goat-r2r)
+            setting_benchmark="r2r"
+            ;;
+        duet-reverie|hamt-reverie|goat-reverie)
+            setting_benchmark="reverie"
+            ;;
+        etpnav-r2r-ce|bevbert-r2r-ce)
+            setting_benchmark="r2r-ce"
+            ;;
+        *)
+            printf 'error: unknown campaign setting: %s\n' "${setting}" >&2
+            exit 2
+            ;;
+    esac
+    case "${SEEN_SETTINGS}" in
+        *" ${setting} "*)
+            printf 'error: duplicate campaign setting: %s\n' "${setting}" >&2
+            exit 2
+            ;;
+    esac
+    case "${SEEN_BENCHMARKS}" in
+        *" ${setting_benchmark} "*) ;;
+        *)
+            printf 'error: campaign setting %s requires benchmark %s\n' \
+                "${setting}" "${setting_benchmark}" >&2
+            exit 2
+            ;;
+    esac
+    SEEN_SETTINGS="${SEEN_SETTINGS}${setting} "
+done
 [[ -x "${PY}" ]] || { printf 'error: missing campaign Python: %s\n' "${PY}" >&2; exit 2; }
 if [[ "${PREFLIGHT_ONLY}" == "0" ]]; then
     if ! CUDA_VISIBLE_DEVICES="${GPU}" "${PY}" -c \
@@ -149,7 +215,8 @@ if [[ "${PREFLIGHT_ONLY}" == "0" ]]; then
         exit 2
     fi
 fi
-log "CAMPAIGN START benchmarks=${BENCHMARKS[*]} methods=${CAMPAIGN_METHODS} preflight_only=${PREFLIGHT_ONLY}"
+DISPLAY_SETTINGS="${CAMPAIGN_SETTINGS:-all}"
+log "CAMPAIGN START benchmarks=${BENCHMARKS[*]} settings=${DISPLAY_SETTINGS} methods=${CAMPAIGN_METHODS} preflight_only=${PREFLIGHT_ONLY}"
 for benchmark in "${BENCHMARKS[@]}"; do
     run_benchmark "${benchmark}"
 done

@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -64,6 +66,66 @@ class SpecContractTest(unittest.TestCase):
         campaign = (REPO_ROOT / "vln/scripts/run_consistency_campaign.sh").read_text()
         self.assertNotIn("consistency_search_v1.json", campaign)
         self.assertEqual(campaign.count("consistency_search_v2.json"), 3)
+
+    def test_campaign_setting_allowlist_filters_without_replaying_cells(self):
+        script = REPO_ROOT / "vln/scripts/run_consistency_campaign.sh"
+        true_executable = shutil.which("true")
+        self.assertIsNotNone(true_executable)
+        with tempfile.TemporaryDirectory() as directory:
+            environment = dict(os.environ)
+            environment.update({
+                "PYTHON": true_executable,
+                "PREFLIGHT_ONLY": "1",
+                "OUT_ROOT": directory,
+                "CAMPAIGN_METHODS": "tent",
+                "CAMPAIGN_SETTINGS": "hamt-r2r goat-reverie",
+            })
+            result = subprocess.run(
+                ["bash", str(script), "r2r", "reverie", "r2r-ce"],
+                cwd=str(REPO_ROOT),
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PREFLIGHT r2r hamt-r2r tent", result.stdout)
+        self.assertIn("PREFLIGHT reverie goat-reverie tent", result.stdout)
+        self.assertIn("SKIP r2r-ce; no requested settings", result.stdout)
+        self.assertNotIn("duet-r2r", result.stdout)
+        self.assertNotIn("goat-r2r tent", result.stdout)
+
+    def test_campaign_setting_allowlist_rejects_unknown_or_unreachable(self):
+        script = REPO_ROOT / "vln/scripts/run_consistency_campaign.sh"
+        true_executable = shutil.which("true")
+        self.assertIsNotNone(true_executable)
+        for settings, benchmarks, message in (
+            ("unknown", ["r2r"], "unknown campaign setting"),
+            ("duet-reverie", ["r2r"], "requires benchmark reverie"),
+            ("hamt-r2r hamt-r2r", ["r2r"], "duplicate campaign setting"),
+        ):
+            with self.subTest(settings=settings):
+                with tempfile.TemporaryDirectory() as directory:
+                    environment = dict(os.environ)
+                    environment.update({
+                        "PYTHON": true_executable,
+                        "PREFLIGHT_ONLY": "1",
+                        "OUT_ROOT": directory,
+                        "CAMPAIGN_METHODS": "tent",
+                        "CAMPAIGN_SETTINGS": settings,
+                    })
+                    result = subprocess.run(
+                        ["bash", str(script)] + benchmarks,
+                        cwd=str(REPO_ROOT),
+                        env=environment,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=False,
+                    )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(message, result.stderr)
 
     def test_candidate_budgets_are_explicit_and_constrained(self):
         for path in SPECS:
