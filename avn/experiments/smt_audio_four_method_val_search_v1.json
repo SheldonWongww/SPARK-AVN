@@ -286,11 +286,12 @@
       "idea": 2
     },
     "hard_caps": {
-      "eam": 4,
-      "feedtta": 4,
-      "atena": 3,
-      "idea": 2
+      "eam": 10,
+      "feedtta": 10,
+      "atena": 10,
+      "idea": 10
     },
+    "hard_cap_basis": "User-approved operational ceiling of 10 workers per method lane after observing low GPU-memory use on the 4x24GB school server; peak GPU and host-memory pressure must still be monitored.",
     "barrier": "within_each_method_single_source_must_finish_before_multi_source",
     "cross_method_execution": "four_method_lanes_run_concurrently"
   },
@@ -299,7 +300,7 @@
     "state_transfer_between_candidates_or_source_settings": false,
     "allowed_runtime_overrides": [
       "gpu_ids",
-      "concurrency_downward_only",
+      "concurrency_within_hard_caps",
       "resume",
       "batch_id"
     ]

@@ -83,11 +83,20 @@ class SmtAudioValSearchTest(unittest.TestCase):
             self.assertEqual(len(self.runner.method_points(self.spec, method)), count)
         self.assertFalse(self.spec["freeze"]["grid_expansion_after_results"])
 
-    def test_concurrency_can_only_be_reduced(self):
+    def test_concurrency_accepts_ten_and_rejects_above_hard_cap(self):
         self.runner.validate_runtime_limits(self.spec, self._args())
+        self.runner.validate_runtime_limits(
+            self.spec,
+            self._args(
+                eam_concurrency=10,
+                feedtta_concurrency=10,
+                atena_concurrency=10,
+                idea_concurrency=10,
+            ),
+        )
         with self.assertRaisesRegex(self.runner.UserError, "exceeds frozen cap"):
             self.runner.validate_runtime_limits(
-                self.spec, self._args(atena_concurrency=4)
+                self.spec, self._args(atena_concurrency=11)
             )
 
     def test_smoke_selects_one_job_per_method_on_one_setting(self):

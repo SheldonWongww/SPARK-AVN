@@ -43,8 +43,11 @@ bash avn/scripts/smt_audio_val_search_screen.sh status \
   smt-four-val-v1-seed0
 ```
 
-The default 24GB limits are EAM 4, FeedTTA 4, ATENA 3, and IDEA 2.  They may
-only be lowered at launch.  All four methods execute the actual sampled AVN
+The conservative default concurrency is EAM 4, FeedTTA 4, ATENA 3, and IDEA
+2.  The user-approved operational hard cap is 10 for every method lane; launch
+arguments may select any value from 1 through 10.  Values above the defaults
+still require live GPU/host-memory monitoring because 10 is not a
+method-specific peak-memory calibration.  All four methods execute the actual sampled AVN
 action.  In particular, ATENA is reported as `ATENA-AVN(sample)` because its
 official VLN implementation uses argmax.  IDEA automatically prepares a
 separate digest-pinned 128-trajectory sampled source-training artifact before

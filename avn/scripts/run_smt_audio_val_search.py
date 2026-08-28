@@ -333,7 +333,7 @@ def load_spec(path: Path) -> Mapping[str, object]:
     )
     require(
         scheduler.get("hard_caps") == {
-            "eam": 4, "feedtta": 4, "atena": 3, "idea": 2
+            "eam": 10, "feedtta": 10, "atena": 10, "idea": 10
         },
         "spec concurrency caps mismatch",
     )
