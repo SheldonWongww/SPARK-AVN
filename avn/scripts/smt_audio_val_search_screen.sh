@@ -34,13 +34,13 @@ cd "${REPO_ROOT}"
 case "${ACTION}" in
   start)
     command -v screen >/dev/null || { printf 'screen is unavailable\n' >&2; exit 1; }
-    screen -DmS "${SESSION}" \
+    screen -dmS "${SESSION}" \
       python3 "${RUNNER}" --batch-id "${BATCH_ID}" "$@"
     printf 'started screen=%s batch=%s\n' "${SESSION}" "${BATCH_ID}"
     ;;
   resume)
     command -v screen >/dev/null || { printf 'screen is unavailable\n' >&2; exit 1; }
-    screen -DmS "${SESSION}" \
+    screen -dmS "${SESSION}" \
       python3 "${RUNNER}" --batch-id "${BATCH_ID}" --resume "$@"
     printf 'resumed screen=%s batch=%s\n' "${SESSION}" "${BATCH_ID}"
     ;;

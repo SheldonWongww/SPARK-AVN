@@ -135,6 +135,12 @@ class SmtAudioValSearchTest(unittest.TestCase):
         finally:
             self.runner.LOG_ROOT = original
 
+    def test_screen_launcher_forks_detached_session(self):
+        launcher = ROOT / "avn/scripts/smt_audio_val_search_screen.sh"
+        source = launcher.read_text(encoding="utf-8")
+        self.assertEqual(source.count('screen -dmS "${SESSION}"'), 2)
+        self.assertNotIn('screen -DmS "${SESSION}"', source)
+
 
 if __name__ == "__main__":
     unittest.main()
