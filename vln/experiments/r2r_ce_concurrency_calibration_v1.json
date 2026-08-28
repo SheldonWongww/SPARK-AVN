@@ -1,0 +1,42 @@
+{
+  "schema": "navtta.vln_r2r_ce_concurrency_calibration.v1",
+  "experiment_id": "vln-r2r-ce-concurrency-calibration-v1",
+  "benchmark": "r2r-ce",
+  "purpose": "Validate complete simultaneously resident 100-episode groups before raising the R2R-CE consistency-search worker caps.",
+  "base_search_spec": {
+    "path": "vln/experiments/r2r_ce_consistency_search_v2.json",
+    "sha256": "490cf7075f1fd1a4f5bc23431415894f1f2bcf877a2c1a31870881daf463a6d5"
+  },
+  "settings": ["etpnav-r2r-ce", "bevbert-r2r-ce"],
+  "methods": ["tent", "fstta", "eam", "feedtta", "atena"],
+  "protocol": {
+    "split": "val_seen",
+    "episode_count": 100,
+    "candidate_role": "paper_anchor",
+    "action_selection": "argmax",
+    "formal_navigation_result": false,
+    "require_all_workers_complete": true,
+    "require_simultaneous_gpu_residency": true,
+    "minimum_full_residency_samples": 10,
+    "require_positive_method_updates": true,
+    "strict_model_method_barrier": true,
+    "auto_descend_on_resource_failure": true
+  },
+  "resource_limits": {
+    "production_gpu_memory_mib_exclusive": 29000,
+    "emergency_gpu_memory_mib": 30000,
+    "production_cgroup_memory_gib_exclusive": 80.0,
+    "poll_seconds": 1.0,
+    "termination_grace_seconds": 15.0,
+    "idle_gpu_memory_mib_max": 1024,
+    "gpu_clear_timeout_seconds": 120.0
+  },
+  "minimum_concurrency": {
+    "etpnav-r2r-ce": {"tent": 3, "fstta": 3, "eam": 3, "feedtta": 3, "atena": 3},
+    "bevbert-r2r-ce": {"tent": 3, "fstta": 3, "eam": 3, "feedtta": 3, "atena": 3}
+  },
+  "target_concurrency": {
+    "etpnav-r2r-ce": {"tent": 7, "fstta": 7, "eam": 5, "feedtta": 5, "atena": 4},
+    "bevbert-r2r-ce": {"tent": 6, "fstta": 6, "eam": 4, "feedtta": 4, "atena": 3}
+  }
+}

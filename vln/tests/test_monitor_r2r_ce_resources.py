@@ -44,6 +44,21 @@ class MonitorR2RCEResourcesTest(unittest.TestCase):
             "batch-search-etpnav-r2r-ce-feedtta-lr_2em6-s3",
         )
 
+    def test_classify_concurrency_calibration_worker(self):
+        command = (
+            "bash run_source_eval.sh etpnav-r2r-ce val_seen 0 "
+            "--run-tag batch-calibration-etpnav-r2r-ce-eam-paper_anchor-w5 "
+            "--tta-config /tmp/etpnav-r2r-ce/eam/calibration/"
+            "paper_anchor/worker_5/tta_config.json"
+        )
+        identity = MODULE.classify_command(command)
+        self.assertEqual(identity["setting"], "etpnav-r2r-ce")
+        self.assertEqual(identity["method"], "eam")
+        self.assertEqual(identity["stage"], "calibration")
+        self.assertEqual(identity["candidate_id"], "paper_anchor")
+        self.assertIsNone(identity["order_seed"])
+        self.assertEqual(identity["calibration_worker_index"], 5)
+
     def test_identify_job_through_parent_chain_and_update_peaks(self):
         tag = "calibration-batch"
         table = {
@@ -82,6 +97,7 @@ class MonitorR2RCEResourcesTest(unittest.TestCase):
         )
         phase = summary["phases"]["bevbert-r2r-ce/atena/search"]
         self.assertEqual(phase["max_concurrent_jobs_observed"], 1)
+        self.assertEqual(phase["concurrent_job_sample_counts"], {"1": 1})
         self.assertEqual(phase["peak_sum_process_gpu_memory_mib"], 4100.0)
         self.assertEqual(phase["peak_cgroup_memory_gib"], 12.5)
         self.assertEqual(phase["mean_board_memory_used_mib"], 5000.0)

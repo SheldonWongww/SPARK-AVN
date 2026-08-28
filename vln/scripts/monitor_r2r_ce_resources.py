@@ -22,7 +22,7 @@ import time
 SCHEMA = "navtta.vln_r2r_ce_resource_calibration.v1"
 SETTINGS = ("etpnav-r2r-ce", "bevbert-r2r-ce")
 METHODS = ("tent", "fstta", "eam", "feedtta", "atena")
-STAGES = ("search", "retention")
+STAGES = ("search", "retention", "calibration")
 
 
 def utc_now():
@@ -140,13 +140,20 @@ def classify_command(command):
         None,
     )
     candidate = None
-    match = re.search(r"/(?:search|retention)/([^/]+)/seed_[0-9]+", command)
+    match = re.search(
+        r"/(?:search|retention|calibration)/([^/]+)/(?:seed|worker)_[0-9]+",
+        command,
+    )
     if match:
         candidate = match.group(1)
     order_seed = None
     match = re.search(r"/seed_([0-9]+)(?:/|\s)", command)
     if match:
         order_seed = int(match.group(1))
+    worker_index = None
+    match = re.search(r"/worker_([0-9]+)(?:/|\s)", command)
+    if match:
+        worker_index = int(match.group(1))
     run_tag = None
     match = re.search(r"--run-tag\s+([^\s]+)", command)
     if match:
@@ -157,6 +164,7 @@ def classify_command(command):
         "stage": stage,
         "candidate_id": candidate,
         "order_seed": order_seed,
+        "calibration_worker_index": worker_index,
         "run_tag": run_tag,
     }
 
@@ -238,6 +246,9 @@ def update_summary(
             },
         )
         phase["samples"] += 1
+        histogram = phase.setdefault("concurrent_job_sample_counts", {})
+        concurrency_key = str(len(jobs))
+        histogram[concurrency_key] = histogram.get(concurrency_key, 0) + 1
         running_mean(
             phase,
             "mean_board_memory_used_mib",
@@ -291,6 +302,9 @@ def update_summary(
                 {
                     "candidate_id": identity["candidate_id"],
                     "order_seed": identity["order_seed"],
+                    "calibration_worker_index": identity[
+                        "calibration_worker_index"
+                    ],
                     "samples": 0,
                 },
             )

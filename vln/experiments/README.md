@@ -30,6 +30,41 @@ and campaign lock.  A shared per-GPU active-reservation ledger protects the
 projected GPU/RAM gates during CUDA cold start; direct exclusive,
 CLI-overprovisioned, or duplicate-resume launch is rejected.
 
+## R2R-CE consistency-search concurrency calibration
+
+`r2r_ce_concurrency_calibration_v1.json` binds the unchanged consistency-v2
+search specification and registers the projected worker counts that must be
+validated before a faster successor campaign is created.  The calibration is
+non-formal: for one model-method cell at a time it launches a complete group
+of paper-anchor workers over the canonical 100-episode `val_seen` prefix.
+Every accepted group must be observed simultaneously for at least ten
+one-second samples, finish every worker, produce positive method-update
+evidence, stay below 29,000 MiB board memory and 80 GiB cgroup memory, and have
+no OOM or failed process.  A resource-only failure automatically retries one
+worker lower; any method or evidence failure stops the campaign.
+
+Run the launcher preflight and then the detached calibration on the clean GPU
+host with unique IDs:
+
+```bash
+python3 vln/scripts/run_r2r_ce_concurrency_calibration.py \
+  --batch-id r2rce-calib-preflight-YYYYMMDD \
+  --out-dir /root/autodl-tmp/tmp/r2rce-calib-preflight-YYYYMMDD \
+  --gpu 0 --dry-run
+
+screen -dmS navtta-r2rce-concurrency-calibration bash -lc \
+  'cd /root/autodl-tmp/code/NavTTA && \
+   /root/autodl-tmp/conda/envs/duet/bin/python \
+   vln/scripts/run_r2r_ce_concurrency_calibration.py \
+   --batch-id r2rce-calib-YYYYMMDD \
+   --out-dir vln/results/logs/r2r-ce/resource_calibration/r2rce-calib-YYYYMMDD \
+   --gpu 0'
+```
+
+`SUMMARY.json` retains every attempted level.  Only a completed
+`APPROVED_CONCURRENCY.json` may be used to create a new consistency-search
+spec; the already executed v2 spec is never edited in place.
+
 ## R2R model-wise direct Cartesian full-val search
 
 `r2r_modelwise_cartesian_hparam_v2.json` is the immutable design input for the
