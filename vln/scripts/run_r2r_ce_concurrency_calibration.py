@@ -243,8 +243,8 @@ def build_job(batch_id, out_dir, search, setting, method, concurrency, attempt,
     attempt_tag = "{}-{}-{}-c{}-a{}".format(
         batch_id, setting, method, concurrency, attempt
     )
-    run_tag = "{}-calibration-{}-{}-paper_anchor-w{}".format(
-        attempt_tag, setting, method, worker_index
+    run_tag = "{}-calibration-paper_anchor-w{}".format(
+        attempt_tag, worker_index
     )
     validate_component(run_tag, "worker run tag")
     job_dir = (
