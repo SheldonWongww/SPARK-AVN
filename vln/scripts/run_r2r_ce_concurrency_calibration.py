@@ -627,7 +627,7 @@ def run_attempt(batch_id, out_dir, search, setting, method, concurrency,
     exit_codes = [process.returncode for process in processes]
     if abort_reason is None and any(code != 0 for code in exit_codes):
         abort_reason = "worker_failure"
-    oom_detected = any(
+    oom_detected = any(code in (-9, 137) for code in exit_codes) or any(
         tail_contains_oom(Path(job["job_dir"]) / "launcher.log") for job in jobs
     )
     if abort_reason == "worker_failure" and oom_detected:
