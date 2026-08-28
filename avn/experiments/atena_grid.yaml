@@ -1,4 +1,6 @@
 experiment: atena_avn_full_cartesian_v1
+status: superseded
+superseded_by: avn-smt-audio-four-method-val-search-v1
 result_role: hyperparameter_search
 method: atena
 models: [smt_audio, enmus]

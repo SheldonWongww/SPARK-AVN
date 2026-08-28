@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 
-SCHEMA = "navtta.avn.idea_source_selection.v1"
+SCHEMA = "navtta.avn.idea_source_selection.v2"
 
 
 def file_sha256(path):
@@ -67,8 +67,8 @@ def load_source_manifest(path, expected_sha256, model=None, source_setting=None)
             raise ValueError("invalid {} SHA256".format(label))
     if selection.get("count") != 128 or payload.get("episode_count") != 128:
         raise ValueError("canonical IDEA source manifest requires 128 episodes")
-    if selection.get("action_selection") != "argmax":
-        raise ValueError("IDEA source collection must use native argmax actions")
+    if selection.get("action_selection") != "sample":
+        raise ValueError("IDEA source collection must use native sampled actions")
     if canonical_sha256(selection) != payload["protocol_sha256"]:
         raise ValueError("IDEA source protocol SHA256 mismatch")
     episodes = payload.get("episodes")
@@ -147,6 +147,7 @@ def collection_provenance(manifest, manifest_sha256, model_state_sha256):
         "episode_order_sha256": manifest["episode_order_sha256"],
         "selection_protocol_sha256": manifest["protocol_sha256"],
         "selection_protocol": dict(manifest["selection"]),
+        "action_selection": manifest["selection"]["action_selection"],
         "model": manifest["model"],
         "source_setting": manifest["source_setting"],
     }

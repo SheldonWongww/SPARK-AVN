@@ -1,0 +1,917 @@
+{
+  "benchmark": "mp3d",
+  "checkpoint": {
+    "path": "avn/checkpoints/source/smt_audio/multi_best_val.pth",
+    "sha256": "c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8"
+  },
+  "dataset": {
+    "bundle_root": "avn/data/datasets/train/multi_source/mp3d/v1/train",
+    "bundle_sha256": "6919d650ee7a55f6ca0a730e6b5947aa5ef156466a9a1bc2a572ec0a2c0b3f96",
+    "files": [
+      {
+        "path": "train.json.gz",
+        "sha256": "a99e5a737df13a48fc04b5023b14f5015afb79c828e93f9a638f5053d8ceafb7"
+      },
+      {
+        "path": "content/17DRP5sb8fy.json.gz",
+        "sha256": "bf44b603ddd235d5fe43275035f9fac6253f201d16c03dc052a9a5cf3f3ecb2d"
+      },
+      {
+        "path": "content/1LXtFkjw3qL.json.gz",
+        "sha256": "0ffd7a3e4869dcedc4bfedc298c29f63661b43ced47c2bcb02b8a056e2e3e460"
+      },
+      {
+        "path": "content/1pXnuDYAj8r.json.gz",
+        "sha256": "80ecd2e8f2ede5a11681f3a828c6c643dd4d6e98923529100a69154b57135ce1"
+      },
+      {
+        "path": "content/29hnd4uzFmX.json.gz",
+        "sha256": "d654cc12f2baa24b94d1afe6fbaf8f3f3fa1677e2c003386725bf771d53a32b2"
+      },
+      {
+        "path": "content/2azQ1b91cZZ.json.gz",
+        "sha256": "ff1bf6acff088c688ebf4f1fac0bd02f14521e064b94df62ca8c2e57b55ef922"
+      },
+      {
+        "path": "content/2n8kARJN3HM.json.gz",
+        "sha256": "4ff79411f6f9aa431c9662a54600d035f7f1e9b6d0b5df7ec8dd050e92a96a4d"
+      },
+      {
+        "path": "content/5LpN3gDmAk7.json.gz",
+        "sha256": "b902ae21079e253d27bd6315f78894c70ec9acd9be467df753ee9cca878477c2"
+      },
+      {
+        "path": "content/5q7pvUzZiYa.json.gz",
+        "sha256": "f6a99fd2594b0e7bc2c088eea8675bbfb8d7a747cf1c8d7e82b52dac5aa0c91b"
+      },
+      {
+        "path": "content/759xd9YjKW5.json.gz",
+        "sha256": "16720d7e0f935066555bed30e52df492467ba6071f38ece79fe0df7028d0bb71"
+      },
+      {
+        "path": "content/7y3sRwLe3Va.json.gz",
+        "sha256": "f8558cef512bb4e3af7d2d095974d98ea52341f9c03e277b87a20da5d6dbc0cf"
+      },
+      {
+        "path": "content/8194nk5LbLH.json.gz",
+        "sha256": "92582e0af9c5911fee6cb1d9985730b75e3ec1e37657fba7efe05ce5738a8186"
+      },
+      {
+        "path": "content/82sE5b5pLXE.json.gz",
+        "sha256": "820527f91acc22294d6e973a1f4f24d144602f811a0f9cf9a60a1cef4c066f44"
+      },
+      {
+        "path": "content/ARNzJeq3xxb.json.gz",
+        "sha256": "86fbbf2d36aab8af51d03fcee42b0914abd40c0971d91aa3f1366fd2cee3c238"
+      },
+      {
+        "path": "content/B6ByNegPMKs.json.gz",
+        "sha256": "b1311d13eb49e43e76d86d375592ae74cb8b77447f2aabfb9832c4e1bf93c57f"
+      },
+      {
+        "path": "content/D7G3Y4RVNrH.json.gz",
+        "sha256": "870e94d5691340a13c8bf71cc705a65cb1d6206dea21d26c70bff219d7233289"
+      },
+      {
+        "path": "content/D7N2EKCX4Sj.json.gz",
+        "sha256": "11887cb758f8baa6dc0e74f8fa21ff3c6267a9630f2779fba099f5d92de5b730"
+      },
+      {
+        "path": "content/E9uDoFAP3SH.json.gz",
+        "sha256": "c798c81ab51d8c94075105a501792542e0bbafd115d5bdd28c6d22ca1208b2a9"
+      },
+      {
+        "path": "content/EU6Fwq7SyZv.json.gz",
+        "sha256": "99f519a5aaef5cfb53f8e2b92af7ed05e9be1af6f4eee481f3a9d13f09411bbd"
+      },
+      {
+        "path": "content/GdvgFV5R1Z5.json.gz",
+        "sha256": "a42f3c636e8ba9f2dde96fc16e7fb1cc84a2fc482c9666276627b767348ee576"
+      },
+      {
+        "path": "content/JF19kD82Mey.json.gz",
+        "sha256": "6cf0b4b96e2aa4565fa0ce5709ef60565daeabf81be67d11f5d6f3705dcbfd97"
+      },
+      {
+        "path": "content/JeFG25nYj2p.json.gz",
+        "sha256": "78eb2f5dcf500cf1ddecaa307f4d6800f65ebcb531fbb785d2fbb1115c6e49c5"
+      },
+      {
+        "path": "content/JmbYfDe2QKZ.json.gz",
+        "sha256": "9ae88e0467d22faeb3471018e6f6eeb5ce4a60233c6a53ce7b9890b762d12246"
+      },
+      {
+        "path": "content/PX4nDJXEHrG.json.gz",
+        "sha256": "8169586eee8de05b1acdef405aff6366dc7fd18a58d9d497ffd841a99237e799"
+      },
+      {
+        "path": "content/Pm6F8kyY3z2.json.gz",
+        "sha256": "a5e8dc8bc373d2221f610152cb41ed7113f18f0e806a68e26df6bd70bb6ada77"
+      },
+      {
+        "path": "content/SN83YJsR3w2.json.gz",
+        "sha256": "0597cb7583a743bdd56610347e3a6d5748b4ae207581b7ac8e98d003e02470b5"
+      },
+      {
+        "path": "content/TbHJrupSAjP.json.gz",
+        "sha256": "8a73526e5bfc9fed2e91a23b218d1ece7dc59e54ac025dd79f3ca390feca5338"
+      },
+      {
+        "path": "content/ULsKaCPVFJR.json.gz",
+        "sha256": "81524507e01caeb057aa88086b008b62dc48d1287d526b1978d29a04ea9caf78"
+      },
+      {
+        "path": "content/UwV83HsGsw3.json.gz",
+        "sha256": "4b8fc8f7a9d122f09658b28537864c7816e53c4bfb82bf61cab60a98d9813f39"
+      },
+      {
+        "path": "content/Uxmj2M2itWa.json.gz",
+        "sha256": "3bf407325cf63a07f18b9f3cbeb91bb97102cb8fd428fbc6feed8106f68d336d"
+      },
+      {
+        "path": "content/VFuaQ6m2Qom.json.gz",
+        "sha256": "a5aa776a7b1edca0561c01939137d0ab82e031bfee9182c10c009ae45085ed7c"
+      },
+      {
+        "path": "content/Vvot9Ly1tCj.json.gz",
+        "sha256": "2dc6c7b54250243df23525db3e75d28106c50148051ea5eaa8ace396a65ee52d"
+      },
+      {
+        "path": "content/VzqfbhrpDEA.json.gz",
+        "sha256": "19b2f8ba6a515095d2ab723eaa114029dfeebe39d12bcb14dafa6fd7e99d6a71"
+      },
+      {
+        "path": "content/WYY7iVyf5p8.json.gz",
+        "sha256": "c9420bb5d5454b965244ce468a1884e41dc8189a6d4b8d08d16f4e21c30da399"
+      },
+      {
+        "path": "content/X7HyMhZNoso.json.gz",
+        "sha256": "2b7d3bea4083431e6b7428fc701f91ded6e74689afbdd4bf2fead86769881186"
+      },
+      {
+        "path": "content/XcA2TqTSSAj.json.gz",
+        "sha256": "e525a12172be4d7796e73e1590c2c35eb0501721316b41f7cfdbf9b2c12556dd"
+      },
+      {
+        "path": "content/YFuZgdQ5vWj.json.gz",
+        "sha256": "bb19caf9fa5b612831b952593e9f76e62f8677ca47b99bf551e23dedcc283add"
+      },
+      {
+        "path": "content/YmJkqBEsHnH.json.gz",
+        "sha256": "193c2708b12890bf743430afb5feec7922a85f1b22c3188b6b7d0e06a0612370"
+      },
+      {
+        "path": "content/Z6MFQCViBuw.json.gz",
+        "sha256": "fdc40d04e2ad1d81852964d710625c5eec645f39807cd42f9eaf187681d5eb42"
+      },
+      {
+        "path": "content/ZMojNkEp431.json.gz",
+        "sha256": "a0701bb2c918f6769808660864c82cea07d13b882842cadad4b60a26e0e80d7d"
+      },
+      {
+        "path": "content/aayBHfsNo7d.json.gz",
+        "sha256": "5b5a03c99ba7595e6ea2aac74ed71481d890997b573966434e3d572fb9192ebb"
+      },
+      {
+        "path": "content/cV4RVeZvu5T.json.gz",
+        "sha256": "15397a1685d788afbcbf1b3c8c2c6ff35f09afce763a5bb4d2edb080bbc0be7f"
+      },
+      {
+        "path": "content/fzynW3qQPVF.json.gz",
+        "sha256": "f6bffaaafc16bb5e1e4217ab84241996af1b045edaaa2c43bf7e867570b3c30f"
+      },
+      {
+        "path": "content/jtcxE69GiFV.json.gz",
+        "sha256": "4cca65269e23f40548a307473d8e0037358bd2f5bc00f0b6b4d98c6e0d70ee18"
+      },
+      {
+        "path": "content/mJXqzFtmKg4.json.gz",
+        "sha256": "bcf92371a3acc49db496433e19863fee1af53c606397cdc9a0fbd8e05eec7374"
+      },
+      {
+        "path": "content/p5wJjkQkbXX.json.gz",
+        "sha256": "140324d14d28e2a85a27021482211bb7c929699e49230256490ebb88456efbb6"
+      },
+      {
+        "path": "content/pLe4wQe7qrG.json.gz",
+        "sha256": "9f13c8ffcda1b628af49f6d4c11b35dee5d5b52f990621995847c4c4252ac441"
+      },
+      {
+        "path": "content/pRbA3pwrgk9.json.gz",
+        "sha256": "55f11658c929d8033f6532dfb62f88bc8c458b7950b098eb7810c09a135c06bc"
+      },
+      {
+        "path": "content/pa4otMbVnkk.json.gz",
+        "sha256": "4d52a09ffdd00df764a9871acae87889bf6b68cfea4dcce932cac0267881f9d9"
+      },
+      {
+        "path": "content/r1Q1Z4BcV1o.json.gz",
+        "sha256": "f9aa6e5f515b9d097d658a1f02fd04e2f2f073a85fe82df90abc234ddea49760"
+      },
+      {
+        "path": "content/rPc6DW4iMge.json.gz",
+        "sha256": "e0b095bf2c07a6b5b6776bca7c9ff743eec9d4277c5abe6dab6a25c8c04420a3"
+      },
+      {
+        "path": "content/rqfALeAoiTq.json.gz",
+        "sha256": "2e093177f20089638ebacfdf5267aefa19bd616ed0ca57f45ef4b478e483d865"
+      },
+      {
+        "path": "content/s8pcmisQ38h.json.gz",
+        "sha256": "6929cfbd67f2a96e0797865fb9bd0059e2dfe9d41466a59baa448976d2b84194"
+      },
+      {
+        "path": "content/sKLMLpTHeUy.json.gz",
+        "sha256": "ecba413a8a75ddc057d0af11259e25cd085c43cff4028aeb6acc3f01e6e77532"
+      },
+      {
+        "path": "content/sT4fr6TAbpF.json.gz",
+        "sha256": "724caf127ed132f9a8152e4a31eec314f9504f232cc6324cf27d551544a38325"
+      },
+      {
+        "path": "content/uNb9QFRL6hY.json.gz",
+        "sha256": "47da583afc7590bca697f24c658789ce5ef01c0f1d9601f7ece19d7a43de1eaa"
+      },
+      {
+        "path": "content/ur6pFq6Qu1A.json.gz",
+        "sha256": "bf887af81b28b086c9149898313b9f3ecf0200130bcd94aea92ca686098d7ea4"
+      },
+      {
+        "path": "content/wc2JMjhGNzB.json.gz",
+        "sha256": "77842bf4a8df793034d03b4cc91a373856d98b69c765c1c21068cc6ff39b14d0"
+      },
+      {
+        "path": "content/x8F5xyUWy9e.json.gz",
+        "sha256": "f918d60a8c35f1867342e87931bdce7dc6a442680215660d6cb4acb18985562b"
+      },
+      {
+        "path": "content/yqstnuAEVhm.json.gz",
+        "sha256": "65930f8e82c030d4c1c9857a1d5da3facd53a2dbe091da2ea4b8dfba4dc63b16"
+      },
+      {
+        "path": "content/zsNo4HB9uLZ.json.gz",
+        "sha256": "a21f950d0df24be6a93b6f5ebc2dc3e27d1047dfed6618fb968f40659d6a628d"
+      }
+    ],
+    "index_path": "avn/data/datasets/train/multi_source/mp3d/v1/train/train.json.gz",
+    "name": "avn_mp3d_multi_source",
+    "split": "train",
+    "version": "v1"
+  },
+  "episode_count": 128,
+  "episode_order_sha256": "a6d96bdc8451c135285ea4686a41239362aed60fd759a8a758fe54ebd24580d9",
+  "episodes": [
+    {
+      "episode_id": "669167",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/669167"
+    },
+    {
+      "episode_id": "490276",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/490276"
+    },
+    {
+      "episode_id": "523250",
+      "scene_id": "2azQ1b91cZZ",
+      "trajectory_id": "2azQ1b91cZZ/523250"
+    },
+    {
+      "episode_id": "30310",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/30310"
+    },
+    {
+      "episode_id": "661394",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/661394"
+    },
+    {
+      "episode_id": "82899",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/82899"
+    },
+    {
+      "episode_id": "498915",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/498915"
+    },
+    {
+      "episode_id": "637014",
+      "scene_id": "p5wJjkQkbXX",
+      "trajectory_id": "p5wJjkQkbXX/637014"
+    },
+    {
+      "episode_id": "617648",
+      "scene_id": "7y3sRwLe3Va",
+      "trajectory_id": "7y3sRwLe3Va/617648"
+    },
+    {
+      "episode_id": "660463",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/660463"
+    },
+    {
+      "episode_id": "4037",
+      "scene_id": "5LpN3gDmAk7",
+      "trajectory_id": "5LpN3gDmAk7/4037"
+    },
+    {
+      "episode_id": "62446",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/62446"
+    },
+    {
+      "episode_id": "210231",
+      "scene_id": "Vvot9Ly1tCj",
+      "trajectory_id": "Vvot9Ly1tCj/210231"
+    },
+    {
+      "episode_id": "457063",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/457063"
+    },
+    {
+      "episode_id": "475627",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/475627"
+    },
+    {
+      "episode_id": "495070",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/495070"
+    },
+    {
+      "episode_id": "655132",
+      "scene_id": "EU6Fwq7SyZv",
+      "trajectory_id": "EU6Fwq7SyZv/655132"
+    },
+    {
+      "episode_id": "131522",
+      "scene_id": "B6ByNegPMKs",
+      "trajectory_id": "B6ByNegPMKs/131522"
+    },
+    {
+      "episode_id": "44177",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/44177"
+    },
+    {
+      "episode_id": "107540",
+      "scene_id": "ur6pFq6Qu1A",
+      "trajectory_id": "ur6pFq6Qu1A/107540"
+    },
+    {
+      "episode_id": "98735",
+      "scene_id": "ur6pFq6Qu1A",
+      "trajectory_id": "ur6pFq6Qu1A/98735"
+    },
+    {
+      "episode_id": "669500",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/669500"
+    },
+    {
+      "episode_id": "208411",
+      "scene_id": "Vvot9Ly1tCj",
+      "trajectory_id": "Vvot9Ly1tCj/208411"
+    },
+    {
+      "episode_id": "469996",
+      "scene_id": "aayBHfsNo7d",
+      "trajectory_id": "aayBHfsNo7d/469996"
+    },
+    {
+      "episode_id": "110580",
+      "scene_id": "B6ByNegPMKs",
+      "trajectory_id": "B6ByNegPMKs/110580"
+    },
+    {
+      "episode_id": "677359",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/677359"
+    },
+    {
+      "episode_id": "235254",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/235254"
+    },
+    {
+      "episode_id": "637568",
+      "scene_id": "p5wJjkQkbXX",
+      "trajectory_id": "p5wJjkQkbXX/637568"
+    },
+    {
+      "episode_id": "665221",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/665221"
+    },
+    {
+      "episode_id": "613371",
+      "scene_id": "r1Q1Z4BcV1o",
+      "trajectory_id": "r1Q1Z4BcV1o/613371"
+    },
+    {
+      "episode_id": "70147",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/70147"
+    },
+    {
+      "episode_id": "139231",
+      "scene_id": "wc2JMjhGNzB",
+      "trajectory_id": "wc2JMjhGNzB/139231"
+    },
+    {
+      "episode_id": "29871",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/29871"
+    },
+    {
+      "episode_id": "79249",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/79249"
+    },
+    {
+      "episode_id": "482354",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/482354"
+    },
+    {
+      "episode_id": "515587",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/515587"
+    },
+    {
+      "episode_id": "452370",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/452370"
+    },
+    {
+      "episode_id": "59179",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/59179"
+    },
+    {
+      "episode_id": "478459",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/478459"
+    },
+    {
+      "episode_id": "507730",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/507730"
+    },
+    {
+      "episode_id": "260183",
+      "scene_id": "82sE5b5pLXE",
+      "trajectory_id": "82sE5b5pLXE/260183"
+    },
+    {
+      "episode_id": "660656",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/660656"
+    },
+    {
+      "episode_id": "5539",
+      "scene_id": "5LpN3gDmAk7",
+      "trajectory_id": "5LpN3gDmAk7/5539"
+    },
+    {
+      "episode_id": "676868",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/676868"
+    },
+    {
+      "episode_id": "480985",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/480985"
+    },
+    {
+      "episode_id": "16641",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/16641"
+    },
+    {
+      "episode_id": "669320",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/669320"
+    },
+    {
+      "episode_id": "517473",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/517473"
+    },
+    {
+      "episode_id": "660249",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/660249"
+    },
+    {
+      "episode_id": "236225",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/236225"
+    },
+    {
+      "episode_id": "276718",
+      "scene_id": "UwV83HsGsw3",
+      "trajectory_id": "UwV83HsGsw3/276718"
+    },
+    {
+      "episode_id": "236519",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/236519"
+    },
+    {
+      "episode_id": "405626",
+      "scene_id": "D7N2EKCX4Sj",
+      "trajectory_id": "D7N2EKCX4Sj/405626"
+    },
+    {
+      "episode_id": "490578",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/490578"
+    },
+    {
+      "episode_id": "428307",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/428307"
+    },
+    {
+      "episode_id": "217162",
+      "scene_id": "Vvot9Ly1tCj",
+      "trajectory_id": "Vvot9Ly1tCj/217162"
+    },
+    {
+      "episode_id": "230505",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/230505"
+    },
+    {
+      "episode_id": "419197",
+      "scene_id": "yqstnuAEVhm",
+      "trajectory_id": "yqstnuAEVhm/419197"
+    },
+    {
+      "episode_id": "223712",
+      "scene_id": "Vvot9Ly1tCj",
+      "trajectory_id": "Vvot9Ly1tCj/223712"
+    },
+    {
+      "episode_id": "84743",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/84743"
+    },
+    {
+      "episode_id": "267429",
+      "scene_id": "PX4nDJXEHrG",
+      "trajectory_id": "PX4nDJXEHrG/267429"
+    },
+    {
+      "episode_id": "274148",
+      "scene_id": "PX4nDJXEHrG",
+      "trajectory_id": "PX4nDJXEHrG/274148"
+    },
+    {
+      "episode_id": "48009",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/48009"
+    },
+    {
+      "episode_id": "409447",
+      "scene_id": "D7N2EKCX4Sj",
+      "trajectory_id": "D7N2EKCX4Sj/409447"
+    },
+    {
+      "episode_id": "671546",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/671546"
+    },
+    {
+      "episode_id": "235149",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/235149"
+    },
+    {
+      "episode_id": "253606",
+      "scene_id": "1pXnuDYAj8r",
+      "trajectory_id": "1pXnuDYAj8r/253606"
+    },
+    {
+      "episode_id": "434616",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/434616"
+    },
+    {
+      "episode_id": "460135",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/460135"
+    },
+    {
+      "episode_id": "102395",
+      "scene_id": "ur6pFq6Qu1A",
+      "trajectory_id": "ur6pFq6Qu1A/102395"
+    },
+    {
+      "episode_id": "62789",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/62789"
+    },
+    {
+      "episode_id": "474939",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/474939"
+    },
+    {
+      "episode_id": "34023",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/34023"
+    },
+    {
+      "episode_id": "6768",
+      "scene_id": "sKLMLpTHeUy",
+      "trajectory_id": "sKLMLpTHeUy/6768"
+    },
+    {
+      "episode_id": "419085",
+      "scene_id": "yqstnuAEVhm",
+      "trajectory_id": "yqstnuAEVhm/419085"
+    },
+    {
+      "episode_id": "64563",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/64563"
+    },
+    {
+      "episode_id": "425673",
+      "scene_id": "8194nk5LbLH",
+      "trajectory_id": "8194nk5LbLH/425673"
+    },
+    {
+      "episode_id": "112271",
+      "scene_id": "B6ByNegPMKs",
+      "trajectory_id": "B6ByNegPMKs/112271"
+    },
+    {
+      "episode_id": "524616",
+      "scene_id": "2azQ1b91cZZ",
+      "trajectory_id": "2azQ1b91cZZ/524616"
+    },
+    {
+      "episode_id": "240625",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/240625"
+    },
+    {
+      "episode_id": "38891",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/38891"
+    },
+    {
+      "episode_id": "226557",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/226557"
+    },
+    {
+      "episode_id": "79103",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/79103"
+    },
+    {
+      "episode_id": "641583",
+      "scene_id": "p5wJjkQkbXX",
+      "trajectory_id": "p5wJjkQkbXX/641583"
+    },
+    {
+      "episode_id": "649529",
+      "scene_id": "TbHJrupSAjP",
+      "trajectory_id": "TbHJrupSAjP/649529"
+    },
+    {
+      "episode_id": "41327",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/41327"
+    },
+    {
+      "episode_id": "10082",
+      "scene_id": "sKLMLpTHeUy",
+      "trajectory_id": "sKLMLpTHeUy/10082"
+    },
+    {
+      "episode_id": "5292",
+      "scene_id": "5LpN3gDmAk7",
+      "trajectory_id": "5LpN3gDmAk7/5292"
+    },
+    {
+      "episode_id": "69916",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/69916"
+    },
+    {
+      "episode_id": "439905",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/439905"
+    },
+    {
+      "episode_id": "457702",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/457702"
+    },
+    {
+      "episode_id": "142885",
+      "scene_id": "ZMojNkEp431",
+      "trajectory_id": "ZMojNkEp431/142885"
+    },
+    {
+      "episode_id": "628483",
+      "scene_id": "p5wJjkQkbXX",
+      "trajectory_id": "p5wJjkQkbXX/628483"
+    },
+    {
+      "episode_id": "95887",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/95887"
+    },
+    {
+      "episode_id": "146597",
+      "scene_id": "ZMojNkEp431",
+      "trajectory_id": "ZMojNkEp431/146597"
+    },
+    {
+      "episode_id": "512119",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/512119"
+    },
+    {
+      "episode_id": "410218",
+      "scene_id": "D7N2EKCX4Sj",
+      "trajectory_id": "D7N2EKCX4Sj/410218"
+    },
+    {
+      "episode_id": "26100",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/26100"
+    },
+    {
+      "episode_id": "473316",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/473316"
+    },
+    {
+      "episode_id": "475993",
+      "scene_id": "SN83YJsR3w2",
+      "trajectory_id": "SN83YJsR3w2/475993"
+    },
+    {
+      "episode_id": "276009",
+      "scene_id": "pRbA3pwrgk9",
+      "trajectory_id": "pRbA3pwrgk9/276009"
+    },
+    {
+      "episode_id": "440541",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/440541"
+    },
+    {
+      "episode_id": "640175",
+      "scene_id": "p5wJjkQkbXX",
+      "trajectory_id": "p5wJjkQkbXX/640175"
+    },
+    {
+      "episode_id": "24175",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/24175"
+    },
+    {
+      "episode_id": "680093",
+      "scene_id": "X7HyMhZNoso",
+      "trajectory_id": "X7HyMhZNoso/680093"
+    },
+    {
+      "episode_id": "520116",
+      "scene_id": "2azQ1b91cZZ",
+      "trajectory_id": "2azQ1b91cZZ/520116"
+    },
+    {
+      "episode_id": "670367",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/670367"
+    },
+    {
+      "episode_id": "145375",
+      "scene_id": "ZMojNkEp431",
+      "trajectory_id": "ZMojNkEp431/145375"
+    },
+    {
+      "episode_id": "51758",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/51758"
+    },
+    {
+      "episode_id": "248713",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/248713"
+    },
+    {
+      "episode_id": "228031",
+      "scene_id": "VzqfbhrpDEA",
+      "trajectory_id": "VzqfbhrpDEA/228031"
+    },
+    {
+      "episode_id": "681854",
+      "scene_id": "X7HyMhZNoso",
+      "trajectory_id": "X7HyMhZNoso/681854"
+    },
+    {
+      "episode_id": "458789",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/458789"
+    },
+    {
+      "episode_id": "213886",
+      "scene_id": "Vvot9Ly1tCj",
+      "trajectory_id": "Vvot9Ly1tCj/213886"
+    },
+    {
+      "episode_id": "485803",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/485803"
+    },
+    {
+      "episode_id": "663392",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/663392"
+    },
+    {
+      "episode_id": "94349",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/94349"
+    },
+    {
+      "episode_id": "52305",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/52305"
+    },
+    {
+      "episode_id": "447310",
+      "scene_id": "2n8kARJN3HM",
+      "trajectory_id": "2n8kARJN3HM/447310"
+    },
+    {
+      "episode_id": "660283",
+      "scene_id": "pa4otMbVnkk",
+      "trajectory_id": "pa4otMbVnkk/660283"
+    },
+    {
+      "episode_id": "504995",
+      "scene_id": "fzynW3qQPVF",
+      "trajectory_id": "fzynW3qQPVF/504995"
+    },
+    {
+      "episode_id": "406152",
+      "scene_id": "D7N2EKCX4Sj",
+      "trajectory_id": "D7N2EKCX4Sj/406152"
+    },
+    {
+      "episode_id": "43351",
+      "scene_id": "E9uDoFAP3SH",
+      "trajectory_id": "E9uDoFAP3SH/43351"
+    },
+    {
+      "episode_id": "645529",
+      "scene_id": "759xd9YjKW5",
+      "trajectory_id": "759xd9YjKW5/645529"
+    },
+    {
+      "episode_id": "117963",
+      "scene_id": "B6ByNegPMKs",
+      "trajectory_id": "B6ByNegPMKs/117963"
+    },
+    {
+      "episode_id": "617062",
+      "scene_id": "r1Q1Z4BcV1o",
+      "trajectory_id": "r1Q1Z4BcV1o/617062"
+    },
+    {
+      "episode_id": "99848",
+      "scene_id": "ur6pFq6Qu1A",
+      "trajectory_id": "ur6pFq6Qu1A/99848"
+    },
+    {
+      "episode_id": "74983",
+      "scene_id": "Z6MFQCViBuw",
+      "trajectory_id": "Z6MFQCViBuw/74983"
+    }
+  ],
+  "model": "smt_audio",
+  "protocol_sha256": "c46f5765b0e88ec17d2fd6ea1e0f7ae7f640b8b562d0d5820f85e731a2a1c6b5",
+  "schema": "navtta.avn.idea_source_selection.v2",
+  "selection": {
+    "action_selection": "sample",
+    "algorithm": "domain_separated_sha256_rank_v1",
+    "count": 128,
+    "domain_separator": "navtta.avn.idea.source128.sample.v2",
+    "seed": 0
+  },
+  "source_setting": "multi_source",
+  "task": "avn"
+}

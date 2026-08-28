@@ -58,7 +58,7 @@ class EnmusIdeaSourceCollectionTest(unittest.TestCase):
             self.assertEqual(loaded["episode_count"], 128)
             self.assertEqual(loaded["dataset"]["split"], "train")
             self.assertEqual(
-                loaded["selection"]["action_selection"], "argmax"
+                loaded["selection"]["action_selection"], "sample"
             )
 
     def test_enmus_trainer_has_fail_closed_collection_contract(self):
@@ -73,7 +73,7 @@ class EnmusIdeaSourceCollectionTest(unittest.TestCase):
             "TransformerFusionProtocol.for_source_collection",
             "verify_manifest_assets",
             "EVAL.SPLIT=train",
-            "native argmax actions",
+            "native sampled actions",
             "TEST_EPISODE_COUNT",
             "source policy state changed during IDEA collection",
             "expected_source_provenance={",
@@ -90,6 +90,8 @@ class EnmusIdeaSourceCollectionTest(unittest.TestCase):
         self.assertIn(
             "TASK_CONFIG.DATASET.IDEA_SOURCE_EPISODE_MANIFEST", launcher
         )
+        self.assertIn("_sample_seed${SEED}.json", launcher)
+        self.assertIn("EVAL.ACTION_SELECTION sample", launcher)
         self.assertIn("ITERATOR_OPTIONS.SHUFFLE False", launcher)
 
 

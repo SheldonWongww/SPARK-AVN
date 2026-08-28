@@ -84,6 +84,8 @@ TTA:
     QUERY_THRESHOLD: 0.1
     SELF_LOSS_WEIGHT: 0.1
     PARAM_SCOPE: "all"
+    # AVN task-native variant: execute and learn from the sampled action.
+    ACTION_SELECTION_PROTOCOL: "sample_from_policy"
     TASK_UPDATE_SCOPE: "replay_reachable_actor_navigation_policy"
     OPTIMIZER: "AdamW"
     WEIGHT_DECAY: 0.01

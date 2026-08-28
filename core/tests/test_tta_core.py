@@ -1622,6 +1622,13 @@ class TTACoreTest(unittest.TestCase):
             adapter.diagnostics()["action_selection_protocol"],
             "target_native_argmax",
         )
+        distribution = policy.action_distribution(
+            _forward(policy, _inputs())[0]
+        )
+        torch.testing.assert_close(
+            adapter.select_action(distribution),
+            distribution.probs.argmax(dim=-1, keepdim=True),
+        )
         self.assertEqual(adapter.param_scope, "module_prefixes")
         self.assertTrue(all(
             name.startswith(("net.norms.3.", "action_distribution."))
@@ -1648,6 +1655,36 @@ class TTACoreTest(unittest.TestCase):
         adapter._accumulate_step_gradient(torch.full((width,), 2.0))
         expected = torch.full((width,), 2.5)
         torch.testing.assert_close(adapter._aggregate_trajectory(), expected)
+
+    def test_feedtta_sample_protocol_uses_distribution_sample(self):
+        adapter = FEEDTTAAdapter(
+            _TinyPolicy(),
+            trainable_prefixes=("action_distribution",),
+            action_selection_protocol="sample_from_policy",
+        )
+
+        class _Distribution:
+            probs = torch.tensor([[0.9, 0.1]])
+
+            @staticmethod
+            def sample():
+                return torch.tensor([[1]])
+
+        self.assertEqual(int(adapter.select_action(_Distribution()).item()), 1)
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["action_selection"], "sample")
+        self.assertEqual(
+            diagnostics["policy_gradient_action"],
+            "task_runner_executed_action",
+        )
+
+    def test_feedtta_rejects_unknown_action_protocol(self):
+        with self.assertRaisesRegex(ValueError, "action_selection_protocol"):
+            FEEDTTAAdapter(
+                _TinyPolicy(),
+                trainable_prefixes=("action_distribution",),
+                action_selection_protocol="untracked_selector",
+            )
 
     def test_feedtta_trajectory_accumulator_has_constant_memory(self):
         adapter = FEEDTTAAdapter(
@@ -1817,6 +1854,53 @@ class TTACoreTest(unittest.TestCase):
             adapter.diagnostics()["gradient_reconstruction"],
             "exact_step_replay_in_eval_mode",
         )
+
+    def test_atena_task_native_sampling_uses_executed_action(self):
+        policy = _TinyPolicy()
+        adapter = ATENAAdapter(
+            policy,
+            lr_query=1e-2,
+            query_threshold=0.0,
+            weight_decay=0.0,
+            action_selection_protocol="sample_from_policy",
+        )
+        adapter.episode_start()
+        inputs = _inputs()
+        features, logits = _forward(policy, inputs)
+        distribution = policy.action_distribution(features)
+        argmax = distribution.probs.argmax(dim=-1, keepdim=True)
+        executed = (argmax + 1) % distribution.probs.shape[-1]
+        adapter.adapt(
+            logits,
+            action=executed,
+            features=features,
+            policy_inputs=inputs,
+        )
+        self.assertEqual(
+            int(adapter.trajectory[0]["action"].item()), int(executed.item())
+        )
+        adapter.episode_end({"success": 1.0})
+        diagnostics = adapter.diagnostics()
+        self.assertEqual(diagnostics["action_selection"], "sample")
+        self.assertEqual(
+            diagnostics["pseudo_expert_action"],
+            "executed_task_native_sample",
+        )
+        self.assertEqual(diagnostics["sample_argmax_match_rate"], 0.0)
+
+    def test_atena_lazy_head_initialization_preserves_action_rng(self):
+        policy = _TinyPolicy()
+        adapter = ATENAAdapter(
+            policy,
+            action_selection_protocol="sample_from_policy",
+        )
+        features, _ = _forward(policy, _inputs())
+        before = torch.random.get_rng_state().clone()
+        adapter._ensure_head(
+            features.shape[-1], features.device, features.dtype
+        )
+        after = torch.random.get_rng_state()
+        self.assertTrue(torch.equal(after, before))
 
     def test_atena_accepts_lambda_one_and_task_forward_policy(self):
         policy = _TinyPolicy()

@@ -852,8 +852,8 @@ class PPOTrainer(BaseRLTrainer):
                 raise ValueError("IDEA source collection requires TTA.METHOD=source")
             if str(config.EVAL.SPLIT).lower() != "train":
                 raise ValueError("IDEA source collection requires EVAL.SPLIT=train")
-            if action_selection != "argmax":
-                raise ValueError("IDEA source collection requires native argmax actions")
+            if action_selection != "sample":
+                raise ValueError("IDEA source collection requires native sampled actions")
             if int(config.NUM_PROCESSES) != 1 or int(config.TEST_EPISODE_COUNT) != 128:
                 raise ValueError(
                     "IDEA source collection requires one environment and exactly 128 episodes"
@@ -955,6 +955,10 @@ class PPOTrainer(BaseRLTrainer):
                     "FeedTTA REINFORCE requires actions sampled from the policy; "
                     "set EVAL.ACTION_SELECTION=sample"
                 )
+            if tta_method == "idea" and action_selection != "sample":
+                raise ValueError(
+                    "AVN IDEA requires task-native sampled actions"
+                )
             if tta_method == "atena" and not bool(
                 getattr(getattr(tta_cfg, "ATENA", None), "PREFLIGHT_APPROVED", False)
             ):
@@ -963,6 +967,23 @@ class PPOTrainer(BaseRLTrainer):
                     "avn/experiments/ATENA_PRE_RUN_REVIEW.md and set "
                     "TTA.ATENA.PREFLIGHT_APPROVED=True only for the reviewed run."
                 )
+            if tta_method == "atena":
+                configured_protocol = str(getattr(
+                    getattr(tta_cfg, "ATENA", None),
+                    "ACTION_SELECTION_PROTOCOL",
+                    "policy_argmax",
+                )).lower()
+                expected_protocol = (
+                    "sample_from_policy"
+                    if action_selection == "sample"
+                    else "policy_argmax"
+                )
+                if configured_protocol != expected_protocol:
+                    raise ValueError(
+                        "ATENA action protocol mismatch: EVAL.ACTION_SELECTION={} "
+                        "requires TTA.ATENA.ACTION_SELECTION_PROTOCOL={}"
+                        .format(action_selection, expected_protocol)
+                    )
             if tta_method == "atena":
                 atena_task_scope = str(getattr(
                     getattr(tta_cfg, "ATENA", None),
@@ -1055,6 +1076,7 @@ class PPOTrainer(BaseRLTrainer):
                         "episode_selection_manifest_sha256": (
                             source_manifest_sha256
                         ),
+                        "action_selection": "sample",
                         "model": "smt_audio",
                         "source_setting": source_setting,
                     },
@@ -1130,7 +1152,12 @@ class PPOTrainer(BaseRLTrainer):
                         not_done_masks,
                         test_em.memory[:, 0] if ppo_cfg.use_external_memory else None,
                         test_em.masks if ppo_cfg.use_external_memory else None,
-                        deterministic=True,
+                        # Source statistics must follow the same AVN behavior
+                        # policy as target evaluation.  The guarded collection
+                        # protocol above requires ``action_selection == sample``;
+                        # the returned tensor is copied to ``prev_actions`` and
+                        # passed unchanged to ``envs.step`` below.
+                        deterministic=(action_selection == "argmax"),
                     )
                     prev_actions.copy_(actions)
             elif tta_adapter is None:
@@ -1487,6 +1514,7 @@ class PPOTrainer(BaseRLTrainer):
                 False if tta_method == "atena" else None
             )
             diagnostics["action_counts"] = tta_action_counts
+            diagnostics["task_action_selection"] = action_selection
             if source_collection is None:
                 diagnostics["mean_max_action_probability"] = (
                     tta_max_prob_sum / max(1, tta_probability_steps)

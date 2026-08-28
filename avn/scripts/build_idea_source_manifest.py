@@ -9,8 +9,8 @@ import os
 from pathlib import Path
 
 
-SCHEMA = "navtta.avn.idea_source_selection.v1"
-DOMAIN = "navtta.avn.idea.source128.v1"
+SCHEMA = "navtta.avn.idea_source_selection.v2"
+DOMAIN = "navtta.avn.idea.source128.sample.v2"
 
 
 def _sha256(path):
@@ -123,7 +123,7 @@ def build_manifest(dataset, checkpoint, model, source_setting, seed=0, count=128
         for _, scene, episode_id in ranked[:count]
     ]
     protocol = {
-        "action_selection": "argmax",
+        "action_selection": "sample",
         "algorithm": "domain_separated_sha256_rank_v1",
         "count": count,
         "domain_separator": DOMAIN,

@@ -227,6 +227,7 @@ _C.TTA.FEEDTTA.ALPHA = -0.2
 _C.TTA.FEEDTTA.SGR_SEED = 0
 _C.TTA.FEEDTTA.SGR_MODE = "paper_main"
 _C.TTA.FEEDTTA.GAMMA = 0.99
+_C.TTA.FEEDTTA.ACTION_SELECTION_PROTOCOL = "sample_from_policy"
 # Eq. (3) sums discounted trajectory gradients; it does not length-normalize.
 _C.TTA.FEEDTTA.NORMALIZE_GRADIENT = False
 # Freeze sensory encoders and adapt the fusion encoder plus action head.
@@ -251,6 +252,9 @@ _C.TTA.ATENA.MIX_LAMBDA = 0.5
 _C.TTA.ATENA.QUERY_THRESHOLD = 0.1
 _C.TTA.ATENA.SELF_LOSS_WEIGHT = 0.1
 _C.TTA.ATENA.PARAM_SCOPE = "all"
+# Official VLN uses policy_argmax.  AVN launchers must opt in explicitly to
+# sample_from_policy so the executed task-native action is the pseudo expert.
+_C.TTA.ATENA.ACTION_SELECTION_PROTOCOL = "policy_argmax"
 # AVN replays the actor navigation graph but excludes the value-only critic.
 # A requested end-to-end/full-policy claim is rejected by the trainer.
 _C.TTA.ATENA.TASK_UPDATE_SCOPE = (

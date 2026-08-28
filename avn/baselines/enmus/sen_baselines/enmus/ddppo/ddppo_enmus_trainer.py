@@ -802,9 +802,9 @@ class DDPPOTrainer(PPOTrainer):
                 raise ValueError(
                     "ENMuS IDEA source collection requires EVAL.SPLIT=train"
                 )
-            if action_selection != "argmax":
+            if action_selection != "sample":
                 raise ValueError(
-                    "ENMuS IDEA source collection requires native argmax actions"
+                    "ENMuS IDEA source collection requires native sampled actions"
                 )
             if self.envs.num_envs != 1:
                 raise ValueError(
@@ -929,7 +929,7 @@ class DDPPOTrainer(PPOTrainer):
                 expected_trajectory_count=128,
             )
             logging.info(
-                "[IDEA source] frozen argmax collection enabled: setting=%s "
+                "[IDEA source] frozen sampled-action collection enabled: setting=%s "
                 "manifest=%s order=%s",
                 source_setting,
                 actual_manifest_sha256,
@@ -941,6 +941,10 @@ class DDPPOTrainer(PPOTrainer):
                     "FeedTTA REINFORCE requires actions sampled from the policy; "
                     "set EVAL.ACTION_SELECTION=sample"
                 )
+            if tta_method == "idea" and action_selection != "sample":
+                raise ValueError(
+                    "AVN IDEA requires task-native sampled actions"
+                )
             if tta_method == "atena" and not bool(
                 getattr(getattr(tta_cfg, "ATENA", None), "PREFLIGHT_APPROVED", False)
             ):
@@ -949,6 +953,23 @@ class DDPPOTrainer(PPOTrainer):
                     "avn/experiments/ATENA_PRE_RUN_REVIEW.md and set "
                     "TTA.ATENA.PREFLIGHT_APPROVED=True only for the reviewed run."
                 )
+            if tta_method == "atena":
+                configured_protocol = str(getattr(
+                    getattr(tta_cfg, "ATENA", None),
+                    "ACTION_SELECTION_PROTOCOL",
+                    "policy_argmax",
+                )).lower()
+                expected_protocol = (
+                    "sample_from_policy"
+                    if action_selection == "sample"
+                    else "policy_argmax"
+                )
+                if configured_protocol != expected_protocol:
+                    raise ValueError(
+                        "ATENA action protocol mismatch: EVAL.ACTION_SELECTION={} "
+                        "requires TTA.ATENA.ACTION_SELECTION_PROTOCOL={}"
+                        .format(action_selection, expected_protocol)
+                    )
             if tta_method == "atena":
                 atena_task_scope = str(getattr(
                     getattr(tta_cfg, "ATENA", None),
@@ -1037,6 +1058,7 @@ class DDPPOTrainer(PPOTrainer):
                         "episode_selection_manifest_sha256": (
                             source_manifest_sha256
                         ),
+                        "action_selection": "sample",
                         "model": "enmus",
                         "source_setting": source_setting,
                     },
@@ -1406,6 +1428,7 @@ class DDPPOTrainer(PPOTrainer):
                 "fixed_discrete_all_actions_valid"
             )
             diagnostics["task_valid_action_count"] = tta_valid_action_count
+            diagnostics["task_action_selection"] = action_selection
             diagnostics["tent_canonical_update_interval"] = (
                 int(getattr(tta_cfg, "UPDATE_INTERVAL", 1)) == 1
                 if tta_method == "tent" else None

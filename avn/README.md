@@ -1,6 +1,8 @@
 # Audio-Visual Navigation
 
-AVN is the active task line. The first formal comparison uses SMT+Audio and ENMuS with Source, Tent, FSTTA, EAM, FeedTTA, and ATENA under single-source and multi-source evaluation.
+AVN is the active task line. The comparison uses SMT+Audio and ENMuS with
+Source, Tent, FSTTA, EAM, FeedTTA, ATENA, and IDEA under single-source and
+multi-source evaluation.
 
 Current structure:
 
@@ -23,6 +25,44 @@ Example evaluation entry points:
 bash avn/scripts/eval_smt_audio.sh single_source source 0
 bash avn/scripts/eval_enmus.sh multi_source tent 0
 ```
+
+The active SMT+Audio development campaign searches EAM, FeedTTA,
+ATENA-AVN(sample), and IDEA directly on the fixed single-source and
+multi-source validation streams.  It contains 118 TTA jobs, uses one fixed
+method lane per GPU, and enforces a single-before-multi barrier within each
+lane:
+
+```bash
+python3 avn/scripts/run_smt_audio_val_search.py --dry-run \
+  --batch-id smt-four-val-v1-seed0
+python3 avn/scripts/run_smt_audio_val_search.py --preflight-only \
+  --batch-id smt-four-val-v1-seed0
+bash avn/scripts/smt_audio_val_search_screen.sh start \
+  smt-four-val-v1-seed0
+bash avn/scripts/smt_audio_val_search_screen.sh status \
+  smt-four-val-v1-seed0
+```
+
+The default 24GB limits are EAM 4, FeedTTA 4, ATENA 3, and IDEA 2.  They may
+only be lowered at launch.  All four methods execute the actual sampled AVN
+action.  In particular, ATENA is reported as `ATENA-AVN(sample)` because its
+official VLN implementation uses argmax.  IDEA automatically prepares a
+separate digest-pinned 128-trajectory sampled source-training artifact before
+each source setting.  See
+[`experiments/SMT_AUDIO_FOUR_METHOD_VAL_SEARCH_V1.md`](experiments/SMT_AUDIO_FOUR_METHOD_VAL_SEARCH_V1.md)
+for the frozen grid and selection rule.
+
+After an interruption, first confirm the old scheduler and workers are gone,
+then resume the same immutable batch:
+
+```bash
+bash avn/scripts/smt_audio_val_search_screen.sh resume \
+  smt-four-val-v1-seed0
+```
+
+Previously failed jobs are retained by default.  Retry them only after review
+with the same command plus `--retry-failed`; every attempt remains in its job's
+`attempts/` directory.
 
 Re-evaluate the four pretrained Source baselines on exactly the same
 seed-0, 20-scene x 100-episode streams used by the Tent searches:
@@ -221,9 +261,11 @@ full runs, revalidate artifacts on resume, and write separate logs and combined 
 for the fixed protocol, paper ambiguities, selection rule, controls, and smoke
 commands.
 
-ATENA uses the official greedy-action protocol, so its batch first includes a
-matched Source-argmax control for each model. The complete single-source search
-contains 144 ATENA points/model plus those two controls (290 jobs total):
+The following legacy ATENA launcher preserves the official greedy-action
+protocol for audit purposes. It is superseded by the active sampled-action AVN
+campaign above and must not be mixed into that campaign. Its batch includes a
+matched Source-argmax control for each model and contains 144 ATENA points/model
+plus those two controls (290 jobs total):
 
 ```bash
 python3 avn/scripts/run_atena_grid.py --dry-run \

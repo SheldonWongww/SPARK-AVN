@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_SETTING="${1:?usage: $0 <single_source|multi_source> <source|tent|fstta|eam|feedtta|atena> <seed> [CONFIG OVERRIDES ...]}"
+SOURCE_SETTING="${1:?usage: $0 <single_source|multi_source> <source|tent|fstta|eam|feedtta|atena|idea> <seed> [CONFIG OVERRIDES ...]}"
 METHOD="${2:?missing method}"
 SEED="${3:?missing seed}"
 shift 3
@@ -14,7 +14,7 @@ esac
 
 case "${METHOD}" in
     source) CONFIG_METHOD="none" ;;
-    tent|fstta|eam|feedtta|atena) CONFIG_METHOD="${METHOD}" ;;
+    tent|fstta|eam|feedtta|atena|idea) CONFIG_METHOD="${METHOD}" ;;
     *) printf 'invalid method: %s\n' "${METHOD}" >&2; exit 2 ;;
 esac
 
@@ -34,19 +34,83 @@ RUN_ID="avn-mp3d-smt_audio-${METHOD}-${SOURCE_SETTING}-seed${SEED}${RUN_TAG_SUFF
 RUN_DIR="${REPO_ROOT}/avn/results/runs/${RUN_ID}"
 STREAM_ORDER_SHA256="${NAVTTA_STREAM_ORDER_SHA256:-}"
 STREAM_CONTENT_SHA256="${NAVTTA_STREAM_CONTENT_SHA256:-}"
+EPISODE_COUNT=2000
+IDEA_SOURCE_MANIFEST=""
+
+overrides=("$@")
+if (( ${#overrides[@]} % 2 != 0 )); then
+    printf 'config overrides must be KEY VALUE pairs\n' >&2
+    exit 2
+fi
+for ((index = 0; index + 1 < ${#overrides[@]}; index += 2)); do
+    key="${overrides[$index]}"
+    value="${overrides[$((index + 1))]}"
+    case "${key}" in
+        TASK_CONFIG.DATASET.*|TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.*|\
+        BASE_TASK_CONFIG_PATH)
+            printf 'unsupported stream-defining override: %s\n' "${key}" >&2
+            exit 2
+            ;;
+    esac
+    if [[ "${key}" == "EVAL.USE_CKPT_CONFIG" && "${value}" != "False" ]]; then
+        printf 'EVAL.USE_CKPT_CONFIG must remain False\n' >&2
+        exit 2
+    fi
+    if [[ "${key}" == "NUM_PROCESSES" && "${value}" != "1" ]]; then
+        printf 'manifested SMT+Audio TTA requires NUM_PROCESSES=1\n' >&2
+        exit 2
+    fi
+    if [[ "${key}" == "EVAL.SPLIT" && "${value}" != "val" ]]; then
+        printf 'SMT+Audio TTA evaluation is pinned to EVAL.SPLIT=val\n' >&2
+        exit 2
+    fi
+    if [[ "${key}" == "TEST_EPISODE_COUNT" ]]; then
+        EPISODE_COUNT="${value}"
+    fi
+    if [[ "${key}" == "TTA.IDEA.SOURCE_EPISODE_MANIFEST" ]]; then
+        IDEA_SOURCE_MANIFEST="${value}"
+    fi
+done
+[[ "${EPISODE_COUNT}" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'invalid TEST_EPISODE_COUNT: %s\n' "${EPISODE_COUNT}" >&2
+    exit 2
+}
+[[ ${EPISODE_COUNT} -le 2000 ]] || {
+    printf 'TEST_EPISODE_COUNT exceeds the configured 2000-episode stream\n' >&2
+    exit 2
+}
 
 test -f "${CHECKPOINT}" || { printf 'missing checkpoint: %s\n' "${CHECKPOINT}" >&2; exit 1; }
 test -f "${DATASET}" || { printf 'missing dataset: %s\n' "${DATASET}" >&2; exit 1; }
-if [[ -z "${STREAM_ORDER_SHA256}" || -z "${STREAM_CONTENT_SHA256}" ]]; then
-    fingerprints="$(python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
-        --dataset "${DATASET}" --seed "${SEED}")"
-    read -r STREAM_ORDER_SHA256 STREAM_CONTENT_SHA256 <<< "${fingerprints}"
+fingerprints="$(python3 "${REPO_ROOT}/avn/scripts/fingerprint_episode_stream.py" \
+    --dataset "${DATASET}" --seed "${SEED}" --episode-count "${EPISODE_COUNT}")"
+read -r CURRENT_STREAM_ORDER_SHA256 CURRENT_STREAM_CONTENT_SHA256 <<< "${fingerprints}"
+if [[ -n "${STREAM_ORDER_SHA256}" && \
+      "${STREAM_ORDER_SHA256}" != "${CURRENT_STREAM_ORDER_SHA256}" ]]; then
+    printf 'launcher and runtime stream-order SHA256 differ\n' >&2
+    exit 1
 fi
+if [[ -n "${STREAM_CONTENT_SHA256}" && \
+      "${STREAM_CONTENT_SHA256}" != "${CURRENT_STREAM_CONTENT_SHA256}" ]]; then
+    printf 'launcher and runtime stream-content SHA256 differ\n' >&2
+    exit 1
+fi
+STREAM_ORDER_SHA256="${CURRENT_STREAM_ORDER_SHA256}"
+STREAM_CONTENT_SHA256="${CURRENT_STREAM_CONTENT_SHA256}"
 [[ "${STREAM_ORDER_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { printf 'invalid stream-order SHA256\n' >&2; exit 1; }
 [[ "${STREAM_CONTENT_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { printf 'invalid stream-content SHA256\n' >&2; exit 1; }
 mkdir -p "${REPO_ROOT}/avn/results/runs"
 mkdir "${RUN_DIR}" || { printf 'run directory already exists: %s\n' "${RUN_DIR}" >&2; exit 1; }
 mkdir -p "${RUN_DIR}/raw/model"
+
+manifest_options=()
+if [[ "${METHOD}" == "idea" ]]; then
+    test -f "${IDEA_SOURCE_MANIFEST}" || {
+        printf 'missing IDEA source episode manifest: %s\n' "${IDEA_SOURCE_MANIFEST}" >&2
+        exit 1
+    }
+    manifest_options+=(--asset-manifest "${IDEA_SOURCE_MANIFEST}")
+fi
 
 python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --output "${RUN_DIR}/manifest.json" \
@@ -57,6 +121,7 @@ python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --dataset "${DATASET}" --dataset-version v1 \
     --stream-order-sha256 "${STREAM_ORDER_SHA256}" \
     --stream-content-sha256 "${STREAM_CONTENT_SHA256}" \
+    "${manifest_options[@]}" \
     --extra "$@"
 
 cd "${BASELINE_ROOT}"
@@ -73,6 +138,12 @@ python3 ss_baselines/savi/run.py \
     TTA.METHOD "${CONFIG_METHOD}"
 status=$?
 set -e
+artifacts=()
+STATS="${RUN_DIR}/raw/model/tb/val_stats_${SEED}.json"
+DIAGNOSTICS="${RUN_DIR}/raw/model/tb/tta_diagnostics_${SEED}.json"
+[[ -f "${STATS}" ]] && artifacts+=(--artifact "episode_metrics=${STATS}")
+[[ -f "${DIAGNOSTICS}" ]] && artifacts+=(--artifact "tta_diagnostics=${DIAGNOSTICS}")
 python3 "${REPO_ROOT}/tools/finalize_run_manifest.py" \
-    --manifest "${RUN_DIR}/manifest.json" --exit-code "${status}"
+    --manifest "${RUN_DIR}/manifest.json" --exit-code "${status}" \
+    "${artifacts[@]}"
 exit "${status}"

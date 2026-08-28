@@ -1,0 +1,314 @@
+{
+  "schema": "navtta.avn.smt_audio_val_search.v1",
+  "spec_id": "avn-smt-audio-four-method-val-search-v1",
+  "status": "active",
+  "supersedes": [
+    "eam_boundary_grid_v1",
+    "feedtta_avn_intensity_grid_v1",
+    "feedtta_avn_sgr_grid_v1",
+    "atena_avn_full_cartesian_v1"
+  ],
+  "purpose": {
+    "phase": "development",
+    "hypothesis": "Low-dose AVN-specific settings can improve validation SPL without reducing validation SR below the matched sampled-action Source policy.",
+    "decision": "Select one SMT+Audio configuration independently for each method and each source setting before any later confirmation run."
+  },
+  "scope": {
+    "task": "avn",
+    "benchmark": "mp3d",
+    "model": "smt_audio",
+    "source_settings_in_order": [
+      "single_source",
+      "multi_source"
+    ],
+    "methods": [
+      "eam",
+      "feedtta",
+      "atena",
+      "idea"
+    ]
+  },
+  "data": {
+    "split": {
+      "name": "val",
+      "role": "development"
+    },
+    "seed": 0,
+    "episodes": 2000,
+    "max_steps_per_episode": 500,
+    "streams": {
+      "single_source": {
+        "dataset_index_sha256": "838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80",
+        "stream_order_sha256": "07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c",
+        "stream_content_sha256": "dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
+      },
+      "multi_source": {
+        "dataset_index_sha256": "45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d",
+        "stream_order_sha256": "cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525",
+        "stream_content_sha256": "deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d"
+      }
+    }
+  },
+  "source_control": {
+    "mode": "reuse_existing_sampled_action_result",
+    "rerun_in_campaign": false,
+    "evidence_status": "provisional_incomplete_provenance",
+    "action_selection": "sample",
+    "checkpoint_sha256": {
+      "single_source": "8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03",
+      "multi_source": "c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8"
+    },
+    "metrics": {
+      "single_source": {
+        "success": 0.5415,
+        "spl": 0.294229,
+        "softspl": 0.365105
+      },
+      "multi_source": {
+        "success": 0.259,
+        "spl": 0.134196,
+        "softspl": 0.248589
+      }
+    },
+    "formal_use_condition": "Revalidate matched Source manifests before promoting validation-selected rows to formal results."
+  },
+  "protocol": {
+    "processes": 1,
+    "batch_size": 1,
+    "causal_online": true,
+    "continual_across_episodes": true,
+    "reset_boundary": "fresh_process_per_candidate_and_source_setting",
+    "action_selection": "sample",
+    "action_rng": "torch_seed_0_in_each_fresh_process",
+    "method_rng": {
+      "eam_replay": "python_random_seed_0",
+      "feedtta_sgr": "dedicated_torch_generator_seed_0",
+      "atena_self_head": "forked_torch_rng_state_restored_before_next_action",
+      "idea": "dedicated_cpu_torch_generator_seed_0"
+    },
+    "augmentation_rng": "none_during_eval",
+    "episode_order_seed": 0,
+    "model_seed": 0,
+    "selection_is_independent_per_source_setting": true,
+    "methods": {
+      "eam": {
+        "supervision": "unsupervised",
+        "update_unit": "action_step",
+        "trainable_scope": "smt_transformer_plus_action_head"
+      },
+      "feedtta": {
+        "supervision": "feedback_supervised",
+        "feedback": "binary_episode_success_after_termination",
+        "update_unit": "episode",
+        "action_port": "sample_from_policy_and_optimize_executed_action",
+        "trainable_scope": "smt_state_encoder_plus_action_head"
+      },
+      "atena": {
+        "reported_label": "ATENA-AVN(sample)",
+        "supervision": "feedback_supervised",
+        "feedback": "active_binary_episode_success_after_termination_or_self_prediction",
+        "update_unit": "episode",
+        "action_port": "sample_from_policy_and_use_executed_action_as_pseudo_expert",
+        "official_divergence": "Official VLN executes policy argmax; this AVN task-native variant samples and optimizes the action actually executed.",
+        "trainable_scope": "replay_reachable_actor_navigation_policy_plus_self_prediction_head"
+      },
+      "idea": {
+        "supervision": "unsupervised",
+        "update_unit": "action_step_prompt_only",
+        "base_policy_trainable": false,
+        "source_statistics": {
+          "description": "128_digest_pinned_source_train_trajectories_per_source_setting",
+          "action_selection": "sample",
+          "single_source": {
+            "manifest": "avn/manifests/idea_source/smt_audio_single_source_sample_seed0.json",
+            "manifest_sha256": "695c901045ca1c8234c98432cf7c8c0769ab43b7b2445e47ca6af168567345e3",
+            "dataset_bundle_sha256": "23e27db47746b427fc78f4cc4ffc4661320ab092e2dc57706ff301533cd75c9b",
+            "episode_order_sha256": "766fa784299684f72b262d2bdca5c8879eb3be223c30c9c80667a673cb53b5d9"
+          },
+          "multi_source": {
+            "manifest": "avn/manifests/idea_source/smt_audio_multi_source_sample_seed0.json",
+            "manifest_sha256": "59b0616440cfb281e50eb5b11b5126eb57bf2535f306bde4d434191590d7b49b",
+            "dataset_bundle_sha256": "6919d650ee7a55f6ca0a730e6b5947aa5ef156466a9a1bc2a572ec0a2c0b3f96",
+            "episode_order_sha256": "a6d96bdc8451c135285ea4686a41239362aed60fd759a8a758fe54ebd24580d9"
+          }
+        }
+      }
+    }
+  },
+  "search": {
+    "eam": {
+      "candidate_count_per_source_setting": 12,
+      "provenance": "AVN EAM boundary search around authenticated SMT+Audio LR=1e-8/update_interval=128 winner; one lower-dose interval and one adjacent LR added a priori.",
+      "fixed": {
+        "confidence_scale": 0.4,
+        "memory_size": 32,
+        "batch_size": 8,
+        "optimizer": "Adam",
+        "trainable_prefixes": [
+          "net.smt_state_encoder.transformer",
+          "action_distribution"
+        ]
+      },
+      "grid": {
+        "lr": [
+          "3e-9",
+          "1e-8",
+          "3e-8",
+          "1e-7"
+        ],
+        "update_interval": [
+          64,
+          128,
+          256
+        ]
+      }
+    },
+    "feedtta": {
+      "candidate_count_per_source_setting": 15,
+      "provenance": "Centered on authenticated SMT+Audio LR=3e-8/gamma=0.95 and the paper-main p=0.05/alpha=-0.2 setting; includes bounded LR/gamma probes and three predeclared SGR controls.",
+      "fixed": {
+        "optimizer": "Adam",
+        "sgr_mode": "paper_main",
+        "trainable_prefixes": [
+          "net.smt_state_encoder",
+          "action_distribution"
+        ]
+      },
+      "candidates": [
+        {"id": "i00", "lr": "1e-8", "gamma": "0.90", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i01", "lr": "1e-8", "gamma": "0.95", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i02", "lr": "1e-8", "gamma": "0.99", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i03", "lr": "1e-8", "gamma": "1.0", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i04", "lr": "3e-8", "gamma": "0.90", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i05", "lr": "3e-8", "gamma": "0.95", "p": "0.05", "alpha": "-0.2", "variant": "intensity_anchor"},
+        {"id": "i06", "lr": "3e-8", "gamma": "0.99", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i07", "lr": "3e-8", "gamma": "1.0", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i08", "lr": "1e-7", "gamma": "0.90", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i09", "lr": "1e-7", "gamma": "0.95", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i10", "lr": "1e-7", "gamma": "0.99", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "i11", "lr": "1e-7", "gamma": "1.0", "p": "0.05", "alpha": "-0.2", "variant": "intensity"},
+        {"id": "s12", "lr": "3e-8", "gamma": "0.95", "p": "0.1", "alpha": "-0.2", "variant": "paper_sgr_p_probe"},
+        {"id": "s13", "lr": "3e-8", "gamma": "0.95", "p": "0.05", "alpha": "-0.1", "variant": "paper_sgr_alpha_probe"},
+        {"id": "c14", "lr": "3e-8", "gamma": "0.95", "p": "0.0", "alpha": "-0.2", "variant": "no_sgr_control"}
+      ]
+    },
+    "atena": {
+      "candidate_count_per_source_setting": 20,
+      "provenance": "Core AVN low-rate pairs and entropy thresholds plus lambda/self-loss probes and three released VLN learning-rate anchors, all declared before observing this campaign.",
+      "fixed": {
+        "optimizer": "AdamW",
+        "weight_decay": 0.01,
+        "parameter_scope": "all_replay_reachable_noncritic",
+        "action_selection_protocol": "sample_from_policy"
+      },
+      "candidates": [
+        {"id": "c00", "lr_query": "3e-8", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c01", "lr_query": "3e-8", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.5", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c02", "lr_query": "3e-8", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.75", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c03", "lr_query": "3e-8", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "1.0", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c04", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c05", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.5", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c06", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.75", "self_loss_weight": "0.1", "variant": "core_anchor"},
+        {"id": "c07", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "1.0", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c08", "lr_query": "3e-7", "lr_self": "3e-8", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c09", "lr_query": "3e-7", "lr_self": "3e-8", "mix_lambda": "0.5", "query_threshold": "0.5", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c10", "lr_query": "3e-7", "lr_self": "3e-8", "mix_lambda": "0.5", "query_threshold": "0.75", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "c11", "lr_query": "3e-7", "lr_self": "3e-8", "mix_lambda": "0.5", "query_threshold": "1.0", "self_loss_weight": "0.1", "variant": "core"},
+        {"id": "l12", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.25", "query_threshold": "0.75", "self_loss_weight": "0.1", "variant": "lambda_probe"},
+        {"id": "l13", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.75", "query_threshold": "0.75", "self_loss_weight": "0.1", "variant": "lambda_probe"},
+        {"id": "s14", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.5", "self_loss_weight": "0.25", "variant": "self_loss_probe"},
+        {"id": "s15", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.75", "self_loss_weight": "0.25", "variant": "self_loss_probe"},
+        {"id": "s16", "lr_query": "1e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "1.0", "self_loss_weight": "0.25", "variant": "self_loss_probe"},
+        {"id": "a17", "lr_query": "5e-7", "lr_self": "1e-8", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "official_etpnav_lr_anchor"},
+        {"id": "a18", "lr_query": "8e-7", "lr_self": "1e-7", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "official_duet_r2r_lr_anchor"},
+        {"id": "a19", "lr_query": "5e-6", "lr_self": "1e-7", "mix_lambda": "0.5", "query_threshold": "0.1", "self_loss_weight": "0.1", "variant": "official_duet_reverie_lr_anchor"}
+      ]
+    },
+    "idea": {
+      "candidate_count_per_source_setting": 12,
+      "provenance": "Paper/default LR=3e-3 and tau=0.7 with predeclared logarithmic LR and coverage-gate probes; all other paper hyperparameters fixed.",
+      "fixed": {
+        "prompt_length": 4,
+        "capacity": 32,
+        "lambda": 0.4,
+        "fisher_beta": 0.1,
+        "optimization_steps": 50,
+        "optimizer": "AdamW",
+        "prompt_layers": 0,
+        "source_trajectories": 128
+      },
+      "grid": {
+        "lr": [
+          "3e-4",
+          "1e-3",
+          "3e-3",
+          "1e-2"
+        ],
+        "tau": [
+          "0.5",
+          "0.7",
+          "1.0"
+        ]
+      }
+    }
+  },
+  "selection": {
+    "unit": "method_and_source_setting",
+    "eligibility": [
+      "runner_exitcode_zero",
+      "manifest_valid",
+      "exact_2000_episode_stream",
+      "finite_metrics",
+      "success_not_below_matched_sampled_source"
+    ],
+    "primary_metric": "spl",
+    "tie_breakers": [
+      "success",
+      "softspl",
+      "lower_relative_parameter_drift",
+      "lower_job_id"
+    ],
+    "atena_additional_constraint": "query_rate_between_0.05_and_0.95",
+    "no_eligible_candidate": "report_pareto_frontier_and_stop_without_posthoc_grid_expansion"
+  },
+  "scheduler": {
+    "launcher": "avn/scripts/run_smt_audio_val_search.py",
+    "gpu_method_mapping": {
+      "eam": 0,
+      "feedtta": 1,
+      "atena": 2,
+      "idea": 3
+    },
+    "default_concurrency": {
+      "eam": 4,
+      "feedtta": 4,
+      "atena": 3,
+      "idea": 2
+    },
+    "hard_caps": {
+      "eam": 4,
+      "feedtta": 4,
+      "atena": 3,
+      "idea": 2
+    },
+    "barrier": "within_each_method_single_source_must_finish_before_multi_source",
+    "cross_method_execution": "four_method_lanes_run_concurrently"
+  },
+  "freeze": {
+    "grid_expansion_after_results": false,
+    "state_transfer_between_candidates_or_source_settings": false,
+    "allowed_runtime_overrides": [
+      "gpu_ids",
+      "concurrency_downward_only",
+      "resume",
+      "batch_id"
+    ]
+  },
+  "outputs": {
+    "result_role": "validation_selected",
+    "run_manifest_required": true,
+    "episode_metrics_required": true,
+    "diagnostics_required": true,
+    "raw_logs_are_git_ignored": true
+  }
+}

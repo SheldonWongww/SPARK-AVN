@@ -14,6 +14,14 @@ datasets:
     path: tta_test/single_source
     files: 45
     approximate_size: 1.5M
+    development_split:
+      index_path: tta_test/single_source/mp3d/v1/val/val.json.gz
+      index_sha256: "838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80"
+      fixed_stream:
+        seed: 0
+        episode_count: 2000
+        order_sha256: "07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c"
+        content_sha256: "dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
     calibration_split:
       index_path: tta_test/single_source/mp3d/v1/train/train.json.gz
       index_sha256: "816afeee2fe777d683c22aa81def2d7ec032f4119ed1c40bd909b7676a002931"
@@ -29,9 +37,20 @@ datasets:
     path: tta_test/multi_source
     files: 42
     approximate_size: 1.6M
+    development_split:
+      index_path: tta_test/multi_source/mp3d/v1/val/val.json.gz
+      index_sha256: "45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d"
+      fixed_stream:
+        seed: 0
+        episode_count: 2000
+        order_sha256: "cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525"
+        content_sha256: "deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d"
 missing_runtime_assets:
   - avn/data/binaural_rirs
 notes:
   - Episode files were migrated from the pre-refactor SoundSpaces working tree.
   - "`train/` contains both the train and validation splits supplied for source-model development."
+  - >-
+    IDEA source-train bundle and 128-trajectory selection digests are pinned in
+    avn/manifests/idea_source/smt_audio_{single,multi}_source_sample_seed0.json.
   - The several-hundred-GB RIR assets remain unavailable on this machine.

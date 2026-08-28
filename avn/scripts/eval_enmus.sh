@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_SETTING="${1:?usage: $0 <single_source|multi_source> <source|tent|fstta|eam|feedtta|atena> <seed> [CONFIG OVERRIDES ...]}"
+SOURCE_SETTING="${1:?usage: $0 <single_source|multi_source> <source|tent|fstta|eam|feedtta|atena|idea> <seed> [CONFIG OVERRIDES ...]}"
 METHOD="${2:?missing method}"
 SEED="${3:?missing seed}"
 shift 3
@@ -14,7 +14,7 @@ esac
 
 case "${METHOD}" in
     source) CONFIG_METHOD="none" ;;
-    tent|fstta|eam|feedtta|atena) CONFIG_METHOD="${METHOD}" ;;
+    tent|fstta|eam|feedtta|atena|idea) CONFIG_METHOD="${METHOD}" ;;
     *) printf 'invalid method: %s\n' "${METHOD}" >&2; exit 2 ;;
 esac
 

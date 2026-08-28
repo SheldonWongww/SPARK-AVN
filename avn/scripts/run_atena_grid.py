@@ -474,6 +474,7 @@ def expected_overrides(job: Job, episodes: int) -> List[str]:
             "TTA.ATENA.QUERY_THRESHOLD", job.point.query_threshold,
             "TTA.ATENA.SELF_LOSS_WEIGHT", job.point.self_loss_weight,
             "TTA.ATENA.PARAM_SCOPE", PARAM_SCOPE,
+            "TTA.ATENA.ACTION_SELECTION_PROTOCOL", "policy_argmax",
             "TTA.ATENA.OPTIMIZER", OPTIMIZER,
             "TTA.ATENA.BETA1", "0.9",
             "TTA.ATENA.BETA2", "0.999",

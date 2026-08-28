@@ -1,10 +1,17 @@
 # AVN ATENA 运行前复核
 
-状态：**代码复核完成；通过 1/5/20 episode smoke 后批准完整网格**
+状态：**历史官方-argmax 协议；已由 `avn-smt-audio-four-method-val-search-v1`
+在 SMT+Audio 当前开发搜索中取代**
 
 最后复核：2026-08-04
 
 适用模型：SMT+Audio、ENMuS
+
+> 当前 AVN 主实验统一采用任务原生 sampled action。旧的 290-job 官方-argmax
+> 搜索仍保留作审计基线，但不得用于当前 SMT+Audio campaign。当前版本显式命名为
+> `ATENA-AVN(sample)`，使用真正执行的 sample 作为 mixture pseudo expert；详见
+> `SMT_AUDIO_FOUR_METHOD_VAL_SEARCH_V1.md` 和
+> `ATENA_AVN_SAMPLE_REPRODUCTION_CONTRACT.md`。共享 ATENA 默认仍保持官方 argmax。
 
 ATENA 当前实现以论文和官方 DUET 代码为复现依据，但 VLN 与 AVN 在动作粒度、轨迹长度、成功条件和网络结构上差异明显。任何 smoke test、超参数搜索或正式评估开始前，都必须重新完成本文件中的判断；不能直接把默认参数当作最终实验设定。
 

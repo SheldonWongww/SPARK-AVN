@@ -7,7 +7,7 @@ TEST_EPISODE_COUNT: 128
 EVAL:
   SPLIT: "train"
   USE_CKPT_CONFIG: False
-  ACTION_SELECTION: "argmax"
+  ACTION_SELECTION: "sample"
 TTA:
   METHOD: "source"
   IDEA:

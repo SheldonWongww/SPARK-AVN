@@ -2193,10 +2193,15 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             )
         self.gamma = float(gamma)
         self.normalize_gradient = bool(normalize_gradient)
-        self.action_selection_protocol = str(action_selection_protocol)
-        if not self.action_selection_protocol:
+        self.action_selection_protocol = str(action_selection_protocol).lower()
+        if self.action_selection_protocol not in (
+            "sample_from_policy",
+            "policy_argmax",
+            "target_native_argmax",
+        ):
             raise ValueError(
-                "FEEDTTA action_selection_protocol must be nonempty"
+                "FEEDTTA action_selection_protocol must be "
+                "sample_from_policy, policy_argmax, or target_native_argmax"
             )
         self.episodic = bool(episodic)
         self.max_grad_norm = float(max_grad_norm)
@@ -2298,6 +2303,18 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
                 self.gamma * self._trajectory_discount_mass + 1.0
             )
         self._trajectory_step_count += 1
+
+    def select_action(self, distribution):
+        """Select the behavior action declared by the task adapter.
+
+        FeedTTA's loss always consumes the action returned here and passed to
+        the environment by the task runner.  Sampling is the paper-native
+        protocol; deterministic VLN ports must opt into one of the explicit
+        argmax labels instead of merely changing a diagnostic string.
+        """
+        if self.action_selection_protocol == "sample_from_policy":
+            return distribution.sample()
+        return distribution.probs.argmax(dim=-1, keepdim=True)
 
     @torch.enable_grad()
     def adapt(self, logits, action=None, **kwargs):
@@ -2437,6 +2454,12 @@ class FEEDTTAAdapter(_AdapterDiagnostics):
             "feedback_type": "binary_episode_success",
             "feedback_values": "+1_success_-1_failure",
             "action_selection_protocol": self.action_selection_protocol,
+            "action_selection": (
+                "sample"
+                if self.action_selection_protocol == "sample_from_policy"
+                else "argmax"
+            ),
+            "policy_gradient_action": "task_runner_executed_action",
             "update_timing": "once_after_episode_feedback",
             "reversal_probability": self.reversal_probability,
             "reversal_scale": self.reversal_scale,
@@ -2493,8 +2516,10 @@ class ATENAAdapter(_AdapterDiagnostics):
     RGB/depth/audio forwards, so retaining that graph is not practical.  This
     adapter stores detached policy inputs on CPU and replays one action step at
     a time after the binary episode outcome is known.  The accumulated gradient
-    is exactly the gradient of the official joint mean loss in eval mode, while
-    peak GPU activation memory is independent of episode length.
+    is exactly the gradient of the selected protocol's joint mean loss in eval
+    mode (the official loss under ``policy_argmax`` and the explicitly named
+    task-native variant under ``sample_from_policy``), while peak GPU activation
+    memory is independent of episode length.
     """
 
     # The online action pass only records detached inputs/features.  Gradients
@@ -2520,6 +2545,7 @@ class ATENAAdapter(_AdapterDiagnostics):
         weight_decay=0.01,
         max_grad_norm=0.0,
         forward_policy=None,
+        action_selection_protocol="policy_argmax",
     ):
         numeric_values = {
             "LR_QUERY": float(lr_query),
@@ -2555,6 +2581,15 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.self_loss_weight = float(self_loss_weight)
         self.episodic = False
         self.max_grad_norm = float(max_grad_norm)
+        self.action_selection_protocol = str(action_selection_protocol).lower()
+        if self.action_selection_protocol not in (
+            "policy_argmax",
+            "sample_from_policy",
+        ):
+            raise ValueError(
+                "ATENA action_selection_protocol must be policy_argmax or "
+                "sample_from_policy"
+            )
         self.param_scope = str(scope).lower()
         if forward_policy is not None and not callable(forward_policy):
             raise TypeError("ATENA forward_policy must be callable")
@@ -2652,6 +2687,8 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.query_gate_evaluation_count = 0
         self.self_prediction_evaluation_count = 0
         self.replayed_step_count = 0
+        self.sampled_action_steps = 0
+        self.sampled_action_argmax_matches = 0
         # ``scope='all'`` is only a candidate scope until a real task replay
         # callback has been differentiated.  Task models often expose modules
         # (for example pretraining/object heads) that are not on the deployed
@@ -2676,21 +2713,32 @@ class ATENAAdapter(_AdapterDiagnostics):
                 )
             return
         feature_dim = int(feature_dim)
-        self.self_prediction_head = nn.Sequential(
-            nn.Linear(feature_dim, feature_dim),
-            nn.ReLU(),
-            nn.LayerNorm(feature_dim, eps=1e-12),
-            nn.Linear(feature_dim, 1),
-        ).to(device=device, dtype=dtype)
-        # DUET uses the BERT module initializer for this MLP.
-        for module in self.self_prediction_head.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.normal_(module.weight, mean=0.0, std=0.02)
-                if module.bias is not None:
+        fork_devices = []
+        if device.type == "cuda":
+            fork_devices = [
+                device.index
+                if device.index is not None else torch.cuda.current_device()
+            ]
+        # The AVN behavior policy samples from PyTorch's RNG.  Constructing the
+        # lazily sized self head must not consume that action RNG and silently
+        # change subsequent environment actions.  fork_rng restores both CPU
+        # and the target CUDA generator after initialization.
+        with torch.random.fork_rng(devices=fork_devices, enabled=True):
+            self.self_prediction_head = nn.Sequential(
+                nn.Linear(feature_dim, feature_dim),
+                nn.ReLU(),
+                nn.LayerNorm(feature_dim, eps=1e-12),
+                nn.Linear(feature_dim, 1),
+            ).to(device=device, dtype=dtype)
+            # DUET uses the BERT module initializer for this MLP.
+            for module in self.self_prediction_head.modules():
+                if isinstance(module, nn.Linear):
+                    nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
+                elif isinstance(module, nn.LayerNorm):
+                    nn.init.ones_(module.weight)
                     nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.ones_(module.weight)
-                nn.init.zeros_(module.bias)
         self._head_state = deepcopy(self.self_prediction_head.state_dict())
         if self.zero_update_audit:
             self.audit_head_state_before_sha256 = module_state_sha256(
@@ -2879,9 +2927,14 @@ class ATENAAdapter(_AdapterDiagnostics):
             param.grad = gradient if was_seen else None
 
     def select_action(self, distribution):
-        # Eq. (1) defines the selected pseudo-expert action as policy argmax,
-        # and the official evaluation executes that same greedy action.
-        return distribution.probs.argmax(dim=-1, keepdim=True)
+        # The official VLN protocol executes Eq. (1)'s policy argmax.  A task
+        # may explicitly opt into its native categorical-sampling protocol; in
+        # that named port the executed sample is also the trajectory's
+        # pseudo-expert action so delayed episode feedback remains aligned with
+        # the behaviour that produced it.
+        if self.action_selection_protocol == "policy_argmax":
+            return distribution.probs.argmax(dim=-1, keepdim=True)
+        return distribution.sample()
 
     @torch.no_grad()
     def adapt(
@@ -2900,11 +2953,23 @@ class ATENAAdapter(_AdapterDiagnostics):
         self._preflight_replay_reachability(policy_inputs)
         self.action_dim = int(logits.shape[-1])
         self._ensure_head(features.shape[-1], features.device, features.dtype)
-        pseudo_action = logits.detach().argmax(dim=-1)
-        if not torch.equal(action.detach().long().view(-1), pseudo_action.view(-1)):
+        policy_argmax = logits.detach().argmax(dim=-1)
+        executed_action = action.detach().long().view(-1)
+        if (
+            self.action_selection_protocol == "policy_argmax"
+            and not torch.equal(executed_action, policy_argmax.view(-1))
+        ):
             raise ValueError(
                 "ATENA requires the executed action to equal the policy argmax"
             )
+        if self.action_selection_protocol == "sample_from_policy":
+            pseudo_action = executed_action
+            self.sampled_action_steps += int(executed_action.numel())
+            self.sampled_action_argmax_matches += int(
+                (executed_action == policy_argmax.view(-1)).sum().item()
+            )
+        else:
+            pseudo_action = policy_argmax
         mixture_entropy = self._mixture_entropy(logits, pseudo_action)
         original_entropy = softmax_entropy(logits).mean()
         snapshot = _tree_to_cpu(policy_inputs)
@@ -2963,6 +3028,8 @@ class ATENAAdapter(_AdapterDiagnostics):
         self.query_gate_evaluation_count = 0
         self.self_prediction_evaluation_count = 0
         self.replayed_step_count = 0
+        self.sampled_action_steps = 0
+        self.sampled_action_argmax_matches = 0
         self.replay_determinism_validated_episodes = 0
         self._init_diagnostics()
 
@@ -3219,7 +3286,28 @@ class ATENAAdapter(_AdapterDiagnostics):
             "replay_determinism_validated_episodes": (
                 self.replay_determinism_validated_episodes
             ),
-            "action_selection": "argmax",
+            "action_selection": (
+                "argmax"
+                if self.action_selection_protocol == "policy_argmax"
+                else "sample"
+            ),
+            "action_selection_protocol": self.action_selection_protocol,
+            "pseudo_expert_action": (
+                "policy_argmax"
+                if self.action_selection_protocol == "policy_argmax"
+                else "executed_task_native_sample"
+            ),
+            "action_rng_isolated_from_self_head_initialization": True,
+            "sampled_action_steps": self.sampled_action_steps,
+            "sampled_action_argmax_matches": (
+                self.sampled_action_argmax_matches
+            ),
+            "sample_argmax_match_rate": (
+                self.sampled_action_argmax_matches
+                / max(1, self.sampled_action_steps)
+                if self.action_selection_protocol == "sample_from_policy"
+                else 1.0
+            ),
             "feedback": "binary_episode_success_or_self_prediction",
             "adapted_parameter_count": sum(
                 parameter.numel() for parameter in self.params
@@ -3479,6 +3567,9 @@ def build_adapter(model, tta_cfg, forward_policy=None, fusion_protocol=None):
             weight_decay=float(avalue("WEIGHT_DECAY", 0.01)),
             max_grad_norm=float(avalue("MAX_GRAD_NORM", 0.0)),
             forward_policy=forward_policy,
+            action_selection_protocol=str(avalue(
+                "ACTION_SELECTION_PROTOCOL", "policy_argmax"
+            )),
         ))
     if method == "idea":
         from .idea import IDEAAdapter

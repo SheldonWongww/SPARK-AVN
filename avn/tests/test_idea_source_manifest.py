@@ -55,6 +55,8 @@ class IdeaSourceManifestTest(unittest.TestCase):
                 root / "train.json.gz", checkpoint,
                 "smt_audio", "single_source",
             )
+            self.assertEqual(payload["schema"], "navtta.avn.idea_source_selection.v2")
+            self.assertEqual(payload["selection"]["action_selection"], "sample")
             manifest_path = root / "manifest.json"
             manifest_path.write_text(json.dumps(payload), encoding="utf-8")
             manifest, _ = load_source_manifest(
@@ -70,6 +72,7 @@ class IdeaSourceManifestTest(unittest.TestCase):
                 manifest, file_sha256(manifest_path), "b" * 64
             )
             self.assertEqual(provenance["model_state_sha256"], "b" * 64)
+            self.assertEqual(provenance["action_selection"], "sample")
             self.assertEqual(
                 provenance["episode_selection_manifest_sha256"],
                 file_sha256(manifest_path),
@@ -117,6 +120,18 @@ class IdeaSourceManifestTest(unittest.TestCase):
             "source collection cannot consume an IDEA source artifact",
             source,
         )
+        self.assertNotIn("deterministic=True", source)
+        self.assertIn(
+            'deterministic=(action_selection == "argmax")', source
+        )
+
+    def test_smt_collection_launcher_uses_sample_v2_assets(self):
+        launcher = Path(__file__).parents[1] / (
+            "scripts/collect_smt_audio_idea_source_stats.sh"
+        )
+        source = launcher.read_text(encoding="utf-8")
+        self.assertIn("_sample_seed${SEED}.json", source)
+        self.assertIn("EVAL.ACTION_SELECTION sample", source)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,12 @@ methods:
   - id: atena
     config_method: atena
     feedback: active_binary_episode_success
+    avn_action_protocol: sample_from_policy
+    reported_label: ATENA-AVN(sample)
+  - id: idea
+    config_method: idea
+    feedback: none
+    avn_action_protocol: sample_from_policy
 formal_seeds: [0]
 notes:
   - Hyperparameters and formal seeds must be frozen after implementation validation.

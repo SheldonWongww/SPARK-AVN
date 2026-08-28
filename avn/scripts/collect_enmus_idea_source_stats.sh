@@ -17,8 +17,8 @@ CHECKPOINT="${REPO_ROOT}/avn/checkpoints/source/enmus/${CHECKPOINT_NAME}"
 AUDIO_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/audio_encoder_best_val.pth"
 VISUAL_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/visual_encoder_best_val.pth"
 SELD_ENCODER="${BASELINE_ROOT}/data/pretrained_weights/semantic_audionav/enmus/seld_crnn_best_val.h5"
-MANIFEST="${REPO_ROOT}/avn/manifests/idea_source/enmus_${SOURCE_SETTING}_seed${SEED}.json"
-OUTPUT="${REPO_ROOT}/avn/results/idea_source_statistics/enmus_${SOURCE_SETTING}_seed${SEED}.json"
+MANIFEST="${REPO_ROOT}/avn/manifests/idea_source/enmus_${SOURCE_SETTING}_sample_seed${SEED}.json"
+OUTPUT="${REPO_ROOT}/avn/results/idea_source_statistics/enmus_${SOURCE_SETTING}_sample_seed${SEED}.json"
 CONFIG="sen_baselines/enmus/config/${SOURCE_SETTING}/enmus_tta_test.yaml,sen_baselines/enmus/config/${SOURCE_SETTING}/enmus_idea_source_stats.yaml"
 
 for required in "${DATASET}" "${CHECKPOINT}" "${AUDIO_ENCODER}" "${VISUAL_ENCODER}" "${SELD_ENCODER}"; do
@@ -37,8 +37,9 @@ cd "${BASELINE_ROOT}"
 export PYTHONPATH="${REPO_ROOT}/avn:${REPO_ROOT}/core:${BASELINE_ROOT}:${SOUNDSPACES_ROOT}:${PYTHONPATH:-}"
 python3 sen_baselines/enmus/run.py --run-type eval --decoder-type MSMT \
   --exp-config "${CONFIG}" \
-  --model-dir "${REPO_ROOT}/avn/results/idea_source_statistics/enmus_${SOURCE_SETTING}_runtime" \
+  --model-dir "${REPO_ROOT}/avn/results/idea_source_statistics/enmus_${SOURCE_SETTING}_sample_runtime" \
   EVAL_CKPT_PATH_DIR "${CHECKPOINT}" SEED "${SEED}" TASK_CONFIG.SEED "${SEED}" \
+  EVAL.ACTION_SELECTION sample \
   TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.CYCLE True \
   TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.SHUFFLE False \
   TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.GROUP_BY_SCENE False \
