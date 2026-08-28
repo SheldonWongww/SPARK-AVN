@@ -1,0 +1,368 @@
+{
+  "schema": "navtta.vln_tta_consistency_search.v2",
+  "experiment_id": "vln-r2r-ce-consistency-search-v3",
+  "benchmark": "r2r-ce",
+  "description": "Scheduling-only successor to v2: the scientific protocol and candidate grids are unchanged; ETPNav and BEVBert retain a strict model barrier while user-approved conservative production caps use the prior 32 GiB projections minus one worker.",
+  "protocol": {
+    "development_split": "val_unseen",
+    "retention_split": "val_seen",
+    "order_seeds": [
+      1,
+      2,
+      3
+    ],
+    "primary_metric": "SPL",
+    "secondary_metric": "SR",
+    "selection_score": "mean_delta_minus_sample_std_delta",
+    "positive_result_required": false,
+    "source_policy": "reuse_authenticated_order_invariant_argmax"
+  },
+  "settings": [
+    "etpnav-r2r-ce",
+    "bevbert-r2r-ce"
+  ],
+  "model_barrier": true,
+  "blocked_settings": {
+    "streamvln-r2r-ce": {
+      "status": "blocked",
+      "reason": "run_source_eval.sh rejects --order-seed for StreamVLN and tta_config_cli.py has no StreamVLN TTA adapter"
+    }
+  },
+  "concurrency": {
+    "etpnav-r2r-ce": {
+      "tent": 6,
+      "fstta": 6,
+      "eam": 4,
+      "feedtta": 4,
+      "atena": 3,
+      "idea": 1
+    },
+    "bevbert-r2r-ce": {
+      "tent": 5,
+      "fstta": 5,
+      "eam": 3,
+      "feedtta": 3,
+      "atena": 2,
+      "idea": 1
+    }
+  },
+  "methods": {
+    "tent": {
+      "base": {
+        "norm_scope": "ln",
+        "optimizer": "Adam",
+        "action_selection": "argmax",
+        "update_interval": 1,
+        "max_grad_norm": 0.0
+      },
+      "candidates": [
+        {
+          "id": "lr_3em7",
+          "parameters": {
+            "lr": 3e-7
+          }
+        },
+        {
+          "id": "lr_1em6",
+          "parameters": {
+            "lr": 0.000001
+          }
+        },
+        {
+          "id": "lr_3em6",
+          "parameters": {
+            "lr": 0.000003
+          }
+        },
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr": 0.000015625
+          }
+        }
+      ]
+    },
+    "fstta": {
+      "base": {
+        "m": 3,
+        "n": 4,
+        "q": 0.1,
+        "rho": 0.95,
+        "tau": 0.7,
+        "a": 0.9,
+        "b": 1.1,
+        "reset_var_hist_each_episode": false,
+        "last_k_ln": 4,
+        "norm_scope": "last_k_ln",
+        "slow_optimizer": "AdamW",
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "fast_grad_mode": "concordant",
+        "action_selection": "argmax",
+        "max_grad_norm": 0.0
+      },
+      "candidates": [
+        {
+          "id": "scale_0p03",
+          "parameters": {
+            "lr_fast": 0.000018,
+            "lr_slow": 0.00003
+          }
+        },
+        {
+          "id": "scale_0p1",
+          "parameters": {
+            "lr_fast": 0.00006,
+            "lr_slow": 0.0001
+          }
+        },
+        {
+          "id": "scale_0p3",
+          "parameters": {
+            "lr_fast": 0.00018,
+            "lr_slow": 0.0003
+          }
+        },
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr_fast": 0.0006,
+            "lr_slow": 0.001
+          }
+        }
+      ]
+    },
+    "eam": {
+      "base": {
+        "confidence_scale": 0.4,
+        "memory_size": 32,
+        "batch_size": 8,
+        "update_interval": 1,
+        "optimizer": "Adam",
+        "action_selection": "argmax"
+      },
+      "candidates": [
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr": 0.000001
+          }
+        },
+        {
+          "id": "lr_3em6",
+          "parameters": {
+            "lr": 0.000003
+          }
+        },
+        {
+          "id": "lr_1em5",
+          "parameters": {
+            "lr": 0.00001
+          }
+        }
+      ]
+    },
+    "feedtta": {
+      "base": {
+        "gamma": 0.99,
+        "p": 0.05,
+        "alpha": 0.1,
+        "sgr_mode": "paper_main",
+        "normalize_gradient": false,
+        "optimizer_eps": 0.00001,
+        "scope_profile": "paper_full",
+        "action_selection": "argmax"
+      },
+      "candidates": [
+        {
+          "id": "lr_2em6",
+          "parameters": {
+            "lr": 0.000002
+          }
+        },
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr": 0.000005
+          }
+        },
+        {
+          "id": "lr_1em5",
+          "parameters": {
+            "lr": 0.00001
+          }
+        }
+      ]
+    },
+    "atena": {
+      "base": {
+        "action_selection": "argmax",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "optimizer": "AdamW",
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "weight_decay": 0.01,
+        "episodic": false,
+        "max_grad_norm": 0.0,
+        "self_loss_weight": 0.1
+      },
+      "required_diagnostics": {
+        "exact_episode_replay_enabled": true,
+        "gradient_reconstruction": "exact_step_replay_in_eval_mode",
+        "retains_episode_graph": false,
+        "requires_task_policy_scope_verification": true,
+        "task_scope_evidence": "high_level_waypoint_navigation_decision"
+      },
+      "candidates": [
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr_query": 0.000001,
+            "lr_self": 5e-7,
+            "query_threshold": 0.05,
+            "mix_lambda": 0.5
+          }
+        },
+        {
+          "id": "lr_half",
+          "parameters": {
+            "lr_query": 5e-7,
+            "lr_self": 2.5e-7,
+            "query_threshold": 0.05,
+            "mix_lambda": 0.5
+          }
+        },
+        {
+          "id": "lr_double",
+          "parameters": {
+            "lr_query": 0.000002,
+            "lr_self": 0.000001,
+            "query_threshold": 0.05,
+            "mix_lambda": 0.5
+          }
+        },
+        {
+          "id": "delta_0p1",
+          "parameters": {
+            "lr_query": 0.000001,
+            "lr_self": 5e-7,
+            "query_threshold": 0.1,
+            "mix_lambda": 0.5
+          }
+        },
+        {
+          "id": "delta_0p2",
+          "parameters": {
+            "lr_query": 0.000001,
+            "lr_self": 5e-7,
+            "query_threshold": 0.2,
+            "mix_lambda": 0.5
+          }
+        },
+        {
+          "id": "lambda_0p75",
+          "parameters": {
+            "lr_query": 0.000001,
+            "lr_self": 5e-7,
+            "query_threshold": 0.05,
+            "mix_lambda": 0.75
+          }
+        }
+      ]
+    },
+    "idea": {
+      "availability": {
+        "status": "ready",
+        "reason": "offline source-train statistics are bound by path, SHA256, checkpoint, and 128-trajectory provenance"
+      },
+      "source_statistics": {
+        "etpnav-r2r-ce": {
+          "checkpoint_sha256": "4e70d2a1b4a6cfb32158901b7300cbc2be657641f16c9a17f35ca8570470d8b3",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/etpnav-r2r-ce/collection_config.json",
+          "collection_config_sha256": "fb9b792868ccdbba99bad6cbb4a9c82b296dd9a75c659f01e8d9cae1a9c7fe37",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/etpnav-r2r-ce/train/tta_diagnostics.json",
+          "diagnostics_sha256": "9c019800f7aa11a5703b8468118196adf28886402f8e0831cf02d88fd77d3f09",
+          "formal_immutable_identity_sha256": "7054de17df818f5bcd9c22bdfa7af8b6a314b3f9eca32fc3111cdc805968bbb8",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-etpnav-r2r-ce-train-v1.3-unified/manifest.json",
+          "formal_manifest_sha256": "27f56c7cfe15853fc6dde07bd41525b5854a18cbdf39c099fa505f5ac4244c02",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/etpnav-r2r-ce/episode_order/train.json",
+          "order_manifest_sha256": "ccfc2f4dbc6570332ece5805e44be002b4d182cbf72417ec3d1d2f09c0bbe1a7",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/etpnav-r2r-ce/train/source_statistics.json",
+          "sha256": "19a3959fb1280f47f8b911b53138ea030eda41b286f785a941d857a2ed8fc5b3",
+          "trajectory_count": 128
+        },
+        "bevbert-r2r-ce": {
+          "checkpoint_sha256": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8",
+          "collection_config": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/bevbert-r2r-ce/collection_config.json",
+          "collection_config_sha256": "31cf60c93f14c13815a333dce75733fdf5b6e1e9e7496a30ce3db0d536dedf27",
+          "collection_policy": "frozen_source_argmax_rollout",
+          "diagnostics": "vln/results/idea_source_statistics/idea-source-train128-v1/bevbert-r2r-ce/train/tta_diagnostics.json",
+          "diagnostics_sha256": "e6d9d18aee19da78789e0d22350b4726afdc500eed8c9216b29eb4c5d0007483",
+          "formal_immutable_identity_sha256": "e0913670f0812fd33ccd5a65eaadbae36e797c66ef1cfd5fb5263db62de0689a",
+          "formal_manifest": "vln/results/runs/idea-source-train128-v1-bevbert-r2r-ce-train-v1.3-unified/manifest.json",
+          "formal_manifest_sha256": "8bdd1f42ba6c56c41073a840a075172e4049da3bb4983e6357e23853e3195012",
+          "order_manifest": "vln/results/idea_source_statistics/_inputs/idea-source-train128-v1/bevbert-r2r-ce/episode_order/train.json",
+          "order_manifest_sha256": "6496b0f9b31e065cc48b480d49fb8b522fb572b946e306adc47e6cb9b1d5e8af",
+          "path": "vln/results/idea_source_statistics/idea-source-train128-v1/bevbert-r2r-ce/train/source_statistics.json",
+          "sha256": "662a07afb498eadd4acaa3131dfdeb28a9e112dff9f6b21f07bbdd5d4eb64c5f",
+          "trajectory_count": 128
+        }
+      },
+      "base": {
+        "prompt_length": 4,
+        "k_max": 32,
+        "lambda": 0.4,
+        "fisher_beta": 0.1,
+        "use_fisher": true,
+        "opt_steps": 50,
+        "action_selection": "argmax"
+      },
+      "candidates": [
+        {
+          "id": "lr_1em3_tau_0p5",
+          "parameters": {
+            "lr": 0.001,
+            "tau": 0.5
+          }
+        },
+        {
+          "id": "lr_1em3_tau_0p7",
+          "parameters": {
+            "lr": 0.001,
+            "tau": 0.7
+          }
+        },
+        {
+          "id": "lr_3em3_tau_0p5",
+          "parameters": {
+            "lr": 0.003,
+            "tau": 0.5
+          }
+        },
+        {
+          "id": "paper_anchor",
+          "role": "paper_anchor",
+          "parameters": {
+            "lr": 0.003,
+            "tau": 0.7
+          }
+        }
+      ]
+    }
+  },
+  "operational_revision": {
+    "status": "active",
+    "supersedes": [
+      "vln-r2r-ce-consistency-search-v2"
+    ],
+    "scientific_protocol_changed": false,
+    "concurrency_basis": "user_approved_prior_32gib_projection_minus_one",
+    "idea_scheduled": false
+  }
+}

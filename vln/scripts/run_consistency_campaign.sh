@@ -24,6 +24,7 @@ CAMPAIGN_METHODS="${CAMPAIGN_METHODS:-tent fstta eam feedtta atena}"
 # "start from" flag so interrupted campaigns can resume without touching
 # already completed cells.
 CAMPAIGN_SETTINGS="${CAMPAIGN_SETTINGS:-}"
+R2R_CE_SPEC="${R2R_CE_SPEC:-${REPO_ROOT}/vln/experiments/r2r_ce_consistency_search_v2.json}"
 LOG_DIR="${OUT_ROOT}/_campaign_logs"
 RUNNER="${REPO_ROOT}/vln/scripts/run_consistency_hparam_search.py"
 
@@ -90,7 +91,7 @@ run_benchmark() {
             settings=(duet-reverie hamt-reverie goat-reverie)
             ;;
         r2r-ce)
-            spec="${REPO_ROOT}/vln/experiments/r2r_ce_consistency_search_v2.json"
+            spec="${R2R_CE_SPEC}"
             settings=(etpnav-r2r-ce bevbert-r2r-ce)
             ;;
         *)

@@ -23,6 +23,9 @@ SPECS = (
     REPO_ROOT / "vln/experiments/reverie_consistency_search_v2.json",
     REPO_ROOT / "vln/experiments/r2r_ce_consistency_search_v2.json",
 )
+R2R_CE_V3_SPEC = (
+    REPO_ROOT / "vln/experiments/r2r_ce_consistency_search_v3.json"
+)
 
 
 class SpecContractTest(unittest.TestCase):
@@ -66,6 +69,41 @@ class SpecContractTest(unittest.TestCase):
         campaign = (REPO_ROOT / "vln/scripts/run_consistency_campaign.sh").read_text()
         self.assertNotIn("consistency_search_v1.json", campaign)
         self.assertEqual(campaign.count("consistency_search_v2.json"), 3)
+
+    def test_r2r_ce_v3_changes_only_registered_scheduling_fields(self):
+        v2 = json.loads(SPECS[2].read_text(encoding="utf-8"))
+        v3 = json.loads(R2R_CE_V3_SPEC.read_text(encoding="utf-8"))
+        self.assertEqual(runner.load_spec(R2R_CE_V3_SPEC), v3)
+        self.assertEqual(v3["experiment_id"], "vln-r2r-ce-consistency-search-v3")
+        self.assertFalse(v3["operational_revision"]["scientific_protocol_changed"])
+        self.assertFalse(v3["operational_revision"]["idea_scheduled"])
+        for key in (
+            "schema", "benchmark", "protocol", "settings",
+            "model_barrier", "blocked_settings", "methods",
+        ):
+            self.assertEqual(v3[key], v2[key], key)
+        self.assertEqual(v3["concurrency"], runner.R2R_CE_V3_CONCURRENCY)
+
+    def test_campaign_can_select_r2r_ce_v3_without_changing_other_specs(self):
+        script = REPO_ROOT / "vln/scripts/run_consistency_campaign.sh"
+        true_executable = shutil.which("true")
+        with tempfile.TemporaryDirectory() as directory:
+            environment = dict(os.environ)
+            environment.update({
+                "PYTHON": true_executable,
+                "PREFLIGHT_ONLY": "1",
+                "OUT_ROOT": directory,
+                "CAMPAIGN_METHODS": "tent",
+                "CAMPAIGN_SETTINGS": "etpnav-r2r-ce",
+                "R2R_CE_SPEC": str(R2R_CE_V3_SPEC),
+            })
+            result = subprocess.run(
+                ["bash", str(script), "r2r-ce"], cwd=str(REPO_ROOT),
+                env=environment, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PREFLIGHT r2r-ce etpnav-r2r-ce tent", result.stdout)
 
     def test_campaign_setting_allowlist_filters_without_replaying_cells(self):
         script = REPO_ROOT / "vln/scripts/run_consistency_campaign.sh"

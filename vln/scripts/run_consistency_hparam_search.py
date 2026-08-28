@@ -70,6 +70,30 @@ EXPECTED_CONCURRENCY = {
         for setting in ("etpnav-r2r-ce", "bevbert-r2r-ce")
     },
 }
+R2R_CE_V3_CONCURRENCY = {
+    "etpnav-r2r-ce": {
+        "tent": 6, "fstta": 6, "eam": 4,
+        "feedtta": 4, "atena": 3, "idea": 1,
+    },
+    "bevbert-r2r-ce": {
+        "tent": 5, "fstta": 5, "eam": 3,
+        "feedtta": 3, "atena": 2, "idea": 1,
+    },
+}
+EXPECTED_EXPERIMENTS = {
+    "vln-r2r-consistency-search-v2": (
+        "r2r", EXPECTED_CONCURRENCY["r2r"]
+    ),
+    "vln-reverie-consistency-search-v2": (
+        "reverie", EXPECTED_CONCURRENCY["reverie"]
+    ),
+    "vln-r2r-ce-consistency-search-v2": (
+        "r2r-ce", EXPECTED_CONCURRENCY["r2r-ce"]
+    ),
+    "vln-r2r-ce-consistency-search-v3": (
+        "r2r-ce", R2R_CE_V3_CONCURRENCY
+    ),
+}
 MODEL_FOR_SETTING = {
     "duet-r2r": "duet",
     "hamt-r2r": "hamt",
@@ -450,6 +474,12 @@ def load_spec(path):
         raise UserError("benchmark metric policy must be {}/{}".format(*metric_pair))
     if spec["benchmark"] not in EXPECTED_SETTINGS:
         raise UserError("unsupported benchmark: {}".format(spec["benchmark"]))
+    experiment_id = spec["experiment_id"]
+    expected_experiment = EXPECTED_EXPERIMENTS.get(experiment_id)
+    if expected_experiment is None:
+        raise UserError("unsupported experiment_id: {}".format(experiment_id))
+    if expected_experiment[0] != spec["benchmark"]:
+        raise UserError("experiment_id does not match benchmark")
     settings = spec["settings"]
     if not isinstance(settings, list) or not settings or len(settings) != len(set(settings)):
         raise UserError("settings must be a non-empty unique list")
@@ -467,7 +497,7 @@ def load_spec(path):
         raise UserError("methods must define exactly {}".format(", ".join(METHOD_ORDER)))
     for method in METHOD_ORDER:
         _validate_candidates(method, spec["methods"][method], spec["benchmark"])
-    if spec["concurrency"] != EXPECTED_CONCURRENCY[spec["benchmark"]]:
+    if spec["concurrency"] != expected_experiment[1]:
         raise UserError("concurrency differs from the registered per-cell caps")
     if spec["benchmark"] == "r2r-ce":
         if spec.get("model_barrier") is not True:

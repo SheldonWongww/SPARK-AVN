@@ -32,6 +32,23 @@ CLI-overprovisioned, or duplicate-resume launch is rejected.
 
 ## R2R-CE consistency-search concurrency calibration
 
+`r2r_ce_consistency_search_v3.json` is a scheduling-only successor to the v2
+R2R-CE consistency search.  Its candidate grids, splits, seeds, Source
+evidence, selection rule, and strict ETPNav-to-BEVBert model barrier are
+unchanged.  At the user's direction, production uses the prior 32 GiB
+projections minus one worker rather than waiting for the remaining stress
+tests: ETPNav caps are `6/6/4/4/3` and BEVBert caps are `5/5/3/3/2` for
+Tent/FSTTA/EAM/FeedTTA/ATENA.  IDEA remains excluded from the production
+campaign.  The historical v2 spec retains its three-worker caps.
+
+Select the successor explicitly through `R2R_CE_SPEC`; this keeps old campaign
+commands reproducible:
+
+```bash
+R2R_CE_SPEC="$PWD/vln/experiments/r2r_ce_consistency_search_v3.json" \
+  vln/scripts/run_consistency_campaign.sh r2r-ce
+```
+
 `r2r_ce_concurrency_calibration_v1.json` binds the unchanged consistency-v2
 search specification and registers the projected worker counts that must be
 validated before a faster successor campaign is created.  The calibration is
