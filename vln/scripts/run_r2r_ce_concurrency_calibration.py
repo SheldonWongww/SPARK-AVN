@@ -454,8 +454,8 @@ def validate_diagnostics(job, setting, method, episode_count):
         errors.append("baseline missing")
     if diagnostics.get("episode_count") != episode_count:
         errors.append("episode_count mismatch")
-    if diagnostics.get("action_selection") != "argmax":
-        errors.append("action selection is not argmax")
+    if diagnostics.get("action_selection") != "target_native_argmax":
+        errors.append("action selection is not target-native argmax")
     if not isinstance(adapter, dict):
         errors.append("adapter diagnostics missing")
         updates = None

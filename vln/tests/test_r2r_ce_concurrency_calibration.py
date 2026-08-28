@@ -74,7 +74,7 @@ class R2RCEConcurrencyCalibrationTest(unittest.TestCase):
                 "method": "tent",
                 "baseline": "etpnav",
                 "episode_count": 100,
-                "action_selection": "argmax",
+                "action_selection": "target_native_argmax",
                 "feedback_supervision": "none",
                 "adapter": {"episodes": 100, "updates": 10},
             }
@@ -99,7 +99,7 @@ class R2RCEConcurrencyCalibrationTest(unittest.TestCase):
                 "method": "atena",
                 "baseline": "bevbert",
                 "episode_count": 100,
-                "action_selection": "argmax",
+                "action_selection": "target_native_argmax",
                 "feedback_supervision": "binary_episode_success",
                 "atena_exact_replay_within_declared_scope": True,
                 "atena_optimizer_scope_matches_reachable": True,
