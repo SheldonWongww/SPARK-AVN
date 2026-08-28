@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavTTA Research Workflow"
+  short_description: "Route NavTTA work across research and experiment specialists"
+  default_prompt: "Use $navtta-research-workflow to route this NavTTA request and preserve a traceable specialist handoff."

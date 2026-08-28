@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavTTA 方法开发"
+  short_description: "将已批准的 TTA 假设实现为共享算法、任务适配器与验证证据"
+  default_prompt: "Use $navtta-method-developer to implement an approved NavTTA method contract across authorized navigation tasks."

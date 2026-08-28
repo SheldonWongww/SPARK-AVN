@@ -2,6 +2,58 @@
 
 下面对 TTA 的相关研究进行系统性学习梳理，掌握 TTA 的核心思想、在具身导航任务(VLN)上的方法改进以及在强化学习（DDPPO 算法）中如何引入指导信息（例如如何用 LLM 来生成奖励信号）来进行参数更新……
 
+# 零：测试时训练(TTT)和测试时适应(TTA)的区别
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784473577066-e5b31490-2bb6-4838-9833-55609237cd51.png" width="903" title="" crop="0,0,1,1" id="u11cba47e" class="ne-image">
+
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784473670355-364dcaf9-057c-470b-9099-dda9a10ab69b.png" width="939" title="" crop="0,0,1,1" id="u28cb0650" class="ne-image">
+
+图里把 `test-time training` 和 `fully test-time adaptation` 都归到“测试阶段会对目标样本产生测试损失”的设置；关键差别在于前者仍依赖源域监督训练，后者完全不依赖源域或目标标签。
+
+**测试时训练（test-time training, TTT）和测试时适应（test-time adaptation, TTA）的核心区别不在于“测试时是否更新模型”，而在于这种更新机制是否在源域训练阶段就被预先设计和训练过**。
+
+## 核心区别
+**TTT 是“训练时就为测试时更新做准备”。**  
+它在源域训练阶段不仅优化主任务监督损失：
+
+$ L(x^s, y^s) $
+
+还会加入一个自监督/辅助损失：
+
+$ L(x^s) $
+
+测试时再用同一个辅助损失在目标样本上更新模型：
+
+$ L(x^t) $
+
+所以 TTT 的逻辑是：  
+模型在训练阶段已经学会“如何用无标签数据调整自己”，测试时只是把这个机制迁移到目标域样本上。
+
+## TTA 则成本更低
+**测试时适应（TTA）是更宽泛的概念。**
+
+只要模型在测试阶段利用无标签目标数据 $ x^t $ 调整自身，都可以叫 TTA。它不一定要求源域训练时专门加入测试时损失。
+
+图里的 `fully test-time adaptation` 是一种更严格的 TTA：
+
+$ \text{source data: } - $
+
+$ \text{target data: } x^t $
+
+$ \text{test loss: } L(x^t) $
+
+也就是说，它假设部署时只有目标域测试数据，没有源域数据、没有源域标签，也没有目标标签。
+
+**一句话区分**
+
+| 维度 | Test-time training | Test-time adaptation |
+| --- | --- | --- |
+| 是否是测试时更新 | 是 | 是 |
+| 是否需要源域训练设计 | 通常需要 | 不一定 |
+| 是否使用源域监督数据 | 训练阶段需要 $ x^s, y^s $ | fully TTA 中不需要 |
+| 测试时用什么 | 无标签目标数据 $ x^t $ | 无标签目标数据 $ x^t $ |
+| 方法直觉 | 训练一个“测试时可自我修正”的模型 | 直接在部署时让模型适应当前测试分布 |
+
+
 # 一、<font style="color:rgb(0,0,0);">Beyond Model Adaptation at Test Time: A Survey</font>
 > TTA 的综述，于 2024 年 11 月发布在 arXiv 上
 >
@@ -2150,6 +2202,9 @@ $ \mathbb{E}[\tilde{g}'_{\theta_m}] = \frac{g_{\theta_m} \cdot (\alpha p + (1 - 
 > <font style="color:rgba(0, 0, 0, 0.86);">重点关注的点是：主动选择策略是什么？与被动适应相比的优势？两种方法能否互补？</font>
 >
 
+> code:[GitHub - kuai-lab/NeurIPS25_att_vln](https://github.com/kuai-lab/NeurIPS25_att_vln)
+>
+
 ## 摘要
 在离线数据集上训练的视觉语言导航（VLN）策略，在部署到不熟悉的导航环境进行测试时，其任务性能通常会下降，因为在这些环境中，智能体通常在无法获得外部交互或反馈的情况下进行评估。熵最小化已成为一种在测试时降低预测不确定性的实用解决方案；然而，它可能会遭受**累积误差**的影响，因为智能体在没有足够上下文依据的情况下，可能会对错误的动作变得过度自信。
 
@@ -2650,7 +2705,7 @@ $ H(\hat{y}) = -\sum_c p(\hat{y}_c) \log p(\hat{y}_c) $
 
 尽管现有大多数方法能取得很高的准确率,但它们都依赖**反向传播,**而反向传播在内存和计算上开销很大,使其不适合资源受限的设备。近期降低这种开销的尝试,往往要么延迟很高,要么绑定于特定架构(例如仅支持 ViT 或仅支持 CNN)。在本工作中,我们从**<font style="color:#DF2A3F;background-color:#FBDE28;">嵌入</font>**的视角重新审视**<u>域偏移</u>**。
 
-我们的分析揭示:域偏移会在嵌入空间中引发三种不同的结构性变化:**<font style="color:#601BDE;">平移(均值偏移)</font>**、**<font style="color:#601BDE;">缩放(方差偏移)</font>**和**<font style="color:#601BDE;">旋转(协方差偏移)</font>**。基于这一洞察,我们提出了**<font style="background-color:#FBDE28;">渐进式嵌入对齐(PEA)</font>**,一种无需反向传播且与架构无关的 TTA 方法。通过在每个中间层施加一种新颖的协方差对齐过程,PEA 仅用两次前向传播就高效地校正了嵌入的畸变。
+我们的分析揭示:域偏移会在嵌入空间中引发三种不同的结构性变化:**<font style="color:#601BDE;">平移(均值偏移)</font>**、**<font style="color:#601BDE;">缩放(方差偏移)</font>**和**<font style="color:#601BDE;">旋转(协方差偏移)</font>**。基于这一洞察,我们提出了**<font style="background-color:#FBDE28;">渐进式嵌入对齐(PEA)</font>**,一种无需反向传播且与架构无关的 TTA 方法。通过在每个中间层施加一种新颖的<font style="color:#DF2A3F;">协方差对齐过程</font>,PEA 仅用两次前向传播就高效地校正了嵌入的畸变。
 
 大量实验表明,PEA 在准确率和效率两方面都达到了最先进的水平,同时也证明了它在包括 ViT 和 CNN 在内的不同架构上的通用性。
 
@@ -2750,23 +2805,37 @@ $ H(\hat{y}) = -\sum_c p(\hat{y}_c) \log p(\hat{y}_c) $
 ### 距离感知的加权协方差对齐
 我们方法的主要目标是**在深度神经网络（DNN）的每个块处，将****<font style="color:#DF2A3F;">测试时中间特征</font>****逐步与****<font style="color:#DF2A3F;">源域分布</font>****重新对齐**。
 
-我们使用**<font style="color:#601BDE;">白化着色变换（WCT）</font>**来实现这一点，该变换对目标域特征进行几何变换以匹配源域的结构。然而，正如我们在上述第一个挑战中提到的，过于激进地应用协方差对齐会有过度校正和不对齐的风险。为了平衡这一点，我们引入了一种距离感知加权机制，该机制根据特定层的统计差异，自适应地组合原始特征和对齐特征。我们的方法分为两个阶段运行：在部署前提取源统计量的离线阶段，以及在测试时通过两次前向传播过程执行动态对齐的在线阶段。
+我们使用**<font style="color:#601BDE;">白化着色变换（WCT）</font>**来实现这一点，该变换对目标域特征进行几何变换以匹配源域的结构。然而，正如我们在上述第一个挑战中提到的，过于激进地应用协方差对齐会有过度校正和不对齐的风险。为了平衡这一点，我们引入了一种距离感知加权机制，该机制根据特定层的统计差异，自适应地组合原始特征和对齐特征。
 
-**离线阶段。** 在测试时部署之前，我们使用训练集计算并存储模型每个块 $ l $ 的源特征统计量。这些包括源均值向量 $ \mu_{s,l} $ 和协方差矩阵 $ \Sigma_{s,l} $。这些预先计算的统计量作为基准的源几何结构，用于我们在测试时将特征重新对齐。这个离线过程只需要通过训练数据进行一次前向传播，不涉及任何梯度计算或反向传播。一旦计算完成，这些统计量只需要极少的存储空间（对于 ViT-Base 约为 30MB），并且无需持续访问源数据即可进行部署，这使得我们的方法在现实世界的部署场景中非常实用。
+<details class="lake-collapse"><summary id="u03f4fdfb"><strong><span class="ne-text">白化着色变化（WCT）是什么</span></strong></summary><p id="u09404611" class="ne-p"><span class="ne-text">WCT（Whitening and Coloring Transform，白化着色变换）本质上是一个</span><strong><span class="ne-text">二阶统计量对齐</span></strong><span class="ne-text">方法：先把测试域特征“白化”成零均值、单位协方差，再把它“着色”为源域的均值和协方差。</span></p><p id="u9a23fe1f" class="ne-p"><span class="ne-text">假设某一中间层的测试域特征为：</span></p><p id="u33d11f7b" class="ne-p" style="text-align: center"><span id="FCCF8" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fd4d983291ccc05b133a1bb0db537368.svg"></span></p><p id="u8b3437f9" class="ne-p"><span class="ne-text">其中 </span><span id="QPGnl" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/df378375e7693bdcf9535661c023c02e.svg"></span><span class="ne-text"> 是样本数、token 数或空间位置数，</span><span id="zG3cs" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/56c1b0cb7a48ccf9520b0adb3c8cb2e8.svg"></span><span class="ne-text"> 是特征维度。测试域均值和协方差为：</span></p><p id="ucb9122f2" class="ne-p" style="text-align: center"><span id="rujqw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/e5e56e08e8d605b192b8067683edc458.svg"></span></p><p id="u1667b182" class="ne-p" style="text-align: center"><span id="an9og" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6ff68ea6071ff4d6a020576ac2511d32.svg"></span></p><p id="u43326610" class="ne-p"><span class="ne-text">源域预先统计得到：</span></p><p id="uc26beff4" class="ne-p" style="text-align: center"><span id="uvvPc" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/26e8292c3c776ec42da9858db5ce45de.svg"></span></p><p id="ufc828f84" class="ne-p"><strong><span class="ne-text">第一步：白化 Whitening</span></strong></p><p id="u12028d07" class="ne-p"><span class="ne-text">白化的目标是去掉测试域特征自身的均值和协方差结构：</span></p><p id="u1f868639" class="ne-p" style="text-align: center"><span id="Rv2Zi" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/533da92d351daa2db53c5005a5a4754a.svg"></span></p><p id="u18e68c53" class="ne-p"><span class="ne-text">其中 </span><span id="XkHME" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/32a47ed477aef814076dd8c2b0f4f140.svg"></span><span class="ne-text"> 可以通过特征值分解得到。若：</span></p><p id="udf7f4ba4" class="ne-p" style="text-align: center"><span id="WXsdo" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a80ad0ba91fb12c7e5fb769770ab58c3.svg"></span></p><p id="ub3788e41" class="ne-p"><span class="ne-text">则：</span></p><p id="uba338381" class="ne-p" style="text-align: center"><span id="exeMD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/78e56e051436a7e7d5b864794e8e1bdd.svg"></span></p><p id="ucb6f8634" class="ne-p"><span class="ne-text">实际实现中通常会加一个很小的稳定项：</span></p><p id="u9ec23661" class="ne-p" style="text-align: center"><span id="hffBE" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f2a569b51ac83f3326c1393537382c56.svg"></span></p><p id="u18d25785" class="ne-p"><span class="ne-text">白化之后，特征满足近似：</span></p><p id="ucf9097a7" class="ne-p" style="text-align: center"><span id="xzc2o" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/4e66c1e8db2c875a6da0bcf66aaf000f.svg"></span></p><p id="ube44deac" class="ne-p" style="text-align: center"><span id="ap0cX" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/9b37fd974e06c73d66259b8266be4e36.svg"></span></p><p id="u82bcd391" class="ne-p"><span class="ne-text">也就是说，测试域特征被拉回到一个标准化的空间中。</span></p><p id="ufe5b66f6" class="ne-p"><strong><span class="ne-text">第二步：着色 Coloring</span></strong></p><p id="u0052a946" class="ne-p"><span class="ne-text">着色的目标是把白化后的测试域特征重新赋予源域的协方差结构：</span></p><p id="u3a35c65d" class="ne-p" style="text-align: center"><span id="DSOh0" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/44294d61a5bbbb6c8316bea1400d4239.svg"></span></p><p id="u9f9c0719" class="ne-p"><span class="ne-text">其中：</span></p><p id="ud02fbff1" class="ne-p" style="text-align: center"><span id="nF0iP" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/92e3f6ac163cadd334374e3c72a0b6cf.svg"></span></p><p id="ub9e8b302" class="ne-p"><span class="ne-text">最终合起来就是：</span></p><p id="u40bb5d48" class="ne-p" style="text-align: center"><span id="C8NX2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/051ea91c3b3b2092226ef69a58594449.svg"></span></p><p id="u059b02c8" class="ne-p"><span class="ne-text">这就是 PEA 里协方差对齐的核心形式。</span></p><p id="ud580154b" class="ne-p"><span class="ne-text">它的直观含义是：</span></p><ol class="ne-ol"><li id="ub918b0f4" data-lake-index-type="0"><span class="ne-text">减去 </span><span id="YUxJE" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ac13b3c9be62867b46bdbe12b045e06f.svg"></span><span class="ne-text">：去掉测试域的均值偏移。</span></li><li id="u074f7bf0" data-lake-index-type="0"><span class="ne-text">乘上 </span><span id="PXE4X" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/32a47ed477aef814076dd8c2b0f4f140.svg"></span><span class="ne-text">：消除测试域自己的方差和通道相关性。</span></li><li id="ud61a308e" data-lake-index-type="0"><span class="ne-text">乘上 </span><span id="sZHLA" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/74b8c77371cd83c4b0a2f6d01828e1cd.svg"></span><span class="ne-text">：注入源域的协方差结构。</span></li><li id="udc07a7de" data-lake-index-type="0"><span class="ne-text">加上 </span><span id="RkLEq" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/1fb93f39e7d1a63585bf693e4c3ee704.svg"></span><span class="ne-text">：恢复源域的均值位置。</span></li></ol><p id="u8616980b" class="ne-p"><span class="ne-text">所以变换后的特征近似满足：</span></p><p id="ub5af082c" class="ne-p" style="text-align: center"><span id="kvVGp" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/726c7cf9113293386c70fa854155c044.svg"></span></p><p id="u59e6123a" class="ne-p" style="text-align: center"><span id="KsPg2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/67d5133b6423379f1aa5975984f76684.svg"></span></p><p id="u593baa06" class="ne-p"><span class="ne-text">和 AdaIN 只对齐每个通道的均值、方差不同，WCT 对齐的是完整协方差矩阵，因此能处理通道之间的相关性变化，也就是 PEA 文章里说的“旋转”型特征偏移。</span></p></details>
+我们的方法分为<font style="color:#DF2A3F;background-color:#FBDE28;">两个阶段</font>运行：在部署前提取**源统计量**的离线阶段，以及在测试时通过两次前向传播过程执行动态对齐的在线阶段。
 
-**在线阶段。** 在测试时，每个输入的批次会经历两次前向传播。第一次传播估计每层的领域偏移程度，以确定适当的对齐强度。然后，第二次传播使用 WCT 执行实际的特征对齐。与以前需要多次运行来优化提示词的仅前向传播方法不同，我们的方法仅需两次前向传播即可实现自适应。
+#### 离线阶段
+在测试时部署之前，我们使用训练集计算并存储模型每个块 $ l $ 的源特征统计量。这些包括**<font style="color:#601BDE;background-color:#E8F7CF;">源均值向量</font>**<font style="color:#601BDE;background-color:#E8F7CF;"> </font>$ \mu_{s,l} $ 和**<font style="color:#2F4BDA;background-color:#FBDFEF;">协方差矩阵 </font>**$ \Sigma_{s,l} $。这些预先计算的统计量作为基准的源几何结构，用于我们在测试时将特征重新对齐。这个离线过程只需要通过训练数据进行一次前向传播，不涉及任何梯度计算或反向传播。一旦计算完成，这些统计量只需要极少的存储空间（对于 ViT-Base 约为 30MB），并且无需持续访问源数据即可进行部署，这使得我们的方法在现实世界的部署场景中非常实用。
 
-**第一次传播：估计对齐权重。** 第一次传播的目的是测量当前批次在每个块处偏离源分布的程度。为此，我们将测试批次向前传递通过网络以提取中间特征激活值 $ F_l \in \mathbb{R}^{B \times N \times D} $。对于每个块 $ l $，我们计算批次均值 $ \mu_{b,l} $ 和方差 $ \sigma^2_{b,l} $。这些统计量表征了当前批次的分布。为了量化偏移，我们计算批次分布和源分布之间的统计距离：
+#### 在线阶段
+在测试时，每个输入的批次会经历两次前向传播。
+
++ 第一次传播估计每层的领域偏移程度，以确定适当的**<font style="color:#2F4BDA;">对齐强度</font>**。
++ 然后，第二次传播使用 WCT 执行实际的特征对齐。与以前需要多次运行来优化提示词的仅前向传播方法不同，我们的方法**<u>仅需两次前向传播</u>**即可实现自适应。
+
+#### 第一次传播：估计对齐权重
+第一次传播的目的是**<u>测量当前批次在每个块处偏离源分布的程度</u>**。
+
+为此，我们将测试批次向前传递通过网络以提取中间特征激活值 $ F_l \in \mathbb{R}^{B \times N \times D} $。对于每个块 $ l $，我们计算批次均值 $ \mu_{b,l} $ 和方差 $ \sigma^2_{b,l} $。这些统计量表征了当前批次的分布。
+
+为了**<font style="color:#601BDE;background-color:#FBDFEF;">量化偏移</font>**，我们计算**批次分布**和**源分布**之间的<font style="color:#601BDE;">统计距离</font>：
 
 $ d_l = \|\mu_{s,l} - \mu_{b,l}\|^2 + \|\sigma^2_{s,l} - \sigma^2_{b,l}\|^2 $
 
-这个距离捕获了每层处的中心偏移（平移）和尺度不匹配。然后，我们使用最小-最大缩放（min-max scaling）对所有层中的这些原始距离进行归一化，以获得对齐权重 $ w_l \in [0, 1] $：
+这个距离捕获了每层处的中心偏移（平移）和尺度不匹配。然后，我们使用**最小-最大缩放（min-max scaling）**对所有层中的这些原始距离进行归一化，以获得对齐**<font style="color:#601BDE;">权重 </font>**$ w_l \in [0, 1] $：
 
 $ w_l = \frac{d_l - \min_l d_l}{\max_l d_l - \min_l d_l} $
 
 权重 $ w_l $ 反映了应该多强烈地对齐块 $ l $ 处的特征：具有最小偏移的层接收接近零的权重（即跳过对齐），而具有高差异的层将被更激进地校正。
 
-**第二次传播：执行加权特征对齐。** 在第二次前向传播中，我们重新将批次通过模型进行处理，并在每个块处应用基于 WCT 的对齐。令更新后的测试时批次统计量为 $ \mu_{t,l} $ 和 $ \Sigma_{t,l} $，它们可以从当前批次或从 EMA 跟踪中计算得出（见 4.2 节）。然后，我们应用白化-着色变换：
+#### 第二次传播：执行加权特征对齐
+在第二次前向传播中，我们重新将批次通过模型进行处理，并在每个块处应用基于 WCT 的对齐。令更新后的测试时批次统计量为 $ \mu_{t,l} $ 和 $ \Sigma_{t,l} $，它们可以从当前批次或从 EMA 跟踪中计算得出（见 4.2 节）。然后，我们应用白化-着色变换：
 
 $ Y_l = (F_l - \mu_{t,l})\Sigma^{-1/2}_{t,l} \Sigma^{1/2}_{s,l} + \mu_{s,l} $
 
@@ -2778,71 +2847,101 @@ $ F'_l = (1 - w_l)F_l + w_l Y_l $
 
 $ F_l $ 和 $ Y_l $ 的组合确保仅在必要时才平移特征，在校正不匹配的层的同时保持了对齐良好层的稳定性。
 
-我们对齐过程中的主要计算瓶颈之一在于对协方差矩阵的操作，特别是计算矩阵平方根 $ \Sigma^{1/2} $ 及其逆矩阵 $ \Sigma^{-1/2} $。为了高效稳定地执行此操作，我们使用了专为对称半正定（SPSD）矩阵定制的特征分解。给定协方差矩阵 $ \Sigma $，我们首先计算特征分解 $ \Sigma = V \Lambda V^\top $，其中 $ V $ 包含特征向量，$ \Lambda $ 包含特征值。平方根和逆平方根计算如下：
+我们对齐过程中的主要计算瓶颈之一在于对**协方差矩阵**的操作，特别是计算**矩阵平方根** $ \Sigma^{1/2} $ 及其**逆矩阵 **$ \Sigma^{-1/2} $。为了高效稳定地执行此操作，我们使用了专为**对称半正定（SPSD）矩阵**定制的特征分解。给定协方差矩阵 $ \Sigma $，我们首先计算特征分解 $ \Sigma = V \Lambda V^\top $，其中 $ V $ 包含特征向量，$ \Lambda $ 包含特征值。平方根和逆平方根计算如下：
 
 $ \Sigma^{1/2} = V \Lambda^{1/2} V^\top, \quad \Sigma^{-1/2} = V \Lambda^{-1/2} V^\top $
 
-这种特征分解简化了矩阵平方根及其逆矩阵的计算，有效避免了通用矩阵运算的高计算负担。总的来说，我们的方法引入了极小的开销：由于每层特征维度适中（通常为 128 - 1024），用于对齐的特征分解在计算上是高效的，并且它仅在前向传播期间应用。关键是，我们的方法完全免梯度且与模型无关——它不需要反向传播和特定任务的微调。所有操作都在中间特征激活上执行，从而可以与各种架构（例如，CNN 和 ViT）无缝集成，并在资源受限设备上实现低延迟部署。
+这种特征分解简化了矩阵平方根及其逆矩阵的计算，有效避免了通用矩阵运算的高计算负担。
+
+总的来说，我们的方法引入了极小的开销：由于每层特征维度适中（通常为 128 - 1024），用于对齐的特征分解在计算上是高效的，并且它仅在前向传播期间应用。关键是，我们的方法完全免梯度且与模型无关——它不需要反向传播和特定任务的微调。所有操作都在**<font style="color:#601BDE;background-color:#FBDFEF;">中间特征激活</font>**上执行，从而可以与各种架构（例如，CNN 和 ViT）无缝集成，并在资源受限设备上实现低延迟部署。
 
 ### 通过 EMA 进行鲁棒的统计量估计
-嵌入对齐的有效性关键取决于目标域统计量（$ \mu_{t,l}, \Sigma_{t,l} $）的准确估计。然而，测试时部署，尤其是在配备有限内存的资源受限设备上，通常需要较小的批量大小（例如 64 或更少），这导致从单个批次得出的统计估计不可靠。为了缓解这个问题，我们维护了目标特征统计量的指数移动平均（EMA）策略，以累积历史批次，从而随着时间的推移产生更稳定和鲁棒的估计。对于每个新批次 $ i $，EMA 使用动量参数 $ m $ 进行更新：
+嵌入对齐的有效性关键取决于目标域统计量（$ \mu_{t,l}, \Sigma_{t,l} $）的准确估计。
+
+然而，测试时部署，尤其是在配备有限内存的资源受限设备上，通常需要较小的批量大小（例如 64 或更少），这导致从单个批次得出的统计估计不可靠。为了缓解这个问题，我们维护了**<font style="color:#D22D8D;">目标特征统计量</font>**的**<font style="color:#ED740C;">指数移动平均（EMA）</font>**策略，以累积历史批次，从而随着时间的推移产生更稳定和鲁棒的估计。
+
+对于每个新批次 $ i $，EMA 使用动量参数 $ m $ 进行更新：
 
 $ \mu^{(i)}_{t,l} = (1 - m) \mu^{(i-1)}_{t,l} + m \mu_{b,l} $
 
 $ \Sigma^{(i)}_{t,l} = (1 - m) \Sigma^{(i-1)}_{t,l} + m \Sigma_{b,l} $
 
-虽然 EMA 确保了稳定性，但它适应突然且快速的领域偏移可能会很慢，导致模型被锚定在过时的统计量上。为了解决这个问题，我们结合了一种基于预测熵的峰值领域偏移检测机制。
+虽然 EMA 确保了稳定性，但它适应**<u>突然且快速的领域偏移</u>**可能会很慢，导致模型被锚定在过时的统计量上。为了解决这个问题，我们结合了一种**<u>基于预测熵的峰值领域偏移检测机制</u>**。
 
-峰值检测使用模型的预测置信度作为检测领域偏移的信号。置信度的突然下降（即熵的急剧上升）通常表明模型遇到了一个新的、不熟悉的领域。我们跟踪批次平均预测熵的 EMA，记为 $ E_{ema} $，并将其与当前批次的瞬时熵 $ H_t $ 进行比较。如果当前熵超过历史平均值一个固定的阈值 $ \theta_{ent} $，则标记为发生峰值（Spike）：
+峰值检测使用模型的预测置信度作为检测领域偏移的信号。置信度的突然下降（即熵的急剧上升）通常表明模型遇到了一个新的、不熟悉的领域。我们跟踪批次平均预测熵的 EMA，记为 $ E_{ema} $，并将其与当前批次的瞬时熵 $ H_t $ 进行比较。如果当前熵超过历史平均值一个固定的阈值 $ \theta_{ent} $，则标记为发生**峰值（Spike）**：
 
 $ \text{Spike if: } H_t > E_{ema} + \theta_{ent} $
 
-如果检测到熵峰值，EMA 统计量（$ \mu_{t,l}, \Sigma_{t,l} $）会立即重置为当前批次的统计量。该检测模块允许模型快速适应新的数据分布，既确保了渐进偏移期间的稳定性，也确保了突然偏移期间的敏捷性。EMA 更新在计算上是轻量级的，每层仅涉及简单的平均，成本可以忽略不计。内存使用量也极低，每个块仅需存储两个小型张量。
+如果检测到熵峰值，EMA 统计量（$ \mu_{t,l}, \Sigma_{t,l} $）会**<u><font style="color:#D22D8D;">立即重置为当前批次的统计量</font></u>**。该检测模块允许模型快速适应新的数据分布，既确保了渐进偏移期间的稳定性，也确保了突然偏移期间的敏捷性。EMA 更新在计算上是轻量级的，每层仅涉及简单的平均，成本可以忽略不计。内存使用量也极低，每个块仅需存储两个小型张量。
 
 ### 通过轻量级增强进行数据丰富
-为了进一步增强对目标批次分布的估计，我们引入了一种基于简单且低成本增强的轻量级数据丰富策略。这些增强包括常见的几何变换，如水平翻转、随机裁剪和轻度旋转。它们的计算成本很低，并且保留了该领域的语义一致性。对于每张输入图像，我们生成 $ K $ 个增强视图。这种数据增强被集成到在线自适应阶段的两次前向传播中：
+为了进一步增强对目标批次分布的估计，我们引入了一种基于简单且低成本增强的**轻量级数据丰富策略**。
 
-**第一次传播：** 正如 4.1 节所述，第一次前向传播用于通过计算当前批次的特征统计量来估计逐层的分布差异。为了增强小批量下的估计，我们对每张图像应用增强，并在第一次前向传播中处理生成的 $ K $ 视图批次。然后，我们使用这个经过丰富的数据批次来计算公式 1 中的对齐距离，从而为每一层产生更鲁棒和稳定的权重估计。
+这些增强包括常见的**几何变换**，如**<u>水平翻转</u>**、**<u>随机裁剪</u>**和**<u>轻度旋转</u>**。它们的计算成本很低，并且保留了该领域的语义一致性。对于每张输入图像，我们生成 $ K $ 个增强视图。
 
-**第二次传播：** 第二次前向传播使用公式 3 中所示的 WCT 变换执行实际的对齐。与第一次传播一样，我们将批次增强为 $ K $ 个视图，并在所有视图上应用 WCT 对齐。在获得 $ K $ 组对齐的预测后，我们通过均匀平均将它们聚合：
+这种数据增强被集成到在线自适应阶段的两次前向传播中：
+
+#### 第一次传播
+正如 5.1 节所述，第一次前向传播用于通过计算当前批次的特征统计量来估计逐层的分布差异。为了增强小批量下的估计，我们对每张图像应用增强，并在第一次前向传播中处理生成的 $ K $ 视图批次。然后，我们使用这个经过丰富的数据批次来计算公式 1 中的对齐距离，从而为每一层产生更鲁棒和稳定的权重估计。
+
+#### 第二次传播 
+第二次前向传播使用公式 3 中所示的 WCT 变换执行实际的对齐。与第一次传播一样，我们将批次增强为 $ K $ 个视图，并在所有视图上应用 WCT 对齐。在获得 $ K $ 组对齐的预测后，我们通过均匀平均将它们聚合：
 
 $ pred_{final} = \frac{1}{K} \sum_{k=1}^K logits_k $
 
 特征丰富和集成不仅提高了嵌入对齐的稳定性，而且通过结合数据的多个互补视图增强了最终预测。尽管为每个输入引入了多个视图，但这些增强是轻量级的，不需要额外的模型参数或反向传播。因此，增加的成本仅限于带有轻微几何变换的重复前向传播，这使得该方法即使在内存受限的边缘设备上也极其高效和实用。
 
-**PEA 的根本方法论差异：**
-
+#### PEA 的根本方法论差异
 现有的 TTA 方法通常通过反向传播来更新归一化层的仿射参数，即它们使用熵最小化和数据增强等技术来使模型自适应，以拟合发生偏移的领域。然而，正如先前研究所讨论的，测试时真实标签的缺失往往会在连续迭代中导致嵌入漂移（embedding drifts），从而导致次优性能，甚至引发灾难性遗忘（catastrophic forgetting）。
 
 相比之下，我们的方法采用了一种截然不同的策略：我们不是去修改模型，而是将偏移的嵌入与源分布重新对齐。这消除了对反向传播的需求，确保了原始模型参数保持完整和鲁棒，从而彻底缓解了灾难性遗忘问题。
 
 ## 实验
 ### 数据集和基线
-**数据集与模型。** 按照近期 TTA 工作的设置，我们在多个数据集上进行了全面评估。具体而言，我们使用 CIFAR10-C、CIFAR100-C 和 ImageNet-C，每个数据集都在原始测试集上施加了 $ 15 $ 种常见腐蚀类型。所有实验均采用最严重的腐蚀等级，即 $ \mathrm{severity} = 5 $，并使用批大小 $ 64 $。为了模拟真实的在线域偏移场景，我们遵循 CoTTA 中的终身持续测试时自适应设定，即腐蚀样本在测试时以数据流形式顺序到达。相比于每个域都始终从源域模型开始进行自适应，我们的持续设定更加真实，也更具挑战性。
+#### 数据集与模型 
+按照近期 TTA 工作的设置，我们在多个数据集上进行了全面评估。
 
-对于骨干网络模型，我们在 ImageNet-C 和 CIFAR100-C 数据集上同时采用 ResNet-50 和 ViT-Base。对于 CIFAR10-C，考虑到该数据集规模较小，我们使用 ResNet-50 和 ViT-Tiny 进行评估。这种多样化选择表明，我们的方法能够有效泛化到 CNN 和基于 Transformer 的架构。
+具体而言，我们使用 CIFAR10-C、CIFAR100-C 和 ImageNet-C，每个数据集都在**<u>原始测试集上施加了 </u>**$ 15 $**<u> 种常见腐蚀类型</u>**。
 
-**基线方法。** 我们将提出的 PEA 与若干高效 TTA 方法以及当前先进的性能驱动方法进行比较。对于高效的基于 CNN 的 TTA，我们包括 EcoTTA、MECTA 和 L-TTA。对于 ViT 专用自适应，我们评估了 FOA，该方法执行仅前向的 prompt 优化。我们还评估了基于熵最小化的方法，包括 Tent、EATA 和 SAR。最后，我们纳入了近期基于伪标签和数据增强的先进方法：CMF、LAW 和 SPA。实现细节和额外说明见附录 C。
+> 这个设定就可以去用，在我们的导航任务上，一个scene就是一个域，当然后续也可以做光照的变化来去得到新的一组偏移后的域。
+>
+
+所有实验均采用最严重的腐蚀等级，即 $ \mathrm{severity} = 5 $，并使用批大小 $ 64 $。
+
+为了模拟真实的在线域偏移场景，我们遵循 **<u><font style="color:#D22D8D;">CoTTA 中的终身持续测试时自适应设定</font></u>**，即腐蚀样本在测试时以数据流形式顺序到达。相比于**<u><font style="background-color:#FBF5CB;">每个域都始终从源域模型开始进行自适应</font></u>**，我们的持续设定更加真实，也更具挑战性。
+
+对于骨干网络模型，我们在 ImageNet-C 和 CIFAR100-C 数据集上同时采用 **ResNet-50** 和 **ViT-Base**。对于 CIFAR10-C，考虑到该数据集规模较小，我们使用 ResNet-50 和 ViT-Tiny 进行评估。这种多样化选择表明，我们的方法能够有效泛化到 CNN 和基于 Transformer 的架构。
+
+#### 基线方法
+我们将提出的 PEA 与若干高效 TTA 方法以及当前先进的性能驱动方法进行比较。
+
++ 对于高效的基于 CNN 的 TTA，我们包括 EcoTTA、MECTA 和 L-TTA。
++ 对于 ViT 专用自适应，我们评估了 FOA，该方法执行仅前向的 prompt 优化。
++ 我们还评估了基于熵最小化的方法，包括 Tent、EATA 和 SAR。
++ 最后，我们纳入了近期基于伪标签和数据增强的先进方法：CMF、LAW 和 SPA。
+
+实现细节和额外说明见附录 C。
 
 ### 在IMAGENET-C上的主要结果
-**数据集与模型。** 按照近期 TTA 工作的设置，我们在多个数据集上进行了全面评估。具体而言，我们使用 CIFAR10-C、CIFAR100-C 和 ImageNet-C，每个数据集都在原始测试集上施加了 $ 15 $ 种常见腐蚀类型。所有实验均采用最严重的腐蚀等级，即 $ \mathrm{severity}=5 $，并使用批大小 $ 64 $。为了模拟真实的在线域偏移场景，我们遵循 CoTTA 中的终身持续测试时自适应设定，即腐蚀样本在测试时以数据流形式顺序到达。相比于每个域都始终从源域模型开始自适应，我们的持续设定更加真实，也更具挑战性。
-
-对于骨干模型，我们在 ImageNet-C 和 CIFAR100-C 数据集上同时采用 ResNet-50 和 ViT-Base。对于 CIFAR10-C，考虑到该数据集规模较小，我们使用 ResNet-50 和 ViT-Tiny 进行评估。这种多样化选择表明，我们的方法能够有效泛化到 CNN 和基于 Transformer 的架构。
-
-**基线方法。** 我们将提出的 PEA 与若干高效 TTA 方法以及当前先进的性能驱动方法进行比较。对于高效的基于 CNN 的 TTA，我们包括 EcoTTA、MECTA 和 L-TTA。对于 ViT 专用自适应，我们评估了 FOA，该方法执行仅前向的 prompt 优化。我们还评估了基于熵最小化的方法，包括 Tent、EATA 和 SAR。最后，我们纳入了近期基于伪标签和数据增强的先进方法：CMF、LAW 和 SPA。实现细节和额外说明见附录 C。
-
-> 表 $ 1 $：在 ImageNet-C 上使用 ViT-Base 和 ResNet-50 的准确率（$ \% $）对比，并报告服务器端内存消耗。Aug 和 BP 分别表示方法是否使用数据增强和反向传播。在 FOA 中，$F$ 表示每个批次的前向传播次数。
+> 表 $ 1 $：在 ImageNet-C 上使用 ViT-Base 和 ResNet-50 的准确率（$ \% $）对比，并报告服务器端内存消耗。Aug 和 BP 分别表示方法是否使用数据增强和反向传播。在 FOA 中，$ F $ 表示每个批次的前向传播次数。
 >
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784127960383-78b2c842-fe17-4017-8d1c-2c970fd29f6c.png" width="1331" title="" crop="0,0,1,1" id="uc55bf6df" class="ne-image">
 
 表 $ 1 $ 展示了每个域上的分类准确率及其波动，这些结果在 $ 5 $ 次不同随机种子运行上取平均；同时，表中还报告了在服务器上测得的内存消耗和每批次推理延迟。
 
-对于 ViT-Base，在不进行自适应的情况下，基线 ViT 模型的平均准确率为 $ 55.5\% $。尽管 Tent 和 EATA 等现有方法能够将准确率适度提升到 $ 58.8\% $ 和 $ 60.7\% $，但由于它们依赖基于反向传播的更新，因此会带来显著的内存开销，超过 $ 6 $ GB。近期的无反向传播方法 FOA 和当前先进方法 SPA 能够取得更强的准确率，最高分别达到 $ 66.1\% $ 和 $ 64.6\% $，但代价是较高延迟，最高达到 $ 3.33 $ 秒，或较高内存消耗，超过 $ 10 $ GB。相比之下，我们的 PEA 仅使用 $ 887 $ MB 内存和 $ 0.31 $ 秒延迟，就达到了 $ 64.5\% $ 的准确率。当结合增强使用时，PEA + Aug 的性能进一步提升到 $ 66.5\% $，在延迟更优的同时超过 FOA。这表明，PEA 不仅提供了有竞争力的准确率，还具备出色的内存和延迟效率，非常适合实时或端侧部署。
+对于 ViT-Base，在不进行自适应的情况下，基线 ViT 模型的平均准确率为 $ 55.5\% $。
+
++ 尽管 Tent 和 EATA 等现有方法能够将准确率适度提升到 $ 58.8\% $ 和 $ 60.7\% $，但由于它们依赖基于反向传播的更新，因此会带来显著的内存开销，超过 $ 6 $ GB。
++ 近期的无反向传播方法 FOA 和当前先进方法 SPA 能够取得更强的准确率，最高分别达到 $ 66.1\% $ 和 $ 64.6\% $，但代价是较高延迟，最高达到 $ 3.33 $ 秒，或较高内存消耗，超过 $ 10 $ GB。
+
+相比之下，我们的 PEA 仅使用 $ 887 $ MB 内存和 $ 0.31 $ 秒延迟，就达到了 $ 64.5\% $ 的准确率。当结合增强使用时，PEA + Aug 的性能进一步提升到 $ 66.5\% $，在延迟更优的同时超过 FOA。这表明，PEA 不仅提供了有竞争力的准确率，还具备出色的内存和延迟效率，非常适合实时或端侧部署。
 
 对于 ResNet-50，Tent、EATA 和 CMF 等 TTA 基线方法将性能提升到最高 $ 43\% $，但同样带来了较大的内存开销，超过 $ 5.9 $ GB，并且需要更高计算量。PEA 在所有低成本自适应方法中表现最佳，平均准确率达到 $ 42.7\% $，且仅使用 $ 983 $ MB 内存。结合增强后，PEA 达到 $ 44.8\% $，大幅超过 EcoTTA 和 L-TTA 等所有现有无反向传播方法。
 
-**效率与准确率权衡。** 我们的方法在鲁棒性和效率之间实现了非常有利的平衡。不同于基于反向传播的 TTA 方法，PEA 在显著降低内存消耗并保持低延迟的同时，仍然能够提供强自适应性能。这种轻量但有效的设计使 PEA 非常适合实际部署，尤其适用于资源受限设备或实时系统。我们将在第 $ 5.6 $ 节进一步讨论这一点。
+**效率与准确率权衡**
+
+我们的方法在鲁棒性和效率之间实现了非常有利的平衡。不同于基于反向传播的 TTA 方法，PEA 在显著降低内存消耗并保持低延迟的同时，仍然能够提供强自适应性能。这种轻量但有效的设计使 PEA 非常适合实际部署，尤其适用于资源受限设备或实时系统。我们将在第 $ 5.6 $ 节进一步讨论这一点。
 
 ### CIFAR10-C 和 CIFAR100-C 上的结果
 > 表 $ 2 $：在 CIFAR10-C 和 CIFAR100-C 上使用 ViT 与 ResNet 的自适应准确率（$ \% $）。
@@ -2850,7 +2949,9 @@ $ pred_{final} = \frac{1}{K} \sum_{k=1}^K logits_k $
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128007026-0fdbdc5d-12e0-44f7-94d0-ba1bed2cee43.png" width="1231" title="" crop="0,0,1,1" id="u988e6589" class="ne-image">
 
-我们还使用 ViT 和 ResNet 评估了 PEA 在 CIFAR10-C 和 CIFAR100-C 上的性能。如表 $ 2 $ 所示，PEA 稳定优于现有 TTA 方法。尤其是在 ViT 骨干网络下，当使用轻量级增强时，PEA 在 CIFAR10-C 上达到 $ 77.0\% $ 准确率，在 CIFAR100-C 上达到 $ 84.7\% $，显著超过 CMF 和 SPA 等基于增强的基线方法。即使不使用增强，PEA 也取得了有竞争力的结果，分别为 $ 75.7\% $ 和 $ 83.7\% $，表明其具备内在鲁棒性。使用 ResNet 骨干网络时也观察到类似趋势，PEA 在 CIFAR10-C 上达到 $ 83.4\% $，在 CIFAR100-C 上达到 $ 54.6\% $，同样超过 MECTA、EcoTTA 和 L-TTA 等强基线。
+我们还使用 ViT 和 ResNet 评估了 PEA 在 CIFAR10-C 和 CIFAR100-C 上的性能。
+
+如表 $ 2 $ 所示，PEA 稳定优于现有 TTA 方法。尤其是在 ViT 骨干网络下，当使用轻量级增强时，PEA 在 CIFAR10-C 上达到 $ 77.0\% $ 准确率，在 CIFAR100-C 上达到 $ 84.7\% $，显著超过 CMF 和 SPA 等基于增强的基线方法。即使不使用增强，PEA 也取得了有竞争力的结果，分别为 $ 75.7\% $ 和 $ 83.7\% $，表明其具备内在鲁棒性。使用 ResNet 骨干网络时也观察到类似趋势，PEA 在 CIFAR10-C 上达到 $ 83.4\% $，在 CIFAR100-C 上达到 $ 54.6\% $，同样超过 MECTA、EcoTTA 和 L-TTA 等强基线。
 
 此外，我们观察到，与其在较大规模数据集 ImageNet-C 上的表现相比，CMF 和 SPA 等基于增强的方法在这些小规模数据集上的收益相对有限。这说明，过度依赖增强本身可能无法很好地泛化到不同数据集规模。相比之下，PEA 在不同模型架构和数据集类型上都展现出较强泛化能力。重要的是，PEA 不更新任何模型参数，并且完全不依赖反向传播，因此天然兼容 CNN 和 Transformer 架构。
 
@@ -2858,46 +2959,67 @@ $ pred_{final} = \frac{1}{K} \sum_{k=1}^K logits_k $
 > 表 $ 3 $：CIFAR100-C 和 ImageNet-C 上小批大小设定下的结果。
 >
 
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128034240-7db2e9bd-78ad-40c8-9c02-371fbc7d00f9.png" width="512" title="" crop="0,0,1,1" id="u3f3049fb" class="ne-image">
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128034240-7db2e9bd-78ad-40c8-9c02-371fbc7d00f9.png" width="459" title="" crop="0,0,1,1" id="u3f3049fb" class="ne-image">
 
-表 $ 3 $ 展示了我们的方法在不同批大小（$ \mathrm{BS}=4,16,64 $）下的性能，评估对象包括 CIFAR100-C 和 ImageNet-C，并使用 ResNet-50 和 ViT-Base。我们观察到，虽然随着批大小减小，准确率会略有下降，但即使在极小批大小下，我们的方法仍然保持较高性能。在 CIFAR100-C 上，ViT-Base 模型在 $ \mathrm{BS}=64 $ 时达到 $ 77.0\% $，即使在 $ \mathrm{BS}=4 $ 时仍保持 $ 70.0\% $ 的强性能，仅下降 $ 7.0\% $。相比之下，ResNet-50 的绝对下降更小，从 $ 54.6\% $ 降至 $ 51.8\% $，但整体准确率仍明显更低。ImageNet-C 上也观察到类似趋势，其中 ViT-Base 下降 $ 3.2\% $，ResNet 下降 $ 3.1\% $。如附录 D.3 的表 $ 9 $ 所示，我们的方法优于其他基线。此外，我们还在极小批大小（$ \mathrm{BS}=1 $ 和 $ \mathrm{BS}=2 $）下评估了方法，以模拟流式推理设置。结果见第 D.4 节。
+表 $ 3 $ 展示了我们的方法在不同批大小（$ \mathrm{BS}=4,16,64 $）下的性能，评估对象包括 CIFAR100-C 和 ImageNet-C，并使用 ResNet-50 和 ViT-Base。我们观察到，虽然随着批大小减小，准确率会略有下降，但即使在极小批大小下，我们的方法仍然保持较高性能。
+
++ 在 CIFAR100-C 上，ViT-Base 模型在 $ \mathrm{BS}=64 $ 时达到 $ 77.0\% $，即使在 $ \mathrm{BS}=4 $ 时仍保持 $ 70.0\% $ 的强性能，仅下降 $ 7.0\% $。相比之下，ResNet-50 的绝对下降更小，从 $ 54.6\% $ 降至 $ 51.8\% $，但整体准确率仍明显更低。
++ ImageNet-C 上也观察到类似趋势，其中 ViT-Base 下降 $ 3.2\% $，ResNet 下降 $ 3.1\% $。
+
+如附录 D.3 的表 $ 9 $ 所示，我们的方法优于其他基线。此外，我们还在极小批大小（$ \mathrm{BS}=1 $ 和 $ \mathrm{BS}=2 $）下评估了方法，以模拟流式推理设置。结果见第 D.4 节。
 
 ### 混合域设定下的结果
-我们进一步在 CIFAR100-C 上的混合域设定中评估 PEA，其中严重程度为 $ 5 $ 的全部 $ 15 $ 种腐蚀类型被合并到一个数据池中并随机打乱。因此，每个小批次都包含来自多种腐蚀的样本，平均每种腐蚀约有 $ 64/15 \approx 4.3 $ 个样本，从而模拟批次内部存在快速且不可预测域偏移的真实部署场景。该设定比单域协议更加具有挑战性。
+我们进一步在 CIFAR100-C 上的混合域设定中评估 PEA，其中严重程度为 $ 5 $ 的全部 $ 15 $ 种腐蚀类型被合并到一个数据池中并随机打乱。因此，每个小批次都包含来自多种腐蚀的样本，平均每种腐蚀约有 $ 64/15 \approx 4.3 $ 个样本，从而模拟批次内部存在快速且不可预测域偏移的真实部署场景。
 
-> 表 $ 4 $：在 Jetson Orin Nano 上使用 CIFAR100-C 进行评估，批大小为 $ 64 $。标记为不兼容（✗）的方法由于目标设备内存不足（$ 3.5 $ GB）而运行失败。它们的内存需求见表 $ 1 $。
->
-
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128116425-520e300a-d5b6-4056-bef9-33e19e3ec8cb.png" width="1004" title="" crop="0,0,1,1" id="uddefe9e4" class="ne-image">
-
-表 $ 5 $ 总结了混合域结果。在 ViT-Base 上，PEA 达到 $ 72.0\% $ 准确率，相比未自适应的源模型提升 $ 10.4\% $，并超过所有基线。值得注意的是，熵最小化方法 Tent 和 EATA 没有带来收益，准确率为 $ 61.2\% $，说明在异质批次上简单更新可能无效；即使是 CMF 这样的强基线，其 $ 71.4\% $ 的结果也低于 PEA。在更具挑战性的 ResNet-50 骨干网络上，差距更大：Tent 和 EATA 显著降低性能，分别为 $ 17.4\% $ 和 $ 16.5\% $，若干方法也表现困难，例如 EcoTTA 为 $ 7.3\% $，L-TTA 为 $ 13.4\% $；而 PEA 达到 $ 47.4\% $，超过最强基线 MECTA 的 $ 40.2\% $，证明其在快速且不规则域偏移下具有鲁棒自适应能力。为了进一步突出 PEA 在混合域偏移下的有效性，我们在第 F 节提供了额外可视化结果。
-
-### 边缘设备上的评估
-为了评估实际可部署性，我们在 Jetson Orin Nano 上测试系统性能。该设备是一个资源受限的边缘设备，具有 $ 8 $ GB 共享内存，但由于操作系统和系统开销，深度学习应用可访问的内存仅有 $ 3.5 $ GB。我们在 CIFAR100-C 上使用默认设置进行测试，批大小为 $ 64 $。表 $ 4 $ 报告了 ViT-Base 和 ResNet-50 骨干网络下的延迟（秒/批次）和峰值内存使用量（MB）。
+该设定比单域协议更加具有挑战性。
 
 > 表 $ 5 $：CIFAR100-C 数据集上混合域设定下的自适应准确率（$ \% $）。
 >
 
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128098715-b130723a-1279-4216-b684-e02f509717c2.png" width="808" title="" crop="0,0,1,1" id="ufd7289a9" class="ne-image">
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128116425-520e300a-d5b6-4056-bef9-33e19e3ec8cb.png" width="683" title="" crop="0,0,1,1" id="Z7ZDJ" class="ne-image">
+
+表 $ 5 $ 总结了混合域结果。
+
+在 ViT-Base 上，PEA 达到 $ 72.0\% $ 准确率，相比未自适应的源模型提升 $ 10.4\% $，并超过所有基线。
+
+值得注意的是，熵最小化方法 Tent 和 EATA 没有带来收益，准确率为 $ 61.2\% $，说明在异质批次上简单更新可能无效；即使是 CMF 这样的强基线，其 $ 71.4\% $ 的结果也低于 PEA。
+
+在更具挑战性的 ResNet-50 骨干网络上，差距更大：Tent 和 EATA 显著降低性能，分别为 $ 17.4\% $ 和 $ 16.5\% $，若干方法也表现困难，例如 EcoTTA 为 $ 7.3\% $，L-TTA 为 $ 13.4\% $；而 PEA 达到 $ 47.4\% $，超过最强基线 MECTA 的 $ 40.2\% $，证明其在快速且不规则域偏移下具有鲁棒自适应能力。为了进一步突出 PEA 在混合域偏移下的有效性，我们在第 F 节提供了额外可视化结果。
+
+### 边缘设备上的评估
+为了评估实际可部署性，我们在 Jetson Orin Nano 上测试系统性能。该设备是一个资源受限的边缘设备，具有 $ 8 $ GB 共享内存，但由于操作系统和系统开销，深度学习应用可访问的内存仅有 $ 3.5 $ GB。我们在 CIFAR100-C 上使用默认设置进行测试，批大小为 $ 64 $。
+
+表 $ 4 $ 报告了 ViT-Base 和 ResNet-50 骨干网络下的延迟（秒/批次）和峰值内存使用量（MB）。
+
+> 表 $ 4 $：在 Jetson Orin Nano 上使用 CIFAR100-C 进行评估，批大小为 $ 64 $。标记为不兼容（✗）的方法由于目标设备内存不足（$ 3.5 $ GB）而运行失败。它们的内存需求见表 $ 1 $。
+>
+
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128098715-b130723a-1279-4216-b684-e02f509717c2.png" width="808" title="" crop="0,0,1,1" id="dxO65" class="ne-image">
 
 由于内存有限，许多 TTA 方法无法在设备上运行，尤其是需要反向传播的方法，例如 Tent、EATA、MECTA 和 SAR。相比之下，我们的方法 PEA 能够在两种骨干网络上成功运行，并保持合理延迟，ViT 为 $ 4.1 $ 秒，ResNet 为 $ 3.0 $ 秒，同时内存使用适中，分别为 $ 1011 $ MB 和 $ 976 $ MB。启用增强后，性能权衡会略有增加，但仍然处于边缘设备约束范围内。尽管 FOA 和 L-TTA 都兼容边缘设备，但 FOA 带来极高延迟，使其难以用于实时应用。相比之下，L-TTA 速度较快，但如第 $ 5.2 $ 节和第 $ 5.3 $ 节所述，它在三个数据集上的准确率都持续偏低。值得注意的是，PEA 的仅前向设计保证了其与边缘场景兼容，而在这类场景中，低内存占用和无梯度推理至关重要。这表明 PEA 在不牺牲自适应效果的情况下，具有很强的真实部署潜力。
 
 ### 消融实验
-我们使用 ViT-Base 模型在 CIFAR100-C 和 ImageNet-C 上进行了消融实验，以量化 PEA 中每个主要组件的贡献。表 $ 6 $ 总结了所提出组件带来的增量性能提升。从未自适应基线出发，仅引入协方差对齐模块（Cov Align Only）就在 CIFAR100-C 上带来了显著提升，从 $ 61.6\% $ 提升到 $ 67.0\% $，说明对齐特征二阶统计量是一种强且轻量的域校正信号。然而，该设置在 ImageNet-C 上导致性能急剧下降至 $ 25.2\% $，原因是所有层上发生了过度对齐。由于 ImageNet 更具挑战性，且域复杂性更高，因此每批次估计目标分布变得不够可靠，导致特征变换发生错配。
+我们使用 ViT-Base 模型在 CIFAR100-C 和 ImageNet-C 上进行了消融实验，以量化 PEA 中每个主要组件的贡献。
+
+表 $ 6 $ 总结了所提出组件带来的增量性能提升。
+
++ 从未自适应基线出发，**仅引入协方差对齐模块**（Cov Align Only）就在 CIFAR100-C 上带来了显著提升，从 $ 61.6\% $ 提升到 $ 67.0\% $，说明对齐特征二阶统计量是一种强且轻量的域校正信号。然而，该设置在 ImageNet-C 上导致性能急剧下降至 $ 25.2\% $，原因是**所有层上发生了过度对齐**。由于 ImageNet 更具挑战性，且域复杂性更高，因此每批次估计目标分布变得不够可靠，导致特征变换发生错配。
 
 > 表 $ 6 $：使用 ViT-Base 模型在 CIFAR100-C 和 ImageNet-C 上对 PEA 进行的消融实验。
 >
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784128185274-6febde90-5351-42bb-9578-9be41135be68.png" width="570" title="" crop="0,0,1,1" id="u8d66e488" class="ne-image">
 
-加入基于层间距离的加权机制（+ Weighting）后，可以缓解 ImageNet-C 上的错配问题，使性能从 $ 25.2\% $ 提升到 $ 52.9\% $。这凸显了选择性地仅对存在显著分布偏移的模块执行对齐的重要性。在 CIFAR100-C 上的提升相对较小，但仍然为正，说明该加权机制有助于提升跨数据集鲁棒性。进一步引入指数移动平均（EMA）来估计测试时统计量（+ Weighting, EMA）后，在两个数据集上都带来了大幅提升，CIFAR100-C 为 $ 75.7\% $，ImageNet-C 为 $ 64.5\% $。EMA 策略能够随时间累积稳定统计量，当测试时批大小较小或噪声较多时尤其有益。该组件确保对齐基于可靠统计量，而不是波动较大的逐批次估计。最后，通过轻量级增强进行数据丰富（+ Weighting, EMA, Aug）后取得最高准确率，CIFAR100-C 为 $ 77.0\% $，ImageNet-C 为 $ 66.5\% $。多视图不仅有助于稳定目标统计量估计，还可以通过集成平均改善最终预测。
++ 加入基于层间距离的加权机制（+ Weighting）后，可以缓解 ImageNet-C 上的错配问题，使性能从 $ 25.2\% $ 提升到 $ 52.9\% $。这凸显了**选择性地仅对存在显著分布偏移的模块执行对齐的重要性**。在 CIFAR100-C 上的提升相对较小，但仍然为正，说明该加权机制有助于提升跨数据集鲁棒性。
++ 进一步引入指数移动平均（EMA）来估计测试时统计量（+ Weighting, EMA）后，在两个数据集上都带来了大幅提升，CIFAR100-C 为 $ 75.7\% $，ImageNet-C 为 $ 64.5\% $。EMA 策略能够随时间累积稳定统计量，当测试时批大小较小或噪声较多时尤其有益。该组件确保对齐基于可靠统计量，而不是波动较大的逐批次估计。
++ 最后，通过轻量级增强进行数据丰富（+ Weighting, EMA, Aug）后取得最高准确率，CIFAR100-C 为 $ 77.0\% $，ImageNet-C 为 $ 66.5\% $。多视图不仅有助于稳定目标统计量估计，还可以通过集成平均改善最终预测。
 
 总体而言，每个组件都为最终性能提供了互补收益，它们的组合使 PEA 能够在多种腐蚀下保持高准确率，同时仍然无反向传播且资源高效。更多超参数评估见附录 D.5。
 
 ## 结论
 本文首先重新审视了域偏移对模型中间嵌入的影响，并识别出三种核心变换：均值偏移（平移）、方差偏移（缩放）和通道级协方差偏移（旋转）。这些变换会在不同层中系统性地扭曲特征空间。受这一洞察启发，我们提出了 PEA，一种轻量级、无需反向传播且架构无关的测试时自适应方法。PEA 仅使用两次前向传播，通过逐层协方差校正渐进式对齐嵌入。在 $ 3 $ 个数据集上的实验，包括在资源受限边缘设备上的评估，表明 PEA 在准确率和效率上都达到了当前最佳水平，为鲁棒的真实世界部署提供了一种实用且可泛化的解决方案。
 
-**局限性。** 尽管 PEA 提供了一种轻量级、无需反向传播且可跨模型架构泛化的方案，但它需要在部署前从训练数据中提取源域统计量。虽然这在标准 TTA 设定中是可以接受的，但在某些实际场景中，这些源域统计量可能并不总是可用。尽管如此，PEA 并不需要访问完整的源数据集：仅使用 $ 10\% $ 的训练数据来计算这些统计量，就足以保持较强性能，详细结果见第 D.5.2 节。
+**局限性。** 尽管 PEA 提供了一种轻量级、无需反向传播且可跨模型架构泛化的方案，但**它需要在部署前从训练数据中提取源域统计量**。虽然这在标准 TTA 设定中是可以接受的，但在某些实际场景中，这些源域统计量可能并不总是可用。尽管如此，PEA 并不需要访问完整的源数据集：**<u><font style="background-color:#FBF5CB;">仅使用 </font></u>**$ 10\% $**<u><font style="background-color:#FBF5CB;"> 的训练数据来计算这些统计量，就足以保持较强性能</font></u>**，详细结果见第 D.5.2 节。
 
 ## A. 嵌入空间中的域偏移
 如第 $ 3 $ 节所讨论，域偏移会表现为深度模型中间特征空间中的结构性扭曲。这些扭曲包括均值偏移、方差偏移和协方差偏移，并且会稳定地出现在网络的所有层中。本节通过在 CIFAR10-C 上使用 ViT 模型可视化域偏移下的特征分布，提供更多经验证据来支持这一分析。
@@ -3404,28 +3526,37 @@ Shao 等人最近表明，一些使用 GRPO 训练的模型，即使在伪随机
 >
 
 ## 摘要部分
-持续测试时适应（Continual Test-Time Adaptation, CTTA）旨在使模型能够在分布偏移条件下，针对无标签数据流进行在线适应，而无需访问源数据。现有 CTTA 方法面临效率与泛化之间的权衡：更新更多参数虽然能够提升适应能力，却会显著降低在线推理效率。理想的方案是在仅更新极少特征的情况下实现可比的适应效果；我们将这一最小子空间称为 golden subspace。
+持续测试时适应（Continual Test-Time Adaptation, CTTA）旨在使模型能够在分布偏移条件下，针对无标签数据流进行在线适应，而无需访问源数据。现有 CTTA 方法面临效率与泛化之间的权衡：更新更多参数虽然能够提升适应能力，却会显著降低在线推理效率。理想的方案是在**<u><font style="color:#D22D8D;">仅更新极少特征</font></u>****的情况下实现可比的适应效果**；
 
-我们在单步适应设定下证明了该子空间的存在性，并表明它与预训练分类器的行空间一致。为了实现对该子空间的在线维护，我们引入了逐样本平均梯度外积（sample-wise Average Gradient Outer Product, AGOP），将其作为一种高效代理，用于在无需重新训练的情况下估计分类器权重。
+我们将这一最小子空间称为 golden subspace。
+
+<details class="lake-collapse"><summary id="uda0354c0"><span class="ne-text">这个</span><strong><span class="ne-text">黄金子空间</span></strong><span class="ne-text">在本文的任务中具体指什么？</span></summary><p id="u5f083ead" class="ne-p"><span class="ne-text">可以把 </span><strong><span class="ne-text">黄金子空间（Golden Subspace）</span></strong><span class="ne-text"> 理解为：在测试时适应时，模型不需要在整个高维特征空间里更新，只需要沿着一小部分“最能改变输出”的特征方向做调整。这些方向由分类头权重 </span><span id="TZTTG" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text"> 决定，并且天然是低秩的。</span></p><p id="u70552472" class="ne-p"><strong><span class="ne-text">1. 黄金子空间是什么</span></strong></p><p id="uc35307f3" class="ne-p"><span class="ne-text">假设</span><strong><span class="ne-text">分类头</span></strong><span class="ne-text">是线性的：</span></p><p id="u2470f343" class="ne-p" style="text-align: center"><span id="iw7mj" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/624bc69a5ddf1521b55061845e293778.svg"></span></p><p id="u8bf3ce38" class="ne-p"><span class="ne-text">其中 </span><span id="gHofK" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fcbf4f3e317548787c0f2c6e506cca1a.svg"></span><span class="ne-text"> 是特征，</span><span id="EwwWp" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a715ad6fe16c6b2cd2f06048397382d5.svg"></span><span class="ne-text"> 是分类器权重，</span><span id="migoX" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ce0fc4b99d4d17e686b5f2d020e22e5f.svg"></span><span class="ne-text"> 是 logits。</span></p><p id="ub4ff4dbc" class="ne-p"><span class="ne-text">如果测试时模型预测错了，我们希望通过一个最小的特征扰动 </span><span id="X1rPl" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f2db11c11faa2db349f3367eca82dd9e.svg"></span><span class="ne-text"> 来修正输出：</span></p><p id="u112cc84e" class="ne-p" style="text-align: center"><span id="kkXbc" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f01405dea45f379999364f23565175a1.svg"></span></p><p id="u7cbe158f" class="ne-p"><span class="ne-text">也就是：</span></p><p id="udd1d834d" class="ne-p" style="text-align: center"><span id="J6KyM" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b2aa28d3bd62bd2f9dc86d9ea24546f7.svg"></span></p><p id="u7ae354d0" class="ne-p"><span class="ne-text">那么问题变成：</span></p><p id="u9885203f" class="ne-p" style="text-align: center"><span id="JtdCN" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/4dbff7d043ed7d5dd0d7dc2482258fad.svg"></span></p><p id="u11f4fdf7" class="ne-p"><span class="ne-text">这个最小范数解是：</span></p><p id="u8fa4390f" class="ne-p" style="text-align: center"><span id="ZVUns" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/41df30c84110a824862158a2d82d2dce.svg"></span></p><p id="u157cc8e1" class="ne-p"><span class="ne-text">其中 </span><span id="K6FHu" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/91ab7fe7f72bc0f204a1977a03780684.svg"></span><span class="ne-text"> 是 Moore-Penrose 伪逆。因为：</span></p><p id="u0564bf6c" class="ne-p" style="text-align: center"><span id="HWocM" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/416decd6136a07fdaa20c85775dd6932.svg"></span></p><p id="u49bd8c66" class="ne-p"><span class="ne-text">所以：</span></p><p id="u87115ac9" class="ne-p" style="text-align: center"><span id="oX3HZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6a21b99523d9b4effd2e50e5fe6c687e.svg"></span></p><p id="uebb0ee8c" class="ne-p"><span class="ne-text">也就是说，</span><strong><span class="ne-text">最有效、最小的特征修正方向一定落在分类器权重 </span></strong><span id="aJkaB" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><strong><span class="ne-text"> 的行空间中</span></strong><span class="ne-text">。这个由 </span><span id="DJwUR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ff55a411336a093e3c0957a6e84188ad.svg"></span><span class="ne-text"> 张成的低维空间，就是文章说的黄金子空间。</span></p><p id="u8b1fbfc6" class="ne-p"><span class="ne-text">直观上，分类头 </span><span id="P71Zy" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text"> 告诉我们：哪些特征方向最会影响类别输出。测试时适应只沿这些方向更新，既省计算，又不容易漂移。</span></p><p id="u41a0c784" class="ne-p"><strong><span class="ne-text">2. 核心创新点</span></strong></p><p id="u0a917f60" class="ne-p"><span class="ne-text">这篇文章的核心创新不是提出一个新的 loss，而是提出一个新的 CTTA 更新范式：</span></p><p id="u66e35f3a" class="ne-p"><strong><span class="ne-text">不要全模型更新，也不要盲目更新 BN/LN 参数，而是在一个低秩、结构化、对输出最敏感的子空间里做特征适应。</span></strong></p><p id="u89c60c7c" class="ne-p"><span class="ne-text">具体创新有四点：</span></p><ol class="ne-ol"><li id="u6ed003b9" data-lake-index-type="0"><span class="ne-text">从理论上证明存在一个低秩的 golden subspace。</span></li><li id="u03a7ecc5" data-lake-index-type="0"><span class="ne-text">用分类器权重初始化这个子空间：</span></li></ol><p id="u1c996a4a" class="ne-p" style="text-align: center"><span id="ndXvW" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b86191b671e08ee88d3bf084ba5fa670.svg"></span></p><ol start="3" class="ne-ol"><li id="u4b84401f" data-lake-index-type="0"><span class="ne-text">测试过程中用 AGOP 在线更新这个子空间，让它逐渐吸收目标域信息。</span></li><li id="ub563c415" data-lake-index-type="0"><span class="ne-text">只在该子空间内学习一个轻量 scaling adapter，而不是更新整个 backbone。</span></li></ol><p id="ue75f2f28" class="ne-p"><span class="ne-text">所以 GOLD 的重点是：</span><strong><span class="ne-text">把 CTTA 的更新空间限制住</span></strong><span class="ne-text">。这解决了持续测试时适应里的几个老问题：计算开销大、伪标签错误累积、参数漂移、灾难性遗忘。</span></p><p id="uf472ccb8" class="ne-p"><strong><span class="ne-text">3. 黄金子空间如何证明成立并有效</span></strong></p><p id="u2b4fff51" class="ne-p"><span class="ne-text">它的理论证明来自上面的最小扰动问题。对于一个线性分类头，如果你想让 logits 产生目标修正 </span><span id="NAEWN" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/70f4cd5f7966b1e991dcdd8efe5d2986.svg"></span><span class="ne-text">，那么最小特征扰动一定是：</span></p><p id="ufa0abe8b" class="ne-p" style="text-align: center"><span id="OgHJZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/41df30c84110a824862158a2d82d2dce.svg"></span></p><p id="u8907faa6" class="ne-p"><span class="ne-text">因此它只能落在：</span></p><p id="ubd545824" class="ne-p" style="text-align: center"><span id="MPZMB" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/edb462fbcf185abaefd8083aebeb8a33.svg"></span></p><p id="u380d848c" class="ne-p"><span class="ne-text">进一步看秩：</span></p><p id="u4b114ca1" class="ne-p" style="text-align: center"><span id="p04Aw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0b690cfe34736ac2469be89d6cc9a6a7.svg"></span></p><p id="ud1b714a0" class="ne-p"><span class="ne-text">而通常类别数 </span><span id="Ckqri" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a42a4fc28b384cc408de066beed57485.svg"></span><span class="ne-text"> 远小于特征维度 </span><span id="xLYIB" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/c895173d3be4872abf206be4268a58cb.svg"></span><span class="ne-text">，所以这个空间天然低秩。也就是说，真正需要更新的方向远少于完整特征维度。</span></p><p id="u26094d35" class="ne-p"><span class="ne-text">文章还从实验上验证它有效：</span></p><ul class="ne-ul"><li id="uba3ab527" data-lake-index-type="0"><span class="ne-text">AGOP 估计出来的子空间和真实 golden subspace 的相似度会快速上升，并稳定在很高水平。</span></li><li id="u73f315dd" data-lake-index-type="0"><span class="ne-text">AGOP 的谱能量高度集中，前 </span><span id="ITFmv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0893f5936b526ffa531efc7b1bda7bde.svg"></span><span class="ne-text"> 到 </span><span id="gAOdb" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/98a9f1a9d99619501a039b3e66daac04.svg"></span><span class="ne-text"> 个特征向量就能覆盖超过 </span><span id="HO8jx" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0eca4ec67aabb9ad84140233f4385d76.svg"></span><span class="ne-text"> 的能量。</span></li><li id="uc1201530" data-lake-index-type="0"><span class="ne-text">消融实验显示，只用 </span><span id="vEP5I" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text"> 初始化已经有效，加入 AGOP 在线更新后效果更好。</span></li><li id="ud85507ca" data-lake-index-type="0"><span class="ne-text">相比全模型 CTTA，GOLD 在准确率、显存、速度之间取得更好的平衡。</span></li></ul><p id="u2cdf40aa" class="ne-p"><strong><span class="ne-text">4. 实际测试时如何完成适应</span></strong></p><p id="ud853c89e" class="ne-p"><span class="ne-text">实际操作中，GOLD 大概分为两个阶段。</span></p><p id="u1fc139f5" class="ne-p"><span class="ne-text">第一步，构造并更新黄金子空间。</span></p><p id="ue8124bd6" class="ne-p"><span class="ne-text">初始化：</span></p><p id="uba28db93" class="ne-p" style="text-align: center"><span id="oB76R" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b86191b671e08ee88d3bf084ba5fa670.svg"></span></p><p id="u014236da" class="ne-p"><span class="ne-text">测试时，对于高置信度样本，计算 top logit 对特征的梯度：</span></p><p id="u7016d7c0" class="ne-p" style="text-align: center"><span id="FcqgE" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b7f059513900188d64d9cc0f0421d8e0.svg"></span></p><p id="ufbee9d31" class="ne-p"><span class="ne-text">然后构造 batch-level AGOP：</span></p><p id="u6657836a" class="ne-p" style="text-align: center"><span id="fYxAi" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a62a50317c4b0dea1c0f16fb8304f62b.svg"></span></p><p id="uddd536db" class="ne-p"><span class="ne-text">再用 EMA 更新：</span></p><p id="u1796b7b7" class="ne-p" style="text-align: center"><span id="OFtCm" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ad5fea58d84b26653e58a7acd881e058.svg"></span></p><p id="u8f5ef0b5" class="ne-p"><span class="ne-text">周期性对 </span><span id="JRgiD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 做特征值分解：</span></p><p id="ua142915e" class="ne-p" style="text-align: center"><span id="aZaAp" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ec9c41e7c91efa40f9d70838b6711cb9.svg"></span></p><p id="u0ee53c00" class="ne-p"><span class="ne-text">取前 </span><span id="LVo1x" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 个特征向量得到子空间基：</span></p><p id="u31f94a48" class="ne-p" style="text-align: center"><span id="lJ8ud" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/61a74118a9443c4a9011d29f1987b483.svg"></span></p><p id="u49747d40" class="ne-p"><span class="ne-text">第二步，在这个子空间里做轻量特征适应。</span></p><p id="u18952d83" class="ne-p"><span class="ne-text">对特征 </span><span id="Sob7D" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text">，先投影到黄金子空间：</span></p><p id="u1f415b6c" class="ne-p" style="text-align: center"><span id="jmaDa" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d2758b5f3fdb0c7c3bbd8204bb3d603b.svg"></span></p><p id="ufa2dc4a1" class="ne-p"><span class="ne-text">然后用可学习 scaling vector </span><span id="cuS3q" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/507b472be844bd1841aa85a79e2387c5.svg"></span><span class="ne-text"> 调整：</span></p><p id="uec6fd181" class="ne-p" style="text-align: center"><span id="FOoeU" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5c1772e7e8aa392848f76c5743deb6c6.svg"></span></p><p id="ubeb31f47" class="ne-p"><span class="ne-text">再映射回原空间，并用残差方式加入原特征：</span></p><p id="u5cbd729a" class="ne-p" style="text-align: center"><span id="DBTFX" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/819cf27c4170944693d46c1ffb7f67a1.svg"></span></p><p id="uffb83c31" class="ne-p"><span class="ne-text">因此 GOLD 不是直接改 backbone，而是把原始特征 </span><span id="DoZ2L" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 变成适应后的特征 </span><span id="pTAH1" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f9b988698379f888ce47e478e0955cec.svg"></span><span class="ne-text">，再送入分类头预测。</span></p><p id="ue0ff4c1b" class="ne-p"><span id="bPgsQ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/507b472be844bd1841aa85a79e2387c5.svg"></span><span class="ne-text"> 的更新由两个 loss 驱动：</span></p><ul class="ne-ul"><li id="uc9389997" data-lake-index-type="0"><span class="ne-text">EMA teacher 提供的 self-training consistency loss；</span></li><li id="u2e4f367c" data-lake-index-type="0"><span class="ne-text">源域 prototype 提供的 contrastive loss，防止特征偏离源语义结构。</span></li></ul><p id="uf423c51f" class="ne-p"><span class="ne-text">最终整体上，GOLD 的方法可以概括为：</span></p><p id="u17f8804d" class="ne-p" style="text-align: center"><span id="NQZ3t" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/609c1477afd4df9112102de2234cf392.svg"></span></p><p id="u5331d167" class="ne-p"><span class="ne-text">对你的具身导航任务来说，它最有价值的思想是：</span><strong><span class="ne-text">测试时适应不一定要更新整个导航模型，而可以先找到对动作预测、目标识别或语义决策最关键的低秩特征方向，只在这些方向上做稳定更新。</span></strong></p></details>
+我们在**单步适应设定**下证明了该子空间的存在性，并表明它与预训练分类器的行空间一致。为了实现对该子空间的在线维护，我们引入了**<font style="color:#D22D8D;background-color:#FBF5CB;">逐样本平均梯度外积</font>**（sample-wise Average Gradient Outer Product, AGOP），将其作为一种高效代理，用于在无需重新训练的情况下估计分类器权重。
 
 基于这些发现，我们提出了 Guided Online Low-rank Directional adaptation（GOLD）。该方法使用一个轻量级适配器将特征投影到 golden subspace 上，并学习一个紧凑的缩放向量，同时通过 AGOP 对该子空间进行动态更新。在包括自动驾驶场景在内的分类与分割基准上的大量实验表明，GOLD 在效率、稳定性和整体性能方面均取得了更优表现。
 
 ## 引言部分
 在真实世界应用中，模型往往需要在持续变化的数据分布下进行推理，例如自动驾驶中的天气与光照变化、视频流分析中的场景变化，以及医学影像中的设备异构性等。这些场景要求模型能够在测试阶段对未知且逐渐变化的目标域进行在线适应，而无需重新访问源数据或进行离线重训练。这一问题设定被称为持续测试时适应（Continual Test-Time Adaptation, CTTA），其目标是在动态环境中保持模型性能的鲁棒性。
 
-在实际部署中，CTTA 面临效率与泛化之间的权衡：更好的泛化通常意味着更复杂的模型和更高强度的计算，从而降低运行时效率。现有方法通常在测试阶段通过自监督目标、熵最小化或自适应批归一化统计量来更新模型参数。虽然这类更新能够带来短期收益，但也会显著增加计算成本，并且容易放大伪标签噪声、引发参数漂移，从而削弱持续适应过程中的泛化能力，最终导致长期性能下降。如图 1b 所示，当新领域到来时，现有方法往往无法快速完成适应，并出现突发性的性能退化，这说明它们在适应过程中难以保持泛化能力。
+在实际部署中，CTTA 面临效率与泛化之间的权衡：更好的泛化通常意味着更复杂的模型和更高强度的计算，从而降低运行时效率。**现有方法通常在测试阶段通过****<u>自监督目标</u>****、****<u>熵最小化</u>****或自适应****<u>批归一化统计量</u>****来更新模型参数**。虽然这类更新能够带来短期收益，但也会显著增加计算成本，并且容易放大伪标签噪声、引发参数漂移，从而削弱持续适应过程中的泛化能力，最终导致长期性能下降。
 
-理想情况下，我们希望在特征子空间内实现模型输出所需的变化，以保证泛化能力，同时将更新幅度保持在尽可能小的范围内，以保证效率。我们将这一子空间定义为 Golden Subspace。我们首先考虑单步适应场景，推导其解析形式，并验证 Golden Subspace 的存在性。分析表明，这一子空间本质上由分类器权重的行空间构成，而该空间可以通过对分类器权重矩阵进行特征值分解来获得。然而，这里又出现了一个新挑战：分类器权重主要编码的是源域信息，而在测试阶段持续更新这些权重，又会重新引入高计算开销和结构退化等同样的问题。因此，我们进一步提出一个问题：如何在不重训练分类器权重的情况下，使分类器具备目标域信息？
-
-受到平均梯度外积（Average Gradient Outer Product, AGOP）表征近期进展的启发，我们发现，由高置信度样本计算得到的 AGOP，能够作为分类器参数内积结构的一个可靠在线代理。具体而言，通过 AGOP 估计得到的 Golden Subspace 会随时间逐步收敛到单步最小范数适应所得到的子空间，这保证了基于该估计器构建的模型依然能够保持较强的泛化能力。从经验上看，AGOP 矩阵具有较低的有效秩，这意味着在实际中 Golden Subspace 往往是低秩的，因此可以实现高效的在线维护与适应。
-
-基于这些观察，我们提出了 Guided Online Low-rank Directional adaptation（GOLD），一种高效的持续测试时适应方法。GOLD 维护一个轻量级矩阵，该矩阵由分类器权重内积初始化，并利用高置信度测试样本计算得到的 AGOP 进行在线更新。我们周期性地对该矩阵进行特征分解，以提取当前的低秩 Golden Subspace。随后，将冻结骨干网络提取的特征投影到这一子空间中，并学习一个紧凑的缩放向量，对投影后的坐标进行重新缩放以完成适应。这样的设计只引入少量额外参数，并且仅更新极少的一部分内部参数，因此能够从机制上限制参数漂移，同时保留足够的能力来修正模型输出。
-
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784079440786-048de539-4108-4099-b48d-8f5d4c784532.png" width="679" title="" crop="0,0,1,1" id="u212524e8" class="ne-image">
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784079440786-048de539-4108-4099-b48d-8f5d4c784532.png" width="679" title="" crop="0,0,1,1" id="F5O78" class="ne-image">
 
 > 图 1. CIFAR100-C 数据集上的实验结果。左图：各评测方法在性能与效率上的分布（TCA 为闭源方法，因此以曲线形式展示）。右图：在持续测试时适应过程中的准确率变化；带阴影的背景区域表示领域发生切换的阶段。在金色阴影区间内，已有方法出现了明显的性能下降，而我们的方法仍能保持良好的泛化能力。
 >
 
+如图 1b 所示，当新领域到来时，现有方法往往无法快速完成适应，并出现突发性的性能退化，这说明它们在适应过程中难以保持泛化能力。
+
+理想情况下，我们希望在特征子空间内实现模型输出所需的变化，以保证泛化能力，同时将更新幅度保持在尽可能小的范围内，以保证效率。我们将这一子空间定义为 Golden Subspace。
+
+我们首先考虑**单步适应场景**，推导其解析形式，并验证 Golden Subspace 的存在性。分析表明，**这一子空间本质上由****<font style="color:#D22D8D;background-color:#FBF5CB;">分类器权重的</font>****<u><font style="color:#D22D8D;background-color:#FBF5CB;">行空间</font></u>****构成，而该空间可以通过对分类器权重矩阵进行****<font style="color:#D22D8D;">特征值分解</font>****来获得**。然而，这里又出现了一个新挑战：<u>分类器权重主要编码的是源域信息</u>，而在测试阶段持续更新这些权重，又会重新引入高计算开销和结构退化等同样的问题。因此，我们进一步提出一个问题：**<font style="background-color:#FBF5CB;">如何在不重训练分类器权重的情况下，使分类器具备目标域信息？</font>**
+
+受到**<font style="color:#601BDE;">平均梯度外积（Average Gradient Outer Product, AGOP）</font>**表征近期进展的启发，我们发现，由高置信度样本计算得到的 AGOP，能够作为分类器参数内积结构的一个可靠在线代理。具体而言，通过 AGOP 估计得到的 Golden Subspace 会随时间逐步收敛到单步最小范数适应所得到的子空间，这保证了基于该估计器构建的模型依然能够保持较强的泛化能力。从经验上看，AGOP 矩阵具有较低的有效秩，这意味着在实际中 Golden Subspace 往往是低秩的，因此可以实现高效的在线维护与适应。
+
+<details class="lake-collapse"><summary id="ude43e009"><span class="ne-text">什么是</span><strong><span class="ne-text" style="color: #601BDE">平均梯度外积（Average Gradient Outer Product, AGOP）</span></strong><span class="ne-text">表征</span></summary><p id="uc46556a6" class="ne-p"><span class="ne-text">AGOP 可以先拆成三个词理解：</span><strong><span class="ne-text">梯度、外积、平均</span></strong><span class="ne-text">。</span></p><p id="u0c2fff59" class="ne-p"><span class="ne-text">它不是一个新的网络层，而是一种用来描述“</span><strong><span class="ne-text" style="color: #601BDE; background-color: #E8F7CF">模型输出对哪些输入/特征方向最敏感</span></strong><span class="ne-text">”的矩阵统计量。</span></p><p id="u95877e8f" class="ne-p"><span class="ne-text">假设模型输出是：</span></p><p id="u506aefe9" class="ne-p" style="text-align: center"><span id="RWNLP" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/8aec8bbb5d45e392deec0d20dfb17585.svg"></span></p><p id="u4fe859b0" class="ne-p"><span class="ne-text">这里先把它理解成一个标量输出，比如某个类别的 logit。对输入或中间特征 </span><span id="FDCb5" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/64d87a6bde6eebbe7916c6f8e488cf44.svg"></span><span class="ne-text"> 求梯度：</span></p><p id="u3a901de2" class="ne-p" style="text-align: center"><span id="ckpeo" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b5d46a2425d24aceb8f3543428cb08a3.svg"></span></p><p id="u2cfff7ff" class="ne-p"><span class="ne-text">这个梯度表示：如果 </span><span id="znPmD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/712ecf7894348e92d8779c3ee87eeeb0.svg"></span><span class="ne-text"> 沿某个方向变化，模型输出会变化多快。也就是说，</span><span id="QiDuB" class="ne-math" style="color: #DF2A3F"><img src="https://cdn.nlark.com/yuque/__latex/55ba3b4ecaffd878543e762f3ce0d49b.svg"></span><span class="ne-text" style="color: #DF2A3F; background-color: #FBDE28"> 指向当前样本上最影响输出的方向</span><span class="ne-text">。</span></p><p id="u946aab8c" class="ne-p"><span class="ne-text">然后对这个梯度做</span><strong><span class="ne-text" style="text-decoration: underline">外积</span></strong><span class="ne-text">：</span></p><p id="uba5a2afb" class="ne-p" style="text-align: center"><span id="VenDv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ef839d25534ecdea42453affa7cefcce.svg"></span></p><p id="u054c3ba2" class="ne-p"><span class="ne-text">这个矩阵描述的是特征维度之间的联合敏感性。比如第 </span><span id="Zvqvt" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a1170a444f2006784f140aea7fd6baa4.svg"></span><span class="ne-text"> 个元素是：</span></p><p id="ud7b1c811" class="ne-p" style="text-align: center"><span id="ksSOP" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/aa681b01dce1d6f2bd83a8a99c433802.svg"></span></p><p id="u9f6eef7e" class="ne-p"><span class="ne-text">如果两个维度的梯度经常一起大，外积矩阵里对应位置也会大。它不只告诉你“哪个维度重要”，还告诉你“哪些方向组合重要”。</span></p><p id="u915cc633" class="ne-p"><span class="ne-text">最后，对很多样本取平均：</span></p><p id="u6bf466fb" class="ne-p" style="text-align: center"><span id="egMXA" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/e73186ae4e68890e680e8cc34828015b.svg"></span></p><p id="u2fb7190a" class="ne-p"><span class="ne-text">这个 </span><span id="uUVpV" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><span class="ne-text"> 就是 </span><strong><span class="ne-text">Average Gradient Outer Product, AGOP</span></strong><span class="ne-text">。</span></p><p id="u43656800" class="ne-p"><span class="ne-text">直观上，AGOP 表征的是：</span><strong><span class="ne-text" style="color: #7E45E8; background-color: #E6DCF9">在一批样本上，模型输出最敏感的主方向有哪些</span></strong><strong><span class="ne-text">。</span></strong></p><p id="u18bfb3f8" class="ne-p"><span class="ne-text">如果对 </span><span id="AHkNR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><span class="ne-text"> 做特征值分解：</span></p><p id="uce96bd86" class="ne-p" style="text-align: center"><span id="e8SWN" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ddce7384953dba58c39214d55d0f9a25.svg"></span></p><p id="u398f5582" class="ne-p"><span class="ne-text">其中大的特征值对应的特征向量，就是模型输出变化最敏感、最重要的方向。</span></p><p id="u88c7f34e" class="ne-p"><span class="ne-text">所以 AGOP 可以看成一种“梯度敏感性表征”：</span></p><p id="u0a1ef8d1" class="ne-p" style="text-align: center"><span id="zMuFz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/8730046e11f4cee04c77a26901fea789.svg"></span></p><p id="u73bb5b2d" class="ne-p"><span class="ne-text">放到 GOLD 里，它的作用是替代直接更新分类器权重。</span></p><p id="uc46704ab" class="ne-p"><span class="ne-text">GOLD 一开始用分类器权重得到：</span></p><p id="u7d774f1d" class="ne-p" style="text-align: center"><span id="BFq9l" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b86191b671e08ee88d3bf084ba5fa670.svg"></span></p><p id="ud6bf88a6" class="ne-p"><span class="ne-text">这个矩阵反映的是源域分类器的特征方向结构。但是测试阶段目标域分布会变化，如果一直只用 </span><span id="dyW81" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text">，子空间就只包含源域信息。</span></p><p id="u49ea46a9" class="ne-p"><span class="ne-text">于是 GOLD 用测试样本上的 AGOP 来更新：</span></p><p id="u03138805" class="ne-p" style="text-align: center"><span id="RSEjD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/339e89a5fe063c6dc49522bbfb012bf2.svg"></span></p><p id="uae18db21" class="ne-p"><span class="ne-text">其中 </span><span id="DLg29" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/48905c2af0ccc944f236f44387276436.svg"></span><span class="ne-text"> 是</span><strong><span class="ne-text" style="text-decoration: underline">高置信度测试样本集合</span></strong><span class="ne-text">，</span><span id="b8rOc" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/3b008c77d31e3eaedb59c6264f80b88f.svg"></span><span class="ne-text"> 是当前样本上 top logit 对特征的梯度：</span></p><p id="u34f31db8" class="ne-p" style="text-align: center"><span id="wx1of" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/dea693f872266c49626a47c05522be63.svg"></span></p><p id="u87301e30" class="ne-p"><span class="ne-text">这样做的意思是：</span><strong><span class="ne-text">不直接重训练分类器权重 </span></strong><span id="UE7ln" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><strong><span class="ne-text">，但通过观察目标域样本上输出对特征的梯度敏感方向，在线估计当前目标域下最重要的分类方向。</span></strong></p><p id="u09c63f5e" class="ne-p"><span class="ne-text">可以把它理解为：</span></p><p id="ue6766445" class="ne-p" style="text-align: center"><span id="D4e3j" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d5589cb21eabeb7fb70e227d942d5963.svg"></span></p><p id="u8c83fdd4" class="ne-p" style="text-align: center"><span id="gY65k" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a09b7b89815961352c3d2d10e50aaced.svg"></span></p><p id="u9de3b3ae" class="ne-p"><span class="ne-text">GOLD 用 AGOP 更新 </span><span id="oFqKZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text">，再从 </span><span id="UCaUf" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 的主特征向量中提取 Golden Subspace：</span></p><p id="ue4c7283c" class="ne-p" style="text-align: center"><span id="S9Dj4" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/61a74118a9443c4a9011d29f1987b483.svg"></span></p><p id="u84fbe5b5" class="ne-p"><span class="ne-text">这就是为什么文章说 AGOP 是“分类器参数内积结构的在线代理”：它不直接改 </span><span id="iNNVG" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text">，但它估计了和 </span><span id="rZQ7R" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text"> 类似的方向结构，并且这个结构会随着目标域测试数据不断更新。</span></p></details>
+基于这些观察，我们提出了 Guided Online Low-rank Directional adaptation（GOLD），一种高效的持续测试时适应方法。GOLD 维护一个轻量级矩阵，该矩阵由**<u>分类器权重内积</u>**<font style="color:#DF2A3F;">初始化</font>，并利用高置信度测试样本计算得到的 AGOP 进行在线更新。我们周期性地对该矩阵进行特征分解，以提取当前的低秩 Golden Subspace。随后，将冻结骨干网络提取的特征投影到这一子空间中，并**<u>学习一个紧凑的缩放向量</u>**，对投影后的坐标进行重新缩放以完成适应。这样的设计只引入少量额外参数，并且仅更新极少的一部分内部参数，因此能够从机制上限制参数漂移，同时保留足够的能力来修正模型输出。
+
+<details class="lake-collapse"><summary id="u508e8118"><span class="ne-text">怎么理解这段内容？</span></summary><p id="ua29ee781" class="ne-p"><span class="ne-text">这里的关键是：GOLD 不是想知道“特征空间长什么样”，而是想知道 </span><strong><span class="ne-text">哪些特征方向一动，模型输出就会明显变化</span></strong><span class="ne-text">。这个信息决定了测试时适应应该往哪里改。</span></p><p id="ub0bc1ecb" class="ne-p"><strong><span class="ne-text">1. 分类器的特征方向结构有什么用？</span></strong></p><p id="u50b79f8a" class="ne-p"><span class="ne-text">假设分类头是线性的：</span></p><p id="u6a391c00" class="ne-p" style="text-align: center"><span id="P8Zs7" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/624bc69a5ddf1521b55061845e293778.svg"></span></p><p id="u7f65c7b3" class="ne-p"><span class="ne-text">其中 </span><span id="RQYel" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 是 backbone 输出的特征，</span><span id="Gpudt" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text"> 是分类器权重。</span></p><p id="u20c84fb8" class="ne-p"><strong><span class="ne-text">分类器权重 </span></strong><span id="Cg27S" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><strong><span class="ne-text"> 的每一行 </span></strong><span id="c9XnI" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b2871858330bff4a19bbdbf8dd0b99ca.svg"></span><strong><span class="ne-text"> 可以理解为第 </span></strong><span id="nZNq2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b891664b42113aee13f0bac25eb998e5.svg"></span><strong><span class="ne-text"> 类的判别方向</span></strong><span class="ne-text">：</span></p><p id="u15540762" class="ne-p" style="text-align: center"><span id="wzwbg" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/bb0f51b2729109089aed75fca6b8e994.svg"></span></p><p id="u11a559b9" class="ne-p"><span class="ne-text">如果特征 </span><span id="qc7tx" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 沿着 </span><span id="NDz1P" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b2871858330bff4a19bbdbf8dd0b99ca.svg"></span><span class="ne-text"> 的方向变化，那么第 </span><span id="qvVKs" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b891664b42113aee13f0bac25eb998e5.svg"></span><span class="ne-text"> 类 logit 会明显变化；如果 </span><span id="uWwdS" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 沿着和所有 </span><span id="DAhti" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b2871858330bff4a19bbdbf8dd0b99ca.svg"></span><span class="ne-text"> 都几乎正交的方向变化，那么 logits 基本不变。</span></p><p id="u78bad205" class="ne-p"><span class="ne-text">所以 </span><span id="wQvzl" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text"> 或 AGOP 捕捉的是：</span></p><p id="u3af5dc81" class="ne-p" style="text-align: center"><span id="GJWCn" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/7f14c58cea4684b4c77e4006c2d595d5.svg"></span></p><p id="u1a16c4b6" class="ne-p"><span class="ne-text">这个信息的用处是：测试时适应不需要在整个高维特征空间里乱改，只要沿这些“输出敏感方向”微调，就更可能修正预测，同时减少漂移。</span></p><p id="ud23807b3" class="ne-p"><strong><span class="ne-text">2. 为什么低秩分解得到的是黄金子空间？</span></strong></p><p id="u47675a1d" class="ne-p"><span class="ne-text">严格说，不是“随便做低秩分解就得到黄金子空间”，而是对一个特定矩阵 </span><span id="n4s3r" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 做特征分解。</span></p><p id="u1452cdf1" class="ne-p"><span class="ne-text">这个矩阵初始化为：</span></p><p id="uf4527605" class="ne-p" style="text-align: center"><span id="iZzZP" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b86191b671e08ee88d3bf084ba5fa670.svg"></span></p><p id="u96501ac1" class="ne-p"><span class="ne-text">它来自分类器权重，表示</span><strong><span class="ne-text">源域分类器的敏感方向结构</span></strong><span class="ne-text">。测试时再用 AGOP 更新：</span></p><p id="uc12e3d4b" class="ne-p" style="text-align: center"><span id="UW3sq" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0a880dc664553afe1d3a1a882c16252a.svg"></span></p><p id="u82bde785" class="ne-p"><span class="ne-text">其中：</span></p><p id="uaab9a26e" class="ne-p" style="text-align: center"><span id="lS9bt" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5d7acd3a411ec0ab385e2bcdb0d5bdd2.svg"></span></p><p id="uba2bfed7" class="ne-p"><span class="ne-text">也就是当前高置信度测试样本上，输出对特征的梯度。</span></p><p id="u84557a22" class="ne-p"><span class="ne-text">然后对 </span><span id="h4oCb" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 做特征分解：</span></p><p id="udb4fd4f1" class="ne-p" style="text-align: center"><span id="SJYFL" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2a2b4c7a63735d0bcddaf7a09a0fe817.svg"></span></p><p id="u4d8bdfc6" class="ne-p"><span class="ne-text">取最大特征值对应的前 </span><span id="Z1Rhv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 个特征向量：</span></p><p id="u9581a859" class="ne-p" style="text-align: center"><span id="lRfxj" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/61a74118a9443c4a9011d29f1987b483.svg"></span></p><p id="u7323d3ed" class="ne-p"><span class="ne-text">这些方向就是当前模型在测试域上最敏感、最有效的特征调整方向，所以被当作在线估计的 golden subspace。</span></p><p id="ua1df7a74" class="ne-p"><span class="ne-text">它不是数学上绝对等同于真实黄金子空间，而是一个在线近似。文章的论证逻辑是：理论上黄金子空间由 </span><span id="gm6IK" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/edb462fbcf185abaefd8083aebeb8a33.svg"></span><span class="ne-text"> 决定；经验上 AGOP 估计出来的主子空间会快速接近单步最小范数适应对应的子空间，因此可以作为测试时的动态代理。</span></p><p id="u73332267" class="ne-p"><strong><span class="ne-text">3. 为什么要把 backbone 特征投影到这个子空间？</span></strong></p><p id="ub54b32c9" class="ne-p"><span class="ne-text">因为原始特征维度 </span><span id="i8AuK" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/c895173d3be4872abf206be4268a58cb.svg"></span><span class="ne-text"> 通常很高。如果直接更新整个 </span><span id="zvZao" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fcbf4f3e317548787c0f2c6e506cca1a.svg"></span><span class="ne-text">，自由度太大，容易被噪声伪标签带偏。</span></p><p id="ud2590067" class="ne-p"><span class="ne-text">投影到低秩子空间：</span></p><p id="u257c8657" class="ne-p" style="text-align: center"><span id="NHclC" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d2758b5f3fdb0c7c3bbd8204bb3d603b.svg"></span></p><p id="u172a82fb" class="ne-p"><span class="ne-text">其中：</span></p><p id="uaf11fae1" class="ne-p" style="text-align: center"><span id="AI4M6" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/44f85611fb9004f740cba40bed1be860.svg"></span></p><p id="u4393e215" class="ne-p"><span class="ne-text">这一步相当于只保留那些对输出最关键的方向坐标。后续适应只发生在 </span><span id="tkXxF" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 维空间里，而不是完整 </span><span id="wl6WF" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/c895173d3be4872abf206be4268a58cb.svg"></span><span class="ne-text"> 维空间里。</span></p><p id="ud79f88e9" class="ne-p"><strong><span class="ne-text">4. 为什么用可学习缩放向量？</span></strong></p><p id="u2a5904bd" class="ne-p"><span class="ne-text">GOLD 不直接学习一个完整变换矩阵，而是学习一个缩放向量 </span><span id="D2rvz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b004a00057f8621d94ed41b49c9fffdd.svg"></span><span class="ne-text">：</span></p><p id="u3e86f56c" class="ne-p" style="text-align: center"><span id="F9M9g" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5c1772e7e8aa392848f76c5743deb6c6.svg"></span></p><p id="u0218aacd" class="ne-p"><span class="ne-text">然后映射回原特征空间：</span></p><p id="u2f42d778" class="ne-p" style="text-align: center"><span id="jARxg" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/819cf27c4170944693d46c1ffb7f67a1.svg"></span></p><p id="u2bbf618b" class="ne-p"><span class="ne-text">这么做有三个好处。</span></p><p id="ucd14157c" class="ne-p"><span class="ne-text">第一，参数量小。完整矩阵是 </span><span id="jUALM" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/87f60c3d3d5103b8fdbafd5869555ae3.svg"></span><span class="ne-text">，低秩缩放只需要 </span><span id="IMYn1" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 个参数。</span></p><p id="ua8763410" class="ne-p"><span class="ne-text">第二，稳定。它不是创造任意新方向，而是在已有 golden subspace 内增强或削弱某些方向。</span></p><p id="uc9502b8e" class="ne-p"><span class="ne-text">第三，残差形式安全。当：</span></p><p id="ua0d649b7" class="ne-p" style="text-align: center"><span id="BJkBv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0430a4d0904d223d9dfd9fcef7362076.svg"></span></p><p id="ube33cc61" class="ne-p"><span class="ne-text">时：</span></p><p id="u9d5a646d" class="ne-p" style="text-align: center"><span id="HoPTr" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/36f7d5ef63adf956996e2340a22c3b4b.svg"></span></p><p id="u215898c7" class="ne-p"><span class="ne-text">也就是退化回原模型，不会一开始就破坏预训练表示。</span></p><p id="udc3a9644" class="ne-p"><strong><span class="ne-text">5. 少量额外参数具体是什么？</span></strong></p><p id="u7ac5092c" class="ne-p"><span class="ne-text">主要是这个低秩 adapter 的缩放向量：</span></p><p id="u2659fc4a" class="ne-p" style="text-align: center"><span id="F1npO" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b004a00057f8621d94ed41b49c9fffdd.svg"></span></p><p id="ud367516f" class="ne-p"><span class="ne-text">如果 </span><span id="gJeL9" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b816dd441eefe0edcf1e23df03d6bdb7.svg"></span><span class="ne-text">，那核心新增可学习参数就只有 64 个量级。</span></p><p id="u1db1e37c" class="ne-p"><span class="ne-text">此外，方法里还会维护一些状态量，但这些通常不是“可学习参数”：</span></p><p id="u711c5948" class="ne-p" style="text-align: center"><span id="z3apD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/263a769ce00a4d8739e6a4a0d2c01c18.svg"></span></p><p id="ua29bfbc3" class="ne-p" style="text-align: center"><span id="mnxr2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2989141ce9badd7daefa2b03f6f98d4b.svg"></span></p><p id="u04816f8b" class="ne-p" style="text-align: center"><span id="ZWZxD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/4b49fdda8ae0cf0a3a448419e4727157.svg"></span></p><p id="u8db8f1e0" class="ne-p"><span class="ne-text">其中 </span><span id="cVKGD" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 是 AGOP 统计矩阵，</span><span id="te9V2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ddb63b1f5daac50985d3302eb4e47cf5.svg"></span><span class="ne-text"> 是分解得到的子空间基，</span><span id="UuWjZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ffd1905f6d4d60accedfa6b91be93ea9.svg"></span><span class="ne-text"> 是源域 prototype。这些是 buffer / 统计量，不是通过梯度直接训练的主要参数。</span></p><p id="u3eb7fd36" class="ne-p"><strong><span class="ne-text">6. 更新的内部参数指什么？</span></strong></p><p id="u87c89d77" class="ne-p"><span class="ne-text">GOLD 的主要更新对象是：</span></p><p id="u4e42cebb" class="ne-p" style="text-align: center"><span id="l2S0g" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/507b472be844bd1841aa85a79e2387c5.svg"></span></p><p id="u67e6fb64" class="ne-p"><span class="ne-text">也就是低秩缩放向量。</span></p><p id="ua5c6fe12" class="ne-p"><span class="ne-text">文章还提到会更新一小部分归一化层参数，例如 BN/LN/GN 的 affine 参数：</span></p><p id="u9c4998d5" class="ne-p" style="text-align: center"><span id="HZjgT" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/072182d59b50dee12b94dffbd3cdb2eb.svg"></span></p><p id="ua7799dd0" class="ne-p"><span class="ne-text">也就是 normalization layer 的 weight 和 bias。完整 backbone 和分类器权重通常不更新：</span></p><p id="uefe00887" class="ne-p" style="text-align: center"><span id="ZwRHd" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/25ce61600bbbd0316cefef7043d7002c.svg"></span></p><p id="ucc630d6f" class="ne-p" style="text-align: center"><span id="Iehth" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b1bfa8615dc5f6dcfc92a25a093c86df.svg"></span></p><p id="u5fd68f45" class="ne-p"><span class="ne-text">所以它的适应过程可以概括为：</span></p><p id="uee9266e5" class="ne-p" style="text-align: center"><span id="KJock" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/67d6f8b1a073849a09f2ece415954f5c.svg"></span></p><p id="u2b1129b4" class="ne-p"><span class="ne-text">最核心的直觉是：</span><strong><span class="ne-text">黄金子空间告诉模型“往哪里改”，缩放向量告诉模型“每个方向改多少”。</span></strong></p></details>
 如图 1 所示，GOLD 在极小的适应代价下取得了最佳性能（图 1a），并且在跨领域变化时保持了很强的泛化能力（图 1b）。
 
 我们的主要贡献如下：
@@ -3437,9 +3568,13 @@ Shao 等人最近表明，一些使用 GRPO 训练的模型，即使在伪随机
 ## 相关工作
 持续测试时适应（Continual Test-Time Adaptation, CTTA）将测试时适应扩展到了动态环境中。在这类场景下，源模型需要在不重新访问源样本的前提下，持续适应一条由无标签且非平稳目标数据组成的数据流。
 
-开创性的 CoTTA 提出了一个 teacher-student 框架，通过权重平均与随机权重恢复来缓解误差累积和遗忘问题。在这一思路基础上，PETAL 提出了一种数据驱动的参数恢复机制，将模型更新正则化到源参数配置附近，以增强鲁棒性。RMT 和 SANTA 则通过对比学习目标，在特征层面约束与源模型的一致性；DSS 通过在适应过程中滤除不安全的伪标签来提升可靠性。近期，TCA 通过在领域偏移过程中保持类别表征之间的拓扑一致性，维持了类别间稳定性。
++ 开创性的 **CoTTA** 提出了一个 teacher-student 框架，通过权重平均与随机权重恢复来缓解误差累积和遗忘问题。
++ 在这一思路基础上，**PETAL** 提出了一种数据驱动的参数恢复机制，将模型更新正则化到源参数配置附近，以增强鲁棒性。
++ **RMT** 和 **SANTA** 则通过对比学习目标，在特征层面约束与源模型的一致性；
++ **DSS** 通过在适应过程中滤除不安全的伪标签来提升可靠性。
++ 近期，**TCA** 通过在领域偏移过程中保持类别表征之间的拓扑一致性，维持了类别间稳定性。
 
-尽管取得了这些进展，现有大多数方法仍然依赖对整个网络进行全局更新或特征层更新，这不可避免地带来了效率与泛化之间的权衡。
+尽管取得了这些进展，现有大多数方法仍然依赖**对****<font style="color:#7E45E8;">整个网络</font>****进行全局更新或特征层更新，这不可避免地带来了效率与泛化之间的权衡。**
 
 ## **<font style="color:rgb(0,0,0);">Preliminary</font>**
 ### **<font style="color:rgb(0,0,0);">Problem Definition</font>**
@@ -3457,24 +3592,27 @@ $ D_T = \{X_1, X_2, \ldots, X_T\} $
 
 这种持续自适应的实用性主要取决于两个关键因素：效率和泛化能力。例如，在自动驾驶系统中，模型必须在有限的时间窗口内快速且稳健地完成自适应，以确保在环境不断变化的情况下实现可靠的感知与决策。
 
+<details class="lake-collapse"><summary id="u56b4da2b"><strong><span class="ne-text">补充1：这里的 f 是什么？</span></strong></summary><h4 id="Ds3qL"><span class="ne-text">GOLD 里的 </span><span id="P12w1" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 基本可以理解为：</span><strong><span class="ne-text">输入到分类头之前的特征，也就是 backbone / feature extractor 输出的 penultimate feature</span></strong><span class="ne-text">。</span></h4><p id="ua32db0fe" class="ne-p"><span class="ne-text">文章里把模型写成：</span></p><p id="u0d4888a2" class="ne-p" style="text-align: center"><span id="s9poK" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d6eb1e90ba1794b84b6843faab2566cf.svg"></span></p><p id="u167e0b7b" class="ne-p"><span class="ne-text">其中：</span></p><p id="u70cbf61a" class="ne-p" style="text-align: center"><span id="rFvQU" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6823d049591084af2646696ec7fbbc71.svg"></span></p><p id="u73bf148d" class="ne-p" style="text-align: center"><span id="zQ51A" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/07511620724d7a9e972f36ee0d39cb27.svg"></span></p><p id="uba97f4eb" class="ne-p"><span class="ne-text">这里：</span></p><ul class="ne-ul"><li id="ub82a3a24" data-lake-index-type="0"><span id="f9M1D" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b271ed281e6f2c5afff6c4b2f3273fae.svg"></span><span class="ne-text"> 是特征提取器，也就是 backbone；</span></li><li id="uf9fd5cf9" data-lake-index-type="0"><span id="Rd9Gp" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/4003424ea3d5003f43a38ada8cde28c3.svg"></span><span class="ne-text"> 是分类头；</span></li><li id="u9a44c8e2" data-lake-index-type="0"><span id="CpE0R" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 是 backbone 输出、分类头输入的特征；</span></li><li id="u63514bdb" data-lake-index-type="0"><span id="Le0rp" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/02bab26178a0cd05dae15ad487830237.svg"></span><span class="ne-text"> 是分类 logits。</span></li></ul><p id="u471d2c2c" class="ne-p"><span class="ne-text">如果分类头是线性的，那么：</span></p><p id="uae1e3328" class="ne-p" style="text-align: center"><span id="z1aP3" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/624bc69a5ddf1521b55061845e293778.svg"></span></p><p id="ufffab715" class="ne-p"><span class="ne-text">其中：</span></p><p id="u6945e549" class="ne-p" style="text-align: center"><span id="DBdYt" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a715ad6fe16c6b2cd2f06048397382d5.svg"></span></p><p id="u14abb4a5" class="ne-p"><span class="ne-text">所以 GOLD 讨论的黄金子空间，就是定义在这个 </span><strong><span class="ne-text">分类头输入特征空间</span></strong><span class="ne-text"> </span><span id="yO8kc" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/45e3872255772b8180bbe50b30734d56.svg"></span><span class="ne-text"> 里的。</span></p><p id="u069c0a32" class="ne-p"><span class="ne-text">对于不同任务，</span><span id="wP8mL" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 的具体形式略有不同：</span></p><p id="uaca60a8e" class="ne-p"><img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784170748622-a8a1c99e-0c46-49de-b6e3-420730b2b980.png" width="766" title="" crop="0,0,1,1" id="cubq9" class="ne-image"></p><p id="ue971094c" class="ne-p"><span class="ne-text">所以它不是 PEA 那种“每个 block 的中间特征”：</span></p><p id="u15c848a5" class="ne-p" style="text-align: center"><span id="WsKHE" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/49d976f913db2ccb65d33d67dc1e02c4.svg"></span></p><p id="u0f973bf6" class="ne-p"><span class="ne-text">而更偏向于</span><strong><span class="ne-text">最后决策头之前的表征空间</span></strong><span class="ne-text">。GOLD 的理论依赖分类头权重 </span><span id="Vj3YU" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text">，因此 </span><span id="e3XCZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 必须是和 </span><span id="P7CAw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text"> 直接相连的那一层特征。</span></p><p id="uaddf1976" class="ne-p"><span class="ne-text">在实际方法中，测试 batch 的特征写作：</span></p><p id="u098e9095" class="ne-p" style="text-align: center"><span id="OYh3p" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6e1a1855ef9814cf92e9d0789437511f.svg"></span></p><p id="u8dedf777" class="ne-p"><span class="ne-text">其中每一行就是一个样本的特征：</span></p><p id="ua3e9ec24" class="ne-p" style="text-align: center"><span id="FHHu6" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6e244858a276faba9818441f3c41e6ea.svg"></span></p><p id="ub6c52ca9" class="ne-p"><span class="ne-text">然后 GOLD 对 </span><span id="f7ggT" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/bccc235f2749d475b14107feeb0d8c42.svg"></span><span class="ne-text"> 做低秩子空间适应：</span></p><p id="u54bf6517" class="ne-p" style="text-align: center"><span id="AYKtt" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/19297a71106f328b6c1f9116f01f4d3c.svg"></span></p><p id="u9fe75b16" class="ne-p"><span class="ne-text">再送入分类头：</span></p><p id="ucb77d100" class="ne-p" style="text-align: center"><span id="GXNqS" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/7b9440f9ded7626c7b04a74445ac35cd.svg"></span></p><p id="u7c879c95" class="ne-p"><span class="ne-text">所以一句话总结：</span><strong><span class="ne-text">GOLD 里的 </span></strong><span id="L6Q7M" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><strong><span class="ne-text"> 是分类头/预测头输入前的高层语义特征，而不是原始输入，也不是任意中间层特征。</span></strong><span class="ne-text"> 对你的具身导航任务，如果迁移 GOLD，最自然的 </span><span id="dUFca" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 就是 action head 或 goal prediction head 之前的融合表示。</span></p></details>
+<details class="lake-collapse"><summary id="ud1477d8d"><strong><span class="ne-text">补充2：什么叫分类头是线性的？</span></strong></summary><p id="ufb895fc3" class="ne-p"><span class="ne-text">“分类头是线性的”指的是：模型最后把特征 </span><span id="GkxLQ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 转成类别 logits </span><span id="BOg2G" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/02bab26178a0cd05dae15ad487830237.svg"></span><span class="ne-text"> 的这一层，是一个</span><strong><span class="ne-text">线性变换</span></strong><span class="ne-text">，通常就是一个全连接层，</span><span class="ne-text" style="text-decoration: underline">没有额外的非线性激活</span><span class="ne-text">。（</span><span class="ne-text" style="background-color: #D8DAD9">当然实际模型中最后还是要有个激活的，因为这里只到logits为止，因此不用讨论最终的激活函数，分类任务的话应该是softmax()</span><span class="ne-text">）</span></p><p id="u64396eaa" class="ne-p"><span class="ne-text">形式上：</span></p><p id="udb5e40fd" class="ne-p" style="text-align: center"><span id="kRd70" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/703e62be5c445bc8f3ca6661daee055d.svg"></span></p><p id="uf144a8cc" class="ne-p"><span class="ne-text">其中：</span></p><ul class="ne-ul"><li id="u794b786e" data-lake-index-type="0"><span id="n3K2j" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d13afc975d0cfa97e511d5e187436602.svg"></span><span class="ne-text"> 是 backbone 输出的特征；</span></li><li id="ub04677d8" data-lake-index-type="0"><span id="QTA14" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a715ad6fe16c6b2cd2f06048397382d5.svg"></span><span class="ne-text"> 是分类头权重；</span></li><li id="uadb52b59" data-lake-index-type="0"><span id="sbFs4" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/e5c4c9a6fc498221a633984dddce06a9.svg"></span><span class="ne-text"> 是偏置；</span></li><li id="u7bfb90bf" data-lake-index-type="0"><span id="QdqrM" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/54b7d0538fff8c3957bf4fb39ecae2d4.svg"></span><span class="ne-text"> 是每个类别的 logit；</span></li><li id="u1db68f36" data-lake-index-type="0"><span id="lSVhQ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a42a4fc28b384cc408de066beed57485.svg"></span><span class="ne-text"> 是类别数。</span></li></ul><p id="u4c3942f9" class="ne-p"><span class="ne-text">如果省略偏置，就是：</span></p><p id="ua0e09ac2" class="ne-p" style="text-align: center"><span id="HMX16" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/624bc69a5ddf1521b55061845e293778.svg"></span></p><p id="ud349e4f2" class="ne-p"><span class="ne-text">这里每一类的 logit 是特征 </span><span id="pIr3X" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18f3c2855f0e85a1ac2257f64d917144.svg"></span><span class="ne-text"> 的一个线性打分。例如第 </span><span id="uAfaF" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b891664b42113aee13f0bac25eb998e5.svg"></span><span class="ne-text"> 类：</span></p><p id="u3f7441bd" class="ne-p" style="text-align: center"><span id="MiTiq" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5696d3a97c94fb8b7b1bbc3c2242a627.svg"></span></p><p id="u04e8f7b8" class="ne-p"><span class="ne-text">其中 </span><span id="PpC2P" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b2871858330bff4a19bbdbf8dd0b99ca.svg"></span><span class="ne-text"> 是 </span><span id="cgAJa" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text"> 的第 </span><span id="ASzNf" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b891664b42113aee13f0bac25eb998e5.svg"></span><span class="ne-text"> 行，也可以理解为第 </span><span id="DpJSw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b891664b42113aee13f0bac25eb998e5.svg"></span><span class="ne-text"> 类的分类方向。</span></p><p id="u0375055f" class="ne-p"><span class="ne-text">所谓“线性”，就是它只做加权求和：</span></p><p id="u91d94d7b" class="ne-p" style="text-align: center"><span id="Q5b5F" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/01a4caa47cc3ba5d8789ecd4817f0067.svg"></span></p><p id="ub691552a" class="ne-p"><span class="ne-text">没有类似下面这些非线性操作：</span></p><p id="u24397f78" class="ne-p" style="text-align: center"><span id="QCL2o" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2deb3347fbbe6521191db8992e9d2c0c.svg"></span></p><p id="ufd4da7fe" class="ne-p"><span class="ne-text">举个最常见的图像分类模型：</span></p><p id="ua2d6a669" class="ne-p" style="text-align: center"><span id="K1RpO" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2b8a5ef9b93ebb6b9b36efb30db5c3f7.svg"></span></p><p id="ue2587c48" class="ne-p"><span class="ne-text">其中：</span></p><p id="udbc5bfd1" class="ne-p" style="text-align: center"><span id="VNK0s" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6a344ca7a5203d4ac1b9508ae7215e1e.svg"></span></p><p id="u58c8373a" class="ne-p"><span class="ne-text">注意：Softmax 通常不算在“线性分类头”里面。分类头输出的是 logits </span><span id="Va6YN" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/02bab26178a0cd05dae15ad487830237.svg"></span><span class="ne-text">，Softmax 只是把 logits 转成概率。</span></p><p id="u07ac58f1" class="ne-p"><span class="ne-text">GOLD 依赖这个线性分类头假设，是因为它要利用：</span></p><p id="u10e79367" class="ne-p" style="text-align: center"><span id="LhYik" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/624bc69a5ddf1521b55061845e293778.svg"></span></p><p id="u000e1a8b" class="ne-p"><span class="ne-text">来推导“如果想改变输出 </span><span id="udViI" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d8c091ebaa3aeaf74bea7669e920e79c.svg"></span><span class="ne-text">，最小的特征变化 </span><span id="nqwxK" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f2db11c11faa2db349f3367eca82dd9e.svg"></span><span class="ne-text"> 应该落在哪里”。如果分类头是线性的，那么：</span></p><p id="u268ade68" class="ne-p" style="text-align: center"><span id="zIMuk" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/530a6ad18e7a9011138a78a2123be22f.svg"></span></p><p id="u19fd6c54" class="ne-p"><span class="ne-text">这个关系很干净，所以可以证明最小扰动：</span></p><p id="u657ac10d" class="ne-p" style="text-align: center"><span id="cZfIe" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/96cbb1cfa2e4e8a8e50c9f635d81a11c.svg"></span></p><p id="u3fa91c8c" class="ne-p"><span class="ne-text">一定落在：</span></p><p id="uf2f5f508" class="ne-p" style="text-align: center"><span id="Qdt50" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/edb462fbcf185abaefd8083aebeb8a33.svg"></span></p><p id="uabef54eb" class="ne-p"><span class="ne-text">也就是黄金子空间。</span></p></details>
 ### **<font style="color:rgb(0,0,0);">Does the Golden Subspace Exist?</font>**
 理想的黄金子空间应当在实现模型输出所需变化的同时（保证泛化能力），尽可能减少训练量（保证效率）。我们首先考虑一个简单但具有启发性的单步自适应场景。
 
-给定一个冻结的预训练分类器 $ W \in \mathbb{R}^{C \times L} $，其位于特征提取器之上。设测试批次在自适应前的特征为 $ F \in \mathbb{R}^{B \times L} $，并假设我们希望在自适应后实现期望的输出校正 $ \Delta Y \in \mathbb{R}^{B \times C} $。为了找到能够实现该校正的最小特征空间变化（以 Frobenius 范数衡量），可以得到如下最小范数解：
+<details class="lake-collapse"><summary id="u87f77c54"><span class="ne-text">怎么理解这句话？</span></summary><p id="u95fcc4a7" class="ne-p"><span class="ne-text">这句话可以理解为：</span><strong><span class="ne-text">测试时适应的目标不是“尽可能多地改模型”，而是“用最小的改动，让模型输出朝正确方向变化”。</span></strong></p><p id="u99f8cff3" class="ne-p"><span class="ne-text">假设模型当前对一个测试 batch 的输出是：</span></p><p id="ue16920a5" class="ne-p" style="text-align: center"><span id="hUh6h" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2ff6da356bdcf3030fb94c514ba702aa.svg"></span></p><p id="u1423ccca" class="ne-p"><span class="ne-text">其中：</span></p><ul class="ne-ul"><li id="uadf084b6" data-lake-index-type="0"><span id="Mv8Yn" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b4e5fc2d1df32b681492985c013538e8.svg"></span><span class="ne-text"> 是 backbone 提取的特征；</span></li><li id="u78f142ed" data-lake-index-type="0"><span id="B5UOJ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a715ad6fe16c6b2cd2f06048397382d5.svg"></span><span class="ne-text"> 是分类头权重；</span></li><li id="u8d0ffd4b" data-lake-index-type="0"><span id="B6CDf" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/7b0f0524bb891b712a6a1cd516942def.svg"></span><span class="ne-text"> 是 logits。</span></li></ul><p id="u9be2bf98" class="ne-p"><span class="ne-text">如果当前输出不够好，我们希望输出发生一个修正：</span></p><p id="u4ce41862" class="ne-p" style="text-align: center"><span id="otdBL" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/de15267f80ad9a34156c798ff8a4a20e.svg"></span></p><p id="u3495c1f5" class="ne-p"><span class="ne-text">那么对应地，特征也需要变化：</span></p><p id="ud7dd0352" class="ne-p" style="text-align: center"><span id="GuLeR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/38fb7e4d6067ed9c7decc17fc915e7f5.svg"></span></p><p id="u7e7f05c6" class="ne-p"><span class="ne-text">由于分类头固定，有：</span></p><p id="u8bd0fa72" class="ne-p" style="text-align: center"><span id="tmDoR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b0aedd0a948c1c6cdae1902dae4fb5d5.svg"></span></p><p id="u48579143" class="ne-p"><span class="ne-text">现在问题是：能实现同一个 </span><span id="rIfRb" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fdbd61e2f55d0e4fd1d02885ff9a2682.svg"></span><span class="ne-text"> 的 </span><span id="cE8hE" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/86430b43a4ad44b6185bf98d692a3785.svg"></span><span class="ne-text"> 可能有很多种。比如你可以大幅改动整个特征空间，也可以只沿少数关键方向轻微调整。GOLD 认为理想情况应该选择</span><strong><span class="ne-text">最小的特征改动</span></strong><span class="ne-text">：</span></p><p id="ue3790298" class="ne-p" style="text-align: center"><span id="bu81x" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/950408ca372fca508ea3ff802acfd1c8.svg"></span></p><p id="u0f254bdb" class="ne-p"><span class="ne-text">这句话里的两层意思是：</span></p><p id="u89db3e27" class="ne-p"><strong><span class="ne-text">保证泛化能力</span></strong><span class="ne-text">：子空间必须有能力实现模型输出需要的变化，也就是能修正预测。如果这个子空间太弱，连 </span><span id="CylVR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fdbd61e2f55d0e4fd1d02885ff9a2682.svg"></span><span class="ne-text"> 都实现不了，那适应没有意义。</span></p><p id="uadc1997c" class="ne-p"><strong><span class="ne-text">保证效率</span></strong><span class="ne-text">：在能实现输出修正的前提下，训练量和改动量越小越好。因为测试时适应是在线的，不能做大规模训练；而且改太多容易导致漂移和遗忘。</span></p><p id="u902f4e2b" class="ne-p"><span class="ne-text">所以“理想的黄金子空间”就是：</span></p><p id="uf1eace22" class="ne-p" style="text-align: center"><span id="g2jSv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/58db07f199bb683d0bdfc6c46bb755a9.svg"></span></p><p id="u3c79d7a6" class="ne-p"><span class="ne-text">这里说的“单步自适应场景”，只是一个简化分析：先不考虑长期连续测试流，也不考虑复杂优化过程，只看</span><strong><span class="ne-text">一个 batch、一次修正、线性分类头固定</span></strong><span class="ne-text">时，最小的特征变化应该落在哪些方向上。</span></p><p id="u341b52bd" class="ne-p"><span class="ne-text">通过这个简化问题，文章推导出：</span></p><p id="u77938fc4" class="ne-p" style="text-align: center"><span id="XVP9h" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/94d41a97a23770f9bc937c254c2715d8.svg"></span></p><p id="u96b27ef3" class="ne-p"><span class="ne-text">因此</span><strong><span class="ne-text" style="color: #7E45E8; background-color: #FBF5CB">最优特征变化 </span></strong><span id="xBaHu" class="ne-math" style="color: #7E45E8"><img src="https://cdn.nlark.com/yuque/__latex/5b617d4fcdab524c3ca62b76ea8cdcd0.svg"></span><strong><span class="ne-text" style="color: #7E45E8; background-color: #FBF5CB"> 落在由分类器权重 </span></strong><span id="s8DZ4" class="ne-math" style="color: #7E45E8"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><strong><span class="ne-text" style="color: #7E45E8; background-color: #FBF5CB"> 决定的子空间里</span></strong><span class="ne-text">。这个子空间就是后面所谓的 </span><strong><span class="ne-text">Golden Subspace</span></strong><span class="ne-text">。</span></p></details>
+给定一个**冻结的预训练分类器** $ W \in \mathbb{R}^{C \times L} $，其位于特征提取器之上。设测试批次在自适应前的特征为 $ F \in \mathbb{R}^{B \times L} $，并假设我们希望在自适应后实现期望的输出校正 $ \Delta Y \in \mathbb{R}^{B \times C} $。为了找到能够实现该校正的最小特征空间变化（以 Frobenius 范数衡量），可以得到如下最小范数解：
 
 $ \Delta F^\star = \Delta Y (W^\top)^\dagger $
 
-其中，$ (\cdot)^\dagger $ 表示 Moore-Penrose 伪逆。该代数关系直接导出如下秩约束：
+其中，$ (\cdot)^\dagger $ 表示 **<font style="color:#7E45E8;background-color:#FBF5CB;">Moore-Penrose 伪逆</font>**。该代数关系直接导出如下秩约束：
 
 $ \mathrm{rank}(\Delta F^\star) \leq \mathrm{rank}\left((W^\top)^\dagger\right) = \mathrm{rank}(W^\top W) $
 
-这意味着黄金子空间的秩受到分类器权重秩的约束，因此其本质上是低秩的。在神经网络中，类别数通常较小，因此 $ W $ 的秩受类别数限制。这说明，仅少量与分类器相关的方向就足以修改整个批次的模型预测，而无需探索任意高维扰动。
+这意味着**黄金子空间的秩**受到**分类器权重秩**的约束，因此其本质上是低秩的。在神经网络中，类别数通常较小，因此 $ W $ 的秩受类别数限制。这说明，仅少量与分类器相关的方向就足以修改整个批次的模型预测，而无需探索任意高维扰动。
 
 为了进一步解释这一结果，考虑奇异值分解 $ W^\top = V \Sigma U^\top $。将其代入上式可得：
 
 $ \Delta F^\star = V \Sigma^\dagger U^\top \Delta Y $
 
-这表明黄金子空间被限制在由分类器主特征向量张成的子空间中。分类器隐式地定义了一组特征空间方向，而模型输出对这些方向最为敏感。
+这表明**<font style="color:#DF2A3F;background-color:#E8F7CF;">黄金子空间被限制在由分类器主特征向量张成的子空间</font>**中。分类器隐式地定义了一组特征空间方向，而模型输出对这些方向最为敏感。
 
 这一观察验证了前文提出的黄金子空间的存在性。它表明，我们可以通过对分类器权重进行特征值分解来获得黄金子空间。这样的约束自然降低了噪声伪标签导致错误放大的风险，通过防止参数不受控制地漂移来缓解灾难性遗忘，并最终带来更加高效的 CTTA 过程。
 
@@ -3495,8 +3633,17 @@ $ {W_i^{(l)}}^\top W_i^{(l)}
 
 其中，$ n $ 表示训练样本数量，$ m $ 表示输入到第 $ l $ 层的相关输入子单元索引，例如空间位置或特征通道，$ u_{ij}^{(l)} $ 是该层中第 $ i $ 个单元对应的第 $ j $ 个输入或预激活值。指数 $ \alpha $ 在经验研究中通常取约 $ 1/2 $。
 
-在 CTTA 设定下，一个关键区别在于我们无法获得标签，因此我们选择使用高置信度样本的伪标签进行计算。为了验证该方法的可行性，我们维护一个在线 AGOP 估计器，并进行特征值分解，以获得估计的单步黄金子空间。真实黄金子空间则直接基于公式 $ (1) $ 中的定义计算得到。如图 $ 2a $ 所示，我们可视化了由 AGOP 推导出的子空间与真实黄金子空间之间相似度随时间演化的过程。尽管 AGOP 估计在初始化后表现较差，但它很快收敛到 $ 0.8 $ 以上，并最终稳定在 $ 0.98 $ 以上。这一现象表明，AGOP 可以作为黄金子空间的有效估计器，从而保证我们方法具备较强的泛化能力。
+<details class="lake-collapse"><summary id="u4819d650"><span class="ne-text">怎么理解这段内容？</span></summary><p id="u5a7759d0" class="ne-p"><span class="ne-text">这段话的核心意思是：</span><strong><span class="ne-text">我们可以不用直接更新或重训练权重矩阵 </span></strong><span id="tghjh" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><strong><span class="ne-text">，而是通过测试样本上的梯度统计，估计出和 </span></strong><span id="oTXiv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><strong><span class="ne-text"> 类似的方向结构。</span></strong></p><p id="u2de76068" class="ne-p"><span class="ne-text">先拆开看。</span></p><p id="u63a999e7" class="ne-p"><span id="jEsYw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text"> 是权重矩阵的 Gram matrix，它描述的是权重空间里的方向结构。如果某个方向在 </span><span id="yhTYZ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text"> 中有很大的特征值，说明这个方向对模型输出很重要。</span></p><p id="ub26d000c" class="ne-p"><span class="ne-text">而右边这一项：</span></p><p id="ua0fe2b6e" class="ne-p" style="text-align: center"><span id="krdEO" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/aa9ce6cc1c83eff5b91231ddf5f9d3af.svg"></span></p><p id="u894e4df2" class="ne-p"><span class="ne-text">就是 AGOP。它做的事情是：对很多样本，计算模型输出对某一层中间变量 </span><span id="kVZuq" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5c882ebaae91cf583a8924d2f9f955d0.svg"></span><span class="ne-text"> 的梯度，再把梯度做外积并平均。</span></p><p id="u826b62cb" class="ne-p"><span class="ne-text">其中每个梯度：</span></p><p id="u81e5c39d" class="ne-p" style="text-align: center"><span id="rHC9H" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b7ee76f12409f5b6fcec3c05e644b46f.svg"></span></p><p id="ufc8825b7" class="ne-p"><span class="ne-text">表示：如果第 </span><span id="SmFJx" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6945e109777fe3fd777e8254f0ec0f0c.svg"></span><span class="ne-text"> 层的这个中间特征 </span><span id="C5Fab" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5c882ebaae91cf583a8924d2f9f955d0.svg"></span><span class="ne-text"> 发生变化，模型输出 </span><span id="HfXM3" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/361b317c6c9d215ad20915bc3eb49496.svg"></span><span class="ne-text"> 会怎么变。</span></p><p id="uc95307fd" class="ne-p"><span class="ne-text">外积：</span></p><p id="u996fab22" class="ne-p" style="text-align: center"><span id="HAkZz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/e10976a908a7e331b4682fe8c156ff14.svg"></span></p><p id="u090f3f56" class="ne-p"><span class="ne-text">表示这个样本上“输出敏感方向”的二阶结构。对所有样本和子单元求平均后，就得到一个整体敏感性矩阵。</span></p><p id="ub6416575" class="ne-p"><span class="ne-text">所以这句话本质上是在说：</span></p><p id="u9ca5d434" class="ne-p" style="text-align: center"><span id="urJ9r" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0bff4e275497e05b2899feba722cd0da.svg"></span></p><p id="u110a46f3" class="ne-p"><span class="ne-text">为什么这对 GOLD 有用？因为 GOLD 想得到 golden subspace，而理论上 golden subspace 和分类器权重结构有关：</span></p><p id="ude78843c" class="ne-p" style="text-align: center"><span id="GqYVo" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b86191b671e08ee88d3bf084ba5fa670.svg"></span></p><p id="u00d2a5fb" class="ne-p"><span class="ne-text">但测试时如果一直用源域分类器的 </span><span id="jeWYF" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ccb4aefd8ce9c1f5ccc06b67c8d4b1ed.svg"></span><span class="ne-text">，它只包含源域信息；如果直接重训练 </span><span id="cJEnR" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text">，又会带来高开销和漂移风险。</span></p><p id="uc86ff395" class="ne-p"><span class="ne-text">于是文章用 AGOP 替代直接更新 </span><span id="Wjc42" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a36915ecf0b5605493f5aeaf1480a9ac.svg"></span><span class="ne-text">。也就是通过测试样本的梯度外积：</span></p><p id="u14f50d59" class="ne-p" style="text-align: center"><span id="UiIoz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/a62a50317c4b0dea1c0f16fb8304f62b.svg"></span></p><p id="uaa539830" class="ne-p"><span class="ne-text">来在线估计当前目标域下的重要方向。</span></p><p id="ub6a75ae1" class="ne-p"><span class="ne-text">直观类比是：</span></p><p id="u4b5b29c0" class="ne-p" style="text-align: center"><span id="ivEpm" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/9000ecb3b027927157e4c0d2121f8b62.svg"></span></p><p id="ub1090886" class="ne-p" style="text-align: center"><span id="lFqgw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/e8b557a21877405b7e0411bf76309067.svg"></span></p><p id="u8536f9eb" class="ne-p"><span class="ne-text">所以 AGOP 的价值是：</span><strong><span class="ne-text">它让 golden subspace 从“静态源域子空间”变成“动态目标域子空间”，但不需要真的重训练分类器权重。</span></strong></p><p id="ud6edee07" class="ne-p"><span class="ne-text">公式里的指数 </span><span id="cPlfw" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/18d25ca4f77a9bbed9812e2bb0b350a5.svg"></span><span class="ne-text"> 可以理解为对谱值做缩放。如果：</span></p><p id="ubaedc565" class="ne-p" style="text-align: center"><span id="FVf9L" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ddce7384953dba58c39214d55d0f9a25.svg"></span></p><p id="ub795319b" class="ne-p"><span class="ne-text">那么：</span></p><p id="ud8e702b2" class="ne-p" style="text-align: center"><span id="NHOZb" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/36907b5fd907e53ca9b5482881ac6d1e.svg"></span></p><p id="uf7283064" class="ne-p"><span class="ne-text">它主要改变特征值大小，不改变特征向量方向。因此对于提取子空间来说，关键仍然是主特征向量。</span><span id="XGWQn" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/7ddeb6d8459f403fc0f18b0cd0d84acc.svg"></span><span class="ne-text"> 只是经验上常用的谱缩放。</span></p></details>
+在 CTTA 设定下，一个关键区别在于我们无法获得标签，因此我们选择使用高置信度样本的伪标签进行计算。为了验证该方法的可行性，我们维护一个在线 AGOP 估计器，并进行特征值分解，以获得估计的单步黄金子空间。真实黄金子空间则直接基于公式 $ (1) $ 中的定义计算得到。
 
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784124862596-ad78c96a-87ca-4eff-931c-b71f9614655e.png" width="992" title="" crop="0,0,1,1" id="h7yiK" class="ne-image">
+
+> 图 $ 2 $。（a）随着测试过程推进，由 AGOP 推导出的子空间与由源域推导出的真实子空间之间的对齐程度。AGOP 能够快速收敛，并始终保持较高对齐度。（b）AGOP 谱的累积能量：前 $ 64 $ 到 $ 128 $ 个特征向量即可捕获超过 $ 99\% $ 的能量，表明其具有显著的低秩集中性。
+>
+
+如图 $ 2a $ 所示，我们可视化了由 AGOP 推导出的子空间与真实黄金子空间之间相似度随时间演化的过程。尽管 AGOP 估计在初始化后表现较差，但它很快收敛到 $ 0.8 $ 以上，并最终稳定在 $ 0.98 $ 以上。这一现象表明，AGOP 可以作为黄金子空间的有效估计器，从而保证我们方法具备较强的泛化能力。
+
+<details class="lake-collapse"><summary id="u5147ec3c"><span class="ne-text">这句话怎么理解</span></summary><p id="u3ba752c4" class="ne-p"><span class="ne-text">这句话是在解释：</span><strong><span class="ne-text">AGOP 估计出来的子空间，是否真的接近理论上定义的黄金子空间。</span></strong></p><p id="u130a398b" class="ne-p"><span class="ne-text">先看两个对象。</span></p><p id="u95d166e4" class="ne-p"><span class="ne-text">一个是 </span><strong><span class="ne-text">真实黄金子空间</span></strong><span class="ne-text">。它来自前面的单步最小范数适应推导。理论上，如果已知目标输出修正 </span><span id="q8RMh" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fdbd61e2f55d0e4fd1d02885ff9a2682.svg"></span><span class="ne-text">，那么最小特征扰动为：</span></p><p id="u7654bd99" class="ne-p" style="text-align: center"><span id="eYDZv" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/94d41a97a23770f9bc937c254c2715d8.svg"></span></p><p id="u80cfcf32" class="ne-p"><span class="ne-text">由这些最优扰动方向张成的空间，可以被看作真实 golden subspace。</span></p><p id="u7ebae990" class="ne-p"><span class="ne-text">另一个是 </span><strong><span class="ne-text">AGOP 推导出的子空间</span></strong><span class="ne-text">。测试时不能直接知道真实 </span><span id="BzNA7" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fdbd61e2f55d0e4fd1d02885ff9a2682.svg"></span><span class="ne-text">，也不能直接得到 </span><span id="wNFHJ" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/5b617d4fcdab524c3ca62b76ea8cdcd0.svg"></span><span class="ne-text">，所以文章用高置信度测试样本的梯度外积来估计：</span></p><p id="u3b45bca6" class="ne-p" style="text-align: center"><span id="fPLri" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/9660970038c23d356831a721a956846a.svg"></span></p><p id="u62f1dfa2" class="ne-p"><span class="ne-text">然后对 </span><span id="yAoNl" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/2c17e1768175ff9529f6ee8c8b4cb609.svg"></span><span class="ne-text"> 做特征分解，取前 </span><span id="xfKkT" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 个主方向：</span></p><p id="u82f781af" class="ne-p" style="text-align: center"><span id="qoode" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/61a74118a9443c4a9011d29f1987b483.svg"></span></p><p id="u18bb23c4" class="ne-p"><span class="ne-text">这个 </span><span id="fqbXI" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ddb63b1f5daac50985d3302eb4e47cf5.svg"></span><span class="ne-text"> 就是 AGOP 估计出的 golden subspace。</span></p><p id="u2b269b09" class="ne-p"><span class="ne-text">图 </span><span id="VC9QP" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/d9a298fbb86a1f1ba51a245fa2a7fce3.svg"></span><span class="ne-text"> 做的事情就是比较：</span></p><p id="ubb3e1b68" class="ne-p" style="text-align: center"><span id="ZGxtm" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/8017b6bcc516c18a9afe974eb1faf734.svg"></span></p><p id="u86c8adc0" class="ne-p"><span class="ne-text">之间有多像。</span></p><p id="u594faea8" class="ne-p"><span class="ne-text">相似度一开始低，说明刚初始化时 AGOP 还没有积累足够的目标域信息，估计方向不稳定。随着测试样本不断流入，AGOP 通过 EMA 累积更多梯度统计：</span></p><p id="ufc9be6f5" class="ne-p" style="text-align: center"><span id="AAopd" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ad5fea58d84b26653e58a7acd881e058.svg"></span></p><p id="u7f59d34f" class="ne-p"><span class="ne-text">于是它捕捉到的主方向越来越接近真实需要调整的方向。相似度超过 </span><span id="qIh0p" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6f0f7feb0abbd6693c4e1b9804b8f0f7.svg"></span><span class="ne-text">，说明主方向大体对齐；稳定在 </span><span id="NaZ39" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/81c282fc25e08d313f7c37be5beb8b01.svg"></span><span class="ne-text"> 以上，说明估计子空间和理论黄金子空间几乎一致。</span></p><p id="uc6349ddd" class="ne-p"><span class="ne-text">所以这句话的含义是：</span></p><p id="udf9da32a" class="ne-p"><strong><span class="ne-text">虽然 GOLD 在测试时不知道真正的最优特征修正方向，但 AGOP 可以通过当前测试样本的梯度敏感性，在线估计出非常接近的方向集合。</span></strong></p><p id="u55215bfa" class="ne-p"><span class="ne-text">为什么这能说明泛化能力强？因为如果适应方向接近真实 golden subspace，那么模型做的更新更可能是“有效修正输出”的方向，而不是被噪声伪标签带着乱改。换句话说：</span></p><p id="u94abe57c" class="ne-p" style="text-align: center"><span id="RGhP2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/b8e473792e9c311d3b91e1fb75b13fa8.svg"></span></p><p id="u558dd576" class="ne-p"><span class="ne-text">这里的“泛化能力”不是指传统训练集到测试集的大泛化，而是指 CTTA 中：模型在持续变化的测试流上，能够稳定适应新域，同时不发生严重漂移。</span></p></details>
 为了量化黄金子空间的低秩特性，我们测量累积谱能量：
 
 $ \kappa(k) =
@@ -3505,27 +3652,31 @@ $ \kappa(k) =
 
 其中，$ \{\lambda_i\} $ 是 $ G $ 的特征值，并按降序排列。图 $ 2b $ 中的曲线显示，仅使用 $ 64 $ 到 $ 128 $ 个特征向量即可捕获 $ G $ 超过 $ 99\% $ 的谱能量，这证实了其显著的低秩集中性。这一经验事实证明了使用低维子空间引导持续自适应的合理性：这样做可以降低计算成本，同时严格控制表征漂移。
 
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784124862596-ad78c96a-87ca-4eff-931c-b71f9614655e.png" width="992" title="" crop="0,0,1,1" id="u06d36bcc" class="ne-image">
-
-> 图 $ 2 $。（a）随着测试过程推进，由 AGOP 推导出的子空间与由源域推导出的真实子空间之间的对齐程度。AGOP 能够快速收敛，并始终保持较高对齐度。（b）AGOP 谱的累积能量：前 $ 64 $ 到 $ 128 $ 个特征向量即可捕获超过 $ 99\% $ 的能量，表明其具有显著的低秩集中性。
->
-
+<details class="lake-collapse"><summary id="u71f75d4d"><span class="ne-text">解释说明</span></summary><p id="ucd6adc28" class="ne-p"><span class="ne-text">这句话是在说明：</span><strong><span class="ne-text">GOLD 估计出来的方向矩阵 </span></strong><span id="bzDBN" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><strong><span class="ne-text"> 虽然维度很高，但真正重要的方向很少。</span></strong></p><p id="uf62e821e" class="ne-p"><span class="ne-text">先看公式：</span></p><p id="u0e370e7c" class="ne-p" style="text-align: center"><span id="UtLpY" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/dc4ac00f11403f8e845f4abcba63b520.svg"></span></p><p id="u97d7c7e2" class="ne-p"><span class="ne-text">这里 </span><span id="zfE7e" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><span class="ne-text"> 做特征值分解：</span></p><p id="u634e799f" class="ne-p" style="text-align: center"><span id="F5xVL" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ddce7384953dba58c39214d55d0f9a25.svg"></span></p><p id="u647840f8" class="ne-p"><span class="ne-text">其中：</span></p><p id="ud951cad9" class="ne-p" style="text-align: center"><span id="l4LBC" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/3e9c9e0d619853aacaed3b40f49e4f73.svg"></span></p><p id="u838ad974" class="ne-p"><span class="ne-text">并且特征值按从大到小排列：</span></p><p id="ua2b2df6d" class="ne-p" style="text-align: center"><span id="fuMxn" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/dab0f5ea2c6ccc5342dc1fadb052554a.svg"></span></p><p id="u339506a2" class="ne-p"><span class="ne-text">每个特征值 </span><span id="cBbTg" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/6130e424a91207a7f061ba57a6166a3b.svg"></span><span class="ne-text"> 可以理解为：对应特征向量 </span><span id="caj43" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0480d9f663a9cd686bae9ee284ce1bbb.svg"></span><span class="ne-text"> 这个方向的重要程度，或者说这个方向包含多少“能量”。</span></p><p id="ub304b557" class="ne-p"><span class="ne-text">所以：</span></p><p id="u9dda1200" class="ne-p" style="text-align: center"><span id="FVe8a" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/918ae69aae5974423047874f21fbcd9d.svg"></span></p><p id="uca574e1a" class="ne-p"><span class="ne-text">表示前 </span><span id="yNVPs" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/df976ff7fcf17d60490267d18a1e3996.svg"></span><span class="ne-text"> 个最重要方向包含的能量；</span></p><p id="u6c332296" class="ne-p" style="text-align: center"><span id="WHO1f" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/de913f24bd0de127fbbf999ab40562bf.svg"></span></p><p id="ub623e1b0" class="ne-p"><span class="ne-text">表示所有方向的总能量。</span></p><p id="u5052c69c" class="ne-p"><span class="ne-text">因此 </span><span id="BjsUz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/29dec3b004c392d45464b6b75244c619.svg"></span><span class="ne-text"> 表示：</span></p><p id="u2d64218a" class="ne-p"><strong><span class="ne-text">只保留前 </span></strong><span id="sh9A6" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/df976ff7fcf17d60490267d18a1e3996.svg"></span><strong><span class="ne-text"> 个方向时，能保留整个矩阵 </span></strong><span id="IAaPu" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><strong><span class="ne-text"> 多少比例的信息。</span></strong></p><p id="ud56a4021" class="ne-p"><span class="ne-text">如果图 </span><span id="oNGPU" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f24813bfd7dc4fd593a1debad588e2e9.svg"></span><span class="ne-text"> 发现：</span></p><p id="u94896ed5" class="ne-p" style="text-align: center"><span id="wTdBa" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/bdb4679db3d8c14cbb408fa612f93fb0.svg"></span></p><p id="u4943500a" class="ne-p"><span class="ne-text">或者：</span></p><p id="uc7de244f" class="ne-p" style="text-align: center"><span id="unNZ1" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fd8f94e4872ce0be436ee0e894457062.svg"></span></p><p id="ua431d24c" class="ne-p"><span class="ne-text">说明前 </span><span id="mM9B4" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0893f5936b526ffa531efc7b1bda7bde.svg"></span><span class="ne-text"> 到 </span><span id="aUkwz" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/98a9f1a9d99619501a039b3e66daac04.svg"></span><span class="ne-text"> 个主方向已经解释了 </span><span id="YKnXH" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/f8df64a4bfdeb9bdcbc357668b6fb123.svg"></span><span class="ne-text"> 中超过 </span><span id="xSgSM" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/0eca4ec67aabb9ad84140233f4385d76.svg"></span><span class="ne-text"> 的信息，而后面大量方向只贡献很少。</span></p><p id="uca553300" class="ne-p"><span class="ne-text">这就是“低秩集中性”：虽然原始特征维度可能是：</span></p><p id="uc77f74af" class="ne-p" style="text-align: center"><span id="fz54V" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/395811cad023db468da24ec974dc85d3.svg"></span></p><p id="u08b1ecef" class="ne-p"><span class="ne-text">甚至更高，但真正有用的适应方向可能只有：</span></p><p id="u1691035c" class="ne-p" style="text-align: center"><span id="OUham" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/ad03b2a8627569f92c20daabdb63cd75.svg"></span></p><p id="udb8c3714" class="ne-p"><span class="ne-text">这对 GOLD 很重要，因为它证明了低秩适应不是随便压缩，而是有经验依据的。既然大部分能量集中在少数主方向，那么测试时只在这些方向上更新就足够：</span></p><p id="u2657d907" class="ne-p" style="text-align: center"><span id="wIXQ2" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/61a74118a9443c4a9011d29f1987b483.svg"></span></p><p id="u094e856c" class="ne-p"><span class="ne-text">然后只适应：</span></p><p id="u85f3ecce" class="ne-p" style="text-align: center"><span id="YmUVA" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/00ea1037206479e3c9a1f5cb41af8333.svg"></span></p><p id="u2a9a91cb" class="ne-p"><span class="ne-text">而不是完整特征：</span></p><p id="u92e24e05" class="ne-p" style="text-align: center"><span id="hMYN7" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/fcbf4f3e317548787c0f2c6e506cca1a.svg"></span></p><p id="u49139126" class="ne-p"><span class="ne-text">这样有两个直接好处。</span></p><p id="u805f1f17" class="ne-p"><span class="ne-text">第一，降低计算成本。原来可能要在 </span><span id="AFVYc" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/c895173d3be4872abf206be4268a58cb.svg"></span><span class="ne-text"> 维空间里更新，现在只在 </span><span id="fskhl" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/72cb3a229067770aeb6caa625a65a1a1.svg"></span><span class="ne-text"> 维空间里调整：</span></p><p id="u831f5476" class="ne-p" style="text-align: center"><span id="GFfv1" class="ne-math"><img src="https://cdn.nlark.com/yuque/__latex/cb5f448080eb1018ac6d39efdef8f948.svg"></span></p><p id="u293d9450" class="ne-p"><span class="ne-text">第二，控制表征漂移。因为更新被限制在少数高能量、输出敏感方向里，模型不能在无关方向上乱改。这样可以减少伪标签噪声造成的错误累积。</span></p><p id="u287effea" class="ne-p"><span class="ne-text">所以这句话的直观含义是：</span></p><p id="u3f1dceda" class="ne-p"><strong><span class="ne-text">黄金子空间不是整个高维特征空间，而是其中少数最关键方向；这些方向已经包含几乎全部对输出有用的变化信息，因此用它们来做 CTTA 既省又稳。</span></strong></p></details>
 最后，我们观察到，在实践中使用适中的低秩能够取得最佳权衡：较低的秩会带来更快的收敛和更高效的自适应，如图 $ 2a $ 所示；但过小的秩无法覆盖所有重要方向，如图 $ 2b $ 所示。因此，本文所有实验均采用适中的子空间维度 $ 64 $。
 
 ## 方法
-基于上述分析，我们得到两个关键洞察：1）黄金子空间确实存在，并且可以通过对分类器权重进行特征值分解直接获得；2）由测试样本计算得到的 AGOP 能够在不重新训练分类器的情况下，有效近似分类器权重的动态变化。基于这些发现，我们提出了引导式在线低秩方向自适应方法（Guided Online Low-rank Directional adaptation, GOLD），如图 $ 3 $ 所示。
+基于上述分析，我们得到两个关键洞察：
+
+1. 黄金子空间确实存在，并且可以通过对分类器权重进行特征值分解直接获得；
+2. 由测试样本计算得到的 AGOP 能够在不重新训练分类器的情况下，有效近似分类器权重的动态变化。
+
+基于这些发现，我们提出了引导式在线低秩方向自适应方法（Guided Online Low-rank Directional adaptation, GOLD），如图 $ 3 $ 所示。
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125379605-331bbcc1-4a6c-490b-8805-7c6145f38110.png" width="944" title="" crop="0,0,1,1" id="uf0c7f231" class="ne-image">
 
 > 图 $ 3 $。GOLD 概览：该方法维护一个在线 AGOP 估计器，并通过特征值分解从中提取前 $ r $ 个特征向量 $ V_t $，以构成黄金子空间。随后，应用一个秩为 $ r $ 的残差低秩适配器，用于学习轻量级缩放向量 $ S_t $。同时，自训练损失与基于原型的对比损失相结合，为模型提供稳定的监督信号。
 >
 
-GOLD 维护一个轻量级辅助矩阵 $ G_t $，该矩阵由分类器权重的内积初始化，并使用从高置信度测试样本计算得到的 AGOP 进行在线更新。对于每个测试批次，GOLD 分为两个阶段运行：在自适应阶段，骨干网络特征被投影到黄金子空间上，并通过一个紧凑的缩放向量 $ S $ 进行细化，从而实现轻量级特征自适应；在更新阶段，黄金子空间通过来自置信样本的 AGOP 被持续维护，同时缩放向量 $ S $ 通过自训练损失和基于原型的对比损失进行优化，从而实现稳定且无需源数据的持续自适应。
+GOLD 维护一个轻量级辅助矩阵 $ G_t $，该矩阵由分类器权重的内积初始化，并使用从<font style="color:#DF2A3F;background-color:#FBDE28;">高置信度测试样本</font>计算得到的 AGOP 进行在线更新。对于每个测试批次，GOLD 分为两个阶段运行：
+
++ 在自适应阶段，骨干网络特征被投影到黄金子空间上，并通过一个紧凑的缩放向量 $ S $ 进行细化，从而实现轻量级特征自适应；
++ 在更新阶段，黄金子空间通过来自置信样本的 AGOP 被持续维护，同时缩放向量 $ S $ 通过**自训练损失**和**基于原型的对比损失**进行优化，从而实现稳定且无需源数据的持续自适应。
 
 ### Pretraining and Prototype Extraction
 我们首先在带标签源域数据集 $ D_{\mathrm{src}} = \{(x_i^{\mathrm{src}}, y_i^{\mathrm{src}})\}_{i=1}^{N_{\mathrm{src}}} $ 上，使用标准监督损失，例如交叉熵，预训练一个基础模型 $ f_\theta = h_\psi \circ g_\phi $。收敛后，学习到的参数 $ \theta^\ast = (\phi^\ast, \psi^\ast) $ 会形成一个具有判别性的特征空间 $ \mathbb{R}^L $，其中同一类别的样本会构成紧凑的簇。随后，预训练特征提取器 $ g_{\phi^\ast} $ 会被冻结，用于后续的测试时自适应。
 
-对于每个类别 $ c \in \{1, \ldots, C\} $，我们将该类别所有源域样本嵌入的均值计算为类别原型：
+对于每个类别 $ c \in \{1, \ldots, C\} $，我们将该类别所有源域样本嵌入的均值计算为**<font style="color:#DF2A3F;background-color:#FBDE28;">类别原型</font>**：
 
 $ P_c =
 \frac{1}{|I_c|}
@@ -3539,14 +3690,16 @@ I_c = \{i \mid y_i^{\mathrm{src}} = c\} $
 
 $ P = [P_1, P_2, \ldots, P_C]^\top \in \mathbb{R}^{C \times L} $
 
-矩阵 $ P $ 作为一组语义锚点，即保留源域语义几何结构的类别级参考点。在部署过程中，我们从不访问源域样本。相反，我们仅保留在自适应前离线提取的预计算类别原型，并将其作为固定语义锚点贯穿整个测试时自适应过程。
+矩阵 $ P $ 作为**一组语义锚点**，即保留源域语义几何结构的类别级参考点。在部署过程中，我们从不访问源域样本。相反，我们仅保留在自适应前离线提取的**预计算类别原型**，并将其作为固定语义锚点贯穿整个测试时自适应过程。
 
 ### Subspace Projection and Adaptive Rescaling
 对于第 $ t $ 个测试批次，我们将输入批次记为 $ x_t \in \mathbb{R}^{B \times \cdot} $，并将提取到的特征写为：
 
 $ F_t = g_{\phi^\ast}(x_t) \in \mathbb{R}^{B \times L} $
 
-其中，$ F_t $ 的每一行 $ f \in \mathbb{R}^L $ 对应批次中的一个样本。我们引入子空间投影矩阵 $ V_t \in \mathbb{R}^{L \times r} $ 和缩放向量 $ S_t \in \mathbb{R}^r $。$ V_t $ 的 $ r $ 个列向量构成 $ \mathbb{R}^L $ 中一个低维子空间的基，而 $ S_t $ 则指定该子空间坐标的逐元素调制。
+其中，$ F_t $ 的每一行 $ f \in \mathbb{R}^L $ 对应批次中的一个样本。
+
+我们引入<font style="color:#DF2A3F;background-color:#FBDE28;">子空间投影矩阵</font> $ V_t \in \mathbb{R}^{L \times r} $ 和缩放向量 $ S_t \in \mathbb{R}^r $。$ V_t $ 的 $ r $ 个列向量构成 $ \mathbb{R}^L $ 中一个低维子空间的基，而 $ S_t $ 则指定该子空间坐标的逐元素调制。
 
 给定单个特征 $ f \in \mathbb{R}^L $，我们首先将其投影到黄金子空间：
 
@@ -3572,12 +3725,16 @@ $ F_t^{\mathrm{adapt}}
 =
 F_t + \left(S_t \odot (F_t V_t)\right)V_t^\top $
 
-在这一阶段，我们获得用于预测的自适应特征。那么，应该如何更新适配器的子空间和缩放向量？在第 $ 3.2 $ 节推导的指导下，我们在第 $ 4.3 $ 节提出了基于 AGOP 的投影更新，并在第 $ 4.4 $ 节提出了由自训练损失和基于原型的对比损失驱动的缩放向量更新。
+在这一阶段，我们获得用于预测的自适应特征。那么，应该如何更新适配器的子空间和缩放向量？
+
+在第 $ 3.2 $ 节推导的指导下，我们在第 $ 4.3 $ 节提出了基于 AGOP 的投影更新，并在第 $ 4.4 $ 节提出了由自训练损失和基于原型的对比损失驱动的缩放向量更新。
 
 ### AGOP-based Subspace Projection Update
-子空间投影旨在识别特征空间中最需要进行自适应的方向。根据第 $ 3.2 $ 节的分析，我们初始化一个辅助矩阵 $ G_0 = W^\top W $，它反映了源域分类器的全局几何结构。为了在目标域持续变化的情况下实现自适应，我们随后使用当前高置信度样本计算得到的 AGOP 对该矩阵进行在线更新。这种在线细化使子空间能够在不重新训练分类器的情况下逐步融入目标域信息，从而保证自适应过程既高效又稳定。
+子空间投影旨在识别特征空间中最需要进行自适应的方向。
 
-对于当前测试批次 $ x_t $，我们提取特征，并在自适应后的特征上计算 logits：
+根据第 $ 3.2 $ 节的分析，我们初始化一个辅助矩阵 $ G_0 = W^\top W $，它反映了源域分类器的全局几何结构。为了在目标域持续变化的情况下实现自适应，我们随后使用当前高置信度样本计算得到的 AGOP 对该矩阵进行在线更新。这种在线细化使子空间能够在不重新训练分类器的情况下逐步融入目标域信息，从而保证自适应过程既高效又稳定。
+
+对于当前测试批次 $ x_t $，我们提取特征，并在**自适应后的特征**上计算 logits：
 
 $ F_t = g_{\phi^\ast}(x_t) \in \mathbb{R}^{B \times L},
 \quad
@@ -3627,7 +3784,11 @@ $ V_t = [v_1, \ldots, v_r] \in \mathbb{R}^{L \times r} $
 因此，$ V_t $ 表示适配器被限制在其中的低秩子空间，使模型能够实现有效自适应，同时显著降低参数开销和计算开销。
 
 ### Scaling-Vector Update
-为了为缩放向量的更新提供更可靠的监督，我们采用 EMA 教师模型。令当前批次的学生 logits 为 $ Y_t = h_\psi(A(g_{\phi^\ast}(x_t))) $，教师 logits 为 $ Y_t^{\mathrm{ema}} = h_\psi^{\mathrm{ema}}(g_{\phi^\ast}(x_t)) $。同时，我们将同一批次的增强视图 $ x_t^+ $ 上计算得到的 logits 记为 $ Y_t^+ = h_\psi(A(F_t^+)) $。同时使用原始视图和增强视图，可以鼓励模型对真实输入扰动产生不变的预测，从而减少对伪相关特征的过拟合。
+为了为缩放向量的更新提供更可靠的监督，我们采用 EMA 教师模型。
+
+令当前批次的学生 logits 为 $ Y_t = h_\psi(A(g_{\phi^\ast}(x_t))) $，教师 logits 为 $ Y_t^{\mathrm{ema}} = h_\psi^{\mathrm{ema}}(g_{\phi^\ast}(x_t)) $。
+
+同时，我们将同一批次的增强视图 $ x_t^+ $ 上计算得到的 logits 记为 $ Y_t^+ = h_\psi(A(F_t^+)) $。同时使用原始视图和增强视图，可以鼓励模型对真实输入扰动产生不变的预测，从而减少对伪相关特征的过拟合。
 
 **自训练一致性损失。** EMA 教师模型为原始视图和增强视图提供稳定的目标。我们使用 SCE（Symmetric Cross Entropy，对称交叉熵）损失：
 
@@ -3639,7 +3800,9 @@ $ \mathcal{L}_{\mathrm{st}}
 
 直观而言，第一项约束学生模型在原始视图上的预测与稳定的 EMA 目标保持一致，而第二项约束增强视图产生相同的稳定预测。这些项能够提升鲁棒性，并减少由噪声伪标签带来的确认偏差。
 
-**基于原型的对比损失。** 为了进一步将自适应后的特征锚定到源域语义上，我们构造了一个基于原型的对比目标。对于每个样本 $ i $，我们通过余弦相似度找到最近的源域原型 $ k(i) $。使用三元组 $ [P_{k(i)}, f_i, f_i^+] $，其中 $ f_i^+ $ 是增强视图的特征，我们鼓励原始特征和增强特征都与所选原型对齐，同时与其他原型保持区分。一个实际实现是使用 InfoNCE 风格的损失，并在两个视图上取平均：
+**基于原型的对比损失。** 为了进一步将自适应后的特征锚定到源域语义上，我们构造了一个基于原型的对比目标。
+
+对于每个样本 $ i $，我们通过余弦相似度找到最近的源域原型 $ k(i) $。使用三元组 $ [P_{k(i)}, f_i, f_i^+] $，其中 $ f_i^+ $ 是增强视图的特征，我们鼓励原始特征和增强特征都与所选原型对齐，同时与其他原型保持区分。一个实际实现是使用 InfoNCE 风格的损失，并在两个视图上取平均：
 
 $ \mathcal{L}_{\mathrm{cont}}
 =
@@ -3679,39 +3842,55 @@ $ \mathcal{L}
 ### Dataset and Settings
 我们在 CIFAR10-C、CIFAR100-C 和 ImageNet-C 上评估 GOLD，这些数据集是标准鲁棒性基准，包含 $ 15 $ 种腐蚀类型，严重程度分为 $ 1 $ 到 $ 5 $ 级。我们使用 CIFAR10、CIFAR100 和 ImageNet 的干净训练集作为源域，并将其对应的腐蚀版本作为目标域。模型以在线方式顺序适应严重程度为 $ 5 $ 的全部 $ 15 $ 种腐蚀类型，并且不提供域变化通知。对于每种腐蚀类型，CIFAR 系列数据集使用 $ 10{,}000 $ 张图像，ImageNet-C 使用 $ 5{,}000 $ 张图像。
 
-我们严格遵循 CTTA 协议，不访问任何源域数据。我们将本文方法与已有和当前先进的 CTTA 方法进行比较，所有方法均在相同条件下进行在线评估。对于所有数据集，我们均使用最高腐蚀严重程度 $ 5 $。模型预测在适应当前测试流之前生成。我们采用标准预训练模型作为源模型：CIFAR10-C 使用 WideResNet-28，CIFAR100-C 使用 ResNeXt-29，ImageNet-C 使用 ResNet-50。基线方法和实现细节的完整描述见补充材料。
+我们严格遵循 CTTA 协议，不访问任何源域数据。我们将本文方法与已有和当前先进的 CTTA 方法进行比较，所有方法均在相同条件下进行在线评估。对于所有数据集，我们均使用最高腐蚀严重程度 $ 5 $。模型预测在适应当前测试流之前生成。
+
+我们采用标准预训练模型作为源模型：CIFAR10-C 使用 WideResNet-28，CIFAR100-C 使用 ResNeXt-29，ImageNet-C 使用 ResNet-50。基线方法和实现细节的完整描述见补充材料。
 
 ### Main Results
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125662127-34f5b39b-c41a-49e7-8daf-a87bf975d031.png" width="1003" title="" crop="0,0,1,1" id="u5e307243" class="ne-image">
 
-> 表 $ 1 $。CTTA 设定下，CIFAR10-C、CIFAR100-C 和 ImageNet-C 上的在线分类错误率（$ \% $）。所有方法均在严重程度 $ 5 $ 下进行在线评估，本文方法的结果为 $ 5 $ 次独立运行的平均值。每种腐蚀类型下的最佳性能以粗体标出，次优性能以下划线标出。
+> 表 $ 1 $。CTTA 设定下，CIFAR10-C、CIFAR100-C 和 ImageNet-C 上的在线分类**错误率**（$ \% $）。所有方法均在严重程度 $ 5 $ 下进行在线评估，**本文方法的结果为 **$ 5 $** 次独立运行的平均值**。每种腐蚀类型下的最佳性能以粗体标出，次优性能以下划线标出。
 >
 
-表 $ 1 $ 展示了在 CTTA 设定下，不同方法在三个基准数据集上的分类错误率（越低越好），所有结果均在最高腐蚀严重程度 $ 5 $ 下评估。我们提出的 GOLD 在所有基准上都取得了当前最佳性能，表明其在处理多种腐蚀类型时具有稳定有效性。在 CIFAR10-C 上，GOLD 达到了 $ 14.1\% $ 的平均错误率，优于所有对比方法，并且在散焦模糊和运动模糊等几何挑战性腐蚀上表现尤为突出。在 CIFAR100-C 上，GOLD 的优势更加明显，显著超过 CoTTA 和 TENT，说明其在处理细粒度分类任务时具有更强能力。对于 ImageNet-C，GOLD 依然保持了这一竞争优势，取得了最佳整体性能，并在不同规模的数据集上展现出一致的鲁棒性。这些结果共同验证了 GOLD 在多样化连续测试时自适应场景中的有效性。
+表 $ 1 $ 展示了在 CTTA 设定下，不同方法在三个基准数据集上的**<font style="color:#DF2A3F;background-color:#FBDE28;">分类错误率（越低越好）</font>**，所有结果均在最高腐蚀严重程度 $ 5 $ 下评估。我们提出的 GOLD 在所有基准上都取得了当前最佳性能，表明其在处理多种腐蚀类型时具有稳定有效性。在 CIFAR10-C 上，GOLD 达到了 $ 14.1\% $ 的平均错误率，优于所有对比方法，并且在散焦模糊和运动模糊等几何挑战性腐蚀上表现尤为突出。在 CIFAR100-C 上，GOLD 的优势更加明显，显著超过 CoTTA 和 TENT，说明其在处理细粒度分类任务时具有更强能力。对于 ImageNet-C，GOLD 依然保持了这一竞争优势，取得了最佳整体性能，并在不同规模的数据集上展现出一致的鲁棒性。这些结果共同验证了 GOLD 在多样化连续测试时自适应场景中的有效性。
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125704087-fb04eafd-66d0-4904-a2ed-297744846df2.png" width="473" title="" crop="0,0,1,1" id="ue6e94d93" class="ne-image">
 
 > 表 $ 2 $。在 CIFAR10-C、CIFAR100-C 和 ImageNet-C 数据集上，对两个组件（$ G_t $ 和 $ S_t $）进行的消融实验。
 >
 
-如表 $ 2 $ 所示，我们进行了消融实验，以研究黄金子空间估计和损失组件的影响。对于子空间构建，我们比较了三种变体：$ (1) $ 不使用子空间投影；$ (2) $ 使用 $ W^\top W $ 的特征值分解进行初始化，这一设计由公式 $ (1) $ 启发；$ (3) $ 采用本文提出的基于 AGOP 的在线更新。结果表明，子空间投影能够有效抑制过度的参数更新，并稳定自适应过程。使用 $ W^\top W $ 的特征空间作为朴素初始化验证了我们的理论洞察，并为自适应提供了快速且稳定的 warm start。此外，基于 AGOP 的在线更新会持续细化黄金子空间，使模型能够动态对齐不断变化的域统计信息，并取得更优的长期性能。对于缩放向量更新，我们还评估了对比损失 $ \mathcal{L}_{\mathrm{cont}} $ 的影响，该损失进一步增强了模型鲁棒性，并有助于保留源域语义结构，从而有效缓解持续自适应过程中的特征漂移。
+如表 $ 2 $ 所示，我们进行了消融实验，以研究黄金子空间估计和损失组件的影响。对于子空间构建，我们比较了三种变体：$ (1) $ 不使用子空间投影；$ (2) $ 使用 $ W^\top W $ 的特征值分解进行初始化，这一设计由公式 $ (1) $ 启发；$ (3) $ 采用本文提出的基于 AGOP 的在线更新。
+
+结果表明，子空间投影能够有效抑制过度的参数更新，并稳定自适应过程。使用 $ W^\top W $ 的特征空间作为朴素初始化验证了我们的理论洞察，并为自适应提供了快速且稳定的 warm start。
+
+此外，基于 AGOP 的在线更新会持续细化黄金子空间，使模型能够动态对齐不断变化的域统计信息，并取得更优的长期性能。
+
+对于缩放向量更新，我们还评估了对比损失 $ \mathcal{L}_{\mathrm{cont}} $ 的影响，该损失进一步增强了模型鲁棒性，并有助于保留源域语义结构，从而有效缓解持续自适应过程中的特征漂移。
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125773886-689ab234-33e8-4ad0-8d20-b78f90f83144.png" width="568" title="" crop="0,0,1,1" id="u7cb4796f" class="ne-image">
 
 > 图 $ 4 $。方法效率对比。纵轴表示每种方法在每个测试批次中完成自适应和预测所需的时间。
 >
 
-图 $ 4 $ 展示了不同方法在多个基准上的每批处理时间。即使测试数据变得更加复杂，GOLD 仍然稳定保持约 $ 0.25 $ 秒的平均运行时间，与现有最快方法 SANTA 相当，同时取得了显著更好的性能。
+图 $ 4 $ 展示了不同方法在多个基准上的每批处理时间。
+
+即使测试数据变得更加复杂，GOLD 仍然稳定保持约 $ 0.25 $ 秒的平均运行时间，与现有最快方法 SANTA 相当，同时取得了显著更好的性能。
 
 ### Experiments on Segmentation CTTA
-在 CarlaTTA 基准下，该基准是一个基于 CARLA 仿真器构建的合成数据集，用于评估城市道路场景分割中的渐进式测试时自适应。我们模拟了五种持续演化且未知的真实世界环境条件，包括：day2night（白天到夜晚）、clear2fog（晴朗到有雾）、clear2rain（晴朗到下雨）、dynamic（多种变化条件组合）以及 highway（从城市场景过渡到高速公路场景，同时引入标签分布偏移）。该实验的目标是评估模型在这些复杂且持续变化的驾驶场景下的在线自适应能力。评估通过计算整个测试序列上的平均交并比 $ \mathrm{mIoU} $ 来完成。详细实验配置见补充材料。
+在 CarlaTTA 基准下，该基准是一个基于 CARLA 仿真器构建的合成数据集，用于评估城市道路场景分割中的渐进式测试时自适应。
 
-<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125913121-b5df149e-43df-49f8-8265-ade4d70c8077.png" width="619" title="" crop="0,0,1,1" id="u1622c8d0" class="ne-image">
+我们模拟了五种持续演化且未知的真实世界环境条件，包括：day2night（白天到夜晚）、clear2fog（晴朗到有雾）、clear2rain（晴朗到下雨）、dynamic（多种变化条件组合）以及 highway（从城市场景过渡到高速公路场景，同时引入标签分布偏移）。
+
+该实验的目标是评估模型在这些复杂且持续变化的**驾驶场景下的在线自适应能力**。评估通过计算整个测试序列上的平均交并比 $ \mathrm{mIoU} $ 来完成。详细实验配置见补充材料。
+
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125913121-b5df149e-43df-49f8-8265-ade4d70c8077.png" width="592" title="" crop="0,0,1,1" id="u1622c8d0" class="ne-image">
 
 > 表 $ 3 $。CarlaTTA 上渐进式域偏移下语义分割的定量结果。我们报告五个测试序列上的 $ \mathrm{mIoU} $（$ \% $）。最佳结果以粗体标出，次优结果以下划线标出。
 >
 
-定量结果如表 $ 3 $ 所示。与 Source、MEMO、TENT 和 CoTTA 等强基线相比，我们提出的 GOLD 方法在五种域偏移场景中均取得了具有竞争力的性能。具体而言，GOLD 在三个序列上取得了最高的 $ \mathrm{mIoU} $：day2night、clear2fog 和 highway。尤其是在具有挑战性的 highway 序列上，该场景同时包含协变量偏移和标签分布偏移，GOLD 以明显优势超过了所有其他方法。尽管 CoTTA 在 highway 上也表现较强，但 GOLD 仍进一步提升了 $ 0.7\% $。这些结果表明，GOLD 作为一种轻量级方法，在计算效率更高的同时，能够取得与 CoTTA 相当的性能。
+定量结果如表 $ 3 $ 所示。与 Source、MEMO、TENT 和 CoTTA 等强基线相比，我们提出的 GOLD 方法在五种域偏移场景中均取得了具有竞争力的性能。
+
+具体而言，GOLD 在三个序列上取得了最高的 $ \mathrm{mIoU} $：day2night、clear2fog 和 highway。尤其是在具有挑战性的 highway 序列上，该场景同时包含协变量偏移和标签分布偏移，GOLD 以明显优势超过了所有其他方法。尽管 CoTTA 在 highway 上也表现较强，但 GOLD 仍进一步提升了 $ 0.7\% $。这些结果表明，GOLD 作为一种轻量级方法，在计算效率更高的同时，能够取得与 CoTTA 相当的性能。
 
 <img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1784125943449-f5f7c10a-599d-499b-b402-9aec1b5c6e2d.png" width="939" title="" crop="0,0,1,1" id="u4119e35d" class="ne-image">
 
@@ -3930,3 +4109,595 @@ $ p_c = \frac{1}{N_c}\sum_{i:y_i=c} f_i $
 >
 
 **结果。** 表 $ S4 $ 报告了不同方法在 CIFAR10-C 的 $ 10 $ 轮持续自适应设定下的平均错误率。与已有 CTTA 方法相比，GOLD 取得了最佳性能，错误率为 $ 14.15\% $，表明其在持续自适应过程中具有更强稳定性和更好的长期泛化能力。这些结果说明，将更新限制在动态估计的黄金子空间中，可以有效缓解参数漂移，并在长时间范围内维持自适应质量。
+
+# 十一、<font style="color:rgb(23, 23, 23);">Turning Adaptation into Assets: Cross-Domain Bridging for Online Vision-Language Navigation_ICML(2026)</font>
+> <font style="color:rgb(23, 23, 23);">将适应转化为资产：用于在线视觉语言导航的跨域桥接</font>
+>
+
+## <font style="color:rgb(23, 23, 23);">摘要部分</font>
+<font style="color:rgb(23, 23, 23);">在真实环境中部署的视觉语言导航（Vision-and-Language Navigation，VLN）智能体，在面对非平稳环境分布变化时，导航会面临关键挑战。然而，现有面向 VLN 的测试时适应（Test-Time Adaptation，TTA）方法，大多将在线适应视为短暂且彼此孤立的更新过程，从而导致灾难性遗忘和负迁移。为解决这些问题，我们提出了带有</font>**<font style="color:#DF2A3F;">历史资产</font>**<font style="color:rgb(23, 23, 23);">的跨域桥接方法（Inter-Domain BridgE with Historical Assets，</font>**<font style="color:#601BDE;background-color:#FDE6D3;">IDEA</font>**<font style="color:rgb(23, 23, 23);">），这是一种新的 TTA 框架，可将适应过程转化为资产的积累与组合。</font>
+
+<font style="color:rgb(23, 23, 23);">具体而言，IDEA 引入了</font>**<font style="color:rgb(23, 23, 23);">通过 </font>****<font style="color:#DF2A3F;">Fisher</font>****<font style="color:rgb(23, 23, 23);"> 引导加权方案优化的软提示</font>**<font style="color:rgb(23, 23, 23);">，以捕获可迁移知识。随后，这些优化后的提示会结合域坐标进行增强，形成一个动态资产库。基于该资产库，IDEA 通过将目标域投影到历史知识的凸包上来构建跨域桥梁。这些设计形成了一个互补闭环：不断演化的资产库支撑桥梁构建，而桥梁又提供更优的初始化，以加速资产优化。</font>
+
+<font style="color:rgb(23, 23, 23);">在 REVERIE、R2R 和 R2R-CE 基准上的大量实验表明，IDEA 始终优于现有方法，展现出其通过资产共享实现免训练适应的能力。</font>
+
+## 引言部分
+视觉语言导航（Vision-and-Language Navigation，VLN）是一项基础性的具身任务，它使智能体能够将语言指令落地为一系列动作，从而到达目标位置。在真实世界导航中，其环境很少会像训练时那样处于精心构造的条件下，因为智能体不可避免地会遇到未见过的环境，在这些环境中，不同回合之间的视觉外观和空间布局都可能存在显著差异。此外，VLN 还表现出快速的回合内变化，沿着轨迹推进时，观测会发生明显改变。这种动态分布偏移会导致性能显著下降，从而对其在开放世界中的可靠部署构成关键挑战。
+
+为了以尽可能小的开销缓解分布偏移，测试时适应（Test-Time Adaptation，TTA）已成为一种关键范式，它能够通过**<u>在线更新</u>**使模型适应目标分布。在具身导航中，现有 TTA 方法大体可以分为两类。
+
++ **<u>不确定性自训练</u>**利用**<font style="color:#DF2A3F;background-color:#E8F7CF;">熵</font>**度量驱动逐步更新，从而改进行动选择。
++ **<u>反馈驱动适应</u>**则引入来自基础模型（foundation models，FMs）或人类反馈的纠正信号；然而，FMs 的高推理成本使得这类指导难以应用于实时部署。
+
+鉴于 VLN 中场景切换频繁，这两类方法都依赖持续适应，以与不断演化的输入流保持对齐。
+
+尽管具有这些优势，当前研究通常将在线 VLN 建模为一系列彼此孤立的域迁移任务，忽略了**<font style="color:#DF2A3F;background-color:#FCE75A;">重复出现</font>**或**<font style="color:#DF2A3F;background-color:#FCE75A;">相关上下文之间</font>**的关联。这带来了两个关键瓶颈：
+
+1. **<font style="color:#601BDE;">灾难性遗忘</font>**。固定参数集上的在线更新往往会覆盖早期适应结果，从而在重新访问场景时削弱利用历史经验的能力。
+2. **<font style="color:#601BDE;">负迁移</font>**。在未建模域间关系的情况下，从某一上下文中得到的更新可能会被盲目应用到与其差异较大的另一个上下文中，进而引入不匹配的先验并降低性能。这些问题造成了适应工作的浪费，也阻碍了在大规模环境中构建可迁移知识。
+
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1787071425069-fad4367d-1681-47c2-bce6-2443b4a816f3.png" width="988" title="" crop="0,0,1,1" id="XpP7y" class="ne-image">
+
+> 图 1. VLN 中不同适应建模方式的示意图。(a) 以往方法：一系列彼此孤立的域迁移任务。(b) 我们的方法：将适应过程转化为可组合资产的积累与复用。
+>
+
+为应对这些挑战，我们提出了一种新的 TTA 框架“**<u>Inter-Domain BridgE with Historical Assets (IDEA)</u>**”，它将 VLN 适应重新表述为**<u>跨相关域的知识积累与组合过程</u>**。
+
+IDEA 采用“**<font style="background-color:#FBDE28;">知识即资产</font>**”的视角：**它不再将过往训练视为短暂的或特定于某个域的过程，而是将历史知识逐步提炼进一个****<u><font style="color:#4861E0;">轻量</font></u>****<font style="color:#4861E0;">且具备</font>****<u><font style="color:#4861E0;">上下文感知能力</font></u>****<font style="color:#4861E0;">的资产库</font>****中**。这一结构化仓库通过保留历史信息直接缓解遗忘问题，同时允许对资产进行选择性检索与重组，以避免负迁移。基于该资产库，IDEA 进一步识别出一条通往**目标域**的免训练捷径，构建最优桥梁，从而有效绕过漫长的适应轨迹。
+
+具体而言，IDEA 引入**紧凑型提示（prompts）**来编码**适应知识**，并通过优化这些提示缩小表示空间中的源域与目标域差距。
+
++ 为增强知识的可迁移性，我们提出了一种 Fisher 引导加权方案，用以自适应地优先关注对策略敏感的参数，从而将**任务关键先验**与**域特定噪声**区分开。随后这些优化后的提示被进一步结合域坐标，形成可复用的资产。
++ 在资产库基础上，我们在 **Wasserstein 距离**下搜索目标域在由历史资产张成的凸包上的最近投影，进而生成一座跨域桥梁，以缩短适应路径。为了保持这一步骤的轻量性，我们基于** KKT 条件**推导出闭式解，从而避免使用迭代求解器。
++ 这两项设计构成了一个互补闭环：随着资产库不断演化，它为桥梁构建提供了更丰富的组成单元；而桥梁又反过来提供更优的初始化，从而加速后续的资产优化。
+
+我们通过在离散 VLN 基准 REVERIE 和 R2R 上的实验评估了该方法的有效性与泛化性，取得了最先进的结果，平均带来了 +2.5% 的 SR 提升和 +1.9% 的 SPL 提升。此外，我们还展示了其在连续基准 R2R-CE 中应对分布变化时的优越性能，相比现有方法取得了稳定收益。
+
+**贡献**
+
+1. 我们首次将适应知识转化为结构化资产，为 VLN 中的测试时适应开创了一种即插即用的复用范式。
+2. 我们提出了一种新的 TTA 框架 IDEA，其中引入 Fisher 引导的提示调优以编码可迁移知识，并构建基于投影的桥梁，为目标域提供一条免训练捷径。
+3. 我们给出了理论分析，证明我们的桥接机制能够稳定降低未见目标域上的泛化风险。
+4. 在四种模型和三个基准上的大量实验表明，IDEA 具有显著优势。此外，我们还验证了资产库的可迁移性，展示了其通过可扩展共享来帮助新智能体绕过冷启动阶段的潜力。
+
+## 相关工作
+### 视觉语言导航
+视觉语言导航（Vision-Language Navigation，VLN）要求具身智能体根据语言指令和视觉观测，在三维环境中导航至目标位置。从模型架构来看，早期方法将 VLN 建模为一个序列决策问题，采用循环神经网络（RNN）将感知输入映射为动作。随后，基于 Transformer 的多模态预训练兴起并逐渐成为主流范式，借助大规模预训练来编码稳健的跨模态对齐能力。
+
+为优化这类架构，现有方法主要依赖**离线模仿学习**来复制专家行为。许多工作还结合强化学习，在固定的监督轨迹之外进一步优化策略。尽管取得了这些进展，当前方法通常仍建立在静态的“训练后部署”范式之上，忽视了对测试时数据的利用。如果智能体能够在测试过程中持续积累知识，其实际应用价值将得到显著提升。
+
+### 测试时适应
+测试时适应（Test-Time Adaptation，TTA）旨在提升模型在推理阶段处理分布外样本时的性能。现有 TTA 方法通常依赖不确定性最小化、批归一化校准，或辅助性的自监督任务（例如掩码重建）来提供有效的代理信号，以缩小域间差距。
+
+在导航场景中，相关探索主要分为两类：不确定性最小化和反馈驱动适应。前者侧重于在时间序列上施加一致性约束，以缓解不确定性；后者则利用基础模型或人类交互作为指导，为强化学习提供奖励信号。然而，这些方法通常将适应过程视为彼此孤立的任务，未能积累可复用的知识，因此难以支持高效、长期的泛化。
+
+## 预备知识
+### 任务定义
+我们考虑**<u>流式测试时设定</u>**下的视觉语言导航（Vision-and-Language Navigation，VLN）任务。给定一个由参数 $ \theta $ 参数化的预训练策略 $ \pi_\theta $。在测试过程中，智能体会接收一系列导航任务 $ \mathcal{X}=\{X_1,\ldots,X_N\} $。每个任务 $ X_i=(I_i,s_0) $ 由一条自然语言指令 $ I_i $ 和初始位置 $ s_0 $ 处的 $ 360^\circ $ 全景视觉观测组成。从 $ s_0 $ 出发，智能体迭代地选择动作，直到选择停止动作为止，从而生成一条轨迹：
+
+$ \tau_i=\{(s_t,a_t)\}_{t=0}^{T_i-1},\quad a_t\sim \pi_\theta(\cdot \mid s_t, I_i), \tag{1} $
+
+其中，$ T_i $ 表示任务 $ X_i $ 的总步数。
+
+### 模型架构
+在导航过程中，策略模型会逐步构建一个无向探索图 $ G_t=(V_t,E_t) $，其中 $ V_t $ 表示可导航节点，$ E_t $ 表示这些节点之间的连通关系。模型通过一个**双分支编码器**处理当前状态：
+
++ 视觉分支利用预训练的 Vision Transformer，从 $ G_t $ 中提取节点级别的 token，记为 $ V_t\in\mathbb{R}^{N\times C} $；
++ 语言分支则将指令 $ I $ 编码为一个固定嵌入 $ I\in\mathbb{R}^{C} $。
+
+随后，模型使用多层 Transformer 将视觉 token $ V_t $ 与指令嵌入 $ I $ 进行融合，得到一组多模态表示：
+
+$ Z_t=\phi(V_t,I),\quad Z_t=\{z_i\}_{i=1}^{N}\in\mathbb{R}^{N\times C}, \tag{2} $
+
+其中，$ \phi(\cdot) $ 表示融合函数，$ z_i $ 表示第 $ i $ 个候选节点对应的融合特征，$ N $ 表示候选节点数量，$ C $ 表示特征维度。最后，决策头将每个 $ z_i $ 映射为一个标量分数，并通过选择得分最高的候选节点来输出下一步动作。
+
+## 方法
+本文提出 IDEA（Inter-Domain BridgE with Historical Assets，基于历史资产的跨域桥接），一种面向视觉语言导航（VLN）的新型测试时自适应（TTA）框架。IDEA 包含两个核心设计：**带敏感度感知对齐的域资产库**（第 4.1 节），以及**基于凸包投影的桥接构建机制**（第 4.2 节）。这两个组件协同作用，以实现高效、鲁棒的自适应以及持续的知识复用。框架概览如图 2 所示。
+
+<img src="https://cdn.nlark.com/yuque/0/2026/png/65892569/1787479204376-d218927d-c3a1-41cd-a3ea-b2820ae16ffd.png" width="1523" title="" crop="0,0,1,1" id="u7c1409bc" class="ne-image">
+
+> 图 2. 我们提出的 IDEA 方法概述。  
+>
+> (a) VLN 模型的元框架：双编码器提取多模态词元，随后经过融合 Transformer 和决策头。  
+>
+> (b) IDEA 通过我们推导的 Fisher 引导加权项，针对融合层进行具备敏感性感知的对齐优化软提示，从而形成三元组结构的资产（第 4.1 节）。  
+>
+> (c) 借助资产库，IDEA 通过计算历史资产所张成凸包上的最优投影，找到高效的适应捷径（第 4.2 节）。
+>
+
+### 将自适应转化为资产
+现有的 VLN 自适应方法通常将优化建模为一系列孤立的迁移任务，导致知识被覆盖，且忽略了域间联系。为打破这种孤立状态，我们将自适应重新表述为**可移植资产的持续积累**，从域特定更新转向解耦的知识存储。理想情况下，这些资产应具备即插即用、可迁移和可检索的特性，从而实现无缝集成与复用。为此，我们构建了一种配备敏感度感知对齐的基于提示的表示，作为资产库的基本构建单元。
+
+**软视觉提示。** 为实现即插即用机制，我们将每条知识表示为 $ L $ 个可学习提示令牌 $ P := \{p_i\}_{i=1}^{L} $，其中 $ p_i \in \mathbb{R}^{C} $。在导航步骤 $ t $，视觉编码器输出节点级视觉令牌 $ V_t \in \mathbb{R}^{N \times C} $。我们通过将软提示追加到令牌序列中来将其注入视觉令牌，得到：
+
+$ \tilde{V}_t = [P; V_t] \in \mathbb{R}^{(L+N) \times C}. \tag{3} $
+
+随后，这些增强后的令牌 $ \tilde{V}_t $ 与指令嵌入一起被送入跨模态融合模块。通过这种方式，提示可以在不修改冻结策略参数的情况下引导视觉-语言对齐。
+
+**多层对齐。** 为了构建可复用的知识资产，学习得到的提示必须有效弥合目标环境与源域训练骨干网络之间的分布差距。我们将源域潜在空间作为稳健锚点，引入一种层次化对齐机制，对加入提示后的表示进行正则化，使其与源域统计量相匹配。通过将跨模态融合函数 $ \phi $ 分解为 $ M $ 层，知识资产可以在不同抽象层级上捕获结构性的分布偏移。
+
+形式上，我们使用一小部分源域数据（128 个样本）预先计算源域特征统计量（均值和标准差），记为 $ \Gamma_S^{(l)}=\{\mu_S^{(l)},\sigma_S^{(l)}\} $，其中 $ l\in\{1,\ldots,M\} $。在每个导航步骤 $ t $，注入 $ P $ 后，我们从第 $ l $ 层提取融合 token $ Z_t^{(l)}(P) $，并在可导航节点上估计其在线统计量 $ \Gamma_t^{(l)}(P) $。随后，通过如下矩匹配损失优化提示，以最小化分布差异：
+
+$ d^{(l)}(P)=\|\mu_S^{(l)}-\mu_t^{(l)}(P)\|_2+\|\sigma_S^{(l)}-\sigma_t^{(l)}(P)\|_2. \tag{4} $
+
+其中，$ \|\cdot\|_2 $ 表示 $ L_2 $ 范数。为了实现自适应对齐，最终目标采用加权求和形式，其中 $ \alpha_l $ 控制第 $ l $ 层对资产构建的贡献：
+
+$ P^\star=\arg\min_P \sum_{l=1}^{M}\alpha_l d^{(l)}(P). \tag{5} $
+
+**Fisher 引导加权。** 为了增强资产的可迁移性，我们约束提示捕获可迁移的任务先验，同时抑制其对域特定因素的过拟合。我们的直觉在于区分“虚假对齐”和“功能性对齐”：如果某一层的优化仅仅有助于统计匹配，却无法影响策略决策，那么这说明该适应过程只是在拟合无关的分布噪声。相反，能够显著影响输出的动态变化，则反映了任务关键语义的编码。因此，我们分析每一层表示相对于决策输出的敏感性，并以此指导加权过程。
+
+原则上，这种敏感性可以通过策略目标的曲率来衡量，即 Hessian 矩阵。该二阶量描述了策略输出如何响应给定参数中的扰动。然而，在在线推理中计算 Hessian 的代价过高，这一点可以由如下分解看出：
+
+$ H(z)=\nabla_z^2(-\log\pi(a\mid z))
+=-\nabla_z \frac{\nabla_z\pi(a\mid z)}{\pi(a\mid z)} $
+
+$ =-\frac{\pi(a\mid z)\nabla_z^2\pi(a\mid z)-\nabla_z\pi(a\mid z)\nabla_z\pi(a\mid z)^\top}{\pi(a\mid z)^2}, \tag{6} $
+
+其中，$ H(z) $ 表示表示 $ z $ 的 Hessian 矩阵。为减轻计算负担，我们使用一阶梯度推导出 Hessian 的一个可处理代理。由于测试时无法获得真实动作，我们将模型预测视为软标签，并对策略分布取期望来重写损失。在该框架下，期望 Hessian 可化简为 Fisher 信息矩阵，且只需一次梯度计算：
+
+$ \Phi(z):=\mathbb{E}_{a\sim\pi_\theta(\cdot)}
+\nabla_z\log\pi_\theta(a)\nabla_z\log\pi_\theta(a)^\top. \tag{7} $
+
+我们将 $ z $ 具体化为第 $ l $ 层的融合 token $ Z^{(l)} $，其在不注入提示的情况下计算得到。对于 Fisher 矩阵，我们使用其迹作为层级敏感性的标量代理。随后，将归一化后的迹通过指数滑动平均来更新式 (5) 中的权重 $ \alpha_l $：
+
+$ \alpha_l \leftarrow (1-\beta)\alpha_l+\beta\cdot
+\frac{\mathrm{Tr}\,\Phi(Z_t^{(l)})}
+{\sum_{k=1}^{M}\mathrm{Tr}\,\Phi(Z_t^{(k)})}, \tag{8} $
+
+其中，$ \beta $ 为平滑系数，默认设为 $ 0.1 $。
+
+**三元组结构资产。** 基于上述机制，我们将适应知识形式化为一种结构化资产，而不仅仅是优化后的参数；这些资产被索引在域流形中。为了确保其可检索与可复用，我们在学习得到的提示之外，进一步加入域坐标和质量指标。形式上，每个资产被定义为一个三元组 $ A:=\{P^\ast,\Gamma,u\} $，由三个互补部分构成：1）学习得到的软提示 $ P^\ast $，用于编码任务相关的适应知识，并直接调制策略；2）在不注入提示的情况下，从最终融合层提取的特征统计量 $ \Gamma_t=\{\mu(Z_t),\sigma(Z_t)\} $，其作为与提示无关的环境描述符；3）不确定性分数 $ u=\mathrm{Ent}(\pi_{\theta,P^\ast}) $，定义为当前步骤中在 $ P^\ast $ 作用下的预测熵，用于反映资产 $ A $ 所对应适应行为的可靠性。
+
+### 跨域桥接构造
+基于累积得到的资产，复用既有域知识为弥合源域与测试时目标域之间的差距提供了一条有效捷径。一个自然的基线方法是执行硬检索，即根据统计相似性选择最近邻资产。然而，新环境往往会与多个域存在部分重叠，这使得检索过程较为脆弱，并且容易出现不匹配。为了充分利用资产库的表示能力，我们将桥接构造表述为在资产凸包上寻找最近投影，如图 2(c) 所示。
+
+**凸包投影拟合。** 给定资产库 $ \mathcal{M}=\{A_i\}_{i=1}^{K} $，我们引入混合权重 $ w\in\mathbb{R}^{K} $，将投影建模为一种软组合。具体而言，我们使用共享系数，同时在参数空间（提示）和统计空间（域坐标）中进行线性插值。这种统一投影会产生一个以组合提示形式表示的适应桥梁，并同时诱导出对应的分布：
+
+$ P_b(w)=\sum_{j=1}^{K} w_j\cdot P_j,\quad
+\Gamma_b(w)=\sum_{j=1}^{K} w_j\cdot \Gamma_j, \tag{9} $
+
+其中，下标 $ b $ 表示桥梁。
+
+为了确定最优混合权重，我们假设特征统计量服从多元高斯分布，并通过最小化 Wasserstein 距离，将目标统计量 $ \Gamma_t $ 投影到 $ \Gamma_b(w) $ 上。为了增强鲁棒性，我们引入一种不确定性感知正则项，利用资产的不确定性分数 $ u_j $ 抑制对不可靠资产赋予过大的权重。由此得到的约束优化问题为：
+
+$ \min_w W(\Gamma_t,\Gamma_b(w))+\lambda \sum_j u_j\cdot w_j^2,\quad
+\mathrm{s.t.}\ \mathbf{1}^\top w=1,\ w\geq 0, \tag{10} $
+
+其中，$ W(\cdot,\cdot) $ 表示由对应统计量参数化的高斯分布之间的 $ 2 $-Wasserstein 距离，$ \lambda $ 控制正则化强度。
+
+**闭式解。** 直接通过梯度下降优化式 (10) 会带来较大的训练开销。相反，我们利用 Wasserstein 对齐目标的二次结构，并通过 Karush-Kuhn-Tucker（KKT）条件推导出闭式解。首先，我们将原问题转换为带有仿射等式约束的标准二次规划形式：
+
+$ \min_w \|Aw-b\|_2^2+\lambda w^\top U w,\quad
+\mathrm{s.t.}\ \mathbf{1}^\top w=1,\ w\geq 0, \tag{11} $
+
+其中，$ A=[\Gamma_1,\ldots,\Gamma_K]\in\mathbb{R}^{2C\times K} $，$ b=[\Gamma_t]\in\mathbb{R}^{2C} $，分别表示资产库和目标域的向量化特征统计量。$ U=\mathrm{diag}\{u_1,\ldots,u_k\} $ 表示由不确定性分数构成的对角矩阵。
+
+进一步地，我们通过 KKT 条件求解这个线性约束二次规划。具体而言，我们通过拉格朗日乘子 $ \nu $ 将仿射约束纳入目标函数。平稳性条件表明，目标函数的梯度必须与约束法向量对齐。令 $ H=A^\top A+\lambda U $ 表示正则化 Hessian 矩阵，用于刻画资产之间的相关性；令 $ g=A^\top b $ 表示目标域在资产基上的投影。求解得到的线性系统即可给出最优权重：
+
+$ w^\ast=H^{-1}(g-\nu\mathbf{1}),\quad
+\nu=\frac{\mathbf{1}^\top H^{-1}g-1}{\mathbf{1}^\top H^{-1}\mathbf{1}}. \tag{12} $
+
+该推导使 IDEA 能够通过简单的矩阵运算构建最优桥梁。通过消除迭代调优的需求，这一机制作为通往目标域的免训练捷径，能够绕过漫长的适应轨迹，从而显著加速适应过程。
+
+### IDEA 的整体流程
+在每个导航步骤中，IDEA 会根据领域覆盖情况动态判断是利用桥接机制，还是获取一个新的资产。具体而言，我们首先通过式 $ \text{Eq. }12 $ 求解最优权重 $ w $，并构建适应桥 $ P_b(w) $。随后，我们分别度量注入提示与未注入提示时的统计差异，记为 $ d_p $ 和 $ d_0 $。如果差异下降满足 $ d_p < \tau \cdot d_0 $，则认为当前领域已被覆盖，并将 $ P_b(w) $ 用于推理。
+
+否则，我们将其视为一个新领域，并通过式 $ \text{Eq. }5 $ 对 $ P_b(w) $ 进行优化，从而得到一个新的资产 $ A^* = \{P^*, \Gamma^*, u^*\} $。为了维持固定的预算，我们采用最近邻合并策略：
+
+$ \begin{cases}
+A_k \leftarrow \frac{1}{2}(A_k + A^*), & \text{if } K \geq K_{\max}; \\
+\mathcal{M} \leftarrow \mathcal{M} \cup \{A^*\}, & \text{if } K < K_{\max};
+\end{cases}
+\quad
+\text{where } k = \arg\min_k d(\Gamma_k, \Gamma^*).
+\tag{13} $
+
+其中，$ K_{\max} $ 表示资产库的容量预算。
+
+### 关于稳定性与泛化性的理论分析
+我们从理论上解释了为什么本文方法能够在新的目标领域上稳定地降低泛化风险。在领域内特征表示服从多元高斯分布这一常见假设下（Heusel et al., 2017; Hu et al., 2025a），我们建立了两个关键结论：
+
+1. 由式 $ \text{Eq. }10 $ 产生的混合权重能够收紧目标泛化误差的一个有原则的上界，并且在历史资产的凸包内是最优的。
+2. 式 $ \text{Eq. }12 $ 中的解对于估计统计量的扰动具有 Lipschitz 稳定性，这意味着该方法对测试时统计估计中的噪声与偏差具有鲁棒性。
+
+综合来看，这些命题表明，我们的桥接机制能够在测试阶段稳定地降低泛化风险，同时不需要额外训练。这对于 VLN 的实际部署而言是一项关键优势。所有详细的分析与证明见附录 A。
+
+## 实验
+### 实验设置
+为进行公平比较，我们遵循先前工作（Gao et al., 2024; Kim et al., 2025）中的评估流程，包括数据集、预训练策略、训练方案和评估协议。
+
+**数据集。** 我们在三个具有代表性的 VLN 基准上评估所提方法，覆盖离散与连续环境：REVERIE（Qi et al., 2020）、R2R（Anderson et al., 2018）和 R2R-CE（Krantz et al., 2020）。REVERIE 是一项目标导向任务，智能体需基于高层指令定位远程物体。R2R 是标准的指令跟随基准，智能体通过逐步指令导航至目标视点。除这些离散设置外，我们还采用 R2R-CE，即 R2R 的连续变体，引入了底层控制挑战。
+
+**预训练导航策略。** 我们在四个基础模型上验证所提方法：HAMT（Chen et al., 2021）、DUET（Chen et al., 2022c）、BEVBert（An et al., 2023）和 ETPNav（An et al., 2024）。HAMT 采用 Transformer 架构，通过强化学习优化以处理长程导航。DUET 在此基础上进一步将拓扑图集成到双尺度图 Transformer 中，以实现高效的全局规划。BEVBert 通过引入鸟瞰图表示进一步增强空间推理能力。对于连续环境，我们使用 ETPNav，该模型专为连续控制下的鲁棒长程规划而设计。我们的 IDEA 框架在推理阶段应用于这些预训练策略。
+
+**对比方法。** 我们将 IDEA 与以下最先进方法进行比较：SAR（Niu et al., 2023）采用熵最小化结合锐度感知最小化以增强稳定性。ViDA（Liu et al., 2024b）注入低秩与高秩适配器，以解耦域不变表示与域特定表示。FSTTA（Gao et al., 2024）对梯度和参数执行分解-累积分析。ReCAP（Hu et al., 2025b）建模区域不确定性，强制执行隐式数据缩放。此外，我们在附录 B 中提供了与反馈驱动方法的详细比较。
+
+**实现细节。** 我们采用批量大小为 1 以正确模拟在线流式设置，并使用 AdamW 优化器，固定学习率为 $ 3 \times 10^{-3} $，动量为 0.9。关于超参数，我们默认设置提示长度 $ L = 4 $、资产库大小 $ K_{\max} = 32 $、正则化强度 $ \lambda = 0.4 $、比率阈值 $ \tau = 0.7 $。所有实验均在单张 NVIDIA RTX 4090 GPU 上进行。
+
+**评估协议。** 我们遵循先前工作（Chen et al., 2022c;b; Li et al., 2022; Wang et al., 2023）中常用的评估协议：成功率（SR）、Oracle 成功率（OSR）、路径长度加权成功率（SPL）、路径长度加权远程定位成功率（RGSPL）、轨迹长度（TL）和导航误差（NE）。详细定义见附录 E。
+
+### 主要结果
+**在 REVERIE 上的评估。** 我们首先在 REVERIE 数据集上将 IDEA 与先前方法进行比较，其中 TTA 应用于 HAMT 和 DUET。表 1 中报告的结果揭示了几个关键观察：
+
+1. 现有方法在 _test unseen_ 划分上表现不佳，几乎所有对比方法都未能提升甚至降低了 SPL 指标，表明存在严重的不稳定性和负迁移。
+2. 相比之下，IDEA 在所有数据划分上始终优于对比方法，是唯一在所有指标上均取得正向增益的方法。值得注意的是，它在 _test unseen_ 上取得了 $ +2.5\% $ SR 和 $ +2.8\% $ SPL 的显著平均增益。
+3. 在效率方面，IDEA 的推理时间不到 FSTTA 的一半，与 ReCAP 相当，同时带来更稳定的增益。如图 4 所示，这种效率源于免训练自适应桥接，它为大多数传入域绕过了迭代优化，验证了我们资产复用的设计直觉。
+
+**在 R2R 与 R2R-CE 上的评估。** 我们进一步在 R2R 和 R2R-CE 数据集上评估不同方法，如表 2 和表 3 所示。实验结果得出以下观察：
+
+1. 在 R2R _val seen_ 和 R2R-CE _val unseen_ 划分上，现有方法仅取得边际提升，而我们的方法将性能提升了 $ +2\% $ SR 和 $ +3\% $ SPL。
+2. IDEA 持续增强了两种不同的基础模型，并在全部四个场景中保持最佳性能，进一步证明了其在离散与连续环境中的强泛化能力。
+
+### 资产迁移实验
+为评估资产的可迁移性，我们模拟了一种部署场景：在源环境中构建的库被迁移至目标智能体。我们在 REVERIE 数据集上设计了三种协议：_Val Seen → Test Unseen_、_Test Unseen → Val Unseen_ 以及 _Val Seen + Unseen → Test Unseen_。第三种协议代表多源设置，即由多个智能体收集的资产被聚合后供新用户使用。
+
+我们基于共享资产的可用性和在线自适应的使用方式，比较了四种配置，如表 4 所示。结果得出三个重要洞见：
+
+1. **免训练增益：** 共享资产在所有场景中均提供一致的免训练改进。
+2. **与自适应的协同：** 预加载资产与在线自适应互补而不冲突，二者结合时达到峰值性能。
+3. **规模化收益：** 多源设置证实，聚合更大的库有助于鲁棒桥接构建，将 SR 提升 $ +1.2\% $、SPL 提升 $ +1.0\% $。这验证了 IDEA 在协作式知识共享范式中的潜力——聚合来自不同用户的资产可持续增强泛化能力。
+
+此外，我们研究了跨任务可迁移性（REVERIE ↔ R2R）以验证资产的通用性。受篇幅限制，结果详见附录 B。
+
+## 消融实验与可视化
+在本节中，不失一般性，我们以 DUET 在 REVERIE _valid unseen_ 划分上的表现作为代表性测试平台，开展消融实验与可视化分析。围绕 IDEA 的两个关键组件——域资产库与桥接构建，我们进行了多组实验以分析其影响。更多实验与详细分析请参见附录 C。
+
+### 资产配置的敏感度分析
+我们评估 IDEA 相对于两个关键资产配置的鲁棒性：提示长度 $ L $ 和库容量预算 $ K_{\max} $。我们对这两个关键系数分别独立进行消融实验：
+
+如图 3(a) 所示，增加提示长度在 SR 和 SPL 上均带来显著性能增益，因为更长的提示提供了更大的容量来编码可迁移知识。然而，当 $ L $ 超出最优范围（例如 4）后，进一步延长仅带来边际改进。因此，我们默认将 $ L $ 设为 4，以平衡表示能力与效率。类似地，在图 3(b) 中，导航性能随库容量扩大而迅速提升，并在 $ K_{\max} = 32 $ 时达到稳健的平台期。这证实了更密集的历史资产集合有助于更精确的桥接构建。将容量扩展至该阈值以上会导致收益递减，表明库已充分覆盖测试环境的代表性模式。因此，我们默认将 $ K_{\max} $ 设为 32。值得注意的是，在默认设置下，IDEA 仅产生 $ 0.58\ \text{MB} $ 的可忽略内存开销，相对于预训练模型的参数量增加不到 $ 0.1\% $。
+
+### 各组件的有效性
+我们通过将完整方法与部分变体进行比较来研究各组件的影响，如表 5 所示。其中，_Dec._ 表示广泛采用的基线，使用逐层衰减加权（Bao et al., 2022）；而 _Ret._ 表示一种硬选择策略，即检索单个最近邻资产作为桥接。我们的分析得出三个关键观察：
+
+1. 采用最近资产检索与标准衰减加权的朴素基线，其性能仅在未自适应的源模型附近波动。这表明基于启发式加权的硬选择无法解决域偏移，往往导致次优的先验检索。
+2. Fisher 引导的加权带来了 $ +3.5\% $ SR 的明显提升，验证了区分功能性层参数对于识别可迁移知识至关重要。
+3. 我们的闭式桥接相比硬检索展现出明显优势，凸显了最优投影对于构建鲁棒自适应捷径的重要性。
+
+### 互补效应
+如表 5 所示，我们的完整框架始终取得最佳导航性能，证明了不同组件之间的兼容性。为进一步研究资产-桥接设计的互补效应，我们对自适应过程进行了可视化。如图 4(a) 所示，我们观察到库增长与域覆盖率（即桥接成功将差异降至阈值以下的传入域）之间存在正相关。这验证了更丰富的"构建单元"库有助于在更广泛的分布偏移范围内构建桥接。如图 4(b) 所示，注入的桥接显著降低了与目标域的统计差异。通过缩小域差距，桥接减轻了后续资产优化的负担，为学习新环境提供了更优的初始化。
+
+### 定性结果
+基于图 5 中的定性比较，IDEA 相比基线 DUET 显著增强了智能体识别判别性地标的能力。在具有挑战性的场景中，例如寻找带有"红色马车"的特定房间（下图），基线未能在新环境中定位细粒度文本线索，导致错误终止。相比之下，IDEA 通过捕捉任务本质的视觉特征成功纠正了这些偏差。这些可视化进一步证实，我们的自适应桥接有效地将智能体的感知与复杂的未见环境对齐，实现了与指令精确匹配的鲁棒导航。
+
+## 结论
+本文提出 IDEA，一种旨在将自适应知识转化为可复用资产的新型框架。我们设计了 Fisher 引导的加权方案以捕捉可迁移知识，实现有效的资产利用，并进一步构建了免训练自适应桥接，以绕过冗长的优化过程。我们在多种导航基准和模型架构上证明了 IDEA 的一致有效性。我们希望本工作能激发未来关于终身经验积累的研究，为构建标准化、通用化的资产协议铺平道路。此类机制对于实现高效部署以及促进在动态环境中运行的智能体之间的协作至关重要。
+
+**局限性。** 首先，我们的评估集中于单智能体基准。虽然该设置有效验证了个体自适应能力，但 IDEA 框架在多智能体场景中的潜力仍有待充分探索。在未来工作中，我们计划将 IDEA 扩展至协作框架，研究异构智能体之间高效资产共享与合并的机制。其次，当前构建的资产与特定特征空间耦合。尽管 IDEA 展现了鲁棒的跨域与跨数据集可迁移性，但这种依赖限制了其在不同模型架构之间的直接应用。在未来工作中，我们将探索与架构无关的资产协议，以打破这一壁垒并建立更通用的标准。
+
+## 影响声明
+本文所呈现工作的目标是推动**<u>测试时自适应</u>**（Test-Time Adaptation）领域的发展。其社会影响主要体现在：使视觉语言导航智能体能够在真实世界动态场景中可靠运行，而无需进行资源密集型的重新训练。通过引入基于资产的免训练自适应桥接，本工作显著降低了与在线自适应相关的计算延迟。这有助于在资源受限的边缘设备（如家庭服务机器人）上部署智能体。在伦理层面，它通过消除迭代梯度更新的能耗，推动可持续的人工智能实践，与发展高效、环保的自主系统这一更广泛目标相一致。
+
+---
+
+附录结构如下：
+
++ **附录 A** 包含正文中所有理论主张缺失的证明与命题。
++ **附录 B** 呈现跨任务迁移的额外实验，以及与反馈驱动方法的基准对比。
++ **附录 C** 提供关于超参数敏感度的扩展消融研究。
++ **附录 D** 概述所提方法的更多实现细节。
++ **附录 E** 详述实验中使用的数据集与评估指标。
+
+## A. 理论证明
+下面，我们将提供正文中理论结果的详细证明。
+
+**记号。** 首先，我们回顾正文及本附录中使用的记号：$ \pi_\theta $ 表示由 $ \theta $ 参数化的策略模型，其中 $ \pi_\theta(a \mid z) $ 表示动作上的输出分布。$ Z_t = \{z_i\}_{i=1}^{N} \in \mathbb{R}^{N \times C} $ 表示多模态表示集合，其中 $ z_i $ 是由融合函数 $ \phi(\cdot) $ 生成的第 $ i $ 个候选节点的融合特征。此处，$ N $ 为候选节点数量，$ C $ 为特征维度。$ P := \{p_i\}_{i=1}^{L} $ 表示注入的提示集合。关于域统计量，$ \Gamma_S^{(l)} = \{\mu_S^{(l)}, \sigma_S^{(l)}\} $ 表示融合 Transformer 第 $ l $ 层的源域统计量（其中 $ M $ 为总层数）。类似地，$ \Gamma_t(P) $ 和 $ \Gamma_t $ 分别表示使用提示 $ P $ 和不使用提示 $ P $ 计算的目标域统计量。最后，$ P_b(w) = \sum_{j=1}^{K} w_j P_j $ 表示由 $ w $ 加权的复合桥接提示，$ \Gamma_b(w) = \sum_{j=1}^{K} w_j \Gamma_j $ 表示对应的桥接统计量，其中下标 $ b $ 表示桥接域。
+
+### A.1 Fisher 代理推导
+在本节中，我们建立第 4.1 节中策略目标曲率与 Fisher 信息矩阵之间的联系。我们证明，在对策略分布取期望的条件下，计算开销高昂的 Hessian 可由一阶 Fisher 信息矩阵近似。
+
+**命题 A.1.** 设 $ \pi_\theta(a \mid z) $ 为表示 $ z $ 上的可微策略分布，损失函数定义为负对数似然 $ \mathcal{L}(z) = -\log \pi_\theta(a \mid z) $。在允许微分与积分交换的标准正则性条件下，损失关于 $ z $ 的期望 Hessian 等价于 Fisher 信息矩阵 $ \Phi(z) $。具体而言：
+
+$ \mathbb{E}_{a \sim \pi_\theta(\cdot \mid z)} \left[ \nabla_z^2 \bigl(-\log \pi_\theta(a \mid z)\bigr) \right] = \mathbb{E}_{a \sim \pi_\theta(\cdot \mid z)} \left[ \nabla_z \log \pi_\theta(a \mid z) \, \nabla_z \log \pi_\theta(a \mid z)^\top \right]. \tag{14} $
+
+**证明。** 设特定动作 $ a $ 的负对数似然 Hessian 记为 $ H(z; a) = \nabla_z^2 \bigl(-\log \pi_\theta(a \mid z)\bigr) $。我们通过显式展开二阶导数来分析曲率。首先，利用链式法则，对数似然的梯度（即得分函数）为：
+
+$ \nabla_z \log \pi_\theta(a \mid z) = \frac{\nabla_z \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)}. \tag{15} $
+
+对式 (15) 再次关于 $ z $ 求导，我们对向量值函数应用商法则。注意，对于负对数似然，符号取反：
+
+$ \begin{aligned}
+H(z; a) &= \nabla_z \left( -\frac{\nabla_z \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)} \right) \\
+&= -\frac{\pi_\theta(a \mid z)\nabla_z^2 \pi_\theta(a \mid z) - \nabla_z \pi_\theta(a \mid z)\nabla_z \pi_\theta(a \mid z)^\top}{\pi_\theta(a \mid z)^2} \\
+&= \underbrace{\frac{\nabla_z \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)} \left( \frac{\nabla_z \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)} \right)^\top}_{\text{Term A}} - \underbrace{\frac{\nabla_z^2 \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)}}_{\text{Term B}}.
+\end{aligned} \tag{16} $
+
+将式 (15) 中的得分函数定义代回 Term A，我们观察到逐点 Hessian 可分解为梯度的外积减去一个归一化曲率项：
+
+$ H(z; a) = \nabla_z \log \pi_\theta(a \mid z) \, \nabla_z \log \pi_\theta(a \mid z)^\top - \frac{\nabla_z^2 \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)}. \tag{17} $
+
+接下来，我们对策略分布 $ a \sim \pi_\theta(\cdot \mid z) $ 取 $ H(z; a) $ 的期望。由期望的线性性，我们分别分析两项。对于 Term B，我们援引允许微分与积分交换的标准正则性条件（莱布尼茨积分法则）。因此，第二项的期望为零：
+
+$ \begin{aligned}
+\mathbb{E}_{a \sim \pi_\theta(\cdot \mid z)} \left[ \frac{\nabla_z^2 \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)} \right] &= \int \pi_\theta(a \mid z) \frac{\nabla_z^2 \pi_\theta(a \mid z)}{\pi_\theta(a \mid z)} \, da \\
+&= \int \nabla_z^2 \pi_\theta(a \mid z) \, da \\
+&= \nabla_z^2 \int \pi_\theta(a \mid z) \, da \\
+&= \nabla_z^2 (1) = 0.
+\end{aligned} \tag{18} $
+
+由于概率密度函数的积分为 1，其关于参数 $ z $ 的梯度（及 Hessian）必为零。因此，期望 Hessian 仅由第一项决定：
+
+$ \mathbb{E}_{a \sim \pi_\theta(\cdot \mid z)} [H(z; a)] = \mathbb{E}_{a \sim \pi_\theta(\cdot \mid z)} \left[ \nabla_z \log \pi_\theta(a \mid z) \, \nabla_z \log \pi_\theta(a \mid z)^\top \right] = \Phi(z). \tag{19} $
+
+证明完毕。
+
+### A.2 自适应桥接的闭式解
+在本小节中，我们分析所提目标函数的优化景观。通过用特征统计量的欧氏距离近似 Wasserstein 距离，并引入不确定性感知正则化，我们解析地推导出最优混合权重。
+
+**命题 A.2（最优混合权重）** 考虑由特征统计量的正则化匹配定义的目标函数：
+
+$ \min_{w \in \mathbb{R}^K} \mathcal{J}(w) = \|Aw - b\|_2^2 + \lambda w^\top U w, \quad \text{s.t. } \mathbf{1}^\top w = 1, $
+
+其中 $ A \in \mathbb{R}^{2C \times K} $ 聚合资产统计量，$ b \in \mathbb{R}^{2C} $ 表示目标统计量，$ U $ 为不确定性分数构成的对角矩阵。令 $ H = A^\top A + \lambda U $ 为正则化 Hessian，$ g = A^\top b $ 为投影向量。最优解 $ w^* $ 的闭式表达式为：
+
+$ w^* = H^{-1}(g - \nu \mathbf{1}), \quad \text{其中 } \nu = \frac{\mathbf{1}^\top H^{-1}g - 1}{\mathbf{1}^\top H^{-1}\mathbf{1}}. $
+
+**证明。** 该优化问题是一个带线性等式约束的凸二次规划（QP）。我们采用拉格朗日乘子法求解。目标函数 $ \mathcal{J}(w) $ 可展开为：
+
+$ \begin{aligned}
+\mathcal{J}(w) &= (Aw - b)^\top(Aw - b) + \lambda w^\top U w \\
+&= w^\top A^\top A w - 2b^\top A w + b^\top b + \lambda w^\top U w \\
+&= w^\top(A^\top A + \lambda U)w - 2(A^\top b)^\top w + b^\top b.
+\end{aligned} \tag{20} $
+
+代入 $ H = A^\top A + \lambda U $ 和 $ g = A^\top b $ 的定义，并舍弃不影响优化的常数项 $ b^\top b $。为便于梯度推导，我们考虑等价的、缩放因子为 $ 1/2 $ 的优化问题：
+
+$ \min_w \frac{1}{2} w^\top H w - g^\top w \quad \text{s.t. } \mathbf{1}^\top w = 1. \tag{21} $
+
+这是一个带单个仿射等式约束的凸二次规划问题。我们构造拉格朗日函数 $ \mathcal{L}(w, \nu) $，其中标量拉格朗日乘子 $ \nu $ 与等式约束相关联：
+
+$ \mathcal{L}(w, \nu) = \frac{1}{2} w^\top H w - g^\top w + \nu(\mathbf{1}^\top w - 1). \tag{22} $
+
+根据该凸问题的 Karush–Kuhn–Tucker（KKT）条件，最优点 $ (w^*, \nu^*) $ 必须满足平稳性条件 $ \nabla_w \mathcal{L} = 0 $ 和原始可行性条件 $ \nabla_\nu \mathcal{L} = 0 $。
+
+**平稳性条件。** 对 $ w $ 求梯度并令其为零：
+
+$ \nabla_w \mathcal{L}(w, \nu) = Hw - g + \nu \mathbf{1} = 0. \tag{23} $
+
+整理求解 $ w $：
+
+$ Hw = g - \nu \mathbf{1} \implies w = H^{-1}(g - \nu \mathbf{1}). \tag{24} $
+
+此处 $ H $ 可逆（正定），因为 $ A^\top A $ 半正定且 $ \lambda U $ 正定。
+
+**原始可行性。** 我们对式 (24) 中导出的解施加约束 $ \mathbf{1}^\top w = 1 $：
+
+$ \mathbf{1}^\top H^{-1}(g - \nu \mathbf{1}) = 1. \tag{25} $
+
+展开向量乘法：
+
+$ \mathbf{1}^\top H^{-1}g - \nu(\mathbf{1}^\top H^{-1}\mathbf{1}) = 1. \tag{26} $
+
+**求解对偶变量。** 求解上述代数方程中的标量 $ \nu $：
+
+$ \nu(\mathbf{1}^\top H^{-1}\mathbf{1}) = \mathbf{1}^\top H^{-1}g - 1 \implies \nu = \frac{\mathbf{1}^\top H^{-1}g - 1}{\mathbf{1}^\top H^{-1}\mathbf{1}}. \tag{27} $
+
+最后，将该 $ \nu $ 值代回式 (24)，即得闭式解 $ w^* $，证明完毕。
+
+**注记（非负性与实现）。** 尽管命题 A.2 推导了等式约束松弛下的解，但非负性约束（$ w \geq 0 $）在理论上是必不可少的。它确保桥接分布始终是源资产的有效凸组合，将自适应约束在库 $ \mathcal{\mathcal{M}} $ 的凸包内。允许负权重将意味着不当的外推，可能导致不稳定的自适应行为。在实践中，由于正则化结构，解呈现出强烈的正值倾向。在极少数解 $ w^* $ 违反非负性约束的情况下，我们应用一个可计算的投影步骤：在将负值截断为零（$ \hat{w} \leftarrow \max(0, w^*) $）后，执行 $ \hat{w} = w^* / \|w^*\|_1 $。该策略保留了闭式解 $ O(K^3) $ 的计算效率，同时严格满足单纯形约束。
+
+### A.3. 泛化界分析
+在本小节中，我们对所提出的不确定性感知适配桥（uncertainty-aware adaptation bridge）进行理论分析。我们证明，式 (10) 中的优化目标可作为最小化期望目标风险的可认证上界的代理目标。
+
+**注记：** 为清晰起见并与标准学习理论文献保持一致，本小节采用标准记号，可能与前文小节中的记号有所不同。
+
+#### 设定与记号
+设 $ \mathcal{D}_t $ 为定义在 $ (x, y) \in \mathcal{X} \times \mathcal{Y} $ 上的目标分布。设 $ \phi: \mathcal{X} \to \mathbb{R}^d $ 为一个固定的表征映射（例如冻结的骨干网络），并记 $ z = \phi(x) $。对于任意定义在 $ (x, y) $ 上的分布 $ \mathcal{D} $，设 $ Q $ 为由其诱导的 $ z $ 的边缘分布。我们记 $ Q_t $ 为 $ z $ 的目标边缘分布，记 $ Q_b(w) $ 为由混合权重 $ w \in \Delta_K $ 诱导的桥边缘分布。设由复合提示 $ P_b(w) $ 诱导的预测器为 $ h_w $，并定义目标风险
+
+$ R_t(w) := \mathbb{E}_{(x,y) \sim \mathcal{D}_t} \, l(h_w(x), y). $
+
+**假设 A.3（协变量偏移与利普希茨函数）。** 存在一个条件标签机制 $ \eta(y \mid z) $，使得对于任意桥混合 $ w \in \Delta_K $，联合分布满足
+
+$ (z, y) \sim Q_t(z)\, \eta(y \mid z), \qquad (z, y) \sim Q_b(w)(z)\, \eta(y \mid z). $
+
+对于任意 $ w \in \Delta_K $，定义条件期望损失
+
+$ g_w(z) := \mathbb{E}_{y \sim \eta(\cdot \mid z)} \, l\bigl(h_w(\phi^{-1}(z)), y\bigr). $
+
+假设 $ g_w $ 关于 $ \|\cdot\|_2 $ 是 $ L $-利普希茨的，即对所有 $ z, z' $ 有 $ |g_w(z) - g_w(z')| \le L\|z - z'\|_2 $。同时假设 $ l \in [0, 1] $。
+
+**假设 A.4（高斯模型）。** 表征边缘分布被建模（或近似）为高斯分布：$ Q_t = \mathcal{N}(\mu_t, \Sigma_t) $，$ Q_b(w) = \mathcal{N}(\mu_b(w), \Sigma_b(w)) $，其中 $ (\mu_t, \Sigma_t) = \Gamma_t $，$ (\mu_b(w), \Sigma_b(w)) = \Gamma_b(w) $。式 (10) 中的距离 $ W(\Gamma_t, \Gamma_b(w)) $ 定义为这两个高斯分布之间的 2-瓦瑟斯坦距离：
+
+$ W(\Gamma_t, \Gamma_b(w)) := W_2\!\left(\mathcal{N}(\mu_t, \Sigma_t),\, \mathcal{N}(\mu_b(w), \Sigma_b(w))\right). $
+
+**假设 A.5（不确定性作为估计误差的界）。** 在同一函数空间中存在一个（未知的）神谕预测器 $ h^\star $，使得每个由资产诱导的预测器 $ h_j $（对应于 $ A_j $）可写为
+
+$ h_j = h^\star + \varepsilon_j, $
+
+其中 $ \varepsilon_j $ 为随机误差项，满足对所有 $ z $ 有 $ \mathbb{E}[\varepsilon_j \mid z] = 0 $，且误差条件不相关：对 $ i \neq j $ 有 $ \mathbb{E}[\varepsilon_i(z)\varepsilon_j(z) \mid z] = 0 $。此外，不确定性得分为误差的条件二阶矩提供上界：
+
+$ \mathbb{E}\!\left[\varepsilon_j(z)^2 \mid z\right] \le u_j \quad \text{对所有 } z \text{ 和所有 } j. $
+
+最后，复合提示诱导凸组合预测器
+
+$ h_w = \sum_{j=1}^{K} w_j h_j, \qquad w \in \Delta_K. $
+
+#### 命题 A.6（期望目标风险的可认证上界）
+在假设 A.3–A.5 下，对任意 $ w \in \Delta_K $，
+
+$ R_t(w) \le R^\star + L \cdot W(\Gamma_t, \Gamma_b(w)) + \sum_{j=1}^{K} u_j w_j^2, \tag{28} $
+
+其中 $ R^\star := \mathbb{E}_{(x,y) \sim \mathcal{D}_t} l(h^\star(x), y) $ 为神谕风险。因此，最小化 $ W(\Gamma_t, \Gamma_b(w)) + \lambda \sum_j u_j w_j^2 $（式 (10)）即最小化式 (28) 中可认证界的 $ w $ 相关部分，仅相差 $ \lambda $ 的一个常数缩放。
+
+**证明。** 我们将目标风险分解为三项：神谕项、由表征空间中最优传输控制的分布偏移项，以及由 $ w $ 的不确定性加权 $ \ell_2 $ 范数控制的估计稳定性项。
+
+**将风险归约到表征边缘分布。** 由假设 A.3（表征协变量偏移），对任意 $ w \in \Delta_K $，
+
+$ R_t(w) = \mathbb{E}_{z \sim Q_t}[g_w(z)], \qquad R_b(w) := \mathbb{E}_{(x,y) \sim \mathcal{D}_b(w)}[l(h_w(x), y)] = \mathbb{E}_{z \sim Q_b(w)}[g_w(z)]. $
+
+**通过瓦瑟斯坦距离界定分布偏移项。** 由于 $ g_w $ 是 $ L $-利普希茨的（假设 A.3），由 Kantorovich–Rubinstein 对偶可得
+
+$ \mathbb{E}_{Q_t}[g_w] - \mathbb{E}_{Q_b(w)}[g_w] \le L\, W_1(Q_t, Q_b(w)). $
+
+此外，在赋予欧几里得度量的 $ \mathbb{R}^d $ 上，有 $ W_1(\cdot, \cdot) \le W_2(\cdot, \cdot) $，因此
+
+$ R_t(w) \le R_b(w) + L\, W_2(Q_t, Q_b(w)). $
+
+由假设 A.4，$ W_2(Q_t, Q_b(w)) $ 等于式 (10) 中使用的高斯 2-瓦瑟斯坦距离 $ W(\Gamma_t, \Gamma_b(w)) $。因此，
+
+$ R_t(w) \le R_b(w) + L \cdot W(\Gamma_t, \Gamma_b(w)). \tag{29} $
+
+**用神谕风险加不确定性加权稳定性项界定桥风险。** 在假设 A.5 下，有
+
+$ h_w = \sum_{j=1}^{K} w_j (h^\star + \varepsilon_j) = h^\star + \varepsilon_w, \qquad \text{其中 } \varepsilon_w := \sum_{j=1}^{K} w_j \varepsilon_j. $
+
+取条件二阶矩并利用条件不相关性，
+
+$ \mathbb{E}[\varepsilon_w(z)^2 \mid z] = \mathbb{E}\!\left[\left(\sum_{j=1}^{K} w_j \varepsilon_j(z)\right)^2 \,\middle|\, z\right] = \sum_{j=1}^{K} w_j^2\, \mathbb{E}[\varepsilon_j(z)^2 \mid z] \le \sum_{j=1}^{K} w_j^2 u_j. $
+
+现在考虑相对于神谕的桥风险差。由 $ g_w $ 的定义以及条件无偏性 $ \mathbb{E}[\varepsilon_w \mid z] = 0 $，使用 $ h_w $ 而非 $ h^\star $ 所产生的超额期望损失由条件二阶矩控制。具体而言，对于有界损失 $ l \in [0, 1] $，可以将期望超额风险上界表示为均方预测误差的常数倍；特别地，在常见的平方损失实例 $ l(h(x), y) = (h(x) - y)^2 $ 且输出有界的情况下，该分解是精确的：
+
+$ \mathbb{E}_{(x,y) \sim \mathcal{D}_b(w)}[l(h_w(x), y)] = \mathbb{E}_{(x,y) \sim \mathcal{D}_b(w)}[l(h^\star(x), y)] + \mathbb{E}_{z \sim Q_b(w)}[\varepsilon_w(z)^2]. $
+
+因此，
+
+$ R_b(w) \le R^\star + \mathbb{E}_{z \sim Q_b(w)}[\varepsilon_w(z)^2] \le R^\star + \sum_{j=1}^{K} u_j w_j^2. \tag{30} $
+
+**合并各上界。** 将式 (30) 代入式 (29)，得
+
+$ R_t(w) \le R^\star + L \cdot W(\Gamma_t, \Gamma_b(w)) + \sum_{j=1}^{K} u_j w_j^2, $
+
+这正是式 (28)。证明完毕。
+
+### A.4. 解的利普希茨稳定性
+在本小节中，我们分析最优混合权重对目标域统计量扰动的敏感性。稳定性是少样本适配的关键性质，因为从有限数据估计得到的统计量往往含有噪声。我们证明，所得到的闭式解是利普希茨连续的，从而保证目标统计量的微小变化只会引起诱导策略的有界变化。
+
+#### 命题 A.7（扰动界）
+设 $ \hat{b} = b + \varepsilon $ 为被噪声 $ \varepsilon \in \mathbb{R}^{2C} $ 扰动后的目标统计量。最优混合权重的偏差满足如下上界：
+
+$ \|w^*(\hat{b}) - w^*(b)\|_2 \le \|H^{-1}A^\top\|_2 \bigl(1 + \kappa(H^{-1})\bigr) \cdot \|\varepsilon\|_2, \tag{31} $
+
+其中 $ \kappa(H^{-1}) = \dfrac{\lambda_{\max}(H^{-1})}{\lambda_{\min}(H^{-1})} $ 表示矩阵 $ H^{-1} $ 的条件数。
+
+**证明。** 设 $ \Delta w = w^*(\hat{b}) - w^*(b) $。回顾式 (12)，权重的偏移由下式给出：
+
+$ \Delta w = H^{-1}A^\top \varepsilon - \Delta \nu \, \mathbf{1}, \qquad \text{其中 } \Delta \nu = \frac{\mathbf{1}^\top H^{-1} A^\top \varepsilon}{\mathbf{1}^\top H^{-1} \mathbf{1}}. \tag{32} $
+
+设 $ r = H^{-1}A^\top \varepsilon \in \mathbb{R}^K $ 表示无约束梯度响应。该项表示在没有等式约束的情况下权重将如何偏移。我们可以将总权重偏移重写为无约束响应减去沿约束法向量的投影项：
+
+$ \Delta w = r - \frac{\mathbf{1}^\top r}{\mathbf{1}^\top H^{-1} \mathbf{1}} \, H^{-1}\mathbf{1}. \tag{33} $
+
+应用三角不等式可得范数的上界：
+
+$ \|\Delta w\|_2 \le \|r\|_2 + \left|\frac{\mathbf{1}^\top r}{\mathbf{1}^\top H^{-1} \mathbf{1}}\right| \|H^{-1}\mathbf{1}\|_2. \tag{34} $
+
+我们通过分析修正项（第二项）的各个组成部分来严格界定它：
+
+**首先**，对于分子 $ |\mathbf{1}^\top r| $，应用柯西–施瓦茨不等式：
+
+$ |\mathbf{1}^\top r| \le \|\mathbf{1}\|_2 \|r\|_2 = \sqrt{K}\, \|r\|_2. \tag{35} $
+
+**其次**，对于向量范数 $ \|H^{-1}\mathbf{1}\|_2 $，使用谱界：
+
+$ \|H^{-1}\mathbf{1}\|_2 \le \|H^{-1}\|_2 \|\mathbf{1}\|_2 = \lambda_{\max}(H^{-1}) \sqrt{K}. \tag{36} $
+
+**第三**，对于分母，利用正定矩阵 $ H^{-1} $ 的瑞利商性质。具体而言，对任意向量 $ x $，有 $ x^\top H^{-1} x \ge \lambda_{\min}(H^{-1}) \|x\|_2^2 $。令 $ x = \mathbf{1} $，可得：
+
+$ \mathbf{1}^\top H^{-1} \mathbf{1} \ge \lambda_{\min}(H^{-1}) \|\mathbf{1}\|_2^2 = \lambda_{\min}(H^{-1}) K. \tag{37} $
+
+综合以上三个估计，修正项的标量系数可大幅简化：
+
+$ \frac{|\mathbf{1}^\top r|}{\mathbf{1}^\top H^{-1} \mathbf{1}} \|H^{-1}\mathbf{1}\|_2 \le \frac{\sqrt{K}\, \|r\|_2}{\lambda_{\min}(H^{-1}) K} \cdot \lambda_{\max}(H^{-1}) \sqrt{K} = \frac{K\,\lambda_{\max}(H^{-1})}{K\,\lambda_{\min}(H^{-1})} \|r\|_2 = \kappa(H^{-1}) \|r\|_2, \tag{38} $
+
+其中 $ \kappa(H^{-1}) = \dfrac{\lambda_{\max}(H^{-1})}{\lambda_{\min}(H^{-1})} $ 为条件数。将其代回三角不等式：
+
+$ \|\Delta w\|_2 \le \|r\|_2 + \kappa(H^{-1}) \|r\|_2 = \|r\|_2 \bigl(1 + \kappa(H^{-1})\bigr). \tag{39} $
+
+最后，代入无约束响应的上界 $ \|r\|_2 \le \|H^{-1}A^\top\|_2 \|\varepsilon\|_2 $：
+
+$ \|\Delta w\|_2 \le \|H^{-1}A^\top\|_2 \bigl(1 + \kappa(H^{-1})\bigr) \|\varepsilon\|_2. \tag{40} $
+
+证明完毕。
+
+## B. 补充实验
+在本节中，我们提供进一步的实证证据，以验证 IDEA 的优越性与实用性。首先，我们研究资产库的跨任务可迁移性，以展示所捕获环境先验的普适性。随后，我们将资产桥方法与最先进的反馈驱动方法进行对标，突出我们在计算成本与延迟方面的显著优势。综合这些分析，凸显了 IDEA 作为一种轻量级、自主化解决方案，在真实世界具身智能体中部署的潜力。
+
+### B.1. 跨任务资产迁移
+在资产可迁移性分析的基础上，我们通过在不同导航任务上进行评估，实证检验了跨任务性能。具体而言，我们使用在 REVERIE 数据集（即高层目标定位任务）上训练的策略，在 R2R 数据集（即细粒度指令跟随任务）上进行评估；反之，使用在 R2R 上训练的策略在 REVERIE 数据集上进行评估。所有评估均在两个基准的验证集未见（Val Unseen）划分上进行。
+
+表 6 中的结果展示了所提出资产的稳健通用性，得出两个关键观察：
+
+1. 尽管高层指令（REVERIE）与逐步指令（R2R）之间存在显著的语义鸿沟，但利用共享资产即使在没有在线适配的情况下也能立即带来性能提升。例如，在 R2R → REVERIE 的设定下，仅使用共享资产即可将成功率（SR）提升约 1%。这表明所构建的资产捕获了功能性先验，无论具体的导航逻辑如何，这些先验都保持可迁移性。
+2. 共享资产与在线适配的组合在两个任务上始终取得最佳性能。这证实了跨任务资产可以作为通用初始化，有效地弥合域差距并减轻测试时适配（TTA）过程的优化负担，即使源任务存在差异也是如此。
+
+### B.2. 与反馈驱动方法的比较
+**反馈驱动适配** 与以自训练模式运行的标准 TTA 方法不同，反馈驱动方法引入从基础模型（FMs）或人机交互中获得的外部引导，以修正模型更新并校正轨迹。直观上，这些方法的有效性在很大程度上依赖于引导的质量，因此需要强大的多模态大语言模型（MLLMs，如 GPT-4o）或人类专家。然而，这种依赖不可避免地带来高昂的计算开销与延迟。具体而言，我们将本方法与三项代表性工作进行比较：RLCF（Zhao et al., 2023b），其使用一组 CLIP 模型提供视觉-语言对齐分数作为奖励信号；ATENA（Ko et al., 2025），其采用主动学习范式，仅在智能体的不确定性超过阈值时征求人类反馈；以及 FeedTTA（Kim et al., 2025），其探索用 GPT-4o 替代人类神谕，为强化学习提供二值反馈。
+
+**实验结果** 我们在三个基准上对反馈驱动策略与自监督策略（无反馈）进行了详细比较。表 7、表 8 和表 9 中的结果得出以下关键洞察：
+
+1. **无需外部成本即可获得相当性能。** 值得注意的是，IDEA 取得了与反馈驱动方法相当、有时甚至更优的性能，尤其是在以显著域差距为特征的未见划分上。例如，在具有挑战性的 REVERIE 测试集未见（Test Unseen）划分上（表 1），IDEA（结合 DUET）取得了 55.12% 的最高成功率，以高达 +0.8% 的幅度超越所有三种反馈驱动竞品。这验证了基于资产的桥接机制能够有效地从历史数据本身挖掘足够的监督信号，从而在保持鲁棒性的同时，消除了对昂贵外部教师的需求。
+2. **推理速度快数个数量级。** IDEA 最显著的优势在于其效率，这对于实时部署至关重要。如表 7 的时间（毫秒）列所示，反馈驱动方法由于基础模型推理或交互循环而遭受严重的延迟。具体而言，FeedTTA 每个回合需要 $ 7.64 \times 10^3 $ ms，ATENA 需要 $ 5.42 \times 10^3 $ ms。形成鲜明对比的是，IDEA 仅需约 300 ms，比 FeedTTA 快约 $ 20\times $，比 ATENA 快约 $ 15\times $。这证实了在高性能方法中，IDEA 是适用于时间敏感导航任务的可行方案。
+
+## C. 额外消融实验
+在正文第 6 节中，我们对提示长度 $ L $ 和库容量预算 $ K_{\max} $ 两个超参数的影响进行了全面分析。在本节中，我们进一步研究另外两个关键超参数的敏感性：正则化强度 $ \lambda $ 和覆盖阈值 $ \tau $。所有实验均在 REVERIE 验证集未见（validation unseen）划分上进行，为方法的有效性与鲁棒性提供额外洞察。
+
+### C.1. IDEA 中 $ \lambda $ 的敏感性
+式 (10) 中的系数 $ \lambda $ 控制着桥构建过程中不确定性感知正则项的影响。如图 6(a) 所示，增大 $ \lambda $ 会逐渐惩罚不可靠资产的贡献，确保桥由低不确定性先验主导。这种过滤效应带来了性能提升，并在 $ \lambda = 0.4 $ 处达到峰值。该最优值表明在不确定性惩罚与分布对齐目标之间取得了平衡的权衡。然而，当 $ \lambda $ 超过 0.8 时，性能开始下降。这可能是因为过度正则化迫使权重分布趋向稀疏性，从而忽略了实际的统计相似性，阻碍了最优投影。基于这些结果，我们将 $ [0.2, 0.8] $ 确定为稳健工作范围，在此范围内 IDEA 始终优于先前最先进方法（ReCAP），并默认选择 $ \lambda = 0.4 $。
+
+### C.2. IDEA 中 $ \tau $ 的敏感性
+参数 $ \tau $ 充当门控机制，控制在利用轻量级桥与触发资产优化过程之间的权衡。如图 6(b) 所示，性能随 $ \tau $ 的增大而提升，并在 $ \tau = 0.7 $ 处达到最高成功率（SR）。这表明适度宽松的阈值使智能体能够有效地利用桥来减少分布偏移，在不产生优化成本的情况下加速适配。然而，当 $ \tau $ 超出最优范围 $ [0.1, 0.8] $ 时，性能开始显著下降。这表明过于宽松的阈值会接受未能充分弥合域差距的次优桥，从而引入噪声先验并导致负迁移。基于这一观察，我们将 $ \tau = 0.7 $ 设为默认值，在桥利用效率与严格质量控制之间取得平衡。
+
+## D. 更多实现细节
+### D.1. 统计量计算与对齐的额外细节
+在本小节中，我们给出资产优化中用于计算特征统计量和逐层对齐目标的显式数学公式。
+
+**特征统计量计算。** 如正文所述，在每个导航步骤 $ t $，模型处理一个探索图 $ \mathcal{G}_t $，其中包含 $ N $ 个可导航候选节点。设 $ Z_t^{(l)}(P) \in \mathbb{R}^{N \times C} $ 表示从第 $ l $ 个 Transformer 层经提示注入后获得的多模态 token 集合，其中 $ z_{t,i}^{(l)} \in \mathbb{R}^C $ 表示第 $ i $ 个候选节点的特征向量。我们通过在候选节点维度 $ N $ 上池化来计算一阶（均值）和二阶（标准差）统计量。形式上，第 $ l $ 层的均值向量 $ \mu_t^{(l)} \in \mathbb{R}^C $ 和标准差向量 $ \sigma_t^{(l)} \in \mathbb{R}^C $ 计算如下：
+
+$ \mu_t^{(l)} = \frac{1}{N} \sum_{i=1}^{N} z_{t,i}^{(l)}, \qquad \sigma_t^{(l)} = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} \left(z_{t,i}^{(l)} - \mu_t^{(l)}\right)^2 + \varepsilon}, \tag{41} $
+
+其中平方运算和平方根均逐元素应用，$ \varepsilon = 1\mathrm{e}{-6} $ 是用于数值稳定性的小常数。这些统计量 $ \Gamma_t^{(l)} = \{\mu_t^{(l)}, \sigma_t^{(l)}\} $ 作为当前视觉-语言上下文的紧凑描述符，捕获了可导航空间的分布特性。
+
+**源统计量预计算。** 源域统计量 $ \Gamma_S^{(l)} = \{\mu_S^{(l)}, \sigma_S^{(l)}\} $ 离线预计算。我们从训练数据中随机采样 128 条轨迹的子集。对于每条轨迹，我们收集所有步骤的特征 token，并计算所有采样节点上的全局均值与标准差。这些固定的源统计量作为在线矩匹配目标的锚点。由于我们仅存储紧凑统计向量（维度 $ C = 768 $，融合层数 $ M = 4 $）而非原始数据，包括预计算源统计量和动态资产库在内的总存储量仅为 0.58 MB。这一可忽略的开销不到源模型大小的 0.1%，使我们的框架异常轻量，适用于资源受限部署。
+
+**逐层对齐。** 对齐损失旨在最小化当前在线统计量与源锚点之间的差异。将计算得到的定义代入目标函数（正文式 (5)），提示 $ P $ 的显式优化问题变为：
+
+$ \min_P \sum_{l=1}^{M} \alpha_l \left( \|\mu_S^{(l)} - \mu_t^{(l)}(P)\|_2 + \|\sigma_S^{(l)} - \sigma_t^{(l)}(P)\|_2 \right). \tag{42} $
+
+对于初始资产（即遇到的第一个新域），我们使用随机高斯分布初始化提示。对于所有后续资产，我们采用构建的桥提示作为热启动初始化。每个资产优化 $ O = 50 $ 步。
+
+### D.2. IDEA 的伪代码
+算法 1 概述了所提出框架的完整执行工作流。IDEA 在步骤级别运行，持续监控每个导航步骤的域偏移。该过程遵循条件双分支逻辑：
+
+1. 首先尝试通过组合历史资产构建免训练桥。如果满足覆盖准则，则直接部署桥以进行高效推理。
+2. 否则，触发在线优化过程以获取新资产，随后将其合并到资产库中，以增量扩展智能体的知识库。
+
+## E. 更多实验细节
+### E.1. 数据集更多细节
+本文主要采用广泛使用的基准数据集 REVERIE（Remote Embodied Visual rEferring expRession In Real-Indoor Environments，远程具身视觉指代表达真实室内环境）(Qi et al., 2020)，评估所有方法的鲁棒性与适应性。REVERIE 基于 Matterport3D 模拟器 (Chang et al., 2017) 构建，包含 10,567 张全景图像，以及覆盖 90 栋不同建筑的 21,702 条高层指令。
+
+该基准旨在评估智能体定位自然语言所描述远程物体的能力。具体而言，数据集提供了指向特定物品的简短指令（例如，“找到客厅沙发上的靠垫”），要求智能体同时完成长时程导航和细粒度物体定位。数据集划分为 Val Seen、Val Unseen 和 Test Unseen 三个集合。值得注意的是，Val/Test Unseen 集合中的环境与训练集严格不重叠，用于模拟真实部署场景：智能体需要泛化到新的建筑布局以及未见过的物体外观。
+
+此外，我们还在另外两个具有挑战性的基准数据集 R2R (Anderson et al., 2018) 和 R2R-CE (Krantz et al., 2020) 上开展实验，以进一步验证我们的方法在不同导航任务中的通用性。
+
+R2R（Room-to-Room）基于离散连通图构建，包含 10,800 个全景视图和 7,189 条轨迹。它侧重于细粒度的指令跟随，要求智能体严格遵循详细的逐步命令（例如，“经过厨房，在走廊处向左转……”）。因此，该数据集尤其重视轨迹保真度和精确的局部场景理解能力。
+
+R2R-CE（Continuous Environment，连续环境）则进一步提升了挑战性：智能体被部署在连续三维空间中，而非预定义的图结构中。该数据集包含 16,000 对指令—轨迹样本，并引入了真实的底层控制噪声和障碍物碰撞动态。这一设置要求智能体能够稳健地适应连续传感器数据流和复杂的物理交互，从而检验其超越离散决策场景的稳定性。
+
+### E.2. 评估指标细节
+我们采用视觉语言导航（Vision-Language Navigation，VLN）的标准指标，对智能体性能进行全面评估。具体如下：
+
+**轨迹长度（Trajectory Length，TL）。**  
+TL 衡量智能体所经过路径的平均总长度，单位为米。尽管它并非成功与否的直接指标，但较低的 TL（更接近最短路径长度）通常意味着探索效率更高，且不存在冗余移动。
+
+**导航误差（Navigation Error，NE）。**  
+NE 定义为智能体最终预测位置与真实目标位置之间的平均测地距离，单位为米。较低的 NE 表示定位目标位置的精度更高。
+
+**成功率（Success Rate，SR）。**  
+SR 是衡量导航准确性的主要指标，表示智能体最终停止位置位于目标位置阈值距离内（通常为 3 米）的回合比例。形式化定义为：
+
+$ SR = \frac{1}{N}\sum_{i=1}^{N} I[NE_i < 3m], $
+
+其中，$ N $ 为总回合数。
+
+**预言成功率（Oracle Success Rate，OSR）。**  
+OSR 衡量潜在的成功能力。它计算智能体所经过轨迹中，至少有一个位置落在目标位置成功阈值（3 米）以内的回合比例，而不考虑智能体最终实际停止的位置。SR 与 OSR 之间存在较大差距通常表明，智能体在停止条件识别方面存在失败。
+
+**路径长度惩罚成功率（Success penalized by Path Length，SPL）。**  
+SPL 用于评估导航成功情况下的加权轨迹效率。当 SPL 的数值越接近 SR 时，说明轨迹越接近最短路径。该指标定义为：
+
+$ SPL = \frac{1}{N}\sum_{n=1}^{N} S_n \frac{TL_n}{\max(SP_n, TL_n)}, $
+
+其中，$ S $ 为表示是否成功的二元指标，$ SP $ 表示最短路径长度。更高的 SPL 表示导航过程具有更高的效率与准确性。
+
+**路径长度惩罚远程定位成功率（Remote Grounding Success penalized by Path Length，RGSPL）。**  
+RGSPL 将 SPL 的概念扩展到物体定位任务。它衡量智能体成功识别目标物体（Remote Grounding Success）时的效率，并根据到达能够识别该物体的观察视点所经过的路径长度进行加权。

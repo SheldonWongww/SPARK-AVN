@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavTTA Research Mentor"
+  short_description: "Refine NavTTA ideas with evidence and falsifiable tests"
+  default_prompt: "Use $navtta-research-mentor to challenge this NavTTA idea and produce an evidence-grounded hypothesis card."

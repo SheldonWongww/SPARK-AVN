@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavTTA 结果审计"
+  short_description: "认证实验清单、匹配 Source 并审查结果证据"
+  default_prompt: "Use $navtta-result-auditor to authenticate manifests and audit a NavTTA result against its matched Source."

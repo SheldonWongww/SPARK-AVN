@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavTTA 实验运维"
+  short_description: "安全预检、启动、恢复并监控 NavTTA 实验"
+  default_prompt: "Use $navtta-experiment-operator to preflight, monitor, or safely resume a NavTTA experiment campaign."
