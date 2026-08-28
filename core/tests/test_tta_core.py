@@ -1016,6 +1016,32 @@ class TTACoreTest(unittest.TestCase):
         expected_source = source_logits[0, :2].softmax(dim=-1)
         torch.testing.assert_close(combined[0, :2].exp(), expected_source)
 
+    def test_eam_valid_action_count_does_not_require_math_prod(self):
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            confidence_scale=0.4,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        logits = torch.tensor([
+            [3.0, 1.0, 0.0, -1.0],
+            [3.0, 1.0, 0.0, -1.0],
+        ])
+        with mock.patch.object(
+            math, "prod", create=True,
+            side_effect=AssertionError("Python 3.6 has no math.prod"),
+        ):
+            mask = adapter._valid_action_mask(
+                logits, valid_action_count=torch.tensor([2, 4])
+            )
+        torch.testing.assert_close(
+            mask,
+            torch.tensor([
+                [True, True, False, False],
+                [True, True, True, True],
+            ]),
+        )
+
     def test_eam_valid_action_mask_is_snapshotted_for_replay(self):
         policy = _TinyPolicy()
         adapter = EAMAdapter(

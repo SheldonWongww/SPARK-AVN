@@ -1566,7 +1566,12 @@ class EAMAdapter(_AdapterDiagnostics):
             rounded = counts.to(torch.float64).round()
             if not bool((counts.to(torch.float64) == rounded).all()):
                 raise ValueError("EAM valid_action_count must contain integers")
-            expected_samples = math.prod(sample_shape)
+            # ``vlnce017`` is pinned to Python 3.6, where ``math.prod`` is not
+            # available.  Keep the shape calculation dependency-free so the
+            # shared EAM adapter remains usable in the continuous baselines.
+            expected_samples = 1
+            for dimension in sample_shape:
+                expected_samples *= int(dimension)
             if counts.numel() == 1:
                 counts = rounded.to(torch.long).expand(sample_shape)
             elif counts.numel() == expected_samples:
