@@ -12,7 +12,7 @@ Usage:
 
 Manage one detached GNU screen session around the grouped VLN Source runner.
 RUNNER_OPTIONS are forwarded to run_grouped_source_eval.sh; do not repeat
---run-tag. A run tag identifies one immutable attempt and cannot be reused.
+--run-tag. A run tag identifies one attempt and cannot be reused.
 
 Examples:
   TAG=grouped-source-20260810T120000Z
@@ -57,11 +57,9 @@ RUN_TAG="${1:-}"
 validate_tag "${RUN_TAG}"
 shift
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${REPO_ROOT}" in
-    /root/autodl-tmp/*) ;;
-    *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
-esac
+REPO_ROOT=/data1/wxy/code/NavTTA
+VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+TMP_ROOT="${VLN_ROOT}/tmp"
 
 SCRIPT_PATH="${REPO_ROOT}/vln/scripts/manage_grouped_source_screen.sh"
 RUNNER="${REPO_ROOT}/vln/scripts/run_grouped_source_eval.sh"
@@ -73,7 +71,7 @@ EXITCODE_FILE="${CONTROL_ROOT}/exitcode"
 SUMMARY_FILE="${CONTROL_ROOT}/SUMMARY"
 COMMAND_FILE="${CONTROL_ROOT}/command.txt"
 STOP_REQUEST_DIR="${CONTROL_ROOT}/stop.requested"
-GROUP_LOG_ROOT="/root/autodl-tmp/tmp/navtta-grouped-source/${RUN_TAG}"
+GROUP_LOG_ROOT="${TMP_ROOT}/navtta-grouped-source/${RUN_TAG}"
 
 [[ -x "${RUNNER}" ]] || die "missing grouped runner: ${RUNNER}"
 

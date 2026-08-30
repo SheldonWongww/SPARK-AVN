@@ -66,12 +66,12 @@ host with unique IDs:
 ```bash
 python3 vln/scripts/run_r2r_ce_concurrency_calibration.py \
   --batch-id r2rce-calib-preflight-YYYYMMDD \
-  --out-dir /root/autodl-tmp/tmp/r2rce-calib-preflight-YYYYMMDD \
+  --out-dir /data1/wxy/exp_data/NavTTA/vln/tmp/r2rce-calib-preflight-YYYYMMDD \
   --gpu 0 --dry-run
 
 screen -dmS navtta-r2rce-concurrency-calibration bash -lc \
-  'cd /root/autodl-tmp/code/NavTTA && \
-   /root/autodl-tmp/conda/envs/duet/bin/python \
+  'cd /data1/wxy/code/NavTTA && \
+   /data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
    vln/scripts/run_r2r_ce_concurrency_calibration.py \
    --batch-id r2rce-calib-YYYYMMDD \
    --out-dir vln/results/logs/r2r-ce/resource_calibration/r2rce-calib-YYYYMMDD \
@@ -406,24 +406,24 @@ Use the independent batch ID below, only after any active ATENA scheduler has
 released the GPU:
 
 ```bash
-cd /root/autodl-tmp/code/NavTTA
+cd /data1/wxy/code/NavTTA
 SPEC=vln/experiments/r2r_feedtta_low_lr_refinement_v1.json
 BATCH=vln-r2r-feedtta-low-lr-refinement-v1-seed0
 LAUNCH_DIR="$PWD/vln/results/logs/r2r/hparam_search/$BATCH/_launcher"
 
 mkdir -p "$LAUNCH_DIR"
 for METHOD in source feedtta_control feedtta; do
-  /root/miniconda3/bin/python3 \
+  /data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
     vln/scripts/run_r2r_cartesian_hparam_search.py "$METHOD" \
     --spec "$SPEC" --batch-id "$BATCH" --gpu 0 --plan-only
 done
 
 screen -dmS navtta-feedtta-low-lr-v1 \
   env BATCH="$BATCH" SPEC="$SPEC" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
-    cd /root/autodl-tmp/code/NavTTA || exit 97
+    cd /data1/wxy/code/NavTTA || exit 97
     export PYTHONUNBUFFERED=1
     for METHOD in source feedtta_control feedtta; do
-      /root/miniconda3/bin/python3 \
+      /data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
         vln/scripts/run_r2r_cartesian_hparam_search.py "$METHOD" \
         --spec "$SPEC" --batch-id "$BATCH" --gpu 0 --resume --fail-fast \
         >>"$LAUNCH_DIR/console.log" 2>&1 || exit $?

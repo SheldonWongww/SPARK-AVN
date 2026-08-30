@@ -258,7 +258,7 @@ class SourceRunnerSubmissionWiringTest(unittest.TestCase):
         self.assertIn("canonicalize_discrete_output()", source)
         self.assertEqual(source.count("canonicalize_discrete_output r2r"), 2)
         self.assertEqual(source.count("canonicalize_discrete_output reverie"), 2)
-        self.assertEqual(source.count("submission_viewpoint_candidates="), 3)
+        self.assertIn("DISCRETE_SCANVP_CANDIDATES=", source)
         self.assertIn("--scanvp-candidates", source)
 
 

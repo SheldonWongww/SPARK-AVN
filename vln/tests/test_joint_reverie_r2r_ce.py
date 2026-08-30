@@ -17,6 +17,15 @@ import shared_gpu_launch_guard as gpu_guard  # noqa: E402
 
 
 class JointCampaignTest(unittest.TestCase):
+    def test_default_gpu_lock_root_uses_server_storage(self):
+        self.assertEqual(
+            gpu_guard.DEFAULT_LOCK_ROOT,
+            Path(
+                "/data1/wxy/exp_data/NavTTA/vln/tmp/"
+                "navtta-shared-gpu-launch-locks"
+            ),
+        )
+
     def test_plan_is_exact_parallel_zero_source_launch(self):
         output = io.StringIO()
         with mock.patch("sys.stdout", output):

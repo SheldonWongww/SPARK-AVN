@@ -357,7 +357,7 @@ class SpecContractTest(unittest.TestCase):
         with self.assertRaisesRegex(runner.UserError, "Source-statistics"):
             runner._preflight_method(spec, "duet-r2r", "idea")
 
-    def test_ready_idea_binding_is_validated_and_injected(self):
+    def test_ready_idea_direct_binding_is_validated_and_injected(self):
         spec = json.loads(SPECS[0].read_text(encoding="utf-8"))
         trajectory_ids = sorted(
             "trajectory-{}".format(index) for index in range(128)
@@ -430,38 +430,6 @@ class SpecContractTest(unittest.TestCase):
                     },
                 },
             }), encoding="utf-8")
-            formal = root / "manifest.json"
-            formal_document = {
-                "task": "vln",
-                "model": "duet",
-                "method": "idea",
-                "source_setting": "duet-r2r:train:native:idea",
-                "status": "completed",
-                "exit_code": 0,
-                "checkpoint": {"sha256": "a" * 64},
-                "dataset": {
-                    "stream_order_sha256": "e" * 64,
-                    "stream_content_sha256": "d" * 64,
-                },
-                "pinned_manifests": {
-                    "episode_order": {"sha256": runner._sha256(order)},
-                },
-                "auxiliary_checkpoints": [{
-                    "name": "tta_job_config",
-                    "sha256": runner._sha256(config),
-                }],
-                "result_artifacts": [
-                    {"name": path.name, "sha256": runner._sha256(path)},
-                    {
-                        "name": diagnostics.name,
-                        "sha256": runner._sha256(diagnostics),
-                    },
-                ],
-            }
-            formal_document["immutable_identity_sha256"] = (
-                runner.immutable_identity_sha256(formal_document)
-            )
-            formal.write_text(json.dumps(formal_document), encoding="utf-8")
             spec["methods"]["idea"]["availability"] = {"status": "ready"}
             spec["methods"]["idea"]["source_statistics"] = {
                 "duet-r2r": {
@@ -476,13 +444,9 @@ class SpecContractTest(unittest.TestCase):
                     "collection_config_sha256": runner._sha256(config),
                     "diagnostics": str(diagnostics),
                     "diagnostics_sha256": runner._sha256(diagnostics),
-                    "formal_manifest": str(formal),
-                    "formal_manifest_sha256": runner._sha256(formal),
-                    "formal_immutable_identity_sha256": formal_document[
-                        "immutable_identity_sha256"
-                    ],
                 }
             }
+            self.assertFalse((root / "manifest.json").exists())
             runner._preflight_method(spec, "duet-r2r", "idea", "a" * 64)
             records = runner._candidate_records_for_setting(
                 spec, "duet-r2r", "idea"
@@ -533,25 +497,57 @@ class SpecContractTest(unittest.TestCase):
         with self.assertRaisesRegex(runner.UserError, "StreamVLN TTA search is blocked"):
             runner._selected(spec["settings"], {"streamvln-r2r-ce"}, "settings")
 
-    def test_all_tracked_source_ledgers_authenticate_per_setting(self):
-        for path in SPECS:
-            spec = runner.load_spec(path)
-            metrics = (
-                spec["protocol"]["primary_metric"],
-                spec["protocol"]["secondary_metric"],
-            )
-            for setting in spec["settings"]:
-                for split in ("val_unseen", "val_seen"):
-                    evidence = runner._source_evidence(None, setting, split, metrics)
-                    self.assertEqual(len(evidence["checkpoint_sha256"]), 64)
-                    self.assertEqual(len(evidence["source_ledger_sha256"]), 64)
-                    self.assertEqual(
-                        evidence["source_action_protocol"],
-                        "target_native_argmax",
-                    )
-                    self.assertFalse(evidence["matched_feedtta_source"])
-                    self.assertEqual(len(evidence["dataset_sha256"]), 64)
-                    self.assertTrue(evidence["benchmark"])
+    def test_all_tracked_source_ledgers_validate_without_formal_manifests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for path in SPECS:
+                spec = runner.load_spec(path)
+                metrics = (
+                    spec["protocol"]["primary_metric"],
+                    spec["protocol"]["secondary_metric"],
+                )
+                for setting in spec["settings"]:
+                    for split in ("val_unseen", "val_seen"):
+                        key = (spec["benchmark"], split)
+                        ledger_path = REPO_ROOT / runner.SOURCE_LEDGER[key]
+                        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+                        records = ledger.get("records") or ledger.get("settings")
+                        for record in records.values():
+                            for field in (
+                                "formal_manifest",
+                                "formal_manifest_path",
+                                "formal_manifest_sha256",
+                                "formal_manifest_evidence_copy_path",
+                                "immutable_identity_sha256",
+                            ):
+                                record.pop(field, None)
+                        direct_ledger = Path(directory) / "{}-{}.json".format(
+                            spec["benchmark"], split
+                        )
+                        direct_ledger.write_text(
+                            json.dumps(ledger), encoding="utf-8"
+                        )
+                        with mock.patch.dict(
+                            runner.SOURCE_LEDGER, {key: str(direct_ledger)}
+                        ):
+                            evidence = runner._source_evidence(
+                                None, setting, split, metrics
+                            )
+                        self.assertEqual(len(evidence["checkpoint_sha256"]), 64)
+                        self.assertEqual(len(evidence["source_ledger_sha256"]), 64)
+                        self.assertEqual(
+                            evidence["source_action_protocol"],
+                            "target_native_argmax",
+                        )
+                        self.assertFalse(evidence["matched_feedtta_source"])
+                        self.assertEqual(len(evidence["dataset_sha256"]), 64)
+                        self.assertTrue(evidence["benchmark"])
+                        metric_path = Path(evidence["metric_artifact"])
+                        self.assertTrue(metric_path.is_file())
+                        self.assertEqual(
+                            evidence["metric_sha256"], runner._sha256(metric_path)
+                        )
+                        self.assertNotIn("formal_manifest", evidence)
+                        self.assertNotIn("formal_manifest_sha256", evidence)
 
     def test_spec_rejects_non_argmax_source_policy(self):
         document = json.loads(SPECS[0].read_text(encoding="utf-8"))
@@ -606,6 +602,24 @@ class CommandPlanTest(unittest.TestCase):
                 self.assertEqual(config["stage"], "orders")
                 self.assertEqual(config["episodes"], -1)
                 self.assertIn(config["order_seed"], (1, 2, 3))
+            spec = runner.load_spec(SPECS[0])
+            plan_path = runner._plan_path(
+                directory, spec, "unit", "duet-r2r", "tent", "search"
+            )
+            plan = runner._load_plan(
+                plan_path, SPECS[0], spec, "unit", "duet-r2r", "tent",
+                "search",
+            )
+            self.assertEqual(
+                {job["order_seed"] for job in plan["jobs"]}, {1, 2, 3}
+            )
+            for job in plan["jobs"]:
+                self.assertNotIn("formal_manifest", job)
+                self.assertEqual(len(job["expected_order_sha256"]), 64)
+                self.assertEqual(len(job["expected_dataset_sha256"]), 64)
+                self.assertEqual(
+                    len(job["expected_order_manifest_sha256"]), 64
+                )
 
     def test_override_cannot_exceed_registered_cap(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -640,6 +654,7 @@ class CommandPlanTest(unittest.TestCase):
                         )
                         self.assertEqual(len(jobs), 3)
                         for job in jobs:
+                            self.assertNotIn("formal_manifest", job)
                             self.assertEqual(job["command"][2:5], [
                                 setting, "val_unseen", "0",
                             ])
@@ -712,6 +727,77 @@ class MetricParsingTest(unittest.TestCase):
         self.assertAlmostEqual(values["SPL"], 48.26)
 
 
+class JobResultValidationTest(unittest.TestCase):
+    @staticmethod
+    def _write_valid_job(root):
+        config = root / "tta_config.json"
+        config.write_text(json.dumps({"method": "tent"}), encoding="utf-8")
+        result_root = root / "result"
+        result_root.mkdir()
+        metric = result_root / "valid.txt"
+        metric.write_text(
+            "Env name: val_unseen, sr: 62.1, spl: 55.2\n",
+            encoding="utf-8",
+        )
+        diagnostics = result_root / "tta_diagnostics.json"
+        diagnostics.write_text(json.dumps({
+            "method": "tent",
+            "episode_count": 3,
+            "supervision": "unsupervised",
+            "binary_feedback_endpoint": None,
+            "tent_canonical_update_interval": True,
+            "adapter": {
+                "episodes": 3,
+                "updates": 1,
+                "relative_param_drift": 0.1,
+            },
+        }), encoding="utf-8")
+        job = {
+            "config_path": str(config),
+            "config_sha256": runner._sha256(config),
+            "result_root": str(result_root),
+            "setting": "duet-r2r",
+            "split": "val_unseen",
+            "method": "tent",
+            "expected_episode_count": 3,
+        }
+        return job, metric, diagnostics
+
+    def test_direct_artifacts_validate_without_formal_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, metric, diagnostics = self._write_valid_job(Path(directory))
+            result = runner.validate_job_result(job, "f" * 40)
+            self.assertEqual(result["metrics"]["SR"], 62.1)
+            self.assertEqual(result["metrics"]["SPL"], 55.2)
+            self.assertEqual(result["metric_artifact"], str(metric.resolve()))
+            self.assertEqual(result["metric_sha256"], runner._sha256(metric))
+            self.assertEqual(
+                result["diagnostics_path"], str(diagnostics.resolve())
+            )
+            self.assertEqual(
+                result["diagnostics_sha256"], runner._sha256(diagnostics)
+            )
+            self.assertNotIn("formal_manifest_sha256", result)
+            self.assertNotIn("formal_immutable_identity_sha256", result)
+            self.assertNotIn("checkpoint_sha256", result)
+
+    def test_missing_metric_or_diagnostics_still_aborts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            job, metric, diagnostics = self._write_valid_job(Path(directory))
+            metric.unlink()
+            with self.assertRaisesRegex(
+                runner.UserError, "expected exactly one metric artifact"
+            ):
+                runner.validate_job_result(job, "f" * 40)
+            metric.write_text(
+                "Env name: val_unseen, sr: 62.1, spl: 55.2\n",
+                encoding="utf-8",
+            )
+            diagnostics.unlink()
+            with self.assertRaisesRegex(runner.UserError, "cannot read JSON"):
+                runner.validate_job_result(job, "f" * 40)
+
+
 class SelectionTest(unittest.TestCase):
     @staticmethod
     def _rows(candidate_id, primary, secondary, drift=0.1, updates=10):
@@ -725,8 +811,10 @@ class SelectionTest(unittest.TestCase):
                 "metrics": {"SPL": p, "SR": s},
                 "diagnostics": {"relative_param_drift": drift, "updates": updates},
                 "run_tag": "{}-{}".format(candidate_id, seed),
-                "formal_manifest": "/manifest/{}-{}".format(candidate_id, seed),
-                "formal_manifest_sha256": "a" * 64,
+                "metric_artifact": "/metrics/{}-{}".format(candidate_id, seed),
+                "diagnostics_path": "/diagnostics/{}-{}".format(
+                    candidate_id, seed
+                ),
                 "diagnostics_sha256": "b" * 64,
                 "metric_sha256": "c" * 64,
             }
@@ -741,6 +829,11 @@ class SelectionTest(unittest.TestCase):
             {"primary_metric": "SPL", "secondary_metric": "SR", "order_seeds": [1, 2, 3]},
         )
         self.assertEqual(winner["candidate_id"], "stable")
+        for run in winner["selection_runs"].values():
+            self.assertNotIn("formal_manifest", run)
+            self.assertNotIn("formal_manifest_sha256", run)
+            self.assertIn("metric_artifact", run)
+            self.assertIn("diagnostics_path", run)
 
     def test_negative_lcb_still_selects_best_candidate(self):
         rows = self._rows("worse", [65, 65, 65], [66, 66, 66])

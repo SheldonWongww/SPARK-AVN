@@ -9,9 +9,9 @@ Protocol:
   ``mean(delta) - sample_std(delta)`` score;
 * only after freezing, rerun that winner on ``val_seen`` seeds 1, 2, and 3 as
   a retention report.  ``val_seen`` can never affect the winner;
-* authenticate every consumed metric and diagnostics file through its formal
-  run manifest.  A failed, missing, incomplete, or inconsistent job aborts the
-  whole stage.
+* read each job's metric artifact and TTA diagnostics directly.  A failed,
+  missing, incomplete, or inconsistent job aborts the whole stage.  Reused
+  Source evidence remains bound to its tracked ledger and direct artifacts.
 
 R2R/R2R-CE rank SPL first and SR second.  REVERIE ranks RGSPL first and
 RGS second.  There is deliberately no positive-gain gate or fallback.
@@ -34,12 +34,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.run_manifest_identity import immutable_identity_sha256  # noqa: E402
-
-
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
 CONFIG_TRANSLATOR = REPO_ROOT / "vln/scripts/tta_config_cli.py"
-FORMAL_ROOT = REPO_ROOT / "vln/results/runs"
 SEARCH_SCHEMA = "navtta.vln_tta_consistency_search.v2"
 JOB_SCHEMA = "navtta.vln_tta_job.v1"
 PLAN_SCHEMA = "navtta.vln_tta_consistency_plan.v2"
@@ -553,7 +549,7 @@ def _idea_source_parameters(spec, setting, expected_checkpoint_sha256=None):
         raise UserError(
             "{}/IDEA Source-statistics SHA256 mismatch".format(setting)
         )
-    # The formal campaign uses inspectable JSON artifacts.  Runtime performs
+    # The consistency campaign uses inspectable JSON artifacts.  Runtime performs
     # the tensor/dimension checks; here we reject wrong-domain assets before a
     # GPU process is launched.
     if path.suffix.lower() != ".json":
@@ -645,7 +641,6 @@ def _idea_source_parameters(spec, setting, expected_checkpoint_sha256=None):
     order_path = bound_file("order_manifest", "order_manifest_sha256")
     config_path = bound_file("collection_config", "collection_config_sha256")
     diagnostics_path = bound_file("diagnostics", "diagnostics_sha256")
-    formal_path = bound_file("formal_manifest", "formal_manifest_sha256")
     order = _read_json(order_path)
     expected_ids = sorted(str(item.get("episode_id")) for item in order.get("episodes", []))
     if (
@@ -693,59 +688,6 @@ def _idea_source_parameters(spec, setting, expected_checkpoint_sha256=None):
         != IDEA_SOURCE_COLLECTION_POLICY
     ):
         raise UserError("{}/IDEA collection diagnostics mismatch".format(setting))
-    formal = _read_json(formal_path)
-    immutable = binding.get("formal_immutable_identity_sha256")
-    expected_source_setting = "{}:train:{}:idea".format(
-        setting, "v1.3-unified" if setting in CONTINUOUS_SETTINGS else "native"
-    )
-    if (
-        formal.get("task") != "vln"
-        or formal.get("model") != MODEL_FOR_SETTING[setting]
-        or formal.get("method") != "idea"
-        or formal.get("source_setting") != expected_source_setting
-        or formal.get("status") != "completed"
-        or formal.get("exit_code") != 0
-        or formal.get("checkpoint", {}).get("sha256") != artifact_checkpoint
-        or formal.get("dataset", {}).get("stream_order_sha256")
-        != order.get("order_sha256")
-        or formal.get("dataset", {}).get("stream_content_sha256")
-        != order.get("dataset", {}).get("sha256")
-        or not _valid_sha256(immutable)
-        or formal.get("immutable_identity_sha256") != immutable
-        or immutable_identity_sha256(formal) != immutable
-        or formal.get("pinned_manifests", {}).get("episode_order", {}).get(
-            "sha256"
-        ) != binding["order_manifest_sha256"]
-    ):
-        raise UserError("{}/IDEA formal collection manifest mismatch".format(setting))
-    auxiliary = {
-        item.get("name"): item
-        for item in formal.get("auxiliary_checkpoints", [])
-        if isinstance(item, dict)
-    }
-    if auxiliary.get("tta_job_config", {}).get("sha256") != binding[
-        "collection_config_sha256"
-    ]:
-        raise UserError("{}/IDEA formal collection config is unauthenticated".format(setting))
-    artifacts = {
-        item.get("name"): item
-        for item in formal.get("result_artifacts", [])
-        if isinstance(item, dict)
-    }
-    for required_path, required_sha in (
-        (path, expected_sha256),
-        (diagnostics_path, binding["diagnostics_sha256"]),
-    ):
-        try:
-            name = required_path.resolve().relative_to(
-                path.resolve().parent
-            ).as_posix()
-        except ValueError:
-            raise UserError("IDEA collection artifacts do not share a result root")
-        if artifacts.get(name, {}).get("sha256") != required_sha:
-            raise UserError(
-                "{}/IDEA formal collection result is unauthenticated".format(setting)
-            )
     return {
         "source_stats_path": str(path.resolve()),
         "source_stats_sha256": expected_sha256,
@@ -788,7 +730,7 @@ def _parameters_for_seed(method, parameters, order_seed):
             seeded["action_seed"] = order_seed
         else:
             # Native-argmax VLN has no action-sampling RNG.  Do not put an
-            # inert action seed into the formal config/manifest.
+            # inert action seed into the job config.
             seeded.pop("action_seed", None)
     return seeded
 
@@ -805,12 +747,6 @@ def _job_run_tag(run_tag, stage, setting, method, candidate_id, seed):
 
 def _data_version(setting):
     return "v1.3-unified" if setting in CONTINUOUS_SETTINGS else "native"
-
-
-def _formal_manifest_path(run_tag, setting, split):
-    return FORMAL_ROOT / "{}-{}-{}-{}".format(
-        run_tag, setting, split, _data_version(setting)
-    ) / "manifest.json"
 
 
 def _order_metadata(setting, split, seed):
@@ -922,9 +858,6 @@ def _build_jobs(spec, out_dir, run_tag, setting, method, stage, candidates, gpu)
                 "config_path": str(config_path.resolve()),
                 "config_sha256": _sha256(config_path),
                 "result_root": str(result_root.resolve()),
-                "formal_manifest": str(
-                    _formal_manifest_path(job_run_tag, setting, split).resolve()
-                ),
                 "expected_benchmark": order["benchmark"],
                 "expected_episode_count": order["episode_count"],
                 "expected_order_sha256": order["order_sha256"],
@@ -1030,10 +963,6 @@ def _load_plan(path, spec_path, spec, run_tag, setting, method, stage):
             "job_dir": str(expected_job_dir),
             "config_path": str(expected_config_path),
             "result_root": str(expected_result_root),
-            "formal_manifest": str(
-                _formal_manifest_path(expected_run_tag, setting, expected["split"])
-                .resolve()
-            ),
         }
         for key, value in fixed.items():
             if job.get(key) != value:
@@ -1235,22 +1164,6 @@ def read_metrics(result_root, split, setting=None):
     return values
 
 
-def _artifact_entry(manifest, result_root, required_path):
-    relative = Path(required_path).resolve().relative_to(Path(result_root).resolve()).as_posix()
-    matches = [
-        item for item in manifest.get("result_artifacts", [])
-        if isinstance(item, dict) and item.get("name") == relative
-    ]
-    if len(matches) != 1:
-        raise UserError("formal manifest does not authenticate {}".format(relative))
-    item = matches[0]
-    if (
-        item.get("size") != Path(required_path).stat().st_size
-        or item.get("sha256") != _sha256(required_path)
-    ):
-        raise UserError("formal artifact digest mismatch: {}".format(relative))
-
-
 def _validate_diagnostics(job, path):
     diagnostics = _read_json(path)
     if diagnostics.get("method") != job["method"]:
@@ -1285,7 +1198,7 @@ def _validate_diagnostics(job, path):
         if adapter.get("sgr_mode") != "paper_main":
             raise UserError("FeedTTA must attest sgr_mode=paper_main")
         if diagnostics.get("action_selection") != "target_native_argmax":
-            raise UserError("FeedTTA formal VLN protocol requires target-native argmax")
+            raise UserError("FeedTTA consistency protocol requires target-native argmax")
         if adapter.get("action_selection_protocol") != "target_native_argmax":
             raise UserError("FeedTTA adapter action protocol is not target-native argmax")
         if (
@@ -1301,13 +1214,13 @@ def _validate_diagnostics(job, path):
     if job["method"] == "tent" and diagnostics.get(
         "tent_canonical_update_interval"
     ) is not True:
-        raise UserError("Tent formal search requires update_interval=1")
+        raise UserError("Tent consistency search requires update_interval=1")
     if job["method"] == "fstta" and (
         diagnostics.get("fstta_reset_var_hist_each_episode") is not False
         or diagnostics.get("fstta_variance_history_profile")
         != "paper_eq6_test_stream_history"
     ):
-        raise UserError("FSTTA formal search requires paper Eq.6 stream history")
+        raise UserError("FSTTA consistency search requires paper Eq.6 stream history")
     if job["method"] == "atena":
         expected = {
             "exact_episode_replay_enabled": True,
@@ -1359,6 +1272,7 @@ def _validate_diagnostics(job, path):
 
 
 def validate_job_result(job, git_commit):
+    del git_commit
     config_path = Path(job["config_path"])
     if not config_path.is_file() or _sha256(config_path) != job["config_sha256"]:
         raise UserError("job config is missing or changed: {}".format(config_path))
@@ -1372,94 +1286,6 @@ def validate_job_result(job, git_commit):
             raise UserError("required metric {} is missing or invalid".format(metric))
     diagnostics_path = Path(job["result_root"]) / "tta_diagnostics.json"
     diagnostics = _validate_diagnostics(job, diagnostics_path)
-    manifest_path = Path(job["formal_manifest"])
-    manifest = _read_json(manifest_path)
-    expected_run_id = "{}-{}-{}-{}".format(
-        job["run_tag"], job["setting"], job["split"], _data_version(job["setting"])
-    )
-    expected = {
-        "run_id": expected_run_id,
-        "task": "vln",
-        "benchmark": job["expected_benchmark"],
-        "model": job["model"],
-        "method": job["method"],
-        "run_tag": job["run_tag"],
-        "seed": job["order_seed"],
-        "git_commit": git_commit,
-        "status": "completed",
-        "exit_code": 0,
-    }
-    for key, value in expected.items():
-        if manifest.get(key) != value:
-            raise UserError("formal manifest {} mismatch for {}".format(key, job["run_tag"]))
-    if manifest.get("source_setting") != "{}:{}:{}:{}".format(
-        job["setting"], job["split"], _data_version(job["setting"]), job["method"]
-    ):
-        raise UserError("formal manifest source_setting mismatch")
-    if Path(str(manifest.get("config", ""))).resolve() != config_path.resolve():
-        raise UserError("formal manifest config path mismatch")
-    if manifest.get("dataset", {}).get("stream_order_sha256") != job["expected_order_sha256"]:
-        raise UserError("formal manifest stream-order digest mismatch")
-    if manifest.get("dataset", {}).get("stream_content_sha256") != job["expected_dataset_sha256"]:
-        raise UserError("formal manifest dataset digest mismatch")
-    if manifest.get("pinned_manifests", {}).get("episode_order", {}).get("sha256") != job[
-        "expected_order_manifest_sha256"
-    ]:
-        raise UserError("formal manifest order-file digest mismatch")
-    if not _valid_sha256(manifest.get("checkpoint", {}).get("sha256")):
-        raise UserError("formal manifest checkpoint digest is missing")
-    auxiliary = manifest.get("auxiliary_checkpoints")
-    if not isinstance(auxiliary, list):
-        raise UserError("formal manifest auxiliary checkpoints are missing")
-    auxiliary_by_name = {
-        item.get("name"): item for item in auxiliary if isinstance(item, dict)
-    }
-    config_evidence = auxiliary_by_name.get("tta_job_config", {})
-    if (
-        config_evidence.get("sha256") != job["config_sha256"]
-        or config_evidence.get("size") != config_path.stat().st_size
-    ):
-        raise UserError("formal manifest does not bind the TTA job config")
-    if job["method"] == "idea":
-        if diagnostics.get("source_checkpoint_sha256") != manifest["checkpoint"]["sha256"]:
-            raise UserError("IDEA Source-statistics checkpoint digest mismatch")
-        source_evidence = auxiliary_by_name.get("idea_source_statistics", {})
-        source_path = Path(job["parameters"]["source_stats_path"])
-        if (
-            source_evidence.get("sha256")
-            != job["parameters"]["source_stats_sha256"]
-            or source_evidence.get("size") != source_path.stat().st_size
-        ):
-            raise UserError(
-                "formal manifest does not bind IDEA Source statistics"
-            )
-    identity = manifest.get("immutable_identity_sha256")
-    if not _valid_sha256(identity) or immutable_identity_sha256(manifest) != identity:
-        raise UserError("formal manifest immutable identity mismatch")
-    if not isinstance(manifest.get("result_artifacts"), list) or not manifest["result_artifacts"]:
-        raise UserError("formal manifest has no result artifacts")
-    result_root = Path(job["result_root"]).resolve()
-    seen_artifacts = set()
-    for artifact in manifest["result_artifacts"]:
-        if not isinstance(artifact, dict):
-            raise UserError("formal manifest contains a malformed result artifact")
-        name = artifact.get("name")
-        if not isinstance(name, str) or not name or name in seen_artifacts:
-            raise UserError("formal manifest result artifact name is invalid")
-        seen_artifacts.add(name)
-        artifact_path = (result_root / name).resolve()
-        try:
-            artifact_path.relative_to(result_root)
-        except ValueError:
-            raise UserError("formal result artifact escapes the result root")
-        if (
-            not artifact_path.is_file()
-            or artifact.get("size") != artifact_path.stat().st_size
-            or artifact.get("sha256") != _sha256(artifact_path)
-        ):
-            raise UserError("formal result artifact digest mismatch: {}".format(name))
-    _artifact_entry(manifest, job["result_root"], metric_path)
-    _artifact_entry(manifest, job["result_root"], diagnostics_path)
     return {
         **job,
         "metrics": metrics,
@@ -1468,26 +1294,7 @@ def validate_job_result(job, git_commit):
         "diagnostics": diagnostics,
         "diagnostics_path": str(diagnostics_path.resolve()),
         "diagnostics_sha256": _sha256(diagnostics_path),
-        "checkpoint_sha256": manifest["checkpoint"]["sha256"],
-        "formal_manifest_sha256": _sha256(manifest_path),
-        "formal_immutable_identity_sha256": identity,
     }
-
-
-def _source_manifest_from_console(source_root):
-    console = Path(source_root) / "console.log"
-    if not console.is_file():
-        raise UserError("missing Source console log: {}".format(console))
-    candidates = sorted(set(
-        line.strip() for line in console.read_text(
-            encoding="utf-8", errors="replace"
-        ).splitlines() if line.strip().endswith("/manifest.json")
-    ))
-    if len(candidates) != 1:
-        raise UserError("Source console must name exactly one formal manifest")
-    original = Path(candidates[0])
-    local = FORMAL_ROOT / original.parent.name / "manifest.json"
-    return local if local.is_file() else original
 
 
 def _benchmark_for_setting(setting):
@@ -1503,7 +1310,8 @@ def _source_evidence(source_root, setting, split, required_metrics):
 
     ``source_root`` is retained as a CLI compatibility argument, but it is not
     an authority: a single symlink tree cannot represent the different R2R
-    source batches.  The tracked ledger binds each setting independently.
+    source batches.  The tracked ledger and its direct artifacts bind each
+    setting independently.
     """
     del source_root
     ledger_relative = SOURCE_LEDGER[(_benchmark_for_setting(setting), split)]
@@ -1526,6 +1334,13 @@ def _source_evidence(source_root, setting, split, required_metrics):
     record = (ledger.get("records") or ledger.get("settings") or {}).get(setting)
     if not isinstance(record, dict):
         raise UserError("Source ledger lacks setting {}".format(setting))
+    checkpoint_sha256 = record.get("checkpoint_sha256")
+    if (
+        record.get("model") != MODEL_FOR_SETTING[setting]
+        or not _valid_sha256(checkpoint_sha256)
+        or record.get("evidence_status", "ready") != "ready"
+    ):
+        raise UserError("Source ledger identity is invalid for {}".format(setting))
     record_parameters = record.get("parameters")
     if isinstance(record_parameters, dict) and (
         record_parameters.get("action_selection") != "argmax"
@@ -1536,35 +1351,88 @@ def _source_evidence(source_root, setting, split, required_metrics):
             .format(setting)
         )
 
+    order_path = (
+        REPO_ROOT / "vln/manifests/episode_order" / ORDER_FAMILY[setting]
+        / "{}.json".format(split)
+    )
+    order = _read_json(order_path)
+    order_dataset = order.get("dataset")
+    if (
+        order.get("split") != split
+        or type(order.get("episode_count")) is not int
+        or order["episode_count"] <= 0
+        or not isinstance(order.get("benchmark"), str)
+        or not order["benchmark"]
+        or not _valid_sha256(order.get("order_sha256"))
+        or not isinstance(order_dataset, dict)
+        or not _valid_sha256(order_dataset.get("sha256"))
+    ):
+        raise UserError("invalid canonical Source order: {}".format(order_path))
+    if ledger.get("episode_count") != order["episode_count"]:
+        raise UserError("Source ledger episode count mismatch")
+    declared_order = ledger.get("episode_order")
+    if isinstance(declared_order, dict):
+        declared_path = REPO_ROOT / str(declared_order.get("path", ""))
+        if (
+            declared_path.resolve() != order_path.resolve()
+            or declared_order.get("sha256") != _sha256(order_path)
+            or declared_order.get("order_sha256") != order["order_sha256"]
+        ):
+            raise UserError("Source ledger episode-order binding mismatch")
+    elif ledger.get("episode_order_sha256") != order["order_sha256"]:
+        raise UserError("Source ledger episode-order digest mismatch")
+    if (
+        record.get("episode_order_sha256") is not None
+        and record["episode_order_sha256"] != order["order_sha256"]
+    ):
+        raise UserError("Source record episode-order digest mismatch")
+    record_dataset_sha256 = (
+        record.get("dataset_sha256") or record.get("dataset_index_sha256")
+    )
+    if (
+        record_dataset_sha256 is not None
+        and record_dataset_sha256 != order_dataset["sha256"]
+    ):
+        raise UserError("Source ledger dataset digest mismatch")
+
+    def parse_metric_artifact(path):
+        if setting in CONTINUOUS_SETTINGS:
+            raw = _read_json(path)
+            parsed = {
+                key.upper(): float(value)
+                for key, value in raw.items() if _finite(value)
+            }
+            for key in ("SUCCESS", "ORACLE_SUCCESS", "SPL", "NDTW", "SDTW"):
+                if key in parsed:
+                    parsed[key] *= 100.0
+            if "SUCCESS" in parsed:
+                parsed["SR"] = parsed["SUCCESS"]
+            if "ORACLE_SUCCESS" in parsed:
+                parsed["OSR"] = parsed["ORACLE_SUCCESS"]
+            return parsed
+        return parse_console_metrics(
+            path.read_text(encoding="utf-8", errors="replace"), split
+        )
+
     metrics = record.get("metrics")
     metric_path = None
     metric_sha = None
-    formal_metric_path = None
-    formal_metric_sha = None
-    formal_metric_size = None
     if isinstance(metrics, dict):
         metrics = {key.upper(): float(value) for key, value in metrics.items() if _finite(value)}
     else:
         aggregate = record.get("aggregate_artifact")
         if not isinstance(aggregate, dict):
             raise UserError("Source ledger lacks aggregate metrics for {}".format(setting))
-        metric_path = REPO_ROOT / aggregate["path"]
+        metric_path = REPO_ROOT / str(aggregate.get("path", ""))
         if (
             not metric_path.is_file()
+            or not _valid_sha256(aggregate.get("sha256"))
             or _sha256(metric_path) != aggregate.get("sha256")
             or metric_path.stat().st_size != aggregate.get("size")
         ):
             raise UserError("Source aggregate artifact digest mismatch")
-        raw = _read_json(metric_path)
-        metrics = {key.upper(): float(value) for key, value in raw.items() if _finite(value)}
-        for key in ("SUCCESS", "ORACLE_SUCCESS", "SPL", "NDTW", "SDTW"):
-            if key in metrics:
-                metrics[key] *= 100.0
-        metrics["SR"] = metrics["SUCCESS"]
+        metrics = parse_metric_artifact(metric_path)
         metric_sha = aggregate["sha256"]
-        formal_metric_path = metric_path
-        formal_metric_sha = metric_sha
-        formal_metric_size = metric_path.stat().st_size
     for metric in required_metrics:
         if not _finite(metrics.get(metric)):
             raise UserError("Source metric {} is missing for {}".format(metric, setting))
@@ -1573,165 +1441,52 @@ def _source_evidence(source_root, setting, split, required_metrics):
     artifact_sha = record.get("metrics_artifact_sha256") or record.get("aggregate_artifact_sha256")
     if artifact_value is not None:
         metric_path = REPO_ROOT / artifact_value
-        if not metric_path.is_file() or _sha256(metric_path) != artifact_sha:
+        if (
+            not metric_path.is_file()
+            or not _valid_sha256(artifact_sha)
+            or _sha256(metric_path) != artifact_sha
+        ):
             raise UserError("Source metric artifact SHA256 mismatch")
-        parsed = _metric_artifact(metric_path.parent.parent if metric_path.name == "valid.txt" else metric_path.parents[2], setting, split)[1]
+        parsed = parse_metric_artifact(metric_path)
         for metric in required_metrics:
-            if not math.isclose(
+            if not _finite(parsed.get(metric)) or not math.isclose(
                 float(parsed[metric]), float(metrics[metric]),
                 rel_tol=0.0, abs_tol=1e-9,
             ):
                 raise UserError("Source ledger metric disagrees with its artifact")
         metric_sha = artifact_sha
-        formal_metric_path = metric_path
-        formal_metric_sha = artifact_sha
-        formal_metric_size = metric_path.stat().st_size
     metrics_json_value = record.get("metrics_json_path")
     if metrics_json_value is not None:
         metrics_json = REPO_ROOT / metrics_json_value
-        if not metrics_json.is_file() or _sha256(metrics_json) != record.get("metrics_json_sha256"):
+        metrics_json_sha256 = record.get("metrics_json_sha256")
+        if (
+            not metrics_json.is_file()
+            or not _valid_sha256(metrics_json_sha256)
+            or _sha256(metrics_json) != metrics_json_sha256
+        ):
             raise UserError("Source metrics JSON SHA256 mismatch")
         parsed = _read_json(metrics_json).get("metrics", {})
         for metric in required_metrics:
-            if not math.isclose(
+            if not _finite(parsed.get(metric)) or not math.isclose(
                 float(parsed[metric]), float(metrics[metric]),
                 rel_tol=0.0, abs_tol=1e-9,
             ):
                 raise UserError("Source ledger metric disagrees with metrics JSON")
         metric_path = metrics_json
-        metric_sha = record["metrics_json_sha256"]
-
-    formal = record.get("formal_manifest")
-    if isinstance(formal, dict):
-        manifest_path = REPO_ROOT / formal["path"]
-        expected_manifest_sha = formal["sha256"]
-    else:
-        manifest_path = REPO_ROOT / record["formal_manifest_path"]
-        expected_manifest_sha = record["formal_manifest_sha256"]
-    if not manifest_path.is_file() or _sha256(manifest_path) != expected_manifest_sha:
-        raise UserError("Source formal-manifest SHA256 mismatch")
-    manifest = _read_json(manifest_path)
-    manifest_dataset = manifest.get("dataset")
-    if (
-        not isinstance(manifest_dataset, dict)
-        or not _valid_sha256(manifest_dataset.get("stream_content_sha256"))
-    ):
-        raise UserError("Source formal manifest dataset identity is invalid")
-    if (
-        manifest.get("task") != "vln"
-        or manifest.get("model") != MODEL_FOR_SETTING[setting]
-        or manifest.get("method") != "source"
-        or manifest.get("seed") != 0
-        or manifest.get("status") != "completed"
-        or manifest.get("exit_code") != 0
-        or not _valid_sha256(manifest.get("checkpoint", {}).get("sha256"))
-        or not _valid_sha256(manifest.get("immutable_identity_sha256"))
-        or immutable_identity_sha256(manifest) != manifest["immutable_identity_sha256"]
-    ):
-        raise UserError("Source formal manifest identity is invalid for {}".format(setting))
-    source_setting_base = "{}:{}:{}".format(
-        setting, split, _data_version(setting)
-    )
-    if manifest.get("source_setting") not in {
-        source_setting_base, source_setting_base + ":source"
-    }:
-        raise UserError("Source formal manifest split/setting mismatch")
-    if manifest.get("checkpoint", {}).get("sha256") != record.get("checkpoint_sha256"):
-        raise UserError("Source ledger checkpoint digest mismatch")
-    record_dataset_sha = (
-        record.get("dataset_sha256") or record.get("dataset_index_sha256")
-    )
-    if (
-        record_dataset_sha is not None
-        and record_dataset_sha != manifest_dataset["stream_content_sha256"]
-    ):
-        raise UserError("Source ledger dataset digest mismatch")
-    if formal_metric_path is None:
-        candidates = []
-        for item in manifest.get("result_artifacts", []):
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name", ""))
-            if setting in CONTINUOUS_SETTINGS:
-                selected = (
-                    Path(name).name.startswith("stats_")
-                    and Path(name).name.endswith("_{}.json".format(split))
-                    and re.search(r"_r\d+_w\d+$", Path(name).stem) is None
-                )
-            else:
-                selected = Path(name).name == "valid.txt"
-            if not selected:
-                continue
-            recorded_path = Path(str(item.get("path", "")))
-            local_path = recorded_path
-            if not local_path.is_file() and "vln" in recorded_path.parts:
-                # Historical formal manifests were created on AutoDL and keep
-                # absolute server paths.  Resolve their repository-relative
-                # suffix when authenticating a checked-out evidence bundle.
-                offset = recorded_path.parts.index("vln")
-                local_path = REPO_ROOT.joinpath(*recorded_path.parts[offset:])
-            if local_path.is_file() and (
-                item.get("size") != local_path.stat().st_size
-                or item.get("sha256") != _sha256(local_path)
-            ):
-                raise UserError("Source formal metric artifact digest mismatch")
-            if _valid_sha256(item.get("sha256")) and type(item.get("size")) is int:
-                candidates.append((
-                    local_path if local_path.is_file() else None,
-                    item["sha256"],
-                    item["size"],
-                ))
-        if len(candidates) != 1:
-            raise UserError(
-                "Source formal manifest must expose exactly one aggregate metric artifact"
-            )
-        formal_metric_path, formal_metric_sha, formal_metric_size = candidates[0]
-        if formal_metric_path is not None and setting in CONTINUOUS_SETTINGS:
-            parsed_source_metrics = {
-                key.upper(): float(value)
-                for key, value in _read_json(formal_metric_path).items()
-                if _finite(value)
-            }
-            for key in ("SUCCESS", "ORACLE_SUCCESS", "SPL", "NDTW", "SDTW"):
-                if key in parsed_source_metrics:
-                    parsed_source_metrics[key] *= 100.0
-            parsed_source_metrics["SR"] = parsed_source_metrics["SUCCESS"]
-        elif formal_metric_path is not None:
-            parsed_source_metrics = parse_console_metrics(
-                formal_metric_path.read_text(encoding="utf-8", errors="replace"),
-                split,
-            )
-        if formal_metric_path is not None:
-            for metric in required_metrics:
-                if not math.isclose(
-                    float(parsed_source_metrics[metric]), float(metrics[metric]),
-                    rel_tol=0.0, abs_tol=1e-9,
-                ):
-                    raise UserError("Source ledger metric disagrees with formal artifact")
-    if formal_metric_sha is None or formal_metric_size is None:
-        raise UserError("Source ledger has no authenticated metric artifact")
-    matching_artifacts = [
-        item for item in manifest.get("result_artifacts", [])
-        if isinstance(item, dict)
-        and item.get("sha256") == formal_metric_sha
-        and item.get("size") == formal_metric_size
-    ]
-    if len(matching_artifacts) != 1:
-        raise UserError("Source formal manifest does not authenticate its metric artifact")
+        metric_sha = metrics_json_sha256
+    if metric_path is None or not _valid_sha256(metric_sha):
+        raise UserError("Source ledger has no validated metric artifact")
     return {
         "metrics": {key: float(value) for key, value in metrics.items()},
         "source_ledger": str(ledger_path.resolve()),
         "source_ledger_sha256": _sha256(ledger_path),
         "source_action_protocol": "target_native_argmax",
         "matched_feedtta_source": False,
-        "metric_artifact": str(metric_path.resolve()) if metric_path else None,
+        "metric_artifact": str(metric_path.resolve()),
         "metric_sha256": metric_sha,
-        "checkpoint_sha256": manifest["checkpoint"]["sha256"],
-        "dataset_sha256": manifest_dataset["stream_content_sha256"],
-        "benchmark": manifest.get("benchmark"),
-        "formal_manifest": str(Path(manifest_path).resolve()),
-        "formal_manifest_sha256": expected_manifest_sha,
-        "formal_immutable_identity_sha256": manifest["immutable_identity_sha256"],
+        "checkpoint_sha256": checkpoint_sha256,
+        "dataset_sha256": order_dataset["sha256"],
+        "benchmark": order["benchmark"],
     }
 
 
@@ -1784,8 +1539,8 @@ def select_config(candidate_results, source_metrics, selection):
             "selection_runs": {
                 str(row["order_seed"]): {
                     "run_tag": row["run_tag"],
-                    "formal_manifest": row["formal_manifest"],
-                    "formal_manifest_sha256": row["formal_manifest_sha256"],
+                    "metric_artifact": row["metric_artifact"],
+                    "diagnostics_path": row["diagnostics_path"],
                     "diagnostics_sha256": row["diagnostics_sha256"],
                     "metric_sha256": row["metric_sha256"],
                 } for row in rows
@@ -1833,9 +1588,12 @@ def _validate_complete_matrix(plan, spec, source_root):
         _idea_source_parameters(
             spec, plan["setting"], source["checkpoint_sha256"]
         )
-    checkpoint_digests = {row["checkpoint_sha256"] for row in results}
-    if checkpoint_digests != {source["checkpoint_sha256"]}:
-        raise UserError("candidate and Source checkpoint digests differ")
+        if {
+            row["diagnostics"]["source_checkpoint_sha256"] for row in results
+        } != {source["checkpoint_sha256"]}:
+            raise UserError(
+                "IDEA Source-statistics checkpoint differs from Source control"
+            )
     dataset_digests = {row["expected_dataset_sha256"] for row in results}
     if dataset_digests != {source["dataset_sha256"]}:
         raise UserError("candidate and Source dataset digests differ")
@@ -2040,8 +1798,13 @@ def run_report(spec_path, out_dir, source_root, run_tag, methods_filter, setting
                 spec["protocol"]["primary_metric"], spec["protocol"]["secondary_metric"]
             )
             source = _source_evidence(source_root, setting, "val_seen", required)
-            if {row["checkpoint_sha256"] for row in rows} != {source["checkpoint_sha256"]}:
-                raise UserError("retention and Source checkpoint digests differ")
+            if method == "idea" and {
+                row["diagnostics"]["source_checkpoint_sha256"] for row in rows
+            } != {source["checkpoint_sha256"]}:
+                raise UserError(
+                    "IDEA retention Source-statistics checkpoint differs from "
+                    "Source control"
+                )
             if {row["expected_dataset_sha256"] for row in rows} != {
                 source["dataset_sha256"]
             }:
@@ -2081,8 +1844,8 @@ def run_report(spec_path, out_dir, source_root, run_tag, methods_filter, setting
                     "runs": {
                         str(row["order_seed"]): {
                             "run_tag": row["run_tag"],
-                            "formal_manifest": row["formal_manifest"],
-                            "formal_manifest_sha256": row["formal_manifest_sha256"],
+                            "metric_artifact": row["metric_artifact"],
+                            "diagnostics_path": row["diagnostics_path"],
                             "diagnostics_sha256": row["diagnostics_sha256"],
                             "metric_sha256": row["metric_sha256"],
                         } for row in rows

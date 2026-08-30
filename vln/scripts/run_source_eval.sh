@@ -34,14 +34,12 @@ does not produce a local test score.
 VERSION controls ETPNav/BEVBert only: v1.3-unified (default, comparable to
 StreamVLN start states) or v1.2-native (paper/upstream reproduction).
 
---smoke-episodes N is a non-formal GPU lifecycle check.  It is restricted to
+--smoke-episodes N is a short GPU lifecycle check.  It is restricted to
 val_seen, uses the canonical prefix, and writes under vln/results/smoke/.
 
---tta-config FILE enables a provenance-recorded TTA/control job described by
-one JSON file.  --episode-limit N is ordinarily a non-formal development
-prefix used by the hyperparameter scheduler.  The isolated adapter-parity
-audit is the sole exception: it requires exactly 256 canonical-prefix
-episodes and receives the formal manifest/clean-tree lifecycle.
+--tta-config FILE enables a TTA/control job described by one JSON file.
+--episode-limit N is a development prefix used by the hyperparameter
+scheduler.  The isolated adapter-parity audit requires exactly 256 episodes.
 --adapter-parity-audit is required by the isolated zero-write parity schema
 and is rejected for every ordinary tuning/source configuration.
 
@@ -177,18 +175,14 @@ case "${CE_DATA_VERSION}" in
     *) die "invalid CE data version: ${CE_DATA_VERSION}" ;;
 esac
 case "${SETTING}" in
-    etpnav-r2r-ce|bevbert-r2r-ce)
-        RUN_DATA_VERSION="${CE_DATA_VERSION}"
-        ;;
+    etpnav-r2r-ce|bevbert-r2r-ce) ;;
     streamvln-r2r-ce)
         [[ "${CE_DATA_VERSION_SET}" -eq 0 && "${CE_DATA_VERSION}" == "v1.3-unified" ]] || \
             die "--ce-data-version applies only to ETPNav/BEVBert; StreamVLN is fixed to v1.3"
-        RUN_DATA_VERSION="v1.3"
         ;;
     *)
         [[ "${CE_DATA_VERSION_SET}" -eq 0 && "${CE_DATA_VERSION}" == "v1.3-unified" ]] || \
             die "--ce-data-version applies only to ETPNav/BEVBert"
-        RUN_DATA_VERSION="native"
         ;;
 esac
 if [[ -n "${SMOKE_EPISODES}" && "${SPLIT}" != "val_seen" ]]; then
@@ -227,11 +221,13 @@ if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
     MODEL_SEED="${ORDER_SEED}"
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${REPO_ROOT}" in
-    /root/autodl-tmp/*) ;;
-    *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
-esac
+REPO_ROOT=/data1/wxy/code/NavTTA
+VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+ENV_ROOT="${VLN_ROOT}/envs"
+CACHE_ROOT="${VLN_ROOT}/cache"
+TMP_ROOT="${VLN_ROOT}/tmp"
+HOME_ROOT="${VLN_ROOT}/home"
+XDG_CACHE_ROOT="${CACHE_ROOT}/xdg"
 
 # Config translation and protocol guards run before select_env() amends PATH.
 # Resolve them through the setting's pinned environment instead of assuming a
@@ -244,7 +240,7 @@ case "${SETTING}" in
     streamvln-r2r-ce) BOOTSTRAP_ENV_NAME=streamvln ;;
     *) die "invalid setting: ${SETTING}" ;;
 esac
-BOOTSTRAP_PYTHON="/root/autodl-tmp/conda/envs/${BOOTSTRAP_ENV_NAME}/bin/python"
+BOOTSTRAP_PYTHON="${ENV_ROOT}/${BOOTSTRAP_ENV_NAME}/bin/python"
 [[ -x "${BOOTSTRAP_PYTHON}" ]] || \
     die "missing bootstrap Python: ${BOOTSTRAP_PYTHON}"
 
@@ -490,13 +486,13 @@ if [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
 fi
 
 SOURCE_TAG_LOCK_FD=""
-SOURCE_TAG_LOCK_ROOT="/root/autodl-tmp/tmp/navtta-source-tag-locks"
+SOURCE_TAG_LOCK_ROOT="${TMP_ROOT}/navtta-source-tag-locks"
 SOURCE_TAG_LOCK_FILE="${SOURCE_TAG_LOCK_ROOT}/${RUN_TAG}.lock"
 
 claim_or_verify_source_tag_lock() {
     local inherited_fd
     local inherited_path
-    command -v flock >/dev/null 2>&1 || die "flock is required for formal runs"
+    command -v flock >/dev/null 2>&1 || die "flock is required for evaluation runs"
     mkdir -p "${SOURCE_TAG_LOCK_ROOT}"
     if [[ "${NAVTTA_SOURCE_TAG_LOCKED:-}" == "${RUN_TAG}" ]]; then
         inherited_fd="${NAVTTA_SOURCE_TAG_LOCK_FD:-}"
@@ -589,7 +585,6 @@ if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
         die "refusing to overwrite IDEA source-statistics artifact"
 fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
-MATTERSIM_MODULE="${MATTERSIM_ROOT}/build/MatterSim.cpython-38-x86_64-linux-gnu.so"
 case "${SETTING}" in
     duet-r2r|hamt-r2r) ORDER_FAMILY=r2r_duet_hamt ;;
     duet-reverie|hamt-reverie) ORDER_FAMILY=reverie_duet_hamt ;;
@@ -697,19 +692,20 @@ else
     CE_BENCHMARK=r2r_ce_v1_2_etpnav_bevbert
 fi
 STREAM_MANIFEST="${REPO_ROOT}/vln/manifests/episode_order/r2r_vlnce_v1_3"
-CLIP_CACHE="/root/autodl-tmp/cache/clip"
+CLIP_CACHE="${CACHE_ROOT}/clip"
 DISCRETE_SUBMISSION_CANONICALIZER="${REPO_ROOT}/vln/scripts/canonicalize_discrete_submission.py"
 DISCRETE_SCANVP_CANDIDATES="${DATA_ROOT}/goat/R2R/annotations/scanvp_candview_relangles.json"
 
-export HOME="/root/autodl-tmp"
-export XDG_CACHE_HOME="/root/autodl-tmp/.cache"
+mkdir -p "${HOME_ROOT}" "${XDG_CACHE_ROOT}"
+export HOME="${HOME_ROOT}"
+export XDG_CACHE_HOME="${XDG_CACHE_ROOT}"
 export HF_HOME="${CHECKPOINT_ROOT}/duet/.hf_cache"
 export HF_HUB_CACHE="${CHECKPOINT_ROOT}/duet/.hf_cache/hub"
 export TRANSFORMERS_CACHE="${CHECKPOINT_ROOT}/duet/.hf_cache/hub"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
-export NLTK_DATA="/root/autodl-tmp/cache/nltk_data"
+export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export NAVTTA_CLIP_CACHE="${CLIP_CACHE}"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export CUDA_VISIBLE_DEVICES="${GPU}"
@@ -723,285 +719,23 @@ elif [[ -n "${EPISODE_LIMIT}" ]]; then
     export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"
 fi
 
-FORMAL_EXECUTION_PATHS=(
-    core tools vln/baselines vln/navtta_vln vln/scripts
-    vln/experiments vln/manifests
-)
-
-check_formal_git_state() {
-    local expected_commit="$1"
-    local current_commit tracked_changes untracked_files
-
-    if ! current_commit="$(git -C "${REPO_ROOT}" rev-parse --verify HEAD 2>&1)"; then
-        printf 'error: git rev-parse failed: %s\n' "${current_commit}" >&2
-        return 1
-    fi
-    if [[ ! "${current_commit}" =~ ^[0-9a-f]{40}$ ]]; then
-        printf 'error: Git HEAD is not a full commit: %s\n' "${current_commit}" >&2
-        return 1
-    fi
-    if [[ -n "${expected_commit}" && "${current_commit}" != "${expected_commit}" ]]; then
-        printf 'error: Git HEAD changed during the formal run: expected %s, got %s\n' \
-            "${expected_commit}" "${current_commit}" >&2
-        return 1
-    fi
-    if ! tracked_changes="$(
-        git -C "${REPO_ROOT}" status --porcelain --untracked-files=no 2>&1
-    )"; then
-        printf 'error: git status failed: %s\n' "${tracked_changes}" >&2
-        return 1
-    fi
-    if [[ -n "${tracked_changes}" ]]; then
-        printf 'error: tracked worktree changes detected during formal run:\n%s\n' \
-            "${tracked_changes}" >&2
-        return 1
-    fi
-    if ! untracked_files="$(
-        git -C "${REPO_ROOT}" ls-files --others --exclude-standard -- \
-            "${FORMAL_EXECUTION_PATHS[@]}" 2>&1
-    )"; then
-        printf 'error: git ls-files failed: %s\n' "${untracked_files}" >&2
-        return 1
-    fi
-    if [[ -n "${untracked_files}" ]]; then
-        printf 'error: untracked execution files detected during formal run:\n%s\n' \
-            "${untracked_files}" >&2
-        return 1
-    fi
-}
-
-FORMAL_RUN=0
-if [[ "${DRY_RUN}" -eq 0 && -z "${SMOKE_EPISODES}" && \
-      ( -z "${EPISODE_LIMIT}" || "${ADAPTER_PARITY_AUDIT}" -eq 1 ) ]]; then
-    FORMAL_RUN=1
-    if ! RUN_GIT_COMMIT="$(
-        git -C "${REPO_ROOT}" rev-parse --verify HEAD 2>&1
-    )"; then
-        die "cannot resolve Git HEAD: ${RUN_GIT_COMMIT}"
-    fi
-    check_formal_git_state "${RUN_GIT_COMMIT}" || \
-        die "formal runs require an unchanged, clean execution tree"
-fi
-
 if [[ "${DRY_RUN}" -eq 0 ]]; then
     if [[ -d "${RESULT_ROOT}" ]] && find "${RESULT_ROOT}" -mindepth 1 -print -quit | grep -q .; then
         die "output is not empty; use a new run directory: ${RESULT_ROOT}"
     fi
     mkdir -p "${RESULT_ROOT}"
     CONSOLE_LOG="${RESULT_ROOT}/console.log"
-    # Mirror every subsequent diagnostic without placing the evaluated command
-    # behind a pipeline.  Its original exit status therefore reaches `set -e`
-    # and the formal-manifest EXIT trap unchanged; `pipefail` remains active for
-    # the runner's own validation pipelines.
+    # Mirror diagnostics without placing the evaluated command behind a
+    # pipeline, so its original exit status still reaches `set -e`.
     exec > >(tee -a "${CONSOLE_LOG}") 2>&1
     printf 'console log: %s\n' "${CONSOLE_LOG}"
 fi
 
-RUN_MODEL=""
 RUN_ORDER_DIR=""
 RUN_PRIMARY_CHECKPOINT=""
-RUN_CONFIG_REF=""
-RUN_AUX_CHECKPOINTS=()
-RUN_MANIFEST_ACTIVE=0
-RUN_MANIFEST_PATH=""
-RUN_PREFIX_ORDER_FILE=""
-
-set_run_identity() {
-    RUN_MODEL="$1"
-    RUN_ORDER_DIR="$2"
-    RUN_PRIMARY_CHECKPOINT="$3"
-    RUN_CONFIG_REF="$4"
-    shift 4
-    RUN_AUX_CHECKPOINTS=("$@")
-    if [[ -n "${TTA_CONFIG}" && ( "${TTA_NAMESPACE}" == "tuning" || \
-         "${TTA_NAMESPACE}" == "idea_source_statistics" ) ]]; then
-        RUN_AUX_CHECKPOINTS+=("tta_job_config=${TTA_CONFIG}")
-    fi
-    if [[ "${TTA_METHOD}" == "idea" && "${IDEA_SOURCE_COLLECTION}" -eq 0 ]]; then
-        [[ -n "${IDEA_SOURCE_STATS_PATH}" && \
-           -n "${IDEA_SOURCE_STATS_SHA256}" ]] || \
-            die "IDEA source-statistics binding was not validated"
-        RUN_AUX_CHECKPOINTS+=(
-            "idea_source_statistics=${IDEA_SOURCE_STATS_PATH}"
-        )
-    fi
-    case "${RUN_MODEL}" in
-        duet|hamt|goat)
-            # The discrete evaluators import this ignored native module at
-            # runtime.  Hash the exact binary in every formal run manifest.
-            RUN_AUX_CHECKPOINTS+=("mattersim_python=${MATTERSIM_MODULE}")
-            ;;
-    esac
-}
-
-validate_run_identity_paths() {
-    [[ -d "${RUN_ORDER_DIR}" ]] || die "missing episode-order directory: ${RUN_ORDER_DIR}"
-    [[ -f "${RUN_ORDER_DIR}/${SPLIT}.json" ]] || \
-        die "missing episode-order manifest for ${SPLIT}"
-    [[ -f "${RUN_PRIMARY_CHECKPOINT}" ]] || \
-        die "missing primary checkpoint: ${RUN_PRIMARY_CHECKPOINT}"
-    if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
-        local checkpoint_sha256
-        checkpoint_sha256="$(sha256sum "${RUN_PRIMARY_CHECKPOINT}" | awk '{print $1}')"
-        [[ "${checkpoint_sha256}" == "${IDEA_SOURCE_CHECKPOINT_SHA256}" ]] || \
-            die "IDEA collection checkpoint SHA256 does not match the loaded policy"
-    fi
-    if [[ "${RUN_CONFIG_REF}" != *'#'* ]]; then
-        local config_path="${RUN_CONFIG_REF}"
-        [[ "${config_path}" = /* ]] || config_path="${REPO_ROOT}/${config_path}"
-        [[ -f "${config_path}" ]] || die "missing run configuration: ${config_path}"
-    fi
-    local item name path
-    for item in "${RUN_AUX_CHECKPOINTS[@]}"; do
-        [[ "${item}" == *=* ]] || die "invalid auxiliary checkpoint mapping: ${item}"
-        name="${item%%=*}"
-        path="${item#*=}"
-        [[ -n "${name}" && -f "${path}" ]] || \
-            die "missing auxiliary checkpoint ${name}: ${path}"
-    done
-}
-
-finalize_formal_manifest() {
-    local status=$?
-    local finalize_status=0
-    local validate_status=0
-    local artifact relative
-    local -a artifact_args=()
-    trap - EXIT
-    set +e
-    if [[ "${RUN_MANIFEST_ACTIVE}" -eq 1 ]]; then
-        if ! check_formal_git_state "${RUN_GIT_COMMIT}"; then
-            if [[ "${status}" -eq 0 ]]; then
-                printf 'error: refusing to mark a run successful after Git state changed\n' >&2
-                status=1
-            else
-                printf 'error: Git state also changed during the failed formal run\n' >&2
-            fi
-        fi
-        if [[ "${status}" -eq 0 ]]; then
-            while IFS= read -r -d '' artifact; do
-                relative="${artifact#${RESULT_ROOT}/}"
-                artifact_args+=(--artifact "${relative}=${artifact}")
-            done < <(
-                find "${RESULT_ROOT}" -type f \
-                    \( -name '*.json' -o -name '*.jsonl' -o -name '*.txt' \) \
-                    -print0 | sort -z
-            )
-            if [[ "${#artifact_args[@]}" -eq 0 ]]; then
-                printf 'error: formal run produced no compact result artifacts\n' >&2
-                status=1
-            fi
-        fi
-        "${PYTHON}" "${REPO_ROOT}/tools/finalize_run_manifest.py" \
-            --manifest "${RUN_MANIFEST_PATH}" --exit-code "${status}" \
-            "${artifact_args[@]}"
-        finalize_status=$?
-        if [[ "${status}" -eq 0 && "${finalize_status}" -eq 0 ]]; then
-            "${PYTHON}" "${REPO_ROOT}/tools/validate_run_manifest.py" \
-                --manifest "${RUN_MANIFEST_PATH}" --task vln \
-                --benchmark "${RUN_BENCHMARK}" --run-tag "${RUN_TAG}" \
-                --model "${RUN_MODEL}" --method "${TTA_METHOD}" \
-                --source-setting "${RUN_SOURCE_SETTING}" --seed "${MODEL_SEED}" \
-                --git-commit "${RUN_GIT_COMMIT}" \
-                --checkpoint-sha256 "${RUN_PRIMARY_SHA256}" \
-                --stream-order-sha256 "${RUN_ORDER_SHA256}" \
-                --stream-content-sha256 "${RUN_DATASET_SHA256}" \
-                --require-immutable-identity \
-                --require-result-artifacts
-            validate_status=$?
-        fi
-        if [[ "${status}" -eq 0 && "${finalize_status}" -ne 0 ]]; then
-            status=${finalize_status}
-        elif [[ "${status}" -eq 0 && "${validate_status}" -ne 0 ]]; then
-            status=${validate_status}
-            "${PYTHON}" "${REPO_ROOT}/tools/finalize_run_manifest.py" \
-                --manifest "${RUN_MANIFEST_PATH}" --exit-code "${status}" >/dev/null 2>&1
-        fi
-    fi
-    exit "${status}"
-}
-
-prepare_formal_manifest() {
-    [[ "${FORMAL_RUN}" -eq 1 ]] || return 0
-    [[ -n "${RUN_MODEL}" && -n "${RUN_ORDER_DIR}" && \
-       -n "${RUN_PRIMARY_CHECKPOINT}" && -n "${RUN_CONFIG_REF}" ]] || \
-        die "formal run identity is incomplete"
-
-    local canonical_order_file="${RUN_ORDER_DIR}/${SPLIT}.json"
-    [[ -f "${canonical_order_file}" ]] || \
-        die "missing episode-order manifest: ${canonical_order_file}"
-    local order_file="${canonical_order_file}"
-    if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
-        RUN_PREFIX_ORDER_FILE="${RESULT_ROOT}/episode_order_prefix.json"
-        "${PYTHON}" "${REPO_ROOT}/vln/scripts/create_episode_order_prefix.py" \
-            --parent "${canonical_order_file}" \
-            --output "${RUN_PREFIX_ORDER_FILE}" --episodes 256 \
-            --protocol zero_update_adapter_parity
-        order_file="${RUN_PREFIX_ORDER_FILE}"
-    fi
-    local -a order_metadata
-    mapfile -t order_metadata < <(
-        "${PYTHON}" - "${order_file}" <<'PY'
-import json
-import sys
-with open(sys.argv[1], "r") as stream:
-    document = json.load(stream)
-print(document["benchmark"])
-print(document["dataset"]["path"])
-print(document["dataset"]["sha256"])
-print(document["order_sha256"])
-PY
-    )
-    [[ "${#order_metadata[@]}" -eq 4 ]] || die "invalid episode-order metadata"
-    RUN_BENCHMARK="${order_metadata[0]}"
-    local dataset_path="${order_metadata[1]}"
-    RUN_DATASET_SHA256="${order_metadata[2]}"
-    RUN_ORDER_SHA256="${order_metadata[3]}"
-    [[ "${dataset_path}" = /* ]] || dataset_path="${REPO_ROOT}/${dataset_path}"
-    [[ -f "${dataset_path}" ]] || die "missing manifest dataset: ${dataset_path}"
-    local actual_dataset_sha256
-    actual_dataset_sha256="$(sha256sum "${dataset_path}" | awk '{print $1}')"
-    [[ "${actual_dataset_sha256}" == "${RUN_DATASET_SHA256}" ]] || \
-        die "episode-order dataset SHA256 mismatch"
-    [[ -f "${RUN_PRIMARY_CHECKPOINT}" ]] || \
-        die "missing primary checkpoint: ${RUN_PRIMARY_CHECKPOINT}"
-    RUN_PRIMARY_SHA256="$(sha256sum "${RUN_PRIMARY_CHECKPOINT}" | awk '{print $1}')"
-    RUN_SOURCE_SETTING="${SETTING}:${SPLIT}:${RUN_DATA_VERSION}:${TTA_METHOD}"
-    local run_id="${RUN_TAG}-${SETTING}-${SPLIT}-${RUN_DATA_VERSION}"
-    local run_dir="${REPO_ROOT}/vln/results/runs/${run_id}"
-    mkdir -p "${REPO_ROOT}/vln/results/runs"
-    mkdir "${run_dir}" || die "run manifest directory already exists: ${run_dir}"
-    RUN_MANIFEST_PATH="${run_dir}/manifest.json"
-
-    local auxiliary_args=()
-    local item name path
-    for item in "${RUN_AUX_CHECKPOINTS[@]}"; do
-        [[ "${item}" == *=* ]] || die "invalid auxiliary checkpoint mapping: ${item}"
-        name="${item%%=*}"
-        path="${item#*=}"
-        [[ -f "${path}" ]] || die "missing auxiliary checkpoint ${name}: ${path}"
-        auxiliary_args+=(--aux-checkpoint "${name}=${path}")
-    done
-
-    local asset_manifest="${REPO_ROOT}/vln/manifests/assets/eval_assets.json"
-    if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
-        asset_manifest="${REPO_ROOT}/vln/manifests/assets/source_train_assets.json"
-    fi
-    "${PYTHON}" "${REPO_ROOT}/tools/create_run_manifest.py" \
-        --output "${RUN_MANIFEST_PATH}" --run-id "${run_id}" \
-        --task vln --benchmark "${RUN_BENCHMARK}" --model "${RUN_MODEL}" \
-        --method "${TTA_METHOD}" --run-tag "${RUN_TAG}" \
-        --source-setting "${RUN_SOURCE_SETTING}" --seed "${MODEL_SEED}" \
-        --config "${RUN_CONFIG_REF}" --checkpoint "${RUN_PRIMARY_CHECKPOINT}" \
-        "${auxiliary_args[@]}" --dataset "${dataset_path}" \
-        --dataset-version "${RUN_BENCHMARK}" \
-        --stream-order-sha256 "${RUN_ORDER_SHA256}" \
-        --stream-content-sha256 "${RUN_DATASET_SHA256}" \
-        --asset-manifest "${asset_manifest}" \
-        --environment-manifest "${REPO_ROOT}/vln/manifests/environments/eval_environments.json" \
-        --episode-order-manifest "${order_file}" --extra "$@"
-    RUN_MANIFEST_ACTIVE=1
-    trap finalize_formal_manifest EXIT
+set_run_context() {
+    RUN_ORDER_DIR="$1"
+    RUN_PRIMARY_CHECKPOINT="$2"
 }
 
 run_in() {
@@ -1017,31 +751,18 @@ run_in() {
         )
         [[ "${#tta_args[@]}" -gt 0 ]] || die "TTA config produced no model arguments"
         evaluated_command+=("${tta_args[@]}")
-        RUN_CONFIG_REF="${TTA_CONFIG}"
     fi
-    if [[ "${ADAPTER_PARITY_AUDIT}" -eq 1 ]]; then
-        RUN_AUX_CHECKPOINTS+=(
-            "audit_job_config=${TTA_CONFIG}"
-            "canonical_episode_order_parent=${RUN_ORDER_DIR}/${SPLIT}.json"
-        )
-    fi
-    validate_run_identity_paths
     printf 'workdir: %s\ncommand:' "${workdir}"
     printf ' %q' "${evaluated_command[@]}"
     printf '\n'
     if [[ "${DRY_RUN}" -eq 0 ]]; then
-        prepare_formal_manifest "${evaluated_command[@]}"
-        if [[ "${FORMAL_RUN}" -eq 1 ]]; then
-            check_formal_git_state "${RUN_GIT_COMMIT}" || \
-                die "formal execution tree changed before model invocation"
-        fi
         (cd "${workdir}" && "${evaluated_command[@]}")
     fi
 }
 
 select_env() {
     local name="$1"
-    ENV_PREFIX="/root/autodl-tmp/conda/envs/${name}"
+    ENV_PREFIX="${ENV_ROOT}/${name}"
     PYTHON="${ENV_PREFIX}/bin/python"
     [[ -x "${PYTHON}" ]] || die "missing environment Python: ${PYTHON}"
     export CONDA_PREFIX="${ENV_PREFIX}"
@@ -1112,11 +833,8 @@ case "${SETTING}" in
             --episode_order_manifest "${R2R_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity duet "${R2R_DUET_HAMT_MANIFEST}" \
-            "${CHECKPOINT_ROOT}/duet/R2R/best_val_unseen" \
-            "vln/scripts/run_source_eval.sh#duet-r2r" \
-            "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
-            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
+        set_run_context "${R2R_DUET_HAMT_MANIFEST}" \
+            "${CHECKPOINT_ROOT}/duet/R2R/best_val_unseen"
         run_in "${REPO_ROOT}/vln/baselines/duet/map_nav_src" "${COMMAND[@]}"
         canonicalize_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \
@@ -1148,13 +866,8 @@ case "${SETTING}" in
             --episode_order_manifest "${REVERIE_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity duet "${REVERIE_DUET_HAMT_MANIFEST}" \
-            "${CHECKPOINT_ROOT}/duet/REVERIE/best_val_unseen" \
-            "vln/scripts/run_source_eval.sh#duet-reverie" \
-            "pano_features=${DATA_ROOT}/duet/R2R/features/pth_vit_base_patch16_224_imagenet.hdf5" \
-            "object_features=${DATA_ROOT}/duet/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5" \
-            "object_boxes=${DATA_ROOT}/duet/REVERIE/annotations/BBoxes.json" \
-            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
+        set_run_context "${REVERIE_DUET_HAMT_MANIFEST}" \
+            "${CHECKPOINT_ROOT}/duet/REVERIE/best_val_unseen"
         run_in "${REPO_ROOT}/vln/baselines/duet/map_nav_src" "${COMMAND[@]}"
         canonicalize_discrete_output reverie \
             "${RESULT_ROOT}/preds/submit_test_dynamic.json" \
@@ -1167,9 +880,9 @@ case "${SETTING}" in
         ;;
     hamt-r2r)
         select_env hamt
-        export HF_HOME="/root/autodl-tmp/cache/transformers/hamt"
-        export HF_HUB_CACHE="/root/autodl-tmp/cache/transformers/hamt"
-        export TRANSFORMERS_CACHE="/root/autodl-tmp/cache/transformers/hamt"
+        export HF_HOME="${CACHE_ROOT}/transformers/hamt"
+        export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
+        export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
         export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
@@ -1188,10 +901,8 @@ case "${SETTING}" in
             --episode_order_manifest "${R2R_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity hamt "${R2R_DUET_HAMT_MANIFEST}" \
-            "${CHECKPOINT_ROOT}/hamt/R2R/vitbase-finetune-e2e/best_val_unseen" \
-            "vln/scripts/run_source_eval.sh#hamt-r2r-e2e" \
-            "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5"
+        set_run_context "${R2R_DUET_HAMT_MANIFEST}" \
+            "${CHECKPOINT_ROOT}/hamt/R2R/vitbase-finetune-e2e/best_val_unseen"
         run_in "${REPO_ROOT}/vln/baselines/hamt/finetune_src" "${COMMAND[@]}"
         validate_discrete_output r2r \
             "${RESULT_ROOT}/preds/submit_test.json" \
@@ -1201,9 +912,9 @@ case "${SETTING}" in
         ;;
     hamt-reverie)
         select_env hamt
-        export HF_HOME="/root/autodl-tmp/cache/transformers/hamt"
-        export HF_HUB_CACHE="/root/autodl-tmp/cache/transformers/hamt"
-        export TRANSFORMERS_CACHE="/root/autodl-tmp/cache/transformers/hamt"
+        export HF_HOME="${CACHE_ROOT}/transformers/hamt"
+        export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
+        export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
         export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
@@ -1221,12 +932,8 @@ case "${SETTING}" in
             --episode_order_manifest "${REVERIE_DUET_HAMT_MANIFEST}"
         )
         append_submit_flag
-        set_run_identity hamt "${REVERIE_DUET_HAMT_MANIFEST}" \
-            "${CHECKPOINT_ROOT}/hamt/REVERIE/best_val_unseen" \
-            "vln/scripts/run_source_eval.sh#hamt-reverie" \
-            "pano_features=${DATA_ROOT}/hamt/R2R/features/pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5" \
-            "object_features=${DATA_ROOT}/hamt/REVERIE/features/obj_pth_vit_base_patch16_224_imagenet_r2r.e2e.ft.22k.hdf5" \
-            "object_boxes=${DATA_ROOT}/hamt/REVERIE/annotations/BBoxes.json"
+        set_run_context "${REVERIE_DUET_HAMT_MANIFEST}" \
+            "${CHECKPOINT_ROOT}/hamt/REVERIE/best_val_unseen"
         run_in "${REPO_ROOT}/vln/baselines/hamt/finetune_src" "${COMMAND[@]}"
         validate_discrete_output reverie \
             "${RESULT_ROOT}/preds/submit_test.json" \
@@ -1277,20 +984,8 @@ case "${SETTING}" in
             --episode_order_manifest "${MANIFEST}" "${TASK_ARGS[@]}"
         )
         append_submit_flag
-        set_run_identity goat "${MANIFEST}" "${CHECKPOINT_ROOT}/goat/${TASK_ROOT}/best_val_unseen.pt" \
-            "vln/scripts/run_source_eval.sh#${SETTING}" \
-            "pano_features=${DATA_ROOT}/goat/R2R/features/CLIP-ViT-B-16-views.hdf5" \
-            "backdoor=${BACKDOOR#../datasets/}" \
-            "frontdoor=${FRONTDOOR#../datasets/}" \
-            "submission_viewpoint_candidates=${DISCRETE_SCANVP_CANDIDATES}"
-        RUN_AUX_CHECKPOINTS[1]="backdoor=${DATA_ROOT}/goat/${RUN_AUX_CHECKPOINTS[1]#backdoor=}"
-        RUN_AUX_CHECKPOINTS[2]="frontdoor=${DATA_ROOT}/goat/${RUN_AUX_CHECKPOINTS[2]#frontdoor=}"
-        if [[ "${SETTING}" == "goat-reverie" ]]; then
-            RUN_AUX_CHECKPOINTS+=(
-                "object_features=${DATA_ROOT}/goat/REVERIE/features/obj.avg.top3.min80_vit_base_patch16_224_imagenet.hdf5"
-                "object_boxes=${DATA_ROOT}/goat/REVERIE/annotations/BBoxes.json"
-            )
-        fi
+        set_run_context "${MANIFEST}" \
+            "${CHECKPOINT_ROOT}/goat/${TASK_ROOT}/best_val_unseen.pt"
         run_in "${REPO_ROOT}/vln/baselines/goat/map_nav_src" "${COMMAND[@]}"
         if [[ "${SETTING}" == "goat-r2r" ]]; then
             canonicalize_discrete_output r2r \
@@ -1312,11 +1007,11 @@ case "${SETTING}" in
         ;;
     etpnav-r2r-ce|bevbert-r2r-ce)
         select_env vlnce017
-        export HF_HOME="/root/autodl-tmp/cache/huggingface"
-        export HF_HUB_CACHE="/root/autodl-tmp/cache/huggingface/hub"
-        export TRANSFORMERS_CACHE="/root/autodl-tmp/cache/huggingface/transformers"
-        export HF_DATASETS_CACHE="/root/autodl-tmp/cache/huggingface/datasets"
-        export PYTORCH_PRETRAINED_BERT_CACHE="/root/autodl-tmp/cache/pytorch_pretrained_bert"
+        export HF_HOME="${CACHE_ROOT}/huggingface"
+        export HF_HUB_CACHE="${CACHE_ROOT}/huggingface/hub"
+        export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
+        export HF_DATASETS_CACHE="${CACHE_ROOT}/huggingface/datasets"
+        export PYTORCH_PRETRAINED_BERT_CACHE="${CACHE_ROOT}/pytorch_pretrained_bert"
         assert_gpu
         export PYTHONPATH="${REPO_ROOT}/core"
         if [[ "${SETTING}" == "etpnav-r2r-ce" ]]; then
@@ -1326,10 +1021,9 @@ case "${SETTING}" in
             WORKDIR="${REPO_ROOT}/vln/baselines/bevbert/bevbert_ce"
             CHECKPOINT="${CHECKPOINT_ROOT}/bevbert/ckpt.iter9600.pth"
         fi
-        # Canonical CE loaders require EPISODE_COUNT to be -1 (or the full
-        # manifest count). Development prefixes are applied by
-        # NAVTTA_SMOKE_EPISODES after the manifest is validated, so passing the
-        # prefix here would be rejected before environment construction.
+        # CE loaders require EPISODE_COUNT to be -1 (or the full stream size).
+        # Development prefixes are applied after the episode-order input is
+        # loaded, so passing the prefix here would fail during construction.
         CE_EPISODE_COUNT=-1
         COMMON=(
             SIMULATOR_GPU_IDS '[0]' TORCH_GPU_ID 0 TORCH_GPU_IDS '[0]'
@@ -1372,19 +1066,7 @@ case "${SETTING}" in
                 EVAL.EPISODE_COUNT "${CE_EPISODE_COUNT}" EVAL.EPISODE_ORDER_MANIFEST "${CE_MANIFEST}"
             )
         fi
-        if [[ "${SETTING}" == "etpnav-r2r-ce" ]]; then
-            set_run_identity etpnav "${CE_MANIFEST}" "${CHECKPOINT}" \
-                "vln/baselines/etpnav/run_r2r/iter_train.yaml" \
-                "waypoint_predictor=${DATA_ROOT}/etpnav/wp_pred/check_cwp_bestdist_hfov90" \
-                "depth_encoder=${DATA_ROOT}/etpnav/ddppo-models/gibson-2plus-resnet50.pth" \
-                "clip_vit_b32=${CLIP_CACHE}/ViT-B-32.pt"
-        else
-            set_run_identity bevbert "${CE_MANIFEST}" "${CHECKPOINT}" \
-                "vln/baselines/bevbert/bevbert_ce/run_r2r/iter_train.yaml" \
-                "waypoint_predictor=${DATA_ROOT}/etpnav/wp_pred/check_cwp_bestdist_hfov90" \
-                "depth_encoder=${DATA_ROOT}/etpnav/ddppo-models/gibson-2plus-resnet50.pth" \
-                "clip_vit_b16=${CLIP_CACHE}/ViT-B-16.pt"
-        fi
+        set_run_context "${CE_MANIFEST}" "${CHECKPOINT}"
         run_in "${WORKDIR}" "${COMMAND[@]}"
         if [[ "${SPLIT}" == "test" && "${DRY_RUN}" -eq 0 ]]; then
             "${REPO_ROOT}/vln/scripts/validate_r2r_ce_submission.py" \
@@ -1396,13 +1078,13 @@ case "${SETTING}" in
         ;;
     streamvln-r2r-ce)
         select_env streamvln
-        export HF_HOME="/root/autodl-tmp/cache/huggingface"
-        export HF_HUB_CACHE="/root/autodl-tmp/cache/huggingface/hub"
-        export TRANSFORMERS_CACHE="/root/autodl-tmp/cache/huggingface/transformers"
+        export HF_HOME="${CACHE_ROOT}/huggingface"
+        export HF_HUB_CACHE="${CACHE_ROOT}/huggingface/hub"
+        export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
         assert_gpu
         WORKDIR="${REPO_ROOT}/vln/baselines/streamvln"
         MODEL_DIR="${CHECKPOINT_ROOT}/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"
-        VISION_TOWER="/root/autodl-tmp/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3"
+        VISION_TOWER="${CACHE_ROOT}/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3"
         PORT="$((21000 + GPU))"
         COMMAND=(
             "${PYTHON}" -m torch.distributed.run --nproc_per_node=1
@@ -1422,22 +1104,8 @@ case "${SETTING}" in
         if [[ -n "${SMOKE_EPISODES}" ]]; then
             COMMAND+=(--smoke-episodes "${SMOKE_EPISODES}")
         fi
-        set_run_identity streamvln "${STREAM_MANIFEST}" \
-            "${MODEL_DIR}/model.safetensors.index.json" \
-            "vln/baselines/streamvln/config/vln_r2r.yaml" \
-            "model_shard_1=${MODEL_DIR}/model-00001-of-00004.safetensors" \
-            "model_shard_2=${MODEL_DIR}/model-00002-of-00004.safetensors" \
-            "model_shard_3=${MODEL_DIR}/model-00003-of-00004.safetensors" \
-            "model_shard_4=${MODEL_DIR}/model-00004-of-00004.safetensors" \
-            "model_config=${MODEL_DIR}/config.json" \
-            "generation_config=${MODEL_DIR}/generation_config.json" \
-            "tokenizer=${MODEL_DIR}/tokenizer.json" \
-            "tokenizer_config=${MODEL_DIR}/tokenizer_config.json" \
-            "vocab=${MODEL_DIR}/vocab.json" \
-            "merges=${MODEL_DIR}/merges.txt" \
-            "vision_weights=${VISION_TOWER}/model.safetensors" \
-            "vision_config=${VISION_TOWER}/config.json" \
-            "vision_preprocessor=${VISION_TOWER}/preprocessor_config.json"
+        set_run_context "${STREAM_MANIFEST}" \
+            "${MODEL_DIR}/model.safetensors.index.json"
         run_in "${WORKDIR}" "${COMMAND[@]}"
         if [[ "${SPLIT}" == "test" && "${DRY_RUN}" -eq 0 ]]; then
             "${REPO_ROOT}/vln/scripts/validate_r2r_ce_submission.py" \

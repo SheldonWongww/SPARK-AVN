@@ -21,7 +21,7 @@ from joint_campaign_contract import process_identity_alive
 DEFAULT_LOCK_ROOT = Path(
     os.environ.get(
         "NAVTTA_SHARED_GPU_LOCK_ROOT",
-        "/root/autodl-tmp/tmp/navtta-shared-gpu-launch-locks",
+        "/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-shared-gpu-launch-locks",
     )
 )
 

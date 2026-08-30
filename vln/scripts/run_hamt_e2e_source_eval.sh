@@ -62,11 +62,7 @@ done
 
 [[ "${RUN_TAG}" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid run tag: ${RUN_TAG}"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${REPO_ROOT}" in
-    /root/autodl-tmp/*) ;;
-    *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
-esac
+REPO_ROOT=/data1/wxy/code/NavTTA
 
 SOURCE_RUNNER="${REPO_ROOT}/vln/scripts/run_source_eval.sh"
 for setting in hamt-r2r hamt-reverie; do

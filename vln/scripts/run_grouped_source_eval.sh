@@ -12,11 +12,11 @@ Run the nine VLN Source settings in three ordered resource groups:
 
 Options:
   --gpu INDEX                 CUDA device index (default: 0)
-  --run-tag TAG               Shared formal run tag (default: grouped-source-UTC)
+  --run-tag TAG               Shared run tag (default: grouped-source-UTC)
   --split SPLIT               val_seen, val_unseen, test, or all (default: all)
   --ce-data-version VERSION   v1.3-unified or v1.2-native (default: v1.3-unified)
   --only-group INDEX          Run only resource group 1, 2, or 3
-  --skip-preflight            Skip lightweight asset and offline import checks
+  --skip-runtime-check        Skip the offline runtime import check
   --dry-run                   Print/validate child commands without evaluation
   -h, --help                  Show this help
 
@@ -40,7 +40,7 @@ GPU=0
 RUN_TAG=""
 SPLIT=all
 CE_DATA_VERSION=v1.3-unified
-SKIP_PREFLIGHT=0
+SKIP_RUNTIME_CHECK=0
 DRY_RUN=0
 ONLY_GROUP=""
 
@@ -71,8 +71,8 @@ while [[ "$#" -gt 0 ]]; do
             ONLY_GROUP="$2"
             shift 2
             ;;
-        --skip-preflight)
-            SKIP_PREFLIGHT=1
+        --skip-runtime-check)
+            SKIP_RUNTIME_CHECK=1
             shift
             ;;
         --dry-run)
@@ -107,23 +107,20 @@ if [[ -z "${RUN_TAG}" ]]; then
 fi
 [[ "${RUN_TAG}" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid run tag: ${RUN_TAG}"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${REPO_ROOT}" in
-    /root/autodl-tmp/*) ;;
-    *) die "refusing to run outside /root/autodl-tmp: ${REPO_ROOT}" ;;
-esac
+REPO_ROOT=/data1/wxy/code/NavTTA
+VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+TMP_ROOT="${VLN_ROOT}/tmp"
 
 RUNNER="${REPO_ROOT}/vln/scripts/run_source_eval.sh"
-PREFLIGHT="${REPO_ROOT}/vln/scripts/verify_preflight.py"
 RUNTIME_CHECK="${REPO_ROOT}/vln/scripts/verify_runtime_imports.sh"
-LOG_ROOT="/root/autodl-tmp/tmp/navtta-grouped-source/${RUN_TAG}"
+LOG_ROOT="${TMP_ROOT}/navtta-grouped-source/${RUN_TAG}"
 ACTIVE_WORKER_PIDS=()
 CURRENT_SETTING_WAIT_PID=""
 CURRENT_SETTING_PGID=""
 CURRENT_SETTING_PGID_FILE=""
 CURRENT_SETTING_CHILD_PID=""
 SOURCE_TAG_LOCK_FD=""
-SOURCE_TAG_LOCK_ROOT="/root/autodl-tmp/tmp/navtta-source-tag-locks"
+SOURCE_TAG_LOCK_ROOT="${TMP_ROOT}/navtta-source-tag-locks"
 SOURCE_TAG_LOCK_FILE="${SOURCE_TAG_LOCK_ROOT}/${RUN_TAG}.lock"
 
 [[ -x "${RUNNER}" ]] || die "missing source runner: ${RUNNER}"
@@ -131,7 +128,7 @@ command -v setsid >/dev/null 2>&1 || die "setsid is required for child cleanup"
 [[ ! -e "${LOG_ROOT}" ]] || die "launcher log directory already exists: ${LOG_ROOT}"
 
 claim_source_tag_lock() {
-    command -v flock >/dev/null 2>&1 || die "flock is required for formal runs"
+    command -v flock >/dev/null 2>&1 || die "flock is required for grouped runs"
     mkdir -p "${SOURCE_TAG_LOCK_ROOT}"
     exec {SOURCE_TAG_LOCK_FD}>"${SOURCE_TAG_LOCK_FILE}"
     if ! flock -n "${SOURCE_TAG_LOCK_FD}"; then
@@ -142,41 +139,8 @@ claim_source_tag_lock() {
 }
 
 check_run_tag_available() {
-    local manifest_status
     [[ ! -e "${REPO_ROOT}/vln/results/source/${RUN_TAG}" ]] || \
         die "source result tag already exists: ${RUN_TAG}"
-    if [[ -d "${REPO_ROOT}/vln/results/runs" ]]; then
-        if python3 - "${RUN_TAG}" "${REPO_ROOT}/vln/results/runs" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-target = sys.argv[1]
-root = Path(sys.argv[2])
-for path in root.rglob("manifest.json"):
-    try:
-        with path.open("r", encoding="utf-8") as stream:
-            document = json.load(stream)
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        print(f"cannot inspect run manifest {path}: {exc}", file=sys.stderr)
-        raise SystemExit(2)
-    if not isinstance(document, dict) or not isinstance(document.get("run_tag"), str):
-        print(f"invalid run manifest identity: {path}", file=sys.stderr)
-        raise SystemExit(2)
-    if document["run_tag"] == target:
-        raise SystemExit(10)
-PY
-        then
-            manifest_status=0
-        else
-            manifest_status=$?
-        fi
-        case "${manifest_status}" in
-            0) ;;
-            10) die "run manifests already exist for tag: ${RUN_TAG}" ;;
-            *) die "could not verify existing run manifest tags" ;;
-        esac
-    fi
 }
 
 if [[ "${DRY_RUN}" -eq 0 ]]; then
@@ -193,8 +157,7 @@ printf '  CE data version:  %s\n' "${CE_DATA_VERSION}"
 printf '  resource groups:  %s\n' "${ONLY_GROUP:-1,2,3}"
 printf '  launcher logs:    %s\n' "${LOG_ROOT}"
 
-if [[ "${SKIP_PREFLIGHT}" -eq 0 ]]; then
-    python3 "${PREFLIGHT}" --hash small
+if [[ "${SKIP_RUNTIME_CHECK}" -eq 0 ]]; then
     "${RUNTIME_CHECK}"
 fi
 if [[ "${DRY_RUN}" -eq 0 ]]; then

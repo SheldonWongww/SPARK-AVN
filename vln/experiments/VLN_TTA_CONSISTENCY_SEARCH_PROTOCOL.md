@@ -77,15 +77,15 @@ model's native argmax action rule.  Artifacts and bindings record this as
 choice, not a claim that the unspecified rollout detail exactly matches the
 paper.
 
-## Fail-closed evidence contract
+## Runtime evidence contract
 
 A selection or report is produced only when every planned seed is complete.
-Each result must have a successful formal manifest with immutable identity,
-checkpoint, dataset, order-manifest, metric-artifact, configuration, and
-diagnostics digests consistent with the plan. Diagnostics must account for the
-complete stream and preserve the distinction between unsupervised methods and
-FeedTTA/ATENA binary episode feedback. Any failed, missing, duplicate, stale,
-or unauthenticated job aborts the stage.
+The server runner reads each job's metric artifact and TTA diagnostics
+directly; it does not create or validate formal run manifests. Diagnostics
+must account for the complete stream and preserve the distinction between
+unsupervised methods and FeedTTA/ATENA binary episode feedback. Any failed,
+missing, duplicate, or inconsistent job aborts the stage. These outputs remain
+exploratory until a separate formal provenance workflow is applied.
 
 ATENA additionally requires exact full-episode replay diagnostics and honest
 task-level evidence for the replay-reachable high-level policy scope; it must

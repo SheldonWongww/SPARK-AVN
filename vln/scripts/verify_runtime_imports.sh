@@ -8,32 +8,37 @@ if [[ ! "${MKL_NUM_THREADS:-}" =~ ^[1-9][0-9]*$ ]]; then
     export MKL_NUM_THREADS=1
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${REPO_ROOT}" in
-    /root/autodl-tmp/*) ;;
-    *) printf 'error: refusing to run outside /root/autodl-tmp\n' >&2; exit 2 ;;
-esac
+REPO_ROOT=/data1/wxy/code/NavTTA
+VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+ENV_ROOT="${VLN_ROOT}/envs"
+CACHE_ROOT="${VLN_ROOT}/cache"
+HOME_ROOT="${VLN_ROOT}/home"
+XDG_CACHE_ROOT="${CACHE_ROOT}/xdg"
 
-export HOME=/root/autodl-tmp
-export XDG_CACHE_HOME=/root/autodl-tmp/.cache
+mkdir -p "${HOME_ROOT}" "${XDG_CACHE_ROOT}"
+export HOME="${HOME_ROOT}"
+export XDG_CACHE_HOME="${XDG_CACHE_ROOT}"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
-export NLTK_DATA=/root/autodl-tmp/cache/nltk_data
+export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
 SIM_BUILD="${REPO_ROOT}/vln/data/simulators/Matterport3DSimulator/build"
 
 (
-    prefix=/root/autodl-tmp/conda/envs/streamvln
+    prefix="${ENV_ROOT}/streamvln"
     export PATH="${prefix}/bin:${PATH}"
     export LD_LIBRARY_PATH="${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-    export HF_HOME=/root/autodl-tmp/cache/huggingface
-    export HF_HUB_CACHE=/root/autodl-tmp/cache/huggingface/hub
-    export TRANSFORMERS_CACHE=/root/autodl-tmp/cache/huggingface/transformers
+    export HF_HOME="${CACHE_ROOT}/huggingface"
+    export HF_HUB_CACHE="${CACHE_ROOT}/huggingface/hub"
+    export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
+    export STREAMVLN_MODEL_ROOT="${REPO_ROOT}/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"
     cd "${REPO_ROOT}/vln/baselines/streamvln"
     export PYTHONPATH="${PWD}:${PWD}/streamvln${PYTHONPATH:+:${PYTHONPATH}}"
     "${prefix}/bin/python" - <<'PY'
+import os
+
 import decord
 import flash_attn
 import habitat
@@ -42,7 +47,7 @@ import torch
 from model.stream_video_vln import StreamVLNForCausalLM
 from transformers import AutoConfig, AutoTokenizer
 
-root = "/root/autodl-tmp/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"
+root = os.environ["STREAMVLN_MODEL_ROOT"]
 AutoConfig.from_pretrained(root, local_files_only=True)
 AutoTokenizer.from_pretrained(root, local_files_only=True)
 print("streamvln imports/tokenizer passed", torch.__version__, flash_attn.__version__, decord.__version__)
@@ -51,7 +56,7 @@ PY
 
 for setting in duet hamt goat; do
     (
-        prefix="/root/autodl-tmp/conda/envs/${setting}"
+        prefix="${ENV_ROOT}/${setting}"
         export PATH="${prefix}/bin:${PATH}"
         export LD_LIBRARY_PATH="${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
         case "${setting}" in
@@ -63,9 +68,9 @@ for setting in duet hamt goat; do
                 ;;
             hamt)
                 source_root="${REPO_ROOT}/vln/baselines/hamt/finetune_src"
-                export HF_HOME=/root/autodl-tmp/cache/transformers/hamt
-                export HF_HUB_CACHE=/root/autodl-tmp/cache/transformers/hamt
-                export TRANSFORMERS_CACHE=/root/autodl-tmp/cache/transformers/hamt
+                export HF_HOME="${CACHE_ROOT}/transformers/hamt"
+                export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
+                export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
                 ;;
             goat)
                 source_root="${REPO_ROOT}/vln/baselines/goat/map_nav_src"
@@ -103,10 +108,12 @@ PY
         if [[ "${setting}" == goat ]]; then
             PYTHONPATH="${PYTHONPATH}:${source_root}/r2r" \
                 "${prefix}/bin/python" -c \
-                'import sys; sys.argv += ["--mode", "valid", "--root_dir", "../datasets", "--output_dir", "/root/autodl-tmp/cache/runtime_imports/goat/r2r", "--name", "offline_smoke"]; import r2r.main_nav; print("goat R2R entry import passed")'
+                'import sys; output = sys.argv.pop(1); sys.argv += ["--mode", "valid", "--root_dir", "../datasets", "--output_dir", output, "--name", "offline_smoke"]; import r2r.main_nav; print("goat R2R entry import passed")' \
+                "${CACHE_ROOT}/runtime_imports/goat/r2r"
             PYTHONPATH="${PYTHONPATH}:${source_root}/reverie" \
                 "${prefix}/bin/python" -c \
-                'import sys; sys.argv += ["--mode", "valid", "--root_dir", "../datasets", "--output_dir", "/root/autodl-tmp/cache/runtime_imports/goat/reverie", "--name", "offline_smoke", "--features", "clip768", "--obj_features", "vitbase"]; import reverie.main_nav_obj; print("goat REVERIE entry import passed")'
+                'import sys; output = sys.argv.pop(1); sys.argv += ["--mode", "valid", "--root_dir", "../datasets", "--output_dir", output, "--name", "offline_smoke", "--features", "clip768", "--obj_features", "vitbase"]; import reverie.main_nav_obj; print("goat REVERIE entry import passed")' \
+                "${CACHE_ROOT}/runtime_imports/goat/reverie"
         fi
         "${prefix}/bin/python" -m pip check
     )
@@ -114,14 +121,14 @@ done
 
 for setting in etpnav bevbert; do
     (
-        prefix=/root/autodl-tmp/conda/envs/vlnce017
+        prefix="${ENV_ROOT}/vlnce017"
         export PATH="${prefix}/bin:${PATH}"
         export LD_LIBRARY_PATH="${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-        export HF_HOME=/root/autodl-tmp/cache/huggingface
-        export HF_HUB_CACHE=/root/autodl-tmp/cache/huggingface/hub
-        export TRANSFORMERS_CACHE=/root/autodl-tmp/cache/huggingface/transformers
-        export HF_DATASETS_CACHE=/root/autodl-tmp/cache/huggingface/datasets
-        export NAVTTA_CLIP_CACHE=/root/autodl-tmp/cache/clip
+        export HF_HOME="${CACHE_ROOT}/huggingface"
+        export HF_HUB_CACHE="${CACHE_ROOT}/huggingface/hub"
+        export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
+        export HF_DATASETS_CACHE="${CACHE_ROOT}/huggingface/datasets"
+        export NAVTTA_CLIP_CACHE="${CACHE_ROOT}/clip"
         if [[ "${setting}" == etpnav ]]; then
             source_root="${REPO_ROOT}/vln/baselines/etpnav"
             trainer=SS-ETP
@@ -148,5 +155,5 @@ PY
     )
 done
 
-/root/autodl-tmp/conda/envs/vlnce017/bin/python -m pip check
+"${ENV_ROOT}/vlnce017/bin/python" -m pip check
 printf 'All VLN CPU/offline runtime imports passed\n'

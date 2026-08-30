@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 import subprocess
 import unittest
@@ -7,7 +6,6 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "vln" / "scripts" / "run_hamt_e2e_source_eval.sh"
 SOURCE_RUNNER = REPO_ROOT / "vln" / "scripts" / "run_source_eval.sh"
-ASSET_MANIFEST = REPO_ROOT / "vln" / "manifests" / "assets" / "eval_assets.json"
 
 
 class HamtE2ESourceRunnerTest(unittest.TestCase):
@@ -54,26 +52,12 @@ class HamtE2ESourceRunnerTest(unittest.TestCase):
             '"${CHECKPOINT_ROOT}/hamt/R2R/vitbase-finetune-e2e/best_val_unseen"',
             source,
         )
-        self.assertIn("run_source_eval.sh#hamt-r2r-e2e", source)
+        self.assertIn('set_run_context "${R2R_DUET_HAMT_MANIFEST}"', source)
 
-    def test_asset_manifest_pins_final_e2e_checkpoint_and_runtime_link(self):
-        document = json.loads(ASSET_MANIFEST.read_text(encoding="utf-8"))
-        assets = {asset["id"]: asset for asset in document["assets"]}
-        checkpoint = assets["hamt_r2r_e2e_checkpoint"]
-        self.assertEqual(checkpoint["size"], 1225431690)
-        self.assertEqual(
-            checkpoint["sha256"],
-            "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
-        )
-        links = {link["path"]: link["target"] for link in document["runtime_links"]}
-        self.assertEqual(
-            links[
-                "vln/data/hamt/R2R/trained_models/"
-                "vitbase-finetune-e2e/ckpts/best_val_unseen"
-            ],
-            "/root/autodl-tmp/code/NavTTA/vln/checkpoints/hamt/R2R/"
-            "vitbase-finetune-e2e/best_val_unseen",
-        )
+    def test_runner_uses_the_server_checkout_directly(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("REPO_ROOT=/data1/wxy/code/NavTTA", source)
+        self.assertNotIn("runtime_paths.sh", source)
 
 
 if __name__ == "__main__":

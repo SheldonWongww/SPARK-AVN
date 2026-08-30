@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Fail-closed staged VLN TTA campaign for one 32 GiB GPU.
+# Staged VLN TTA campaign for one 32 GiB GPU.
 #
 # Per cell: val_unseen search (seeds 1/2/3) -> freeze -> winner-only
 # val_seen retention (seeds 1/2/3) -> report.  A failed command stops the
 # campaign.  R2R-CE completes every ETPNav cell before starting BEVBert.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PY="${PYTHON:-/root/autodl-tmp/conda/envs/duet/bin/python}"
+REPO_ROOT=/data1/wxy/code/NavTTA
+VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+ENV_ROOT="${VLN_ROOT}/envs"
+PY="${PYTHON:-${ENV_ROOT}/duet/bin/python}"
 RUN_TAG="${RUN_TAG:-consistency-v2}"
 OUT_ROOT="${OUT_ROOT:-${REPO_ROOT}/vln/results/tuning/consistency_v2}"
 GPU="${GPU:-0}"

@@ -21,6 +21,8 @@ class GroupedSourceRunnerTest(unittest.TestCase):
         self.assertIn("DUET, HAMT, GOAT", completed.stdout)
         self.assertIn("ETPNav, BEVBert", completed.stdout)
         self.assertIn("StreamVLN", completed.stdout)
+        self.assertIn("--skip-runtime-check", completed.stdout)
+        self.assertNotIn("--skip-preflight", completed.stdout)
 
     def test_options_do_not_consume_the_next_option_as_a_value(self):
         for option in (
@@ -91,12 +93,21 @@ class GroupedSourceRunnerTest(unittest.TestCase):
         self.assertIn("later groups were not started", source)
         self.assertIn('command+=(--dry-run)', source)
         self.assertIn("source result tag already exists", source)
-        self.assertIn("run manifests already exist for tag", source)
+        self.assertNotIn("run manifests already exist for tag", source)
+        self.assertNotIn("verify_preflight.py", source)
+        self.assertIn("verify_runtime_imports.sh", source)
         self.assertIn("claim_source_tag_lock", source)
         self.assertIn("flock -n", source)
-        self.assertIn("json.load", source)
 
-    def test_formal_group_and_child_share_the_same_tag_lock(self):
+    def test_server_paths_are_explicit(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("REPO_ROOT=/data1/wxy/code/NavTTA", source)
+        self.assertIn("VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln", source)
+        self.assertIn('LOG_ROOT="${TMP_ROOT}/navtta-grouped-source/', source)
+        self.assertNotIn("runtime_paths.sh", source)
+        self.assertNotIn("/root/autodl-tmp", source)
+
+    def test_group_and_child_share_the_same_tag_lock(self):
         grouped_source = RUNNER.read_text(encoding="utf-8")
         child_source = SOURCE_RUNNER.read_text(encoding="utf-8")
         self.assertIn('export NAVTTA_SOURCE_TAG_LOCKED="${RUN_TAG}"', grouped_source)

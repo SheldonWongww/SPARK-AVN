@@ -40,7 +40,13 @@ class GroupedSourceScreenManagerTest(unittest.TestCase):
     def test_control_logs_stay_inside_vln_results(self):
         source = MANAGER.read_text(encoding="utf-8")
         self.assertIn("vln/results/logs/grouped_source_screen", source)
-        self.assertIn("GROUP_LOG_ROOT", source)
+        self.assertIn(
+            'GROUP_LOG_ROOT="${TMP_ROOT}/navtta-grouped-source/${RUN_TAG}"',
+            source,
+        )
+        self.assertIn("REPO_ROOT=/data1/wxy/code/NavTTA", source)
+        self.assertIn("VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln", source)
+        self.assertNotIn("runtime_paths.sh", source)
 
 
 if __name__ == "__main__":

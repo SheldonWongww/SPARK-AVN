@@ -48,16 +48,25 @@ vln/scripts/run_hamt_e2e_source_eval.sh --gpu 0 --run-tag "$TAG"
 
 ## Canonical source evaluation
 
-The reproducible split order is `val_seen`, `val_unseen`, then `test`.  Online
-evaluation uses one process, one environment, and batch size one; each split
-starts in a fresh process.  Complete episode-order manifests and the rationale
-are in `manifests/episode_order/README.md`.
+The split order is `val_seen`, `val_unseen`, then `test`.  Online evaluation
+uses one process, one environment, and batch size one; each split starts in a
+fresh process.  Episode-order JSON files remain runtime inputs because they
+define the online TTA stream.
 
-On the AutoDL host, print three representative settings (three splits each)
-without running them:
+The active server layout is fixed in the launch scripts:
+
+```text
+repository  /data1/wxy/code/NavTTA
+VLN storage /data1/wxy/exp_data/NavTTA/vln
+environments /data1/wxy/exp_data/NavTTA/vln/envs
+cache       /data1/wxy/exp_data/NavTTA/vln/cache
+temporary   /data1/wxy/exp_data/NavTTA/vln/tmp
+```
+
+On that host, print three representative settings without running them:
 
 ```bash
-cd /root/autodl-tmp/code/NavTTA
+cd /data1/wxy/code/NavTTA
 vln/scripts/run_source_eval.sh duet-r2r all 0 --dry-run
 vln/scripts/run_source_eval.sh goat-reverie all 0 --dry-run
 vln/scripts/run_source_eval.sh streamvln-r2r-ce all 0 --dry-run
@@ -73,17 +82,18 @@ TAG="grouped-source-$(date -u +%Y%m%dT%H%M%SZ)"
 vln/scripts/run_grouped_source_eval.sh --gpu 0 --run-tag "$TAG"
 ```
 
-Use `--dry-run --skip-preflight` to validate the complete schedule without
-evaluation.  The default continuous protocol is `v1.3-unified`.  The optional
+Use `--dry-run --skip-runtime-check` to print the complete schedule without
+running the full import sweep.  The model environments must still exist.  The
+default continuous protocol is `v1.3-unified`.  The optional
 `--ce-data-version v1.2-native` applies only to ETPNav/BEVBert; StreamVLN stays
 on v1.3, so such a mixed-version run is provenance-only and must not be used as
 a cross-model comparison.  A failed worker prevents the next resource group
 from starting, interruption terminates active child process groups, and each
 launcher log is retained under
-`/root/autodl-tmp/tmp/navtta-grouped-source/TAG/`.
-Every launcher attempt, including a dry-run, requires a fresh tag; formal runs
-also reject any tag already present in source results or run manifests.
-Grouped and standalone formal launchers share an atomic per-tag lock, so they
+`/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-grouped-source/TAG/`.
+Every launcher attempt, including a dry-run, requires a fresh tag, and a real
+run rejects a tag already present in Source results.
+Grouped and standalone launchers share an atomic per-tag lock, so they
 cannot write the same result tag concurrently.
 
 For long evaluations, run the grouped scheduler inside one detached GNU screen
@@ -106,25 +116,22 @@ Stopping sends `TERM` to the validated grouped-runner PID and lets its existing
 process-group cleanup finish; do not terminate the screen session directly.
 Control logs live under `vln/results/logs/grouped_source_screen/TAG/`, while
 per-setting logs retain their paths printed by the grouped runner.  Screen
-reconnection is not result resumption: a failed or interrupted formal attempt
+reconnection is not result resumption: a failed or interrupted attempt
 still requires a new run tag.
 
-Before a run, repeat the lightweight asset and CPU/offline checks:
+The grouped runner performs the CPU/offline import check automatically.  It
+can also be run directly while preparing environments:
 
 ```bash
-vln/scripts/verify_preflight.py --hash small
 vln/scripts/verify_runtime_imports.sh
 ```
-
-Use `verify_preflight.py --hash all` only when a full re-hash of the multi-GB
-checkpoints and features is warranted.
 
 To restart an isolated resource group with a fresh run tag, pass
 `--only-group 1`, `--only-group 2`, or `--only-group 3` through
 `manage_grouped_source_screen.sh start`.  This is intended for recovery after
-an earlier group has already produced immutable formal artifacts.
+an earlier group has already produced results under a different run tag.
 
-Formal execution requires a GPU; remove `--dry-run` only on the intended
+Full execution requires a GPU; remove `--dry-run` only on the intended
 runtime host.  Supported settings are printed by invoking the script without
 arguments.  Validation splits produce local metrics.  `test` only produces
 leaderboard trajectory files; no local test metric is valid.  The R2R-CE files
@@ -169,22 +176,18 @@ reproduce the upstream v1.2 protocol, and never mix those values in one formal
 cross-model table.  `--run-tag TAG` gives every attempt an isolated output
 tree; if omitted, a UTC tag is generated automatically.
 
-Non-smoke execution is the formal-result path.  The launcher rejects tracked
-changes and untracked execution files, then creates one manifest per
-setting/split under `vln/results/runs/`.  Each manifest pins the commit, full
-command, runtime hardware, primary and auxiliary checkpoint digests, asset
-manifest, annotation bytes, episode-order manifest, and seed.  Review and
-commit the preparation changes before removing `--dry-run`; smoke mode is
-allowed on a dirty review tree and never creates a formal manifest.
+The server launchers intentionally do not inspect asset/environment manifests,
+require a clean Git tree, or create formal run manifests.  Their outputs are
+exploratory experiment results.  Promote a result into a formal table only
+through a separate provenance workflow satisfying the workspace rules.
 
 Frozen-winner order robustness is the only use of
 `run_source_eval.sh --order-seed 0|1|2`.  It requires a complete `val_seen`
 `orders`-stage TTA job for one of the eight staged-search settings.  Seed 0
 uses the unchanged canonical order; seeds 1/2 use the tracked derived
-manifests described in `manifests/episode_order/README.md`.  The launcher
+order files described in `manifests/episode_order/README.md`.  The launcher
 rejects Source, smoke/prefix, StreamVLN, split `all`, and native CE v1.2 uses,
-and records the selected seed as both runtime/model seed and formal-manifest
-seed.
+and passes the selected seed to the runtime/model.
 
 Published paper numbers are preserved only as provenance-limited references in
 `results/legacy/upstream_published_metrics.json`.  They can be used as cited
@@ -194,7 +197,9 @@ commit, exact configuration, asset digests, seed, and hardware.
 
 ## Completed historical R2R model-wise Cartesian full-val search
 
-The active R2R-only search is defined by
+This section documents the earlier formal-manifest workflow for historical
+results.  Its launch recipes are not the active manifest-free server path.
+The historical R2R-only search is defined by
 `experiments/r2r_modelwise_cartesian_hparam_v2.json` and executed by
 `scripts/run_r2r_cartesian_hparam_search.py`.  It covers DUET-R2R, HAMT-R2R,
 and GOAT-R2R with Tent, FSTTA, EAM, FeedTTA, and ATENA.  Unlike the legacy
@@ -240,17 +245,17 @@ worktree.
 Run the long campaign in one detached GNU screen session on the AutoDL host:
 
 ```bash
-cd /root/autodl-tmp/code/NavTTA
+cd /data1/wxy/code/NavTTA
 BATCH="vln-r2r-modelwise-cartesian-v2-seed0"
 SESSION="navtta-r2r-v2"
-LAUNCH_DIR="/root/autodl-tmp/code/NavTTA/vln/results/logs/r2r/hparam_search/${BATCH}/_launcher"
+LAUNCH_DIR="/data1/wxy/code/NavTTA/vln/results/logs/r2r/hparam_search/${BATCH}/_launcher"
 
 mkdir -p "$LAUNCH_DIR"
 python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
   --batch-id "$BATCH" --gpu 0 --plan-only
 
 screen -dmS "$SESSION" env BATCH="$BATCH" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
-  cd /root/autodl-tmp/code/NavTTA || exit 97
+  cd /data1/wxy/code/NavTTA || exit 97
   export PYTHONUNBUFFERED=1
   python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
     --batch-id "$BATCH" --gpu 0 --resume \
@@ -283,7 +288,7 @@ commit, and spec:
 ```bash
 RESUME_SESSION="navtta-r2r-v2-r-$(date -u +%Y%m%dT%H%M%SZ)"
 screen -dmS "$RESUME_SESSION" env BATCH="$BATCH" LAUNCH_DIR="$LAUNCH_DIR" bash -lc '
-  cd /root/autodl-tmp/code/NavTTA || exit 97
+  cd /data1/wxy/code/NavTTA || exit 97
   export PYTHONUNBUFFERED=1
   python3 vln/scripts/run_r2r_cartesian_hparam_search.py all \
     --batch-id "$BATCH" --gpu 0 --resume \
