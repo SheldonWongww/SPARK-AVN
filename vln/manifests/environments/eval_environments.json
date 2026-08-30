@@ -155,6 +155,7 @@
             "fastdtw": "0.3.4",
             "pytorch_transformers": "1.2.0",
             "openai_clip_package": "1.0",
+            "tensorboard": "1.15.0",
             "tensorboardX": "2.4.1",
             "torch_scatter": "2.0.9",
             "navtta_core": "0.1.0",
@@ -181,6 +182,7 @@
                 "fastdtw": "0.3.4",
                 "pytorch-transformers": "1.2.0",
                 "clip": "1.0",
+                "tensorboard": "1.15.0",
                 "tensorboardX": "2.4.1"
             }
     }
