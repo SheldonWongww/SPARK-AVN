@@ -126,6 +126,19 @@ can also be run directly while preparing environments:
 vln/scripts/verify_runtime_imports.sh
 ```
 
+`MatterSim` is a native Python 3.8 extension and is not installed by pip.  On
+a new server checkout, build it once at the fixed runtime path and then repeat
+the import check:
+
+```bash
+vln/scripts/build_mattersim.sh
+vln/scripts/verify_runtime_imports.sh
+```
+
+The builder pins the simulator and pybind11 revisions, applies the OpenCV 4
+compatibility change, and verifies the resulting module in the DUET, HAMT,
+and GOAT environments.  Evaluation launchers never build it implicitly.
+
 To restart an isolated resource group with a fresh run tag, pass
 `--only-group 1`, `--only-group 2`, or `--only-group 3` through
 `manage_grouped_source_screen.sh start`.  This is intended for recovery after
@@ -169,6 +182,36 @@ The two-episode validator requires finite metrics for the exact canonical
 prefix: R2R `1199_0`, `1199_1`; REVERIE `6806_482_0`, `6806_482_1`; and R2R-CE
 `200`, `201` (all in scene `1LXtFkjw3qL`).  Checkpoint-key validation remains
 active during these runs.
+
+The four-GPU launcher can run the same nine-setting smoke, or the complete
+`val_seen` and `val_unseen` Source evaluation.  It assigns ETPNav, BEVBert,
+StreamVLN, and all six discrete settings to four independent queues.  It does
+not run the hidden-label `test` split:
+
+```bash
+SMOKE_TAG="four-gpu-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_four_gpu_source_eval.sh \
+  --gpus 0,1,2,3 --run-tag "$SMOKE_TAG" --smoke
+
+SOURCE_TAG="four-gpu-source-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_four_gpu_source_eval.sh \
+  --gpus 0,1,2,3 --run-tag "$SOURCE_TAG" \
+  --ce-data-version v1.2-native --skip-runtime-check
+```
+
+The explicit v1.2 option reproduces the ETPNav/BEVBert protocol recorded in
+the project Excel Source table; StreamVLN remains v1.3.  Omit it for the
+repository's default unified-v1.3 ETPNav/BEVBert evaluation.  Batch logs, the
+expanded plan, Git commit, exit codes, and the final Excel-Source comparison
+are stored under
+`/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-four-gpu-source/TAG/`.  Per-split
+model logs and outputs remain under `vln/results/source/` or
+`vln/results/smoke/`.  The tracked comparison snapshot is
+`results/legacy/excel_source_metrics.json`; it was transcribed from the Source
+rows in `docs/NavTTA_benchmark_results.xlsx` and is reference-only rather than
+formal run evidence.  `MISMATCH` in `metrics.csv` is a scientific finding, not
+a launcher failure; the command exits nonzero only for execution, completeness,
+or parsing failures.
 
 ETPNav and BEVBert default to the derived `v1.3-unified` annotations so their
 episode starts match StreamVLN.  Use `--ce-data-version v1.2-native` only to

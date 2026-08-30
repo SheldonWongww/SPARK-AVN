@@ -25,6 +25,7 @@ export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
 SIM_BUILD="${REPO_ROOT}/vln/data/simulators/Matterport3DSimulator/build"
+"${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
 
 (
     prefix="${ENV_ROOT}/streamvln"
@@ -58,7 +59,7 @@ for setting in duet hamt goat; do
     (
         prefix="${ENV_ROOT}/${setting}"
         export PATH="${prefix}/bin:${PATH}"
-        export LD_LIBRARY_PATH="${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        export LD_LIBRARY_PATH="${SIM_BUILD}:${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
         case "${setting}" in
             duet)
                 source_root="${REPO_ROOT}/vln/baselines/duet/map_nav_src"

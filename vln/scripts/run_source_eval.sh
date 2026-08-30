@@ -585,6 +585,7 @@ if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
         die "refusing to overwrite IDEA source-statistics artifact"
 fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
+MATTERSIM_BUILD="${MATTERSIM_ROOT}/build"
 case "${SETTING}" in
     duet-r2r|hamt-r2r) ORDER_FAMILY=r2r_duet_hamt ;;
     duet-reverie|hamt-reverie) ORDER_FAMILY=reverie_duet_hamt ;;
@@ -593,6 +594,14 @@ case "${SETTING}" in
     etpnav-r2r-ce|bevbert-r2r-ce) ORDER_FAMILY=r2r_ce_v1_3_unified ;;
     *) ORDER_FAMILY="" ;;
 esac
+
+if [[ "${DRY_RUN}" -eq 0 ]]; then
+    case "${SETTING}" in
+        duet-r2r|duet-reverie|hamt-r2r|hamt-reverie|goat-r2r|goat-reverie)
+            "${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
+            ;;
+    esac
+fi
 
 manifest_for_family() {
     local family="$1"
@@ -816,8 +825,9 @@ canonicalize_discrete_output() {
 case "${SETTING}" in
     duet-r2r)
         select_env duet
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
+        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
             "${PYTHON}" r2r/main_nav.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
@@ -847,8 +857,9 @@ case "${SETTING}" in
         ;;
     duet-reverie)
         select_env duet
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
+        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
             "${PYTHON}" reverie/main_nav_obj.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
@@ -880,11 +891,12 @@ case "${SETTING}" in
         ;;
     hamt-r2r)
         select_env hamt
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
         export HF_HOME="${CACHE_ROOT}/transformers/hamt"
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
+        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
             "${PYTHON}" r2r/main.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
@@ -912,11 +924,12 @@ case "${SETTING}" in
         ;;
     hamt-reverie)
         select_env hamt
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
         export HF_HOME="${CACHE_ROOT}/transformers/hamt"
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
+        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
             "${PYTHON}" reverie/main_navref.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
@@ -943,8 +956,9 @@ case "${SETTING}" in
         ;;
     goat-r2r|goat-reverie)
         select_env goat
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_ROOT}/build:${REPO_ROOT}/vln/baselines/goat/map_nav_src"
+        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/goat/map_nav_src"
         if [[ "${SETTING}" == "goat-r2r" ]]; then
             ENTRY=r2r/main_nav.py
             DATASET=r2r

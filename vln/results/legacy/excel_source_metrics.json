@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "kind": "excel_source_reference_metrics",
+  "formal_result": false,
+  "source_workbook": {
+    "name": "NavTTA_benchmark_results.xlsx",
+    "workspace_path_at_extraction": "docs/NavTTA_benchmark_results.xlsx",
+    "sha256": "48db25692e5c6bb64291d1dec40a899d2056dd6e91a64967ca25ce96303c20ac",
+    "extracted_at": "2026-08-30",
+    "rows": "Source model rows in the REVERIE, R2R, and R2R-CE sheets"
+  },
+  "policy": {
+    "purpose": "Check whether a fresh exploratory Source rerun agrees with the Source cells currently recorded in the project workbook.",
+    "rate_unit": "percentage_points",
+    "distance_unit": "meters",
+    "missing_values": "Blank workbook cells are omitted and reported as unavailable.",
+    "formal_use": "Forbidden; this is a frozen transcription of comparison values, not run evidence."
+  },
+  "records": [
+    {
+      "id": "excel-duet-r2r-source-20260830",
+      "baseline": "DUET",
+      "benchmark": {"name": "R2R", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"TL": 12.33, "NE": 2.28, "SR": 79, "SPL": 73},
+        "val_unseen": {"TL": 13.94, "NE": 3.31, "SR": 72, "SPL": 60}
+      }
+    },
+    {
+      "id": "excel-duet-reverie-source-20260830",
+      "baseline": "DUET",
+      "benchmark": {"name": "REVERIE", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"OSR": 73.86, "SR": 71.75, "SPL": 63.94, "RGSPL": 51.14},
+        "val_unseen": {"OSR": 51.07, "SR": 46.98, "SPL": 33.73, "RGSPL": 23.03}
+      }
+    },
+    {
+      "id": "excel-hamt-r2r-source-20260830",
+      "baseline": "HAMT",
+      "benchmark": {"name": "R2R", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"TL": 11.15, "NE": 2.51, "SR": 76, "SPL": 72},
+        "val_unseen": {"TL": 11.46, "NE": 3.62, "SR": 66, "SPL": 62}
+      }
+    },
+    {
+      "id": "excel-hamt-reverie-source-20260830",
+      "baseline": "HAMT",
+      "benchmark": {"name": "REVERIE", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"OSR": 47.65, "SR": 43.29, "SPL": 40.19, "RGSPL": 25.18},
+        "val_unseen": {"OSR": 36.84, "SR": 32.95, "SPL": 30.20, "RGSPL": 17.28}
+      }
+    },
+    {
+      "id": "excel-goat-r2r-source-20260830",
+      "baseline": "GOAT",
+      "benchmark": {"name": "R2R", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"TL": 11.69, "NE": 1.70, "SR": 84.52, "SPL": 79.60},
+        "val_unseen": {"TL": 13.43, "NE": 2.33, "SR": 77.91, "SPL": 67.34}
+      }
+    },
+    {
+      "id": "excel-goat-reverie-source-20260830",
+      "baseline": "GOAT",
+      "benchmark": {"name": "REVERIE", "protocol": "discrete"},
+      "metrics": {
+        "val_seen": {"OSR": 82.36, "SR": 80.74, "SPL": 73.44, "RGSPL": 58.82},
+        "val_unseen": {"OSR": 57.97, "SR": 53.82, "SPL": 37.52, "RGSPL": 27.00}
+      }
+    },
+    {
+      "id": "excel-etpnav-r2r-ce-source-20260830",
+      "baseline": "ETPNav",
+      "benchmark": {"name": "R2R-CE", "protocol": "v1.2-native"},
+      "metrics": {
+        "val_seen": {"TL": 11.78, "NE": 3.95, "OSR": 72, "SR": 66, "SPL": 59},
+        "val_unseen": {"TL": 11.99, "NE": 4.71, "OSR": 65, "SR": 57, "SPL": 49}
+      }
+    },
+    {
+      "id": "excel-bevbert-r2r-ce-source-20260830",
+      "baseline": "BEVBert",
+      "benchmark": {"name": "R2R-CE", "protocol": "v1.2-native"},
+      "metrics": {
+        "val_seen": {"TL": 13.98, "NE": 3.77, "OSR": 73, "SR": 68, "SPL": 60},
+        "val_unseen": {"TL": 13.27, "NE": 4.57, "OSR": 67, "SR": 59, "SPL": 50}
+      }
+    },
+    {
+      "id": "excel-streamvln-r2r-ce-source-20260830",
+      "baseline": "StreamVLN",
+      "benchmark": {"name": "R2R-CE", "protocol": "v1.3-unified"},
+      "metrics": {}
+    }
+  ]
+}
