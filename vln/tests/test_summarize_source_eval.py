@@ -43,7 +43,7 @@ class SummarizeSourceEvalTest(unittest.TestCase):
                 "benchmark": {
                     "name": benchmark,
                     "protocol": (
-                        "v1.3-unified" if baseline == "StreamVLN"
+                        "v1.3-native" if baseline == "StreamVLN"
                         else "v1.2-native" if benchmark == "R2R-CE"
                         else "discrete"
                     ),
@@ -107,9 +107,13 @@ class SummarizeSourceEvalTest(unittest.TestCase):
             )
             self.assertEqual(len(summaries), 18)
             self.assertTrue(output.is_file())
-            self.assertTrue(all(
-                item["comparison"] == "MATCH_EXACT" for item in summaries
-            ))
+            for item in summaries:
+                expected = (
+                    "MATCH_EXACT"
+                    if item["setting"].endswith("-reverie")
+                    else "MATCH_INTEGER"
+                )
+                self.assertEqual(item["comparison"], expected, item)
 
     def test_incomplete_split_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -138,7 +142,7 @@ class SummarizeSourceEvalTest(unittest.TestCase):
                     reference,
                 )
 
-    def test_unified_ce_is_not_compared_to_native_excel_reference(self):
+    def test_unified_ce_is_not_compared_to_native_paper_reference(self):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)
             source_root = temporary / "source"
@@ -185,7 +189,7 @@ class SummarizeSourceEvalTest(unittest.TestCase):
                 {"SR": Decimal("NaN"), "SPL": Decimal("40")},
             )
 
-    def test_missing_excel_comparison_metric_is_rejected(self):
+    def test_missing_reference_comparison_metric_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)
             source_root = temporary / "source"
@@ -198,7 +202,7 @@ class SummarizeSourceEvalTest(unittest.TestCase):
             reference = temporary / "references.json"
             reference.write_text(json.dumps(document), encoding="utf-8")
             with self.assertRaisesRegex(
-                MODULE.SummaryError, "missing Excel comparison metrics"
+                MODULE.SummaryError, "missing reference comparison metrics"
             ):
                 MODULE.summarize(
                     source_root,
@@ -207,6 +211,32 @@ class SummarizeSourceEvalTest(unittest.TestCase):
                     "v1.2-native",
                     reference,
                 )
+
+    def test_r2r_and_r2r_ce_sr_spl_compare_as_rounded_integers(self):
+        status, value, reference = MODULE.comparison_status(
+            Decimal("71.52"), Decimal("72"), integer=True
+        )
+        self.assertEqual((status, value, reference), (
+            "MATCH_INTEGER", Decimal("72"), Decimal("72")
+        ))
+        status, value, reference = MODULE.comparison_status(
+            Decimal("67.58"), Decimal("67.34"), integer=True
+        )
+        self.assertEqual((status, value, reference), (
+            "MISMATCH_INTEGER", Decimal("68"), Decimal("67")
+        ))
+        status, value, reference = MODULE.comparison_status(
+            Decimal("56.5"), Decimal("57"), integer=True
+        )
+        self.assertEqual((status, value, reference), (
+            "MATCH_INTEGER", Decimal("57"), Decimal("57")
+        ))
+
+    def test_only_sr_and_spl_decide_r2r_parity(self):
+        self.assertTrue(MODULE.used_for_overall("duet-r2r", "SR"))
+        self.assertTrue(MODULE.used_for_overall("etpnav-r2r-ce", "SPL"))
+        self.assertFalse(MODULE.used_for_overall("duet-r2r", "NE"))
+        self.assertFalse(MODULE.used_for_overall("bevbert-r2r-ce", "OSR"))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,8 @@ Queue layout:
 Options:
   --gpus LIST                 Four distinct GPU IDs (default: 0,1,2,3)
   --run-tag TAG               Batch tag (default: four-gpu-source-UTC)
-  --ce-data-version VERSION   v1.3-unified (default) or v1.2-native
+  --ce-data-version VERSION   ETPNav/BEVBert data: v1.2-native (default,
+                              paper-native) or v1.3-unified
   --smoke                     Run two val_seen episodes per setting only
   --only-queue INDEX          Run only queue 0, 1, 2, or 3
   --skip-runtime-check        Skip verify_runtime_imports.sh
@@ -44,7 +45,7 @@ require_option_value() {
 
 GPU_LIST=0,1,2,3
 RUN_TAG=""
-CE_DATA_VERSION=v1.3-unified
+CE_DATA_VERSION=v1.2-native
 SMOKE=0
 ONLY_QUEUE=""
 SKIP_RUNTIME_CHECK=0
@@ -135,6 +136,8 @@ TMP_ROOT="${VLN_ROOT}/tmp"
 RUNNER="${REPO_ROOT}/vln/scripts/run_source_eval.sh"
 RUNTIME_CHECK="${REPO_ROOT}/vln/scripts/verify_runtime_imports.sh"
 SUMMARIZER="${REPO_ROOT}/vln/scripts/summarize_source_eval.py"
+PAPER_REFERENCE="${REPO_ROOT}/vln/results/legacy/upstream_published_metrics.json"
+EXCEL_REFERENCE="${REPO_ROOT}/vln/results/legacy/excel_source_metrics.json"
 LOG_ROOT="${TMP_ROOT}/navtta-four-gpu-source/${RUN_TAG}"
 GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || \
     die "cannot resolve the NavTTA Git commit"
@@ -142,6 +145,8 @@ GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || \
 [[ -x "${RUNNER}" ]] || die "missing source runner: ${RUNNER}"
 [[ -x "${RUNTIME_CHECK}" ]] || die "missing runtime checker: ${RUNTIME_CHECK}"
 [[ -f "${SUMMARIZER}" ]] || die "missing Source summarizer: ${SUMMARIZER}"
+[[ -f "${PAPER_REFERENCE}" ]] || die "missing paper reference: ${PAPER_REFERENCE}"
+[[ -f "${EXCEL_REFERENCE}" ]] || die "missing Excel reference: ${EXCEL_REFERENCE}"
 command -v setsid >/dev/null 2>&1 || die "setsid is required"
 [[ ! -e "${LOG_ROOT}" ]] || die "launcher log directory exists: ${LOG_ROOT}"
 
@@ -199,7 +204,12 @@ printf 'queue\tgpu\tsetting\tsplit\tsetting_tag\tprotocol\tmode\n' \
     printf 'git_commit\t%s\n' "${GIT_COMMIT}"
     printf 'mode\t%s\n' "${MODE}"
     printf 'gpus\t%s\n' "${GPU_LIST}"
+    printf 'model_seed\t0\n'
+    printf 'episode_order_seed\t0\n'
     printf 'ce_data_version\t%s\n' "${CE_DATA_VERSION}"
+    printf 'primary_reference\t%s\n' "${EXCEL_REFERENCE}"
+    printf 'secondary_reference\t%s\n' "${PAPER_REFERENCE}"
+    printf 'r2r_sr_spl_comparison\tdecimal_round_half_up_to_integer\n'
     printf 'started_at_utc\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"${LOG_ROOT}/metadata.tsv"
 for queue in 0 1 2 3; do
@@ -209,7 +219,7 @@ for queue in 0 1 2 3; do
         protocol=native
         case "${setting}" in
             etpnav-r2r-ce|bevbert-r2r-ce) protocol="${CE_DATA_VERSION}" ;;
-            streamvln-r2r-ce) protocol=v1.3-unified ;;
+            streamvln-r2r-ce) protocol=v1.3-native ;;
         esac
         for split in "${SPLITS[@]}"; do
             printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -483,10 +493,18 @@ ACTIVE_QUEUE_IDS=()
 [[ "${failed}" -eq 0 ]] || die "one or more GPU queues failed"
 
 if [[ "${DRY_RUN}" -eq 0 && "${SMOKE}" -eq 0 && -z "${ONLY_QUEUE}" ]]; then
+    printf '=== Current Excel Source-table comparison ===\n'
     "${ENV_ROOT}/duet/bin/python" "${SUMMARIZER}" \
         --run-tag "${RUN_TAG}" \
         --ce-data-version "${CE_DATA_VERSION}" \
+        --reference "${EXCEL_REFERENCE}" \
         --output "${LOG_ROOT}/metrics.csv"
+    printf '=== Original-model-paper Source comparison ===\n'
+    "${ENV_ROOT}/duet/bin/python" "${SUMMARIZER}" \
+        --run-tag "${RUN_TAG}" \
+        --ce-data-version "${CE_DATA_VERSION}" \
+        --reference "${PAPER_REFERENCE}" \
+        --output "${LOG_ROOT}/paper_metrics.csv"
 fi
 
 printf 'Selected four-GPU Source evaluations completed and parsed.\n'
@@ -494,5 +512,6 @@ printf 'Run tag: %s\n' "${RUN_TAG}"
 printf 'Launcher logs: %s\n' "${LOG_ROOT}"
 if [[ "${SMOKE}" -eq 0 ]]; then
     printf 'Results use per-setting tags: %s-SETTING\n' "${RUN_TAG}"
-    printf 'Inspect metrics.csv for Excel agreement; MISMATCH is not an execution failure.\n'
+    printf 'Inspect metrics.csv for workbook agreement and paper_metrics.csv for original-model-paper context.\n'
+    printf 'A comparison MISMATCH is not an execution failure.\n'
 fi

@@ -186,7 +186,30 @@ active during these runs.
 The four-GPU launcher can run the same nine-setting smoke, or the complete
 `val_seen` and `val_unseen` Source evaluation.  It assigns ETPNav, BEVBert,
 StreamVLN, and all six discrete settings to four independent queues.  It does
-not run the hidden-label `test` split:
+not run TTA methods or the hidden-label `test` split.  Every setting uses model
+seed 0 and the canonical episode order (order seed 0).  Its default selects the
+paper-native released weights and dataset versions while retaining NavTTA's
+controlled single-rank, canonical-order execution:
+
+| Model | Released evaluation weight | Evaluation data |
+|---|---|---|
+| DUET | R2R/REVERIE `best_val_unseen` | Original discrete R2R/REVERIE |
+| HAMT | R2R `vitbase-finetune-e2e`; REVERIE `best_val_unseen` | Original discrete R2R/REVERIE |
+| GOAT | R2R/REVERIE `best_val_unseen.pt` plus released sidecars | Original discrete R2R/REVERIE |
+| ETPNav | `ckpt.iter12000.pth` | `R2R_VLNCE_v1-2_preprocessed_BERTidx` |
+| BEVBert | `ckpt.iter9600.pth` | `R2R_VLNCE_v1-2_preprocessed_BERTidx` |
+| StreamVLN | released `...scalevln_v1_3` checkpoint | public `R2R_VLNCE_v1-3` |
+
+R2R-CE v1.3 is not just a repackaging of v1.2.  The official release corrected
+the initial heading of every episode to match discrete R2R and recomputed the
+oracle paths; it also removed 109 no-longer-navigable EnvDrop augmentation
+episodes.  The validation episode identities and goals remain the same, but
+the changed start rotations make v1.2 and v1.3 different evaluation streams.
+The `preprocessed` and `BERTidx` suffixes describe preprocessing/tokenization,
+not additional benchmark versions.  See the
+[official VLN-CE data changelog](https://jacobkrantz.github.io/vlnce/data).
+
+Run it with:
 
 ```bash
 SMOKE_TAG="four-gpu-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -195,29 +218,43 @@ vln/scripts/run_four_gpu_source_eval.sh \
 
 SOURCE_TAG="four-gpu-source-$(date -u +%Y%m%dT%H%M%SZ)"
 vln/scripts/run_four_gpu_source_eval.sh \
-  --gpus 0,1,2,3 --run-tag "$SOURCE_TAG" \
-  --ce-data-version v1.2-native --skip-runtime-check
+  --gpus 0,1,2,3 --run-tag "$SOURCE_TAG" --skip-runtime-check
 ```
 
-The explicit v1.2 option reproduces the ETPNav/BEVBert protocol recorded in
-the project Excel Source table; StreamVLN remains v1.3.  Omit it for the
-repository's default unified-v1.3 ETPNav/BEVBert evaluation.  Batch logs, the
-expanded plan, Git commit, exit codes, and the final Excel-Source comparison
-are stored under
+The four-GPU launcher's default `v1.2-native` option selects the ETPNav/BEVBert
+paper protocol; StreamVLN remains on its released public v1.3 data and is
+labelled `v1.3-native`.  Passing `--ce-data-version v1.3-unified` instead uses
+the derived BERT-indexed v1.3 annotations for ETPNav/BEVBert and is an
+explicitly different cross-model protocol, not paper parity.  Batch logs, the
+expanded plan, Git commit, exit codes, and comparisons are stored under
 `/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-four-gpu-source/TAG/`.  Per-split
 model logs and outputs remain under `vln/results/source/` or
-`vln/results/smoke/`.  The tracked comparison snapshot is
-`results/legacy/excel_source_metrics.json`; it was transcribed from the Source
-rows in `docs/NavTTA_benchmark_results.xlsx` and is reference-only rather than
-formal run evidence.  `MISMATCH` in `metrics.csv` is a scientific finding, not
-a launcher failure; the command exits nonzero only for execution, completeness,
-or parsing failures.
+`vln/results/smoke/`.  `metrics.csv` checks the Source values transcribed from
+the five VLN-TTA papers into the current project workbook;
+`paper_metrics.csv` separately compares against each navigation model's
+original paper.  For R2R and R2R-CE, SR and SPL are compared after decimal
+`ROUND_HALF_UP` to integer percentage points; raw values are retained in both
+CSVs.  REVERIE uses the precision reported by its source table.  A comparison
+mismatch is a scientific finding, not a launcher failure; the command exits
+nonzero only for execution, completeness, or parsing failures.
 
-ETPNav and BEVBert default to the derived `v1.3-unified` annotations so their
-episode starts match StreamVLN.  Use `--ce-data-version v1.2-native` only to
-reproduce the upstream v1.2 protocol, and never mix those values in one formal
-cross-model table.  `--run-tag TAG` gives every attempt an isolated output
-tree; if omitted, a UTC tag is generated automatically.
+The paper-native run is not claimed to reproduce the papers' unpublished
+episode scheduling or process-level RNG bit for bit: NavTTA intentionally uses
+one process, one environment, and its recorded canonical order.  Source does
+not adapt state across episodes, but implementation-level nondeterminism can
+still prevent bitwise parity; the rerun therefore checks the paper-reported
+metric precision rather than requiring identical trajectories.
+
+The standalone `run_source_eval.sh` and grouped scheduler retain their
+`v1.3-unified` default because the existing NavTTA R2R-CE experiments were
+frozen on v1.3 episode starts.  The paper-native four-GPU run is a separate
+reproduction: ETPNav/BEVBert v1.2 and StreamVLN v1.3 must be labelled by
+version and must not be presented as one same-stream cross-model table.  Any
+future TTA/search campaign following the newly selected paper-native protocol
+must use new matched Source controls on ETPNav/BEVBert v1.2; it cannot reuse
+the existing unified-v1.3 Source or TTA records.
+`--run-tag TAG` gives every attempt an isolated output tree; if omitted, a UTC
+tag is generated automatically.
 
 The server launchers intentionally do not inspect asset/environment manifests,
 require a clean Git tree, or create formal run manifests.  Their outputs are

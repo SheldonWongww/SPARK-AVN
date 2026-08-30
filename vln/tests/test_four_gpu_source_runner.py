@@ -64,10 +64,13 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
         self.assertIn("plan.tsv", source)
         self.assertIn("SUMMARY.tsv", source)
         self.assertIn("metrics.csv", source)
+        self.assertIn("paper_metrics.csv", source)
         self.assertIn("combined.log", source)
         self.assertIn("queue-${queue}.log", source)
         self.assertIn("queue-${queue}.exitcode", source)
         self.assertIn("metadata.tsv", source)
+        self.assertIn("printf 'model_seed\\t0\\n'", source)
+        self.assertIn("printf 'episode_order_seed\\t0\\n'", source)
         self.assertIn("setsid --fork --wait bash -c", source)
         self.assertIn('kill -TERM -- "-${pgid}"', source)
         self.assertIn('kill -KILL -- "-${pgid}"', source)
@@ -84,10 +87,11 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
 
     def test_ce_version_is_only_forwarded_to_etpnav_and_bevbert(self):
         source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("CE_DATA_VERSION=v1.2-native", source)
         self.assertIn("unset NAVTTA_CE_DATA_VERSION", source)
         self.assertIn("etpnav-r2r-ce|bevbert-r2r-ce", source)
         self.assertIn('command+=(--ce-data-version "${CE_DATA_VERSION}")', source)
-        self.assertIn("streamvln-r2r-ce) protocol=v1.3-unified", source)
+        self.assertIn("streamvln-r2r-ce) protocol=v1.3-native", source)
 
 
 if __name__ == "__main__":

@@ -50,6 +50,17 @@ REFERENCE_IDENTITY = {
     "bevbert-r2r-ce": ("BEVBert", "R2R-CE"),
     "streamvln-r2r-ce": ("StreamVLN", "R2R-CE"),
 }
+PAPER_NATIVE_PROTOCOL = {
+    "duet-r2r": "discrete",
+    "duet-reverie": "discrete",
+    "hamt-r2r": "discrete",
+    "hamt-reverie": "discrete",
+    "goat-r2r": "discrete",
+    "goat-reverie": "discrete",
+    "etpnav-r2r-ce": "v1.2-native",
+    "bevbert-r2r-ce": "v1.2-native",
+    "streamvln-r2r-ce": "v1.3-native",
+}
 METRIC_ORDER = (
     "TL", "NE", "OSR", "SR", "SPL", "nDTW", "SDTW", "CLS",
     "RGS", "RGSPL",
@@ -191,7 +202,7 @@ def parse_streamvln(directory):
         "os": item["oss_all"],
         "distance_to_goal": item["ones_all"],
     }
-    return canonicalize(raw, ratios=True), int(item["length"]), "v1.3-unified"
+    return canonicalize(raw, ratios=True), int(item["length"]), "v1.3-native"
 
 
 def parse_result(setting, split, directory, ce_data_version):
@@ -239,13 +250,56 @@ def reference_records(reference_path):
     }
 
 
-def comparison_status(value, reference):
+def comparison_status(value, reference, integer=False):
+    if integer:
+        compared_value = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        compared_reference = reference.quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+        status = (
+            "MATCH_INTEGER"
+            if compared_value == compared_reference
+            else "MISMATCH_INTEGER"
+        )
+        return status, compared_value, compared_reference
     if value == reference:
-        return "MATCH_EXACT"
+        return "MATCH_EXACT", value, reference
     quantum = Decimal(1).scaleb(reference.as_tuple().exponent)
     if value.quantize(quantum, rounding=ROUND_HALF_UP) == reference:
-        return "MATCH_ROUNDED"
-    return "MISMATCH"
+        return "MATCH_ROUNDED", value.quantize(
+            quantum, rounding=ROUND_HALF_UP
+        ), reference
+    return "MISMATCH", value, reference
+
+
+def reference_protocol(setting, reference):
+    declared = reference.get("benchmark", {}).get("protocol")
+    if declared in {
+        "discrete", "v1.2-native", "v1.3-native", "v1.3-unified"
+    }:
+        return declared
+    return PAPER_NATIVE_PROTOCOL[setting]
+
+
+def integer_primary_comparison(setting, metric):
+    benchmark = REFERENCE_IDENTITY[setting][1]
+    return benchmark in {"R2R", "R2R-CE"} and metric in {"SR", "SPL"}
+
+
+def used_for_overall(setting, metric):
+    benchmark = REFERENCE_IDENTITY[setting][1]
+    if benchmark in {"R2R", "R2R-CE"}:
+        return metric in {"SR", "SPL"}
+    return True
+
+
+def rounded_integer(metrics, name, setting):
+    if REFERENCE_IDENTITY[setting][1] not in {"R2R", "R2R-CE"}:
+        return ""
+    value = metrics.get(name)
+    if value is None:
+        return ""
+    return format(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP), "f")
 
 
 def summarize(source_root, run_tag, output, ce_data_version, reference_path):
@@ -269,7 +323,7 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
                     )
                 )
             raw_reference = reference.get("metrics", {}).get(split)
-            reference_protocol = reference.get("benchmark", {}).get("protocol")
+            expected_protocol = reference_protocol(setting, reference)
             comparable = {} if raw_reference is None else {
                 ALIASES[key.lower()]: decimal(value)
                 for key, value in raw_reference.items()
@@ -278,7 +332,7 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
             missing_comparison_metrics = sorted(set(comparable) - set(metrics))
             if missing_comparison_metrics:
                 raise SummaryError(
-                    "missing Excel comparison metrics for {}/{}: {}".format(
+                    "missing reference comparison metrics for {}/{}: {}".format(
                         setting, split, ", ".join(missing_comparison_metrics)
                     )
                 )
@@ -294,16 +348,31 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
                         if raw_reference is None else "NO_REFERENCE_METRIC"
                     )
                     difference = ""
+                    comparison_value = ""
+                    comparison_reference = ""
                 elif (
-                    reference_protocol in {"v1.2-native", "v1.3-unified"}
-                    and protocol != reference_protocol
+                    expected_protocol in {
+                        "v1.2-native", "v1.3-native", "v1.3-unified"
+                    }
+                    and protocol != expected_protocol
                 ):
                     status = "NOT_COMPARABLE_PROTOCOL"
                     difference = format(abs(value - expected_value), "f")
-                    statuses.append(status)
+                    comparison_value = ""
+                    comparison_reference = ""
                 else:
-                    status = comparison_status(value, expected_value)
+                    status, compared_value, compared_reference = comparison_status(
+                        value,
+                        expected_value,
+                        integer=integer_primary_comparison(setting, metric),
+                    )
                     difference = format(abs(value - expected_value), "f")
+                    comparison_value = format(compared_value, "f")
+                    comparison_reference = format(compared_reference, "f")
+                primary = expected_value is not None and used_for_overall(
+                    setting, metric
+                )
+                if primary:
                     statuses.append(status)
                 rows.append({
                     "setting": setting,
@@ -316,20 +385,29 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
                         "" if expected_value is None
                         else format(expected_value, "f")
                     ),
+                    "comparison_value": comparison_value,
+                    "comparison_reference": comparison_reference,
                     "abs_delta": difference,
                     "status": status,
+                    "used_for_overall": str(primary).lower(),
                     "reference_id": reference["id"],
                 })
             if "NOT_COMPARABLE_PROTOCOL" in statuses:
                 overall = "NOT_COMPARABLE_PROTOCOL"
-            elif "MISMATCH" in statuses:
-                overall = "MISMATCH"
+            elif any(status.startswith("MISMATCH") for status in statuses):
+                overall = "MISMATCH_INTEGER" if any(
+                    status == "MISMATCH_INTEGER" for status in statuses
+                ) else "MISMATCH"
+            elif statuses and all(
+                status == "MATCH_INTEGER" for status in statuses
+            ):
+                overall = "MATCH_INTEGER"
             elif "MATCH_ROUNDED" in statuses:
                 overall = "MATCH_ROUNDED"
             elif "MATCH_EXACT" in statuses:
                 overall = "MATCH_EXACT"
             else:
-                overall = "NO_EXCEL_REFERENCE"
+                overall = "NO_REFERENCE"
             summaries.append({
                 "setting": setting,
                 "split": split,
@@ -337,6 +415,8 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
                 "protocol": protocol,
                 "SR": format(metrics.get("SR", Decimal("NaN")), "f"),
                 "SPL": format(metrics.get("SPL", Decimal("NaN")), "f"),
+                "SR_integer": rounded_integer(metrics, "SR", setting),
+                "SPL_integer": rounded_integer(metrics, "SPL", setting),
                 "comparison": overall,
             })
 
@@ -344,7 +424,8 @@ def summarize(source_root, run_tag, output, ce_data_version, reference_path):
     with output.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=(
             "setting", "split", "protocol", "episodes", "metric", "value",
-            "reference", "abs_delta", "status", "reference_id",
+            "reference", "comparison_value", "comparison_reference",
+            "abs_delta", "status", "used_for_overall", "reference_id",
         ))
         writer.writeheader()
         writer.writerows(rows)
@@ -358,7 +439,7 @@ def main():
     parser.add_argument(
         "--ce-data-version",
         choices=("v1.2-native", "v1.3-unified"),
-        default="v1.3-unified",
+        default="v1.2-native",
     )
     parser.add_argument(
         "--source-root", type=Path, default=DEFAULT_SOURCE_ROOT,
@@ -376,11 +457,15 @@ def main():
         args.ce_data_version,
         args.reference,
     )
-    print("setting,split,episodes,protocol,SR,SPL,comparison")
+    print("reference={}".format(args.reference))
+    print(
+        "setting,split,episodes,protocol,SR,SPL,"
+        "SR_integer,SPL_integer,comparison"
+    )
     for item in summaries:
         print(",".join(str(item[key]) for key in (
             "setting", "split", "episodes", "protocol", "SR", "SPL",
-            "comparison",
+            "SR_integer", "SPL_integer", "comparison",
         )))
 
 

@@ -14,6 +14,7 @@
     "rate_unit": "percentage_points",
     "distance_unit": "meters",
     "missing_values": "Blank workbook cells are omitted and reported as unavailable.",
+    "comparison": "For R2R and R2R-CE, Source parity is decided only by SR and SPL after decimal ROUND_HALF_UP to integer percentage points; raw decimals remain reported. REVERIE retains the precision transcribed from the cited VLN-TTA paper tables.",
     "formal_use": "Forbidden; this is a frozen transcription of comparison values, not run evidence."
   },
   "records": [
@@ -92,7 +93,7 @@
     {
       "id": "excel-streamvln-r2r-ce-source-20260830",
       "baseline": "StreamVLN",
-      "benchmark": {"name": "R2R-CE", "protocol": "v1.3-unified"},
+      "benchmark": {"name": "R2R-CE", "protocol": "v1.3-native"},
       "metrics": {}
     }
   ]

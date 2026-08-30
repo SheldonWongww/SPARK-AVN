@@ -4,10 +4,24 @@ Current phase: pre-evaluation preparation; no new formal evaluation result has
 been claimed.
 
 - Discrete settings: DUET, HAMT, and GOAT on R2R and REVERIE.
-- Continuous settings: ETPNav, BEVBert, and StreamVLN use R2R-CE v1.3 episode
-  starts for formal comparisons.  ETPNav/BEVBert consume a reproducibly
-  derived BERT-indexed v1.3 file; their native v1.2 data remains available for
-  separately labelled upstream reproduction.
+- Existing completed R2R-CE TTA campaigns used unified v1.3 episode starts;
+  those results remain tied to that frozen protocol.  The newly selected
+  paper-native campaign instead uses ETPNav/BEVBert v1.2 and StreamVLN v1.3.
+  Existing ETPNav/BEVBert v1.3 results must not be reused as matched controls
+  for a future v1.2 TTA campaign.
+- Paper-native Source reproduction is deliberately separate: ETPNav uses the
+  released `ckpt.iter12000.pth` on v1.2, BEVBert uses `ckpt.iter9600.pth` on
+  v1.2, and the updated StreamVLN benchmark checkpoint uses v1.3.  These runs
+  check each model against its own paper but are not one same-stream
+  cross-model comparison.  R2R/R2R-CE SR and SPL parity is judged after
+  decimal half-up rounding to integer percentage points.  The rerunner keeps
+  NavTTA's canonical single-rank execution, so `paper-native` identifies the
+  released checkpoint/data pairing rather than unpublished upstream scheduling
+  or RNG state.
+- The current four-GPU validation campaign is Source-only: model seed 0 and
+  canonical episode-order seed 0, with no TTA method or hyperparameter search.
+  Future TTA/search work starts only after this Source gate and must match each
+  model's selected dataset version and seed-0 stream.
 - Six official source repositories are pinned in
   `manifests/upstream_repositories.json` and exported into `baselines/` as
   active, Git-tracked snapshots.

@@ -2,6 +2,7 @@
   "schema_version": 1,
   "kind": "upstream_published_reference_metrics",
   "curated_at": "2026-08-10",
+  "reviewed_at": "2026-08-30",
   "formal_result": false,
   "policy": {
     "purpose": "Source-baseline context only; these values were not produced by this workspace.",
@@ -9,6 +10,7 @@
     "rate_unit": "percentage_points",
     "distance_unit": "meters",
     "episode_order": "Not reported upstream; aggregate source-model values are not evidence for any order-sensitive TTA protocol.",
+    "comparison": "For R2R and R2R-CE, Source parity is decided only by SR and SPL after decimal ROUND_HALF_UP to integer percentage points; raw decimals remain reported. REVERIE retains the precision of its cited table.",
     "formal_use": "Forbidden unless independently reproduced and registered with a complete run manifest."
   },
   "records": [
@@ -82,8 +84,8 @@
       "model_variant": "HAMT final end-to-end ViT variant",
       "checkpoint_reference": {
         "selection": "best_val_unseen",
-        "expected_upstream_runtime_path": "datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen",
-        "mapping_status": "requires_local_asset_identity_confirmation",
+        "upstream_runtime_path": "datasets/R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen",
+        "mapping_status": "official_script_and_local_archive_mapping",
         "url": "https://github.com/cshizhe/VLN-HAMT/blob/c8b9ee12125f9fe36c51d2ab928fde38f7d846bd/finetune_src/scripts/run_r2r.sh#L54-L62"
       },
       "citation": {
@@ -99,8 +101,8 @@
         "test_unseen": {"TL": 12.27, "NE": 3.93, "SR": 65, "SPL": 60}
       },
       "qualification": [
-        "The checked-in upstream script activates fixed `vitbase` features by default; its e2e feature and checkpoint lines are comments.",
-        "Do not associate these final e2e paper values with a local `best_val_unseen` file until its original archive member is proven to be `vitbase-finetune-e2e`."
+        "The checked-in upstream script activates fixed `vitbase` features by default; the final paper row uses its documented e2e feature/checkpoint alternative.",
+        "The local asset manifest records the original archive member as `R2R/trained_models/vitbase-finetune-e2e/ckpts/best_val_unseen` and pairs it with the e2e feature file."
       ]
     },
     {
@@ -139,7 +141,7 @@
       "benchmark": {
         "name": "R2R",
         "protocol": "discrete_matterport3d_graph",
-        "dataset_variant": "original discrete R2R benchmark with the paper's synthetic augmentation"
+        "dataset_variant": "original discrete R2R evaluation benchmark"
       },
       "model_variant": "GOAT full model with BACL, FACL, CFP, CLIP-B/16, METER initialization, and EnvEdit augmentation",
       "checkpoint_reference": {
@@ -172,7 +174,7 @@
       "benchmark": {
         "name": "REVERIE",
         "protocol": "discrete_matterport3d_graph_object_grounding",
-        "dataset_variant": "original discrete REVERIE benchmark with the paper's synthetic augmentation"
+        "dataset_variant": "original discrete REVERIE evaluation benchmark"
       },
       "model_variant": "GOAT full model with object grounding, BACL, FACL, CFP, CLIP-B/16, METER initialization, and EnvEdit augmentation",
       "checkpoint_reference": {
@@ -200,7 +202,7 @@
       ]
     },
     {
-      "id": "etpnav-r2r-ce-paper-v2",
+      "id": "etpnav-r2r-ce-paper-v3",
       "baseline": "ETPNav",
       "benchmark": {
         "name": "R2R-CE",
@@ -215,8 +217,8 @@
         "url": "https://github.com/MarSaKi/ETPNav/blob/160e65fe5d23ad83d024d57d710e47be6892fc68/run_r2r/main.bash#L24-L34"
       },
       "citation": {
-        "paper_url": "https://arxiv.org/abs/2304.03047v2",
-        "source_url": "https://arxiv.org/src/2304.03047v2",
+        "paper_url": "https://arxiv.org/abs/2304.03047v3",
+        "source_url": "https://arxiv.org/src/2304.03047v3",
         "table_label": "tab:sota_r2r",
         "table_caption": "Comparison with state-of-the-art methods on R2R-CE dataset.",
         "row": "ETPNav (ours)"

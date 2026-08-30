@@ -6,9 +6,12 @@ measurements produced by this workspace and must not be used as formal NavTTA
 results.
 
 `excel_source_metrics.json` is a frozen transcription of the Source rows in
-the project's `NavTTA_benchmark_results.xlsx` workbook.  The four-GPU Source
-launcher compares fresh validation metrics against this file so a workbook
-edit cannot silently change a running server experiment.
+the project's `NavTTA_benchmark_results.xlsx` workbook.  Those rows were
+collected from the five prior VLN-TTA papers used by the project.  The four-GPU
+Source launcher writes its primary comparison to `metrics.csv` so a workbook
+edit cannot silently change a running server experiment.  A second
+`paper_metrics.csv` comparison uses the original navigation-model records in
+`upstream_published_metrics.json` as provenance context.
 
 `upstream_published_metrics.json` uses one record per model/benchmark variant:
 
