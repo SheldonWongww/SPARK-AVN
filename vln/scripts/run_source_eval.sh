@@ -543,6 +543,7 @@ esac
 
 DATA_ROOT="${REPO_ROOT}/vln/data"
 CHECKPOINT_ROOT="${REPO_ROOT}/vln/checkpoints"
+BERT_BASE_UNCASED_ROOT="${CHECKPOINT_ROOT}/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594"
 if [[ -n "${SMOKE_EPISODES}" ]]; then
     RESULT_ROOT="${REPO_ROOT}/vln/results/smoke/${RUN_TAG}/${SETTING}/${SPLIT}"
 elif [[ -n "${TTA_CONFIG}" && "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; then
@@ -717,6 +718,7 @@ export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export NAVTTA_CLIP_CACHE="${CLIP_CACHE}"
+export NAVTTA_BERT_BASE_UNCASED="${BERT_BASE_UNCASED_ROOT}"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export CUDA_VISIBLE_DEVICES="${GPU}"
 export MAGNUM_LOG=quiet

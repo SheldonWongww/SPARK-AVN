@@ -15,6 +15,7 @@ MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"
 CACHE_ROOT="${VLN_ROOT}/cache"
 HOME_ROOT="${VLN_ROOT}/home"
 XDG_CACHE_ROOT="${CACHE_ROOT}/xdg"
+BERT_BASE_UNCASED_ROOT="${REPO_ROOT}/vln/checkpoints/duet/.hf_cache/hub/models--bert-base-uncased/snapshots/86b5e0934494bd15c9632b12f734a8a67f723594"
 
 mkdir -p "${HOME_ROOT}" "${XDG_CACHE_ROOT}"
 export HOME="${HOME_ROOT}"
@@ -24,6 +25,7 @@ export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+export NAVTTA_BERT_BASE_UNCASED="${BERT_BASE_UNCASED_ROOT}"
 
 SIM_BUILD="${REPO_ROOT}/vln/data/simulators/Matterport3DSimulator/build"
 "${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
@@ -98,8 +100,10 @@ if setting == "duet":
 elif setting == "hamt":
     import r2r.main
     import reverie.main_navref
-    from transformers import AutoTokenizer
-    AutoTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
+    from transformers import AutoTokenizer, PretrainedConfig
+    root = os.environ["NAVTTA_BERT_BASE_UNCASED"]
+    AutoTokenizer.from_pretrained(root, local_files_only=True)
+    PretrainedConfig.from_pretrained(root, local_files_only=True)
 else:
     import spacy
     from transformers import AutoTokenizer

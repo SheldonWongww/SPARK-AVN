@@ -1,4 +1,10 @@
+import os
+
 import torch
+
+
+def _bert_base_uncased():
+    return os.environ.get('NAVTTA_BERT_BASE_UNCASED', 'bert-base-uncased')
 
 
 def get_tokenizer(args):
@@ -6,7 +12,7 @@ def get_tokenizer(args):
     if args.dataset == 'rxr' or args.tokenizer == 'xlm':
         cfg_name = 'xlm-roberta-base'
     else:
-        cfg_name = 'bert-base-uncased'
+        cfg_name = _bert_base_uncased()
     tokenizer = AutoTokenizer.from_pretrained(cfg_name)
     return tokenizer
 
@@ -33,7 +39,7 @@ def get_vlnbert_models(args, config=None):
     if args.dataset == 'rxr' or args.tokenizer == 'xlm':
         cfg_name = 'xlm-roberta-base'
     else:
-        cfg_name = 'bert-base-uncased'
+        cfg_name = _bert_base_uncased()
     vis_config = PretrainedConfig.from_pretrained(cfg_name)
 
     if args.dataset == 'rxr' or args.tokenizer == 'xlm':

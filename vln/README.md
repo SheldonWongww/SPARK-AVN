@@ -143,6 +143,11 @@ module in the DUET, HAMT, and GOAT environments.  It does not depend on shell
 activation or exported compiler variables.  Evaluation launchers never build
 it implicitly.
 
+HAMT uses its older Transformers runtime with the pinned local
+`bert-base-uncased` snapshot already stored under the DUET checkpoints.  The
+launch and runtime-check scripts pass that snapshot to HAMT explicitly, so no
+legacy URL-hashed cache files or network access are required.
+
 To restart an isolated resource group with a fresh run tag, pass
 `--only-group 1`, `--only-group 2`, or `--only-group 3` through
 `manage_grouped_source_screen.sh start`.  This is intended for recovery after

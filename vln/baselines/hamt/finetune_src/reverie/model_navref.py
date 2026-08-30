@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 import torch
@@ -9,9 +11,14 @@ from transformers import (PretrainedConfig, AutoTokenizer)
 from utils.misc import length2mask
 from reverie.vlnbert_navref import NavRefCMT
 
+
+def _bert_base_uncased():
+    return os.environ.get('NAVTTA_BERT_BASE_UNCASED', 'bert-base-uncased')
+
+
 def get_tokenizer(args):
     if args.tokenizer == 'bert':
-        tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        tokenizer = AutoTokenizer.from_pretrained(_bert_base_uncased())
     elif args.tokenizer == 'xlm':
         tokenizer = AutoTokenizer.from_pretrained('xlm-roberta-base')
     else:
@@ -37,7 +44,7 @@ def get_vlnbert_models(args, config=None):
     if args.tokenizer == 'xlm':
         cfg_name = 'xlm-roberta-base'
     else:
-        cfg_name = 'bert-base-uncased'
+        cfg_name = _bert_base_uncased()
     vis_config = PretrainedConfig.from_pretrained(cfg_name)
 
     vis_config.max_action_steps = 100 
