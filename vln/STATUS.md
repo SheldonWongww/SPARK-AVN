@@ -22,6 +22,19 @@ been claimed.
   canonical episode-order seed 0, with no TTA method or hyperparameter search.
   Future TTA/search work starts only after this Source gate and must match each
   model's selected dataset version and seed-0 stream.
+- The historical BEVBert Source record under
+  `grouped-source-20260810T080743Z` used unified v1.3 starts, so it is not the
+  paper-native v1.2 control requested for the current comparison. BEVBert has
+  one released CE checkpoint (`ckpt.iter9600.pth`) shared by both validation
+  splits; a focused verifier now authenticates it, CLIP ViT-B/16, its two
+  frozen perception sidecars, and both v1.2 annotation/ground-truth streams
+  before the replacement run.
+- A StreamVLN full run exposed a corrupted
+  `1pXnuDYAj8r_semantic.ply` at the first episode of the second canonical
+  scene. The partial run is invalid. Tracked tools now restore that complete
+  scene from the manifest-pinned official MP3D archive and fail before model
+  loading if its GLB or semantic PLY layout is malformed. A fresh-tag rerun is
+  still required after server-side repair.
 - Six official source repositories are pinned in
   `manifests/upstream_repositories.json` and exported into `baselines/` as
   active, Git-tracked snapshots.

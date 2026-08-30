@@ -115,6 +115,38 @@ class SummarizeSourceEvalTest(unittest.TestCase):
                 )
                 self.assertEqual(item["comparison"], expected, item)
 
+    def test_selected_settings_allow_an_affected_model_rerun(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary = Path(temporary)
+            source_root = temporary / "source"
+            tag = "unit-source"
+            reference = temporary / "references.json"
+            reference.write_text(
+                json.dumps(self._fixture(source_root, tag)), encoding="utf-8"
+            )
+            output = temporary / "metrics.csv"
+            selected = ("bevbert-r2r-ce", "streamvln-r2r-ce")
+            summaries = MODULE.summarize(
+                source_root,
+                tag,
+                output,
+                "v1.2-native",
+                reference,
+                settings=selected,
+            )
+            self.assertEqual(len(summaries), 4)
+            self.assertEqual(
+                {item["setting"] for item in summaries}, set(selected)
+            )
+
+    def test_invalid_selected_settings_are_rejected(self):
+        with self.assertRaisesRegex(MODULE.SummaryError, "unknown settings"):
+            MODULE.validate_selected_settings(("bevbert-r2r-ce", "missing"))
+        with self.assertRaisesRegex(MODULE.SummaryError, "duplicates"):
+            MODULE.validate_selected_settings(
+                ("bevbert-r2r-ce", "bevbert-r2r-ce")
+            )
+
     def test_incomplete_split_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)

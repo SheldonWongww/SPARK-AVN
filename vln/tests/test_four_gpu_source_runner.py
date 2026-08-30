@@ -21,6 +21,7 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
         self.assertIn("never runs the hidden-label test split", completed.stdout)
         self.assertIn("--smoke", completed.stdout)
         self.assertIn("--gpus LIST", completed.stdout)
+        self.assertIn("--only-queues LIST", completed.stdout)
 
     def test_invalid_gpu_and_queue_options_fail_before_server_access(self):
         cases = (
@@ -28,6 +29,8 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
             (["--gpus", "0,1,1,3", "--dry-run"], "must be distinct"),
             (["--gpus", "0,1,x,3", "--dry-run"], "non-negative integers"),
             (["--only-queue", "4", "--dry-run"], "invalid queue"),
+            (["--only-queues", "1,4", "--dry-run"], "invalid queue"),
+            (["--only-queues", "1,1", "--dry-run"], "duplicate queue"),
         )
         for arguments, message in cases:
             with self.subTest(arguments=arguments):
@@ -57,6 +60,10 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
 
     def test_logging_cleanup_and_summary_contract(self):
         source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            'LOG_ROOT="${REPO_ROOT}/vln/results/source/${RUN_TAG}/_launcher"',
+            source,
+        )
         self.assertIn(
             'LOG_ROOT="${TMP_ROOT}/navtta-four-gpu-source/${RUN_TAG}"',
             source,
@@ -92,6 +99,9 @@ class FourGpuSourceRunnerTest(unittest.TestCase):
         self.assertIn("etpnav-r2r-ce|bevbert-r2r-ce", source)
         self.assertIn('command+=(--ce-data-version "${CE_DATA_VERSION}")', source)
         self.assertIn("streamvln-r2r-ce) protocol=v1.3-native", source)
+        self.assertIn('--settings "${SUMMARY_SETTINGS_CSV}"', source)
+        self.assertIn("verify_bevbert_source_pairing.py", source)
+        self.assertIn('"${CE_DATA_VERSION}" == "v1.2-native"', source)
 
 
 if __name__ == "__main__":

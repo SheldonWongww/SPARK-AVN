@@ -121,6 +121,18 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertNotIn('CE_EPISODE_COUNT="${SMOKE_EPISODES}"', source)
         self.assertIn('export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"', source)
 
+    def test_streamvln_checks_the_scene_that_failed_before_model_loading(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        checker = (
+            '"${REPO_ROOT}/vln/scripts/verify_streamvln_scene_assets.py"'
+        )
+        self.assertIn(checker, source)
+        self.assertIn("1pXnuDYAj8r", source)
+        guard = 'if [[ "${DRY_RUN}" -eq 0 ]]; then'
+        self.assertLess(source.rindex(guard, 0, source.index(checker)), source.index(checker))
+        self.assertLess(source.index(checker), source.index('MODEL_DIR="${CHECKPOINT_ROOT}/streamvln/'))
+
     def test_tuning_result_root_override_is_narrow_and_path_bound(self):
         source = RUNNER.read_text(encoding="utf-8")
 

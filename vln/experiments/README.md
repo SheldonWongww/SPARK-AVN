@@ -1,5 +1,12 @@
 # VLN experiment specifications
 
+## BEVBert/StreamVLN Source recovery
+
+`BEVBERT_STREAMVLN_SOURCE_RECOVERY_V1.md` records the checkpoint, dataset,
+episode-order, simulator-asset, and comparison contract for the 2026-08-30
+two-model Source rerun. It is blocked until the corrupt StreamVLN MP3D scene is
+restored and becomes complete only after both validation splits finish.
+
 ## R2R frozen `val_unseen` evaluation
 
 `r2r_val_unseen_frozen_eval_v1.json` defines the independent-split evaluation

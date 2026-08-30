@@ -20,16 +20,18 @@ Options:
   --ce-data-version VERSION   ETPNav/BEVBert data: v1.2-native (default,
                               paper-native) or v1.3-unified
   --smoke                     Run two val_seen episodes per setting only
-  --only-queue INDEX          Run only queue 0, 1, 2, or 3
+  --only-queue INDEX          Run only one queue (legacy spelling)
+  --only-queues LIST          Run a comma-separated subset of queues 0,1,2,3
   --skip-runtime-check        Skip verify_runtime_imports.sh
   --dry-run                   Print child commands without evaluation
   -h, --help                  Show this help
 
-Launcher logs are written below:
-  /data1/wxy/exp_data/NavTTA/vln/tmp/navtta-four-gpu-source/TAG/
+Full-run launcher logs and comparison CSVs are written below:
+  vln/results/source/TAG/_launcher/
 
-Full Source results remain below vln/results/source/, using one distinct
-derived tag per setting. Smoke results remain below vln/results/smoke/.
+Per-split Source results use one distinct derived tag per setting below
+vln/results/source/. Smoke launcher logs remain below the external temporary
+root and smoke results remain below vln/results/smoke/.
 EOF
 }
 
@@ -47,7 +49,7 @@ GPU_LIST=0,1,2,3
 RUN_TAG=""
 CE_DATA_VERSION=v1.2-native
 SMOKE=0
-ONLY_QUEUE=""
+ONLY_QUEUES=""
 SKIP_RUNTIME_CHECK=0
 DRY_RUN=0
 
@@ -72,9 +74,10 @@ while [[ "$#" -gt 0 ]]; do
             SMOKE=1
             shift
             ;;
-        --only-queue)
+        --only-queue|--only-queues)
             require_option_value "$@"
-            ONLY_QUEUE="$2"
+            [[ -z "${ONLY_QUEUES}" ]] || die "queue selection specified more than once"
+            ONLY_QUEUES="$2"
             shift 2
             ;;
         --skip-runtime-check)
@@ -99,10 +102,21 @@ case "${CE_DATA_VERSION}" in
     v1.3-unified|v1.2-native) ;;
     *) die "invalid CE data version: ${CE_DATA_VERSION}" ;;
 esac
-case "${ONLY_QUEUE}" in
-    ''|0|1|2|3) ;;
-    *) die "invalid queue: ${ONLY_QUEUE}" ;;
-esac
+if [[ -n "${ONLY_QUEUES}" ]]; then
+    NORMALIZED_QUEUES=""
+    IFS=',' read -r -a REQUESTED_QUEUES <<<"${ONLY_QUEUES}"
+    [[ "${#REQUESTED_QUEUES[@]}" -gt 0 ]] || die "queue list cannot be empty"
+    for queue in "${REQUESTED_QUEUES[@]}"; do
+        case "${queue}" in
+            0|1|2|3) ;;
+            *) die "invalid queue: ${queue}" ;;
+        esac
+        [[ ",${NORMALIZED_QUEUES}," != *",${queue},"* ]] || \
+            die "duplicate queue: ${queue}"
+        NORMALIZED_QUEUES="${NORMALIZED_QUEUES:+${NORMALIZED_QUEUES},}${queue}"
+    done
+    ONLY_QUEUES="${NORMALIZED_QUEUES}"
+fi
 # The launcher owns this choice.  Do not let a stale exported value alter the
 # seven settings for which --ce-data-version is intentionally not forwarded.
 unset NAVTTA_CE_DATA_VERSION
@@ -136,29 +150,33 @@ TMP_ROOT="${VLN_ROOT}/tmp"
 RUNNER="${REPO_ROOT}/vln/scripts/run_source_eval.sh"
 RUNTIME_CHECK="${REPO_ROOT}/vln/scripts/verify_runtime_imports.sh"
 SUMMARIZER="${REPO_ROOT}/vln/scripts/summarize_source_eval.py"
+BEVBERT_PAIRING_CHECK="${REPO_ROOT}/vln/scripts/verify_bevbert_source_pairing.py"
 PAPER_REFERENCE="${REPO_ROOT}/vln/results/legacy/upstream_published_metrics.json"
 EXCEL_REFERENCE="${REPO_ROOT}/vln/results/legacy/excel_source_metrics.json"
-LOG_ROOT="${TMP_ROOT}/navtta-four-gpu-source/${RUN_TAG}"
 GIT_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || \
     die "cannot resolve the NavTTA Git commit"
 
 [[ -x "${RUNNER}" ]] || die "missing source runner: ${RUNNER}"
 [[ -x "${RUNTIME_CHECK}" ]] || die "missing runtime checker: ${RUNTIME_CHECK}"
 [[ -f "${SUMMARIZER}" ]] || die "missing Source summarizer: ${SUMMARIZER}"
+[[ -f "${BEVBERT_PAIRING_CHECK}" ]] || \
+    die "missing BEVBert pairing checker: ${BEVBERT_PAIRING_CHECK}"
 [[ -f "${PAPER_REFERENCE}" ]] || die "missing paper reference: ${PAPER_REFERENCE}"
 [[ -f "${EXCEL_REFERENCE}" ]] || die "missing Excel reference: ${EXCEL_REFERENCE}"
 command -v setsid >/dev/null 2>&1 || die "setsid is required"
-[[ ! -e "${LOG_ROOT}" ]] || die "launcher log directory exists: ${LOG_ROOT}"
 
 if [[ "${SMOKE}" -eq 1 ]]; then
     RESULT_NAMESPACE=smoke
     SPLITS=(val_seen)
     MODE=smoke
+    LOG_ROOT="${TMP_ROOT}/navtta-four-gpu-source/${RUN_TAG}"
 else
     RESULT_NAMESPACE=source
     SPLITS=(val_seen val_unseen)
     MODE=full
+    LOG_ROOT="${REPO_ROOT}/vln/results/source/${RUN_TAG}/_launcher"
 fi
+[[ ! -e "${LOG_ROOT}" ]] || die "launcher log directory exists: ${LOG_ROOT}"
 
 queue_settings() {
     case "$1" in
@@ -174,7 +192,7 @@ queue_settings() {
 }
 
 queue_selected() {
-    [[ -z "${ONLY_QUEUE}" || "${ONLY_QUEUE}" == "$1" ]]
+    [[ -z "${ONLY_QUEUES}" || ",${ONLY_QUEUES}," == *",$1,"* ]]
 }
 
 for queue in 0 1 2 3; do
@@ -207,6 +225,7 @@ printf 'queue\tgpu\tsetting\tsplit\tsetting_tag\tprotocol\tmode\n' \
     printf 'model_seed\t0\n'
     printf 'episode_order_seed\t0\n'
     printf 'ce_data_version\t%s\n' "${CE_DATA_VERSION}"
+    printf 'selected_queues\t%s\n' "${ONLY_QUEUES:-0,1,2,3}"
     printf 'primary_reference\t%s\n' "${EXCEL_REFERENCE}"
     printf 'secondary_reference\t%s\n' "${PAPER_REFERENCE}"
     printf 'r2r_sr_spl_comparison\tdecimal_round_half_up_to_integer\n'
@@ -236,12 +255,16 @@ printf '  Git commit:       %s\n' "${GIT_COMMIT}"
 printf '  mode:             %s\n' "${MODE}"
 printf '  GPUs:             %s\n' "${GPU_LIST}"
 printf '  CE data version:  %s\n' "${CE_DATA_VERSION}"
-printf '  selected queues:  %s\n' "${ONLY_QUEUE:-0,1,2,3}"
+printf '  selected queues:  %s\n' "${ONLY_QUEUES:-0,1,2,3}"
 printf '  launcher logs:    %s\n' "${LOG_ROOT}"
 cat "${LOG_ROOT}/plan.tsv"
 
 if [[ "${SKIP_RUNTIME_CHECK}" -eq 0 ]]; then
     "${RUNTIME_CHECK}"
+fi
+if [[ "${DRY_RUN}" -eq 0 ]] && queue_selected 1 && \
+   [[ "${CE_DATA_VERSION}" == "v1.2-native" ]]; then
+    "${ENV_ROOT}/vlnce017/bin/python" "${BEVBERT_PAIRING_CHECK}"
 fi
 
 CURRENT_SETTING_WAIT_PID=""
@@ -492,17 +515,27 @@ ACTIVE_QUEUE_IDS=()
 
 [[ "${failed}" -eq 0 ]] || die "one or more GPU queues failed"
 
-if [[ "${DRY_RUN}" -eq 0 && "${SMOKE}" -eq 0 && -z "${ONLY_QUEUE}" ]]; then
+if [[ "${DRY_RUN}" -eq 0 && "${SMOKE}" -eq 0 ]]; then
+    SUMMARY_SETTINGS=()
+    for queue in 0 1 2 3; do
+        queue_selected "${queue}" || continue
+        while IFS= read -r setting; do
+            SUMMARY_SETTINGS+=("${setting}")
+        done < <(queue_settings "${queue}")
+    done
+    SUMMARY_SETTINGS_CSV="$(IFS=,; printf '%s' "${SUMMARY_SETTINGS[*]}")"
     printf '=== Current Excel Source-table comparison ===\n'
     "${ENV_ROOT}/duet/bin/python" "${SUMMARIZER}" \
         --run-tag "${RUN_TAG}" \
         --ce-data-version "${CE_DATA_VERSION}" \
+        --settings "${SUMMARY_SETTINGS_CSV}" \
         --reference "${EXCEL_REFERENCE}" \
         --output "${LOG_ROOT}/metrics.csv"
     printf '=== Original-model-paper Source comparison ===\n'
     "${ENV_ROOT}/duet/bin/python" "${SUMMARIZER}" \
         --run-tag "${RUN_TAG}" \
         --ce-data-version "${CE_DATA_VERSION}" \
+        --settings "${SUMMARY_SETTINGS_CSV}" \
         --reference "${PAPER_REFERENCE}" \
         --output "${LOG_ROOT}/paper_metrics.csv"
 fi

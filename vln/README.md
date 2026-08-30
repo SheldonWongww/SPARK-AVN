@@ -198,6 +198,31 @@ prefix: R2R `1199_0`, `1199_1`; REVERIE `6806_482_0`, `6806_482_1`; and R2R-CE
 `200`, `201` (all in scene `1LXtFkjw3qL`).  Checkpoint-key validation remains
 active during these runs.
 
+The two-episode StreamVLN smoke does not cross into the second canonical
+scene. A damaged `1pXnuDYAj8r_semantic.ply` therefore first appears at episode
+22 as `StanfordImporter::mesh(): unsupported face size 64` followed by a native
+abort. Validate and restore that scene from the manifest-pinned official
+archive before retrying:
+
+```bash
+cd /data1/wxy/code/NavTTA
+if ! vln/scripts/verify_streamvln_scene_assets.py 1pXnuDYAj8r; then
+  vln/scripts/repair_streamvln_scene_assets.py 1pXnuDYAj8r
+fi
+vln/scripts/verify_streamvln_scene_assets.py 1pXnuDYAj8r
+
+TAG="streamvln-scene-transition-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_source_eval.sh streamvln-r2r-ce val_seen 2 \
+  --run-tag "$TAG" --smoke-episodes 22
+```
+
+The repair verifies the complete `mp3d_habitat.zip` against the tracked size
+and SHA256, extracts the four scene files into same-filesystem staging,
+validates the GLB and binary PLY layouts, retains a timestamped backup, and
+then atomically installs the restored scene. Stop all jobs using MP3D before
+running it. Do not use the AVN scene tree as a repair source: a matching bad
+copy may share the same corruption.
+
 The four-GPU launcher can run the same nine-setting smoke, or the complete
 `val_seen` and `val_unseen` Source evaluation.  It assigns ETPNav, BEVBert,
 StreamVLN, and all six discrete settings to four independent queues.  It does
@@ -236,15 +261,36 @@ vln/scripts/run_four_gpu_source_eval.sh \
   --gpus 0,1,2,3 --run-tag "$SOURCE_TAG" --skip-runtime-check
 ```
 
+To rerun only BEVBert and StreamVLN after an affected batch, keep BEVBert
+explicitly on the paper-native v1.2 annotations. The two queues run in
+parallel:
+
+```bash
+SOURCE_TAG="bevbert-streamvln-source-$(date -u +%Y%m%dT%H%M%SZ)"
+vln/scripts/run_four_gpu_source_eval.sh \
+  --gpus 0,1,2,3 --only-queues 1,2 \
+  --ce-data-version v1.2-native \
+  --run-tag "$SOURCE_TAG" --skip-runtime-check
+```
+
+When queue 1 is selected with `v1.2-native`, the launcher checks frozen sizes
+and hashes for the released BEVBert checkpoint, CLIP ViT-B/16, waypoint
+predictor, depth encoder, both validation annotation files, and both evaluator
+ground-truth files before starting GPU work. It also verifies the manifest
+episode counts/order and prints that the one `ckpt.iter9600.pth` checkpoint is
+shared by `val_seen` and `val_unseen`. The same check can be run independently
+with `vln/scripts/verify_bevbert_source_pairing.py`.
+
 The four-GPU launcher's default `v1.2-native` option selects the ETPNav/BEVBert
 paper protocol; StreamVLN remains on its released public v1.3 data and is
 labelled `v1.3-native`.  Passing `--ce-data-version v1.3-unified` instead uses
 the derived BERT-indexed v1.3 annotations for ETPNav/BEVBert and is an
-explicitly different cross-model protocol, not paper parity.  Batch logs, the
-expanded plan, Git commit, exit codes, and comparisons are stored under
-`/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-four-gpu-source/TAG/`.  Per-split
-model logs and outputs remain under `vln/results/source/` or
-`vln/results/smoke/`.  `metrics.csv` checks the Source values transcribed from
+explicitly different cross-model protocol, not paper parity. For a full run,
+batch logs, the expanded plan, Git commit, exit codes, and comparisons are
+stored under `vln/results/source/TAG/_launcher/`. Smoke-launcher logs remain
+under `/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-four-gpu-source/TAG/`.
+Per-split model logs and outputs remain under `vln/results/source/` or
+`vln/results/smoke/`. `metrics.csv` checks the Source values transcribed from
 the five VLN-TTA papers into the current project workbook;
 `paper_metrics.csv` separately compares against each navigation model's
 original paper.  For R2R and R2R-CE, SR and SPL are compared after decimal

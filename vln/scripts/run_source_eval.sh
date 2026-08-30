@@ -1098,6 +1098,15 @@ case "${SETTING}" in
         export HF_HOME="${CACHE_ROOT}/huggingface"
         export HF_HUB_CACHE="${CACHE_ROOT}/huggingface/hub"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
+        # The two-episode smoke does not reach the second canonical scene.
+        # Validate the scene that exposed the corrupted semantic PLY before
+        # loading the multi-billion-parameter checkpoint.
+        if [[ "${DRY_RUN}" -eq 0 ]]; then
+            "${PYTHON}" \
+                "${REPO_ROOT}/vln/scripts/verify_streamvln_scene_assets.py" \
+                1pXnuDYAj8r \
+                --scene-root "${DATA_ROOT}/scene_datasets/mp3d"
+        fi
         assert_gpu
         WORKDIR="${REPO_ROOT}/vln/baselines/streamvln"
         MODEL_DIR="${CHECKPOINT_ROOT}/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"

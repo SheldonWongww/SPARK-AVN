@@ -302,11 +302,31 @@ def rounded_integer(metrics, name, setting):
     return format(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP), "f")
 
 
-def summarize(source_root, run_tag, output, ce_data_version, reference_path):
+def validate_selected_settings(settings):
+    selected = tuple(settings)
+    if not selected:
+        raise SummaryError("at least one setting must be selected")
+    unknown = sorted(set(selected) - set(SETTINGS))
+    if unknown:
+        raise SummaryError("unknown settings: {}".format(", ".join(unknown)))
+    if len(set(selected)) != len(selected):
+        raise SummaryError("settings must not contain duplicates")
+    return selected
+
+
+def summarize(
+    source_root,
+    run_tag,
+    output,
+    ce_data_version,
+    reference_path,
+    settings=SETTINGS,
+):
+    settings = validate_selected_settings(settings)
     references = reference_records(reference_path)
     rows = []
     summaries = []
-    for setting in SETTINGS:
+    for setting in settings:
         reference = references[REFERENCE_IDENTITY[setting]]
         setting_tag = "{}-{}".format(run_tag, setting)
         for split_index, split in enumerate(SPLITS):
@@ -449,13 +469,22 @@ def main():
         "--reference", type=Path, default=DEFAULT_REFERENCE,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--settings",
+        default=",".join(SETTINGS),
+        help="comma-separated Source settings to summarize",
+    )
     args = parser.parse_args()
+    settings = tuple(
+        item.strip() for item in args.settings.split(",") if item.strip()
+    )
     summaries = summarize(
         args.source_root,
         args.run_tag,
         args.output,
         args.ce_data_version,
         args.reference,
+        settings=settings,
     )
     print("reference={}".format(args.reference))
     print(
