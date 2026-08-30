@@ -586,6 +586,7 @@ if [[ "${IDEA_SOURCE_COLLECTION}" -eq 1 ]]; then
 fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
 MATTERSIM_BUILD="${MATTERSIM_ROOT}/build"
+MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"
 case "${SETTING}" in
     duet-r2r|hamt-r2r) ORDER_FAMILY=r2r_duet_hamt ;;
     duet-reverie|hamt-reverie) ORDER_FAMILY=reverie_duet_hamt ;;
@@ -825,7 +826,7 @@ canonicalize_discrete_output() {
 case "${SETTING}" in
     duet-r2r)
         select_env duet
-        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
         export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
@@ -857,7 +858,7 @@ case "${SETTING}" in
         ;;
     duet-reverie)
         select_env duet
-        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
         export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
@@ -891,7 +892,7 @@ case "${SETTING}" in
         ;;
     hamt-r2r)
         select_env hamt
-        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         export HF_HOME="${CACHE_ROOT}/transformers/hamt"
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
@@ -924,7 +925,7 @@ case "${SETTING}" in
         ;;
     hamt-reverie)
         select_env hamt
-        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         export HF_HOME="${CACHE_ROOT}/transformers/hamt"
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
@@ -956,7 +957,7 @@ case "${SETTING}" in
         ;;
     goat-r2r|goat-reverie)
         select_env goat
-        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
         export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/goat/map_nav_src"
         if [[ "${SETTING}" == "goat-r2r" ]]; then

@@ -27,7 +27,23 @@ class MatterSimBuilderTest(unittest.TestCase):
         )
         self.assertIn("CV_LOAD_IMAGE_ANYDEPTH", source)
         self.assertIn("cv::IMREAD_ANYDEPTH", source)
-        self.assertIn('export PATH="${ENV_ROOT}/duet/bin:${PATH}"', source)
+        self.assertIn("<jsoncpp/json/json.h>", source)
+        self.assertIn("<json/json.h>", source)
+        self.assertIn('NATIVE_ROOT="${ENV_ROOT}/mattersim-native"', source)
+        self.assertIn('NATIVE_CMAKE="${NATIVE_BIN}/cmake"', source)
+        self.assertIn('NATIVE_CC="${NATIVE_BIN}/x86_64-conda-linux-gnu-cc"', source)
+        self.assertIn('NATIVE_CXX="${NATIVE_BIN}/x86_64-conda-linux-gnu-c++"', source)
+        self.assertIn('OPENCV_DIR="${NATIVE_LIB}/cmake/opencv4"', source)
+        self.assertIn('JSONCPP_PC="${NATIVE_LIB}/pkgconfig/jsoncpp.pc"', source)
+        self.assertIn('missing native libxcrypt header', source)
+        self.assertIn('export CMAKE_PREFIX_PATH="${NATIVE_ROOT}"', source)
+        self.assertIn('export PATH="${ENV_ROOT}/duet/bin:${NATIVE_BIN}:${PATH}"', source)
+        self.assertIn('-DPKG_CONFIG_EXECUTABLE="${NATIVE_PKG_CONFIG}"', source)
+        self.assertIn('-DCMAKE_BUILD_RPATH="${NATIVE_LIB}"', source)
+        self.assertIn('-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON', source)
+        self.assertIn('BUILDER_CONTRACT=2', source)
+        self.assertIn('builder_contract=%s', source)
+        self.assertIn('native_prefix=%s', source)
         self.assertIn('STAGED_BUILD="${SOURCE_ROOT}/build"', source)
         self.assertIn('BUILD_STAMP=.navtta-build-revisions', source)
         self.assertIn('"${SOURCE_ROOT}/LICENSE"', source)
@@ -40,12 +56,27 @@ class MatterSimBuilderTest(unittest.TestCase):
         guard = source.index('build_mattersim.sh" --check')
         stream = source.index('prefix="${ENV_ROOT}/streamvln"')
         self.assertLess(guard, stream)
+        self.assertIn(
+            'MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"', source
+        )
+        self.assertIn(
+            'LD_LIBRARY_PATH="${SIM_BUILD}:${MATTERSIM_NATIVE_LIB}:', source
+        )
 
     def test_discrete_source_runner_uses_guarded_build_path(self):
         source = SOURCE_RUNNER.read_text(encoding="utf-8")
         self.assertIn('MATTERSIM_BUILD="${MATTERSIM_ROOT}/build"', source)
+        self.assertIn(
+            'MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"', source
+        )
         self.assertIn('build_mattersim.sh" --check', source)
         self.assertEqual(source.count('export PYTHONPATH="${MATTERSIM_BUILD}:'), 5)
+        self.assertEqual(
+            source.count(
+                'export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:'
+            ),
+            5,
+        )
 
 
 if __name__ == "__main__":

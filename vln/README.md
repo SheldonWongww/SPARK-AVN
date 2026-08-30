@@ -135,9 +135,13 @@ vln/scripts/build_mattersim.sh
 vln/scripts/verify_runtime_imports.sh
 ```
 
-The builder pins the simulator and pybind11 revisions, applies the OpenCV 4
-compatibility change, and verifies the resulting module in the DUET, HAMT,
-and GOAT environments.  Evaluation launchers never build it implicitly.
+The builder uses the isolated native toolchain at
+`/data1/wxy/exp_data/NavTTA/vln/envs/mattersim-native`, pins the simulator and
+pybind11 revisions, applies the OpenCV 4 and conda-forge JsonCpp compatibility
+changes, embeds the native-library runtime path, and verifies the resulting
+module in the DUET, HAMT, and GOAT environments.  It does not depend on shell
+activation or exported compiler variables.  Evaluation launchers never build
+it implicitly.
 
 To restart an isolated resource group with a fresh run tag, pass
 `--only-group 1`, `--only-group 2`, or `--only-group 3` through

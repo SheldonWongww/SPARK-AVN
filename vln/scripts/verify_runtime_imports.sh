@@ -11,6 +11,7 @@ fi
 REPO_ROOT=/data1/wxy/code/NavTTA
 VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
 ENV_ROOT="${VLN_ROOT}/envs"
+MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"
 CACHE_ROOT="${VLN_ROOT}/cache"
 HOME_ROOT="${VLN_ROOT}/home"
 XDG_CACHE_ROOT="${CACHE_ROOT}/xdg"
@@ -59,7 +60,7 @@ for setting in duet hamt goat; do
     (
         prefix="${ENV_ROOT}/${setting}"
         export PATH="${prefix}/bin:${PATH}"
-        export LD_LIBRARY_PATH="${SIM_BUILD}:${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        export LD_LIBRARY_PATH="${SIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${prefix}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
         case "${setting}" in
             duet)
                 source_root="${REPO_ROOT}/vln/baselines/duet/map_nav_src"
