@@ -1,7 +1,6 @@
 import gc
 import os
 import random
-import warnings
 from collections import defaultdict
 
 import lmdb
@@ -25,10 +24,6 @@ from vlnce_baselines.common.aux_losses import AuxLosses
 from vlnce_baselines.common.base_il_trainer import BaseVLNCETrainer
 from vlnce_baselines.common.env_utils import construct_envs, is_slurm_batch_job
 from vlnce_baselines.common.utils import extract_instruction_tokens, get_camera_orientations12
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
-    import tensorflow as tf  # noqa: F401
 
 import torch.distributed as distr
 import gzip

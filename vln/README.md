@@ -148,6 +148,12 @@ HAMT uses its older Transformers runtime with the pinned local
 launch and runtime-check scripts pass that snapshot to HAMT explicitly, so no
 legacy URL-hashed cache files or network access are required.
 
+The shared ETPNav/BEVBert evaluation environment uses `tensorboard==1.15.0`,
+the minimum version accepted by its PyTorch runtime.  The unused upstream
+TensorFlow imports are omitted from the active evaluation snapshots, so the
+obsolete `tensorflow==1.13.1` and unavailable `tb-nightly` packages are not
+part of this evaluation runtime.
+
 To restart an isolated resource group with a fresh run tag, pass
 `--only-group 1`, `--only-group 2`, or `--only-group 3` through
 `manage_grouped_source_screen.sh start`.  This is intended for recovery after

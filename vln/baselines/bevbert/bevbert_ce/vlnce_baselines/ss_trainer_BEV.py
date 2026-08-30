@@ -2,7 +2,6 @@ import gc
 import os
 import sys
 import random
-import warnings
 from collections import defaultdict
 from typing import Dict, List
 import jsonlines
@@ -52,10 +51,6 @@ from navtta_core.experiment import (
     load_episode_order_manifest,
     resolve_episode_order_manifest_path,
 )
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
-    import tensorflow as tf  # noqa: F401
 
 import torch.distributed as distr
 import gzip

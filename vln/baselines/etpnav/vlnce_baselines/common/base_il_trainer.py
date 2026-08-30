@@ -3,7 +3,6 @@ import jsonlines
 import os
 import sys
 import time
-import warnings
 from collections import defaultdict
 from typing import Dict, List
 
@@ -57,10 +56,6 @@ from ..utils import get_camera_orientations12
 from ..utils import (
     length2mask, dir_angle_feature, dir_angle_feature_with_ele,
 )
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
-    import tensorflow as tf  # noqa: F401
 
 
 class BaseVLNCETrainer(BaseILTrainer):
