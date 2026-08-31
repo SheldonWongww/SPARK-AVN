@@ -214,6 +214,57 @@ class IDEAAdapterTest(unittest.TestCase):
         self.assertEqual(diag["cold_start_steps"], 1)
         self.assertEqual(diag["new_domain_steps"], 1)
         self.assertEqual(diag["covered_steps"], 0)
+        self.assertEqual(diag["updates"], adapter.opt_steps)
+        self.assertEqual(diag["prompt_optimizer_attempts"], adapter.opt_steps)
+        self.assertEqual(diag["prompt_optimizer_updates"], adapter.opt_steps)
+        self.assertEqual(
+            diag["adapted_parameter_count"],
+            adapter.prompt_length * adapter.feature_dim,
+        )
+        self.assertEqual(
+            diag["adapted_parameter_names"], ["external_soft_prompt"]
+        )
+        self.assertGreater(diag["relative_param_drift"], 0.0)
+        self.assertEqual(
+            diag["base_parameter_integrity_schema"],
+            "navtta.idea.base_parameter_integrity.v1",
+        )
+        self.assertTrue(diag["base_parameter_integrity_complete"])
+        self.assertTrue(diag["base_parameter_unchanged"])
+        self.assertFalse(diag["trains_base_policy"])
+        self.assertEqual(diag["base_parameter_requires_grad_names"], [])
+        self.assertTrue(diag["base_parameter_grads_none"])
+        self.assertEqual(diag["base_parameter_gradient_names"], [])
+        self.assertEqual(
+            diag["base_parameter_name_count_before"],
+            diag["base_parameter_name_count_after"],
+        )
+        self.assertTrue(diag["base_parameter_name_set_unchanged"])
+        self.assertEqual(diag["base_parameter_added_names"], [])
+        self.assertEqual(diag["base_parameter_removed_names"], [])
+        self.assertEqual(
+            len(diag["base_parameter_name_set_before_sha256"]), 64
+        )
+        self.assertEqual(
+            diag["base_parameter_name_set_before_sha256"],
+            diag["base_parameter_name_set_after_sha256"],
+        )
+        self.assertEqual(
+            len(diag["base_parameter_content_before_sha256"]), 64
+        )
+        self.assertEqual(
+            diag["base_parameter_content_before_sha256"],
+            diag["base_parameter_content_after_sha256"],
+        )
+        self.assertTrue(diag["base_parameter_content_hash_match"])
+        self.assertEqual(diag["base_parameter_content_modified_names"], [])
+        self.assertEqual(
+            diag["base_parameter_content_hash_algorithm"],
+            "sha256_of_sorted_named_parameter_sha256_v1",
+        )
+        self.assertTrue(diag["base_parameter_versions_unchanged"])
+        self.assertEqual(diag["base_parameter_version_changed_names"], [])
+        self.assertEqual(diag["base_parameter_modified_names"], [])
 
     def test_repeated_identical_domain_is_eventually_covered(self):
         # A wide coverage threshold plus a repeated domain should trigger the
@@ -260,6 +311,54 @@ class IDEAAdapterTest(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertTrue(all(not p.requires_grad for p in self.policy.parameters()))
         self.assertTrue(all(p.grad is None for p in self.policy.parameters()))
+
+    def test_content_hash_detects_write_that_can_bypass_version_counter(self):
+        adapter = _make_adapter(self.policy, self.protocol)
+        parameter_name, parameter = next(self.policy.named_parameters())
+        with torch.no_grad():
+            parameter.data.add_(1.0)
+        diag = adapter.diagnostics()
+        self.assertTrue(diag["base_parameter_name_set_unchanged"])
+        self.assertTrue(diag["base_parameter_versions_unchanged"])
+        self.assertFalse(diag["base_parameter_unchanged"])
+        self.assertFalse(diag["base_parameter_content_hash_match"])
+        self.assertIn(
+            parameter_name, diag["base_parameter_content_modified_names"]
+        )
+        self.assertIn(parameter_name, diag["base_parameter_modified_names"])
+
+    def test_intermediate_diagnostics_defer_full_content_hash(self):
+        adapter = _make_adapter(self.policy, self.protocol)
+        diag = adapter.diagnostics(verify_base_content=False)
+        self.assertFalse(diag["base_parameter_integrity_complete"])
+        self.assertIsNone(diag["base_parameter_unchanged"])
+        self.assertIsNone(diag["base_parameter_content_after_sha256"])
+        self.assertIsNone(diag["base_parameter_content_hash_match"])
+        self.assertTrue(diag["base_parameter_name_set_unchanged"])
+        self.assertTrue(diag["base_parameter_versions_unchanged"])
+
+    def test_parameter_name_set_change_is_reported(self):
+        adapter = _make_adapter(self.policy, self.protocol)
+        self.policy.register_parameter(
+            "unexpected_parameter",
+            nn.Parameter(torch.zeros(1), requires_grad=False),
+        )
+        diag = adapter.diagnostics()
+        self.assertFalse(diag["base_parameter_unchanged"])
+        self.assertFalse(diag["base_parameter_name_set_unchanged"])
+        self.assertEqual(
+            diag["base_parameter_name_count_after"],
+            diag["base_parameter_name_count_before"] + 1,
+        )
+        self.assertEqual(
+            diag["base_parameter_added_names"], ["unexpected_parameter"]
+        )
+        self.assertEqual(diag["base_parameter_removed_names"], [])
+        self.assertFalse(diag["base_parameter_content_hash_match"])
+        self.assertFalse(diag["base_parameter_versions_unchanged"])
+        self.assertIn(
+            "unexpected_parameter", diag["base_parameter_modified_names"]
+        )
 
     def test_fisher_weights_stay_normalised_and_respond(self):
         adapter = _make_adapter(self.policy, self.protocol, tau=1e-9)

@@ -70,12 +70,35 @@ class MatterSimBuilderTest(unittest.TestCase):
             'MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"', source
         )
         self.assertIn('build_mattersim.sh" --check', source)
-        self.assertEqual(source.count('export PYTHONPATH="${MATTERSIM_BUILD}:'), 5)
+        self.assertEqual(
+            source.count(
+                'export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:'
+            ),
+            5,
+        )
         self.assertEqual(
             source.count(
                 'export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:'
             ),
             5,
+        )
+
+    def test_all_runtime_environments_pin_current_repository_core(self):
+        runtime = RUNTIME_CHECK.read_text(encoding="utf-8")
+        runner = SOURCE_RUNNER.read_text(encoding="utf-8")
+        for source in (runtime, runner):
+            self.assertIn('CORE_ROOT="${REPO_ROOT}/core"', source)
+            self.assertIn(
+                'export NAVTTA_EXPECTED_CORE_ROOT="${CORE_ROOT}"', source
+            )
+            self.assertIn("actual.relative_to(expected)", source)
+            self.assertIn("navtta_core.__file__", source)
+        self.assertIn(
+            'export PYTHONPATH="${CORE_ROOT}:${PWD}:${PWD}/streamvln',
+            runtime,
+        )
+        self.assertIn(
+            'export PYTHONPATH="${CORE_ROOT}:${source_root}', runtime
         )
 
 

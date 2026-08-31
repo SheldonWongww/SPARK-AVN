@@ -32,6 +32,7 @@ import torch.nn as nn
 from .tta_core import (
     _AdapterDiagnostics,
     _make_optimizer,
+    _parameter_state_sha256,
     softmax_entropy,
 )
 
@@ -127,6 +128,48 @@ class IDEAFusionProtocol:
 def _stats_vector(mu, sigma):
     """Vectorise a Gaussian descriptor ``Gamma = [mu; sigma]`` into ``[2C]``."""
     return torch.cat([mu.reshape(-1), sigma.reshape(-1)], dim=0)
+
+
+def _base_parameter_snapshot(model):
+    """Return compact, content-addressed evidence for every base parameter.
+
+    The snapshot retains only names, version counters, and SHA256 strings.  It
+    hashes one parameter at a time through the shared Torch-1.9-compatible
+    helper, so IDEA never keeps a second model-sized tensor copy resident.
+    Per-parameter digests let diagnostics identify an exact changed name even
+    when a write bypasses PyTorch's tensor version counter.
+    """
+    named = sorted(model.named_parameters(), key=lambda item: item[0])
+    names = tuple(name for name, _ in named)
+    if len(names) != len(set(names)):
+        raise RuntimeError("IDEA base policy has duplicate parameter names")
+
+    name_set = hashlib.sha256()
+    name_set.update(b"navtta.idea.base_parameter_name_set.v1\0")
+    content = hashlib.sha256()
+    content.update(b"navtta.idea.base_parameter_content.v1\0")
+    parameter_sha256 = {}
+    versions = {}
+    for name, parameter in named:
+        encoded_name = name.encode("utf-8")
+        name_set.update(encoded_name)
+        name_set.update(b"\0")
+        parameter_digest = _parameter_state_sha256(
+            (parameter,), (name,)
+        )
+        parameter_sha256[name] = parameter_digest
+        versions[name] = int(parameter._version)
+        content.update(encoded_name)
+        content.update(b"\0")
+        content.update(parameter_digest.encode("ascii"))
+        content.update(b"\0")
+    return {
+        "names": names,
+        "name_set_sha256": name_set.hexdigest(),
+        "content_sha256": content.hexdigest(),
+        "parameter_sha256": parameter_sha256,
+        "versions": versions,
+    }
 
 
 def _gaussian_w2(mu_a, sigma_a, mu_b, sigma_b):
@@ -445,6 +488,12 @@ class IDEAAdapter(_AdapterDiagnostics):
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
             parameter.grad = None
+        # Keep a compact content-addressed baseline in addition to PyTorch's
+        # cheap tensor version counters.  The content digest closes the gaps
+        # left by ``.data`` writes and parameter replacement, while the exact
+        # name-set digest catches additions/removals.  The snapshot stores no
+        # tensor clone and hashes only one parameter at a time.
+        self._base_parameter_before = _base_parameter_snapshot(self.model)
 
         self.library = _AssetLibrary(capacity)
         # Fisher-guided layer weights alpha (Eq. 8), initialised uniform.
@@ -463,6 +512,11 @@ class IDEAAdapter(_AdapterDiagnostics):
         self.last_uncertainty = 0.0
         self.alignment_loss_sum = 0.0
         self.alignment_step_count = 0
+        self.prompt_optimizer_attempts = 0
+        self.prompt_optimizer_updates = 0
+        self.prompt_relative_drift_sum = 0.0
+        self.last_prompt_relative_drift = 0.0
+        self.max_prompt_relative_drift = 0.0
         self._init_diagnostics()
 
     def _assert_base_policy_frozen(self):
@@ -598,6 +652,7 @@ class IDEAAdapter(_AdapterDiagnostics):
         device = source_stats[0][0].device
         dtype = source_stats[0][0].dtype
         prompt = self._new_prompt(device, dtype, warm_start=warm_start)
+        initial_prompt = prompt.detach().clone()
         optimizer = _make_optimizer([prompt], **self._optimizer_args)
         alpha = self.alpha.to(device=device, dtype=dtype)
         last_loss = 0.0
@@ -616,8 +671,18 @@ class IDEAAdapter(_AdapterDiagnostics):
                 raise FloatingPointError("IDEA soft-prompt gradient is non-finite")
             if self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_([prompt], self.max_grad_norm)
+            self.prompt_optimizer_attempts += 1
             optimizer.step()
+            self.prompt_optimizer_updates += 1
             last_loss = float(loss.detach().item())
+        prompt_delta = (prompt.detach() - initial_prompt).norm()
+        prompt_reference = initial_prompt.norm().clamp_min(1e-12)
+        relative_drift = float((prompt_delta / prompt_reference).item())
+        self.last_prompt_relative_drift = relative_drift
+        self.max_prompt_relative_drift = max(
+            self.max_prompt_relative_drift, relative_drift
+        )
+        self.prompt_relative_drift_sum += relative_drift
         self.alignment_loss_sum += last_loss
         self.alignment_step_count += 1
         return prompt.detach()
@@ -751,6 +816,11 @@ class IDEAAdapter(_AdapterDiagnostics):
         self.last_uncertainty = 0.0
         self.alignment_loss_sum = 0.0
         self.alignment_step_count = 0
+        self.prompt_optimizer_attempts = 0
+        self.prompt_optimizer_updates = 0
+        self.prompt_relative_drift_sum = 0.0
+        self.last_prompt_relative_drift = 0.0
+        self.max_prompt_relative_drift = 0.0
         self._init_diagnostics()
 
     def episode_start(self):
@@ -801,7 +871,75 @@ class IDEAAdapter(_AdapterDiagnostics):
         self.library.load_payload(payload, self.prompt_length, self.feature_dim)
         return actual
 
-    def diagnostics(self):
+    def diagnostics(self, verify_base_content=True):
+        # Formal final diagnostics hash every base tensor.  Intermediate VLN
+        # progress snapshots may opt out because copying a multi-billion-byte
+        # policy to CPU once per episode would dominate evaluation time.  The
+        # final snapshot remains mandatory and is enforced by the campaign
+        # validator.
+        verify_base_content = bool(verify_base_content)
+        if verify_base_content:
+            base_after = _base_parameter_snapshot(self.model)
+        else:
+            named = sorted(self.model.named_parameters(), key=lambda item: item[0])
+            names = tuple(name for name, _ in named)
+            base_after = {
+                "names": names,
+                "name_set_sha256": hashlib.sha256(
+                    b"navtta.idea.base_parameter_name_set.v1\0"
+                    + b"".join(name.encode("utf-8") + b"\0" for name in names)
+                ).hexdigest(),
+                "content_sha256": None,
+                "parameter_sha256": {},
+                "versions": {
+                    name: int(parameter._version) for name, parameter in named
+                },
+            }
+        base_before = self._base_parameter_before
+        before_names = set(base_before["names"])
+        after_names = set(base_after["names"])
+        added_names = sorted(after_names - before_names)
+        removed_names = sorted(before_names - after_names)
+        common_names = before_names & after_names
+        version_changed_names = sorted(
+            name for name in common_names
+            if base_after["versions"][name] != base_before["versions"][name]
+        )
+        content_changed_names = (
+            sorted(
+                name for name in common_names
+                if base_after["parameter_sha256"][name]
+                != base_before["parameter_sha256"][name]
+            )
+            if verify_base_content else []
+        )
+        changed_base_parameters = sorted(set(
+            added_names + removed_names + version_changed_names
+            + content_changed_names
+        ))
+        trainable_base_parameters = sorted(
+            name for name, parameter in self.model.named_parameters()
+            if parameter.requires_grad
+        )
+        gradient_base_parameters = sorted(
+            name for name, parameter in self.model.named_parameters()
+            if parameter.grad is not None
+        )
+        name_set_unchanged = (
+            base_after["name_set_sha256"]
+            == base_before["name_set_sha256"]
+        )
+        content_hash_match = (
+            base_after["content_sha256"] == base_before["content_sha256"]
+            if verify_base_content else None
+        )
+        base_parameter_unchanged = (
+            name_set_unchanged
+            and content_hash_match is True
+            and not version_changed_names
+            and not trainable_base_parameters
+            and not gradient_base_parameters
+        ) if verify_base_content else None
         output = {
             "method": "idea",
             "action_steps": int(self.action_steps),
@@ -809,6 +947,28 @@ class IDEAAdapter(_AdapterDiagnostics):
             "mean_entropy": self.loss_sum / max(1, self.action_steps),
             "last_entropy": self.last_loss,
             "current_lr": self.current_lr,
+            # IDEA adapts one external LxC prompt at a time.  These generic
+            # fields intentionally describe that trainable state, not the
+            # frozen base policy, so experiment validators can distinguish a
+            # live IDEA run from a Source-like no-op.
+            "updates": int(self.prompt_optimizer_updates),
+            "slow_updates": 0,
+            "adapted_parameter_names": ["external_soft_prompt"],
+            "adapted_parameter_count": (
+                self.prompt_length * self.feature_dim
+            ),
+            "relative_param_drift": (
+                self.prompt_relative_drift_sum
+                / max(1, self.alignment_step_count)
+            ),
+            "parameter_drift_semantics": (
+                "mean_relative_soft_prompt_optimization_drift"
+            ),
+            "prompt_optimizer_attempts": self.prompt_optimizer_attempts,
+            "prompt_optimizer_updates": self.prompt_optimizer_updates,
+            "prompt_optimizations": self.alignment_step_count,
+            "last_prompt_relative_drift": self.last_prompt_relative_drift,
+            "max_prompt_relative_drift": self.max_prompt_relative_drift,
             "library_size": len(self.library),
             "library_capacity": self.library.capacity,
             "asset_adds": self.library.add_count,
@@ -829,10 +989,42 @@ class IDEAAdapter(_AdapterDiagnostics):
             "tau": self.tau,
             "opt_steps": self.opt_steps,
             "use_fisher": self.use_fisher,
-            "trains_base_policy": False,
-            "base_parameter_grads_none": all(
-                parameter.grad is None for parameter in self.model.parameters()
+            "base_parameter_integrity_schema": (
+                "navtta.idea.base_parameter_integrity.v1"
             ),
+            "base_parameter_integrity_complete": verify_base_content,
+            "base_parameter_unchanged": base_parameter_unchanged,
+            "trains_base_policy": bool(trainable_base_parameters),
+            "base_parameter_requires_grad_names": trainable_base_parameters,
+            "base_parameter_grads_none": not gradient_base_parameters,
+            "base_parameter_gradient_names": gradient_base_parameters,
+            "base_parameter_name_count_before": len(base_before["names"]),
+            "base_parameter_name_count_after": len(base_after["names"]),
+            "base_parameter_name_set_before_sha256": (
+                base_before["name_set_sha256"]
+            ),
+            "base_parameter_name_set_after_sha256": (
+                base_after["name_set_sha256"]
+            ),
+            "base_parameter_name_set_unchanged": name_set_unchanged,
+            "base_parameter_added_names": added_names,
+            "base_parameter_removed_names": removed_names,
+            "base_parameter_content_before_sha256": (
+                base_before["content_sha256"]
+            ),
+            "base_parameter_content_after_sha256": (
+                base_after["content_sha256"]
+            ),
+            "base_parameter_content_hash_match": content_hash_match,
+            "base_parameter_content_modified_names": content_changed_names,
+            "base_parameter_content_hash_algorithm": (
+                "sha256_of_sorted_named_parameter_sha256_v1"
+            ),
+            "base_parameter_versions_unchanged": (
+                name_set_unchanged and not version_changed_names
+            ),
+            "base_parameter_version_changed_names": version_changed_names,
+            "base_parameter_modified_names": changed_base_parameters,
             "source_statistics_mode": "offline_artifact",
             "source_statistics_schema": self.source_statistics_metadata.get(
                 "schema"

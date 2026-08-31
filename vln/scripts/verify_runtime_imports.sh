@@ -10,6 +10,7 @@ fi
 
 REPO_ROOT=/data1/wxy/code/NavTTA
 VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+CORE_ROOT="${REPO_ROOT}/core"
 ENV_ROOT="${VLN_ROOT}/envs"
 MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"
 CACHE_ROOT="${VLN_ROOT}/cache"
@@ -26,6 +27,29 @@ export TOKENIZERS_PARALLELISM=false
 export NLTK_DATA="${CACHE_ROOT}/nltk_data"
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export NAVTTA_BERT_BASE_UNCASED="${BERT_BASE_UNCASED_ROOT}"
+export NAVTTA_EXPECTED_CORE_ROOT="${CORE_ROOT}"
+export PYTHONNOUSERSITE=1
+
+assert_current_core() {
+    local python="$1"
+    "${python}" - <<'PY'
+import os
+from pathlib import Path
+
+import navtta_core
+
+expected = Path(os.environ["NAVTTA_EXPECTED_CORE_ROOT"]).resolve()
+actual = Path(navtta_core.__file__).resolve()
+try:
+    actual.relative_to(expected)
+except ValueError:
+    raise SystemExit(
+        "navtta_core import escaped current repository core: {} not under {}"
+        .format(actual, expected)
+    )
+print("navtta_core import OK: {}".format(actual))
+PY
+}
 
 SIM_BUILD="${REPO_ROOT}/vln/data/simulators/Matterport3DSimulator/build"
 "${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
@@ -39,7 +63,8 @@ SIM_BUILD="${REPO_ROOT}/vln/data/simulators/Matterport3DSimulator/build"
     export TRANSFORMERS_CACHE="${CACHE_ROOT}/huggingface/transformers"
     export STREAMVLN_MODEL_ROOT="${REPO_ROOT}/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"
     cd "${REPO_ROOT}/vln/baselines/streamvln"
-    export PYTHONPATH="${PWD}:${PWD}/streamvln${PYTHONPATH:+:${PYTHONPATH}}"
+    export PYTHONPATH="${CORE_ROOT}:${PWD}:${PWD}/streamvln${PYTHONPATH:+:${PYTHONPATH}}"
+    assert_current_core "${prefix}/bin/python"
     "${prefix}/bin/python" - <<'PY'
 import os
 
@@ -81,7 +106,8 @@ for setting in duet hamt goat; do
                 ;;
         esac
         cd "${source_root}"
-        export PYTHONPATH="${SIM_BUILD}:${source_root}${PYTHONPATH:+:${PYTHONPATH}}"
+        export PYTHONPATH="${CORE_ROOT}:${SIM_BUILD}:${REPO_ROOT}/vln:${source_root}${PYTHONPATH:+:${PYTHONPATH}}"
+        assert_current_core "${prefix}/bin/python"
         SETTING="${setting}" "${prefix}/bin/python" - <<'PY'
 import os
 import sys
@@ -143,6 +169,8 @@ for setting in etpnav bevbert; do
             trainer=SS-BEV
         fi
         cd "${source_root}"
+        export PYTHONPATH="${CORE_ROOT}:${source_root}${PYTHONPATH:+:${PYTHONPATH}}"
+        assert_current_core "${prefix}/bin/python"
         TRAINER="${trainer}" "${prefix}/bin/python" - <<'PY'
 import os
 import clip

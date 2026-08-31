@@ -126,6 +126,22 @@ can also be run directly while preparing environments:
 vln/scripts/verify_runtime_imports.sh
 ```
 
+Every VLN environment must resolve `navtta_core` from this checkout, not from
+an older editable install.  Install the shared package into all five runtime
+environments after pulling a new commit, then run the import check above:
+
+```bash
+cd /data1/wxy/code/NavTTA
+for env in duet hamt goat vlnce017 streamvln; do
+  "/data1/wxy/exp_data/NavTTA/vln/envs/${env}/bin/python" \
+    -m pip install -e /data1/wxy/code/NavTTA/core
+done
+vln/scripts/verify_runtime_imports.sh
+```
+
+The launcher and verifier also put `/data1/wxy/code/NavTTA/core` first on
+`PYTHONPATH` and fail if `navtta_core.__file__` resolves outside that tree.
+
 `MatterSim` is a native Python 3.8 extension and is not installed by pip.  On
 a new server checkout, build it once at the fixed runtime path and then repeat
 the import check:
@@ -142,6 +158,62 @@ changes, embeds the native-library runtime path, and verifies the resulting
 module in the DUET, HAMT, and GOAT environments.  It does not depend on shell
 activation or exported compiler variables.  Evaluation launchers never build
 it implicitly.
+
+### REVERIE FeedTTA-LLM render/provider preflight
+
+The standard navigation-only MatterSim build above deliberately has both
+`EGL_RENDERING=OFF` and `OSMESA_RENDERING=OFF`.  It is not valid evidence for
+FeedTTA-LLM, whose hidden-test feedback consumes actual endpoint RGB.  Before
+that submission can run, provision a separate, pinned Python-3.8-compatible
+MatterSim build with exactly one headless backend (EGL or OSMesa) enabled.
+This repository does not build it automatically because the host graphics
+stack and licensed Matterport RGB assets cannot be inferred or downloaded
+safely.  The verifier detects this condition and fails closed.
+
+For the selected smoke scan/viewpoint it requires exactly these source files:
+
+```text
+CONNECTIVITY_DIR/scans.txt
+CONNECTIVITY_DIR/*_connectivity.json for every scan listed in scans.txt
+SCAN_DATA_DIR/SCAN/matterport_skybox_images/VIEWPOINT_skybox_small.jpg
+```
+
+Start the already-downloaded Qwen service in a visible terminal.  Serving,
+`--verify-only`, and live health are restricted to CUDA plus float16:
+
+```bash
+cd /data1/wxy/code/NavTTA
+TOKEN_FILE=/data1/wxy/exp_data/NavTTA/vln/private/qwen-feedback.token
+chmod 600 "$TOKEN_FILE"
+CUDA_VISIBLE_DEVICES=3 \
+PYTHONPATH=/data1/wxy/code/NavTTA/core:/data1/wxy/code/NavTTA/vln \
+  /data1/wxy/exp_data/NavTTA/vln/envs/streamvln/bin/python \
+  vln/scripts/serve_reverie_llm_feedback.py \
+  --model-dir /data1/wxy/exp_data/NavTTA/vln/models/Qwen2-VL-2B-Instruct \
+  --token-file "$TOKEN_FILE" --device cuda:0 --dtype float16
+```
+
+In another terminal, run the complete fail-closed preflight.  The example
+viewpoint is an included viewpoint in scan `17DRP5sb8fy`; select another only
+if its connectivity record and raw cubemap are both present.
+
+```bash
+cd /data1/wxy/code/NavTTA
+TAG="reverie-llm-preflight-$(date -u +%Y%m%dT%H%M%SZ)"
+RENDER_BUILD=/data1/wxy/exp_data/NavTTA/vln/mattersim-render/build
+vln/scripts/verify_reverie_llm_feedback_preflight.sh \
+  "$TAG" 3 17DRP5sb8fy 10c252c90fa24ef3b698c6f54d984c5c \
+  "$TOKEN_FILE" "$RENDER_BUILD"
+```
+
+The command performs a real 36-view render and one live two-stage model
+request.  It records the loaded extension, CMake cache, `scans.txt`, scan
+connectivity JSON, exact raw RGB cubemap, generated panorama, provider health,
+and SHA256 values under
+`/data1/wxy/exp_data/NavTTA/vln/tmp/reverie-llm-preflight/TAG/`.  Missing RGB,
+an excluded viewpoint, a non-headless build, CPU execution, non-float16 model
+parameters, an unhealthy service, or an existing evidence directory is a
+hard failure.  Generated RGB and raw assets must remain outside Git.
 
 HAMT uses its older Transformers runtime with the pinned local
 `bert-base-uncased` snapshot already stored under the DUET checkpoints.  The
@@ -317,8 +389,9 @@ the existing unified-v1.3 Source or TTA records.
 `--run-tag TAG` gives every attempt an isolated output tree; if omitted, a UTC
 tag is generated automatically.
 
-The server launchers intentionally do not inspect asset/environment manifests,
-require a clean Git tree, or create formal run manifests.  Their outputs are
+The Source-only server launchers above intentionally do not inspect
+asset/environment manifests, require a clean Git tree, or create formal run
+manifests. Their outputs are
 exploratory experiment results.  Promote a result into a formal table only
 through a separate provenance workflow satisfying the workspace rules.
 
@@ -335,6 +408,106 @@ Published paper numbers are preserved only as provenance-limited references in
 Source baselines, but cannot be relabelled as canonical-order or TTA reruns.
 Any new formal result must also have a run manifest tied to the top-level Git
 commit, exact configuration, asset digests, seed, and hardware.
+
+## Targeted 16-cell TTA campaign
+
+The active targeted design is
+[`experiments/vln_targeted_gap_campaign_v1.json`](experiments/vln_targeted_gap_campaign_v1.json).
+It contains exactly 16 workbook gaps: 55 complete `val_unseen` search jobs,
+16 fresh frozen-winner `val_seen` jobs, and five REVERIE test submissions.
+StreamVLN and `OURS` are outside this campaign. Queue IDs are fixed; GPUs
+0--3 each own four cell queues, every cell runs one candidate at a time, and
+there is no work stealing. Source runs are prerequisites and are not counted
+in those queues.
+
+The v1 file is a blocked design contract. First produce and independently
+review the four ETPNav/BEVBert native-v1.2 Source controls, authenticate the
+discrete Source ledgers, and run `create-successor` as documented in
+[`VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md`](experiments/VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md).
+Formal execution must use the resulting tracked, committed active v2 file;
+the runner default deliberately remains the blocked v1 and must not be used
+for a formal launch.
+
+On the clean server checkout, verify the exact expansion before starting GPU
+work:
+
+```bash
+cd /data1/wxy/code/NavTTA
+SPEC=vln/experiments/vln_targeted_gap_campaign_v2.json
+BATCH=vln-targeted-gap-campaign-v2-seed0
+
+python3 vln/scripts/run_targeted_gap_campaign.py plan \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+```
+
+Run each barrier as a separate command, in this order:
+
+```bash
+python3 vln/scripts/run_targeted_gap_campaign.py search \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+python3 vln/scripts/run_targeted_gap_campaign.py freeze \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+python3 vln/scripts/run_targeted_gap_campaign.py val-seen \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+```
+
+For a long phase, put only that runner in a named screen and keep the console
+log outside the formal batch directory:
+
+```bash
+STAGE=search
+SESSION="navtta-gap-${STAGE}"
+CONSOLE_DIR="/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-targeted-gap/${BATCH}"
+mkdir -p "$CONSOLE_DIR"
+screen -L -Logfile "$CONSOLE_DIR/${STAGE}.console.log" \
+  -dmS "$SESSION" env PYTHONUNBUFFERED=1 SPEC="$SPEC" BATCH="$BATCH" \
+  STAGE="$STAGE" bash -lc '
+    cd /data1/wxy/code/NavTTA || exit 97
+    exec python3 vln/scripts/run_targeted_gap_campaign.py "$STAGE" \
+      --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+  '
+screen -r "$SESSION"
+# Detach with Ctrl-a d. From another terminal:
+tail -f "$CONSOLE_DIR/${STAGE}.console.log"
+python3 vln/scripts/run_targeted_gap_campaign.py status \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+```
+
+Use a fresh screen name for `val-seen`. A stopped phase is resumed with the
+same spec, batch, stage, and GPU list plus `--resume`, but only after proving
+that the old scheduler and all workers are gone. `--retry-failed` additionally
+requires `--retry-reason TEXT` and is legal only for an independently
+classified infrastructure failure; algorithmic failures remain evidence and
+block the campaign freeze.
+
+The hidden-test phase is launched only after all 16 `val_seen` jobs validate.
+Keep the Qwen service alive, run the real render/provider preflight described
+above, and export its two content-addressed runtime bindings:
+
+```bash
+TOKEN_FILE=/data1/wxy/exp_data/NavTTA/vln/private/qwen-feedback.token
+RENDER_BUILD=/data1/wxy/exp_data/NavTTA/vln/mattersim-render/build
+PREFLIGHT_ROOT="/data1/wxy/exp_data/NavTTA/vln/tmp/reverie-llm-preflight/$TAG"
+export NAVTTA_LLM_FEEDBACK_TOKEN_FILE="$TOKEN_FILE"
+export NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD="$RENDER_BUILD"
+export NAVTTA_REVERIE_LLM_PREFLIGHT="$PREFLIGHT_ROOT/PRECHECK.json"
+
+python3 vln/scripts/run_targeted_gap_campaign.py reverie-test \
+  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
+```
+
+The combined test command validates Qwen, the renderer, raw RGB, and the
+complete PRECHECK artifact graph before any of the five submissions starts.
+It binds that evidence only to the FeedTTA-LLM job and removes the render-build
+override from the four unsupervised subprocesses. Test trajectories are
+submission-only; no local test metric may be used for selection.
+
+Campaign control evidence is under
+`vln/results/logs/targeted_gap/$BATCH/` (`BATCH.json`, `PLAN.json`,
+`scheduler.log`, `FROZEN.json`, stage plans/summaries, and per-attempt logs).
+Model outputs are under `vln/results/tuning/targeted_gap/$BATCH/`; formal run
+manifests are under `vln/results/runs/`. The screen console is the external
+`$CONSOLE_DIR/<stage>.console.log` shown above.
 
 ## Completed historical R2R model-wise Cartesian full-val search
 

@@ -2,11 +2,27 @@
 """Validate one VLN TTA job config and emit baseline-specific CLI tokens."""
 
 import argparse
+import importlib.util
 import json
 import math
 import os
+from pathlib import Path
 import sys
 
+
+VLN_ROOT = Path(__file__).resolve().parents[1]
+_PROVIDER_PATH = VLN_ROOT / "navtta_vln" / "reverie_llm_feedback.py"
+_PROVIDER_SPEC = importlib.util.spec_from_file_location(
+    "_navtta_reverie_llm_feedback_contract", str(_PROVIDER_PATH)
+)
+_PROVIDER_MODULE = importlib.util.module_from_spec(_PROVIDER_SPEC)
+_PROVIDER_SPEC.loader.exec_module(_PROVIDER_MODULE)
+LLM_FEEDBACK_MODEL_ID = _PROVIDER_MODULE.MODEL_ID
+LLM_FEEDBACK_MODEL_REVISION = _PROVIDER_MODULE.PINNED_MODEL_REVISION
+LLM_FEEDBACK_WEIGHTS_SHA256 = _PROVIDER_MODULE.PINNED_WEIGHTS_SHA256
+LLM_FEEDBACK_BUNDLE_SHA256 = _PROVIDER_MODULE.PINNED_BUNDLE_SHA256
+PROMPT_BUNDLE_SHA256 = _PROVIDER_MODULE.PROMPT_BUNDLE_SHA256
+validate_loopback_url = _PROVIDER_MODULE.validate_loopback_url
 
 DISCRETE_SETTINGS = {
     "duet-r2r", "duet-reverie", "hamt-r2r", "hamt-reverie",
@@ -23,7 +39,7 @@ COMMON = {
     "lr", "norm_scope", "last_k_ln", "optimizer", "momentum", "beta1",
     "beta2", "weight_decay", "max_grad_norm", "update_interval",
     "max_updates_per_episode", "episodic", "action_selection", "action_seed",
-    "matched_feedtta_source",
+    "matched_feedtta_source", "diagnostics_expected_episodes",
 }
 METHOD_KEYS = {
     "source": {
@@ -41,7 +57,12 @@ METHOD_KEYS = {
             "update_interval"},
     "feedtta": {"lr", "p", "alpha", "sgr_seed", "sgr_mode", "gamma",
                 "normalize_gradient", "optimizer_eps", "action_seed",
-                "scope_profile"},
+                "scope_profile", "feedback_provider", "llm_feedback_url",
+                "llm_feedback_model_id", "llm_feedback_revision",
+                "llm_feedback_weights_sha256", "llm_feedback_bundle_sha256",
+                "llm_feedback_prompt_sha256", "llm_feedback_token_file",
+                "llm_feedback_cache_dir", "llm_feedback_transcript_path",
+                "llm_feedback_timeout_seconds", "llm_feedback_abort_on_failure"},
     "atena": {"lr_query", "lr_self", "mix_lambda", "query_threshold",
               "self_loss_weight", "update_scope"},
     "idea": {"lr", "prompt_length", "k_max", "lambda", "tau", "fisher_beta",
@@ -207,6 +228,85 @@ def _load(path):
         and parameters["sgr_mode"] not in ("paper_main", "appendix_b1")
     ):
         raise ValueError("invalid FeedTTA sgr_mode")
+    feedback_provider = parameters.get("feedback_provider", "task_evaluator")
+    if feedback_provider not in ("task_evaluator", "qwen2_vl_2b_v1"):
+        raise ValueError("invalid FeedTTA feedback_provider")
+    if feedback_provider == "qwen2_vl_2b_v1":
+        required = (
+            "llm_feedback_url",
+            "llm_feedback_model_id",
+            "llm_feedback_revision",
+            "llm_feedback_weights_sha256",
+            "llm_feedback_bundle_sha256",
+            "llm_feedback_prompt_sha256",
+            "llm_feedback_token_file",
+            "llm_feedback_cache_dir",
+            "llm_feedback_transcript_path",
+        )
+        for key in required:
+            if not isinstance(parameters.get(key), str) or not parameters[key]:
+                raise ValueError("FeedTTA-LLM requires {}".format(key))
+        if parameters["llm_feedback_model_id"] != LLM_FEEDBACK_MODEL_ID:
+            raise ValueError("FeedTTA-LLM model id is not pinned")
+        validate_loopback_url(parameters["llm_feedback_url"])
+        revision = parameters["llm_feedback_revision"].lower()
+        if len(revision) != 40 or any(
+            char not in "0123456789abcdef" for char in revision
+        ):
+            raise ValueError("FeedTTA-LLM revision must be a commit SHA")
+        if revision != LLM_FEEDBACK_MODEL_REVISION:
+            raise ValueError("FeedTTA-LLM revision is not code-pinned")
+        for key in (
+            "llm_feedback_weights_sha256", "llm_feedback_bundle_sha256",
+            "llm_feedback_prompt_sha256"
+        ):
+            digest = parameters[key].lower()
+            if len(digest) != 64 or any(
+                char not in "0123456789abcdef" for char in digest
+            ):
+                raise ValueError("{} must be a SHA256".format(key))
+        if parameters["llm_feedback_weights_sha256"].lower() != (
+            LLM_FEEDBACK_WEIGHTS_SHA256
+        ):
+            raise ValueError("FeedTTA-LLM weights digest is not code-pinned")
+        if parameters["llm_feedback_bundle_sha256"].lower() != (
+            LLM_FEEDBACK_BUNDLE_SHA256
+        ):
+            raise ValueError("FeedTTA-LLM bundle digest is not code-pinned")
+        if parameters["llm_feedback_prompt_sha256"].lower() != (
+            PROMPT_BUNDLE_SHA256
+        ):
+            raise ValueError("FeedTTA-LLM prompt bundle is not code-pinned")
+        if not os.path.isabs(parameters["llm_feedback_cache_dir"]):
+            raise ValueError("FeedTTA-LLM cache directory must be absolute")
+        for key in (
+            "llm_feedback_token_file", "llm_feedback_transcript_path"
+        ):
+            if not os.path.isabs(parameters[key]):
+                raise ValueError("{} must be absolute".format(key))
+        abort_on_failure = parameters.get(
+            "llm_feedback_abort_on_failure", True
+        )
+        if type(abort_on_failure) is not bool:
+            raise ValueError(
+                "llm_feedback_abort_on_failure must be an exact boolean"
+            )
+        if not abort_on_failure:
+            raise ValueError(
+                "formal FeedTTA-LLM requires abort_on_failure=true"
+            )
+        timeout = parameters.get("llm_feedback_timeout_seconds", 120.0)
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or float(timeout) <= 0
+        ):
+            raise ValueError("FeedTTA-LLM timeout must be finite and positive")
+    elif any(key.startswith("llm_feedback_") for key in parameters):
+        raise ValueError(
+            "llm_feedback_* parameters require feedback_provider=qwen2_vl_2b_v1"
+        )
     if method == "source":
         sampled_source = parameters.get("action_selection") == "sample"
         matched_source = parameters.get("matched_feedtta_source", False)
@@ -241,6 +341,13 @@ def _load(path):
     for key, value in parameters.items():
         if isinstance(value, float) and not math.isfinite(value):
             raise ValueError("non-finite parameter {}".format(key))
+    expected_diagnostics = parameters.get("diagnostics_expected_episodes")
+    if expected_diagnostics is not None and (
+        isinstance(expected_diagnostics, bool)
+        or not isinstance(expected_diagnostics, int)
+        or expected_diagnostics <= 0
+    ):
+        raise ValueError("diagnostics_expected_episodes must be a positive integer")
     if audit_zero_update and method == "source":
         raise ValueError("Source controls cannot claim adapter audit mode")
     if audit_control and method != "source":
@@ -385,6 +492,7 @@ def _discrete(
         "action_selection": "--tta_action_selection",
         "action_seed": "--tta_action_seed",
         "matched_feedtta_source": "--tta_matched_feedtta_source",
+        "diagnostics_expected_episodes": "--tta_diagnostics_expected_episodes",
     }
     method_map = {
         "lr_fast": "--tta_lr", "lr_slow": "--tta_fstta_lr_slow",
@@ -408,6 +516,17 @@ def _discrete(
         "sgr_mode": "--tta_feedtta_sgr_mode",
         "gamma": "--tta_feedtta_gamma",
         "scope_profile": "--tta_feedtta_scope_profile",
+        "feedback_provider": "--tta_feedback_provider",
+        "llm_feedback_url": "--tta_llm_feedback_url",
+        "llm_feedback_model_id": "--tta_llm_feedback_model_id",
+        "llm_feedback_revision": "--tta_llm_feedback_revision",
+        "llm_feedback_weights_sha256": "--tta_llm_feedback_weights_sha256",
+        "llm_feedback_bundle_sha256": "--tta_llm_feedback_bundle_sha256",
+        "llm_feedback_prompt_sha256": "--tta_llm_feedback_prompt_sha256",
+        "llm_feedback_token_file": "--tta_llm_feedback_token_file",
+        "llm_feedback_cache_dir": "--tta_llm_feedback_cache_dir",
+        "llm_feedback_transcript_path": "--tta_llm_feedback_transcript_path",
+        "llm_feedback_timeout_seconds": "--tta_llm_feedback_timeout_seconds",
         "optimizer_eps": "--tta_feedtta_eps", "lr_query": "--tta_atena_lr_query",
         "lr_self": "--tta_atena_lr_self", "mix_lambda": "--tta_atena_mix_lambda",
         "query_threshold": "--tta_atena_query_threshold",
@@ -473,11 +592,42 @@ def _discrete(
     return tokens
 
 
+def _validate_setting(setting, method, params):
+    feedback_provider = params.get("feedback_provider", "task_evaluator")
+    if feedback_provider == "qwen2_vl_2b_v1" and setting != "goat-reverie":
+        raise ValueError(
+            "qwen2_vl_2b_v1 is restricted to the goat-reverie setting"
+        )
+    if (
+        setting in CONTINUOUS_SETTINGS
+        and "diagnostics_expected_episodes" in params
+    ):
+        raise ValueError(
+            "diagnostics_expected_episodes is supported only by discrete VLN"
+        )
+    if setting not in DISCRETE_SETTINGS | CONTINUOUS_SETTINGS:
+        raise ValueError("TTA search does not support setting {!r}".format(setting))
+
+
 def translate(setting, config_path, diagnostics):
     (
         method, params, audit_zero_update, audit_control,
         audit_expected_episodes,
     ) = _load(config_path)
+    _validate_setting(setting, method, params)
+    feedback_provider = params.get("feedback_provider", "task_evaluator")
+    if feedback_provider == "qwen2_vl_2b_v1":
+        expected_transcript = os.path.join(
+            os.path.dirname(os.path.abspath(diagnostics)),
+            "llm_feedback_transcript.ndjson",
+        )
+        if os.path.abspath(params["llm_feedback_transcript_path"]) != (
+            expected_transcript
+        ):
+            raise ValueError(
+                "FeedTTA-LLM transcript must be the current job evidence file {}"
+                .format(expected_transcript)
+            )
     if setting in DISCRETE_SETTINGS:
         return method, _discrete(
             method, params, diagnostics,
@@ -492,7 +642,7 @@ def translate(setting, config_path, diagnostics):
             audit_control=audit_control,
             audit_expected_episodes=audit_expected_episodes,
         )
-    raise ValueError("TTA search does not support setting {!r}".format(setting))
+    raise AssertionError("validated setting has no translator")
 
 
 def main():
@@ -504,9 +654,14 @@ def main():
     parser.add_argument("--print-namespace", action="store_true")
     parser.add_argument("--nul", action="store_true")
     args = parser.parse_args()
-    method, tokens = translate(
-        args.setting, os.path.abspath(args.config), os.path.abspath(args.diagnostics)
-    )
+    if args.print_method or args.print_namespace:
+        method, params, _, _, _ = _load(os.path.abspath(args.config))
+        _validate_setting(args.setting, method, params)
+    else:
+        method, tokens = translate(
+            args.setting, os.path.abspath(args.config),
+            os.path.abspath(args.diagnostics),
+        )
     if args.print_method:
         print(method)
         return

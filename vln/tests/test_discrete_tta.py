@@ -26,6 +26,9 @@ from navtta_vln.discrete_tta import (  # noqa: E402
     add_discrete_tta_args,
     discrete_forward_policy,
 )
+from navtta_vln.reverie_llm_feedback import (  # noqa: E402
+    BINARY_FEEDBACK_ENDPOINT,
+)
 
 
 class _TinyCrossmodalStack(nn.Module):
@@ -113,6 +116,26 @@ class DiscreteTTAControllerTest(unittest.TestCase):
         self.assertEqual(args.tta_fstta_a, 0.9)
         self.assertEqual(args.tta_fstta_b, 1.1)
         self.assertFalse(args.tta_fstta_reset_var_hist_each_episode)
+
+    def test_idea_content_hash_is_deferred_until_declared_final_episode(self):
+        class Adapter:
+            def __init__(self):
+                self.calls = []
+
+            def diagnostics(self, verify_base_content=True):
+                self.calls.append(verify_base_content)
+                return {"action_steps": 0}
+
+        controller = object.__new__(DiscreteTTAController)
+        controller.method = "idea"
+        controller.adapter = Adapter()
+        controller.idea_source_collection = None
+        controller.diagnostics_expected_episodes = 2
+        controller.episode_count = 1
+        controller.diagnostics()
+        controller.episode_count = 2
+        controller.diagnostics()
+        self.assertEqual(controller.adapter.calls, [False, True])
 
     def test_duet_online_and_replay_use_concatenated_global_local_cls(self):
         policy = _TinyGraphPolicy()
@@ -770,6 +793,96 @@ class DiscreteTTAControllerTest(unittest.TestCase):
                 ValueError, "simulator-distance fallback is forbidden"
             ):
                 controller.end_episode(observations=[{"distance": 0.0}])
+
+    def test_reverie_llm_branch_precedes_all_ground_truth_access(self):
+        class PoisonEnvironment(object):
+            batch = [{
+                "instr_id": "instruction",
+                "scan": "scan",
+                "instruction": "Go to the red chair.",
+            }]
+
+            @property
+            def gt_trajs(self):
+                raise AssertionError("hidden test accessed evaluator truth")
+
+            def _eval_item(self, *args, **kwargs):
+                raise AssertionError("hidden test invoked evaluator")
+
+        calls = []
+
+        class FakeProvider(object):
+            pass
+
+        controller = SimpleNamespace(
+            method="feedtta",
+            llm_feedback_provider=FakeProvider(),
+            binary_feedback_endpoint=None,
+        )
+
+        def query(environment, trajectories, path_format):
+            calls.append((environment, trajectories, path_format))
+            controller.binary_feedback_endpoint = BINARY_FEEDBACK_ENDPOINT
+            return {"_navtta_llm_pseudo_feedback": {
+                "available": True, "success": True,
+            }}
+
+        controller.query_reverie_llm_feedback = query
+        agent = DiscreteTTAAgentMixin()
+        agent.tta_controller = controller
+        agent.env = PoisonEnvironment()
+        trajectories = [{
+            "instr_id": "instruction",
+            "path": [["start"], ["stop", "reranked"]],
+            "pred_objid": "ignored",
+        }]
+        result = agent.tta_reverie_episode_stats(
+            trajectories, "nested_graph_path"
+        )
+        self.assertTrue(result["_navtta_llm_pseudo_feedback"]["success"])
+        self.assertEqual(len(calls), 1)
+
+    def test_reverie_llm_failure_discards_gradient_without_update(self):
+        class FakeProvider(object):
+            abort_on_failure = False
+
+            @staticmethod
+            def diagnostics():
+                return {"provider_id": "qwen2_vl_2b_v1"}
+
+        prefixes = (
+            "--tta_trainable_prefixes",
+            "vln_bert.global_encoder",
+            "vln_bert.local_encoder",
+            "vln_bert.global_sap_head",
+            "vln_bert.local_sap_head",
+            "vln_bert.sap_fuse_linear",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            policy = _TinyGraphPolicy()
+            controller = DiscreteTTAController(
+                _args(directory, "feedtta", *prefixes), policy, "val_seen"
+            )
+            controller.benchmark = "reverie"
+            controller.feedback_provider_name = "qwen2_vl_2b_v1"
+            controller.llm_feedback_provider = FakeProvider()
+            before = deepcopy(policy.state_dict())
+            controller.begin_episode()
+            self._step(controller, policy, torch.randn(1, 6))
+            controller.binary_feedback_endpoint = BINARY_FEEDBACK_ENDPOINT
+            controller.end_episode(episode_stats={
+                "_navtta_llm_pseudo_feedback": {
+                    "available": False,
+                    "failure": "malformed response",
+                    "cache_hit": False,
+                }
+            })
+            self.assertEqual(controller.adapter.diagnostics()["updates"], 0)
+            self.assertEqual(controller.failed_closed_feedback_episodes, 1)
+            for name, value in policy.state_dict().items():
+                torch.testing.assert_close(value, before[name])
+            # The discarded trajectory cannot leak into the next episode.
+            controller.begin_episode()
 
 
 if __name__ == "__main__":

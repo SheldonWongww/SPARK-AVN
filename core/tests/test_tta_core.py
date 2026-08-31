@@ -246,6 +246,10 @@ class TTACoreTest(unittest.TestCase):
                 self.assertEqual(diagnostics["updates"], 0)
                 self.assertEqual(diagnostics["slow_updates"], 0)
                 self.assertEqual(diagnostics["relative_param_drift"], 0.0)
+                self.assertEqual(
+                    diagnostics["adapted_parameter_count"],
+                    sum(parameter.numel() for parameter in adapter.params),
+                )
                 self.assertGreater(diagnostics["parameter_write_attempts"], 0)
                 self.assertGreater(diagnostics["optimizer_step_attempts"], 0)
                 self.assertEqual(

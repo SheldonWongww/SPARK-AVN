@@ -557,6 +557,9 @@ class _AdapterDiagnostics:
             ),
             "relative_param_drift": _relative_drift(current, self._source_flat),
             "adapted_parameter_names": list(self.names),
+            "adapted_parameter_count": sum(
+                parameter.numel() for parameter in self.params
+            ),
         }
         if self.zero_update_audit:
             final_evidence_due = (

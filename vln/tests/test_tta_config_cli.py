@@ -33,6 +33,32 @@ class TTAConfigCLITest(unittest.TestCase):
         self.assertIn("--tta_fstta_no_fast_lr_scaler", tokens)
         self.assertIn("--tta_fstta_reset_var_hist_each_episode", tokens)
 
+    def test_discrete_diagnostics_horizon_mapping(self):
+        _, tokens = self._translate(
+            "goat-r2r", "idea", {
+                "diagnostics_expected_episodes": 2349,
+                "source_stats_path": "/tmp/source.json",
+                "source_stats_sha256": "a" * 64,
+            },
+        )
+        self.assertEqual(
+            tokens[tokens.index("--tta_diagnostics_expected_episodes") + 1],
+            "2349",
+        )
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            self._translate(
+                "goat-r2r", "idea", {
+                    "diagnostics_expected_episodes": 0,
+                    "source_stats_path": "/tmp/source.json",
+                    "source_stats_sha256": "a" * 64,
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "only by discrete"):
+            self._translate(
+                "etpnav-r2r-ce", "eam",
+                {"diagnostics_expected_episodes": 1839},
+            )
+
     def test_continuous_fstta_records_variance_history_lifetime(self):
         _, tokens = self._translate(
             "etpnav-r2r-ce", "fstta",

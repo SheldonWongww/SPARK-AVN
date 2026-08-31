@@ -88,6 +88,32 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertIn('missing bootstrap Python: ${BOOTSTRAP_PYTHON}', source)
         self.assertNotRegex(source, r"(?m)^\s*python3\b")
 
+    def test_every_runtime_prefers_and_verifies_current_repository_core(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn('CORE_ROOT="${REPO_ROOT}/core"', source)
+        self.assertIn('export PYTHONPATH="${CORE_ROOT}"', source)
+        self.assertIn(
+            'export NAVTTA_EXPECTED_CORE_ROOT="${CORE_ROOT}"', source
+        )
+        self.assertIn("actual = Path(navtta_core.__file__).resolve()", source)
+        self.assertIn("actual.relative_to(expected)", source)
+        for baseline in ("duet", "hamt", "goat"):
+            self.assertIn(
+                'export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:'
+                '${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/' + baseline,
+                source,
+            )
+
+    def test_feedtta_llm_uses_only_a_verified_headless_mattersim_override(self):
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD", source)
+        self.assertIn('TTA_FEEDBACK_PROVIDER}" == "qwen2_vl_2b_v1', source)
+        self.assertIn("EGL_RENDERING", source)
+        self.assertIn("OSMESA_RENDERING", source)
+        self.assertIn("sum(values.values()) != 1", source)
+        self.assertIn('MATTERSIM_BUILD="${RENDER_BUILD}"', source)
+
     def test_base_test_inference_reads_annotations_without_ground_truth(self):
         for path in BASE_TRAINERS:
             with self.subTest(path=path):
@@ -121,6 +147,26 @@ class SourceRunnerGuardTest(unittest.TestCase):
         self.assertNotIn('CE_EPISODE_COUNT="${SMOKE_EPISODES}"', source)
         self.assertIn('export NAVTTA_SMOKE_EPISODES="${EPISODE_LIMIT}"', source)
 
+    def test_full_tta_runs_retain_prediction_evidence(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        start = source.index("append_submit_flag() {")
+        end = source.index("\n}\n", start)
+        function = source[start:end]
+        self.assertIn('-n "${TTA_CONFIG}"', function)
+        self.assertIn("COMMAND+=(--submit)", function)
+
+    def test_tta_cannot_silently_drop_config_through_split_all(self):
+        source = RUNNER.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'if [[ "${SPLIT}" == "all" && -n "${TTA_CONFIG}" ]]', source
+        )
+        self.assertIn(
+            "TTA jobs require one explicit split; --tta-config cannot use split all",
+            source,
+        )
+
     def test_streamvln_checks_the_scene_that_failed_before_model_loading(self):
         source = RUNNER.read_text(encoding="utf-8")
 
@@ -147,8 +193,9 @@ class SourceRunnerGuardTest(unittest.TestCase):
             "--result-root must end with RUN_TAG/SPLIT", source
         )
         self.assertIn(
-            "--result-root is restricted to val_seen or val_unseen", source
+            "--result-root is restricted to validation or test tuning jobs", source
         )
+        self.assertIn("val_seen|val_unseen|test", source)
 
     def test_adapter_parity_namespace_requires_its_dedicated_runner_flag(self):
         source = RUNNER.read_text(encoding="utf-8")

@@ -26,6 +26,7 @@ from navtta_core.experiment import (
     load_episode_order_manifest,
     resolve_episode_order_manifest_path,
 )
+from navtta_vln.per_episode_metrics import write_discrete_per_episode_metrics
 
 
 def build_dataset(args, rank=0):
@@ -305,7 +306,10 @@ def valid(args, train_env, val_envs, rank=-1):
 
         if default_gpu:
             if 'test' not in env_name:
-                score_summary, _ = env.eval_metrics(preds)
+                score_summary, per_episode = env.eval_metrics(preds)
+                write_discrete_per_episode_metrics(
+                    args, 'duet-reverie', env_name, per_episode
+                )
                 loss_str = "Env name: %s" % env_name
                 for metric, val in score_summary.items():
                     loss_str += ', %s: %.2f' % (metric, val)

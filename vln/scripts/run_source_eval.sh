@@ -38,6 +38,8 @@ StreamVLN start states) or v1.2-native (paper/upstream reproduction).
 val_seen, uses the canonical prefix, and writes under vln/results/smoke/.
 
 --tta-config FILE enables a TTA/control job described by one JSON file.
+For supported methods, --result-root may also retain a test submission; test
+labels are never read or scored locally.
 --episode-limit N is a development prefix used by the hyperparameter
 scheduler.  The isolated adapter-parity audit requires exactly 256 episodes.
 --adapter-parity-audit is required by the isolated zero-write parity schema
@@ -170,6 +172,7 @@ if [[ -z "${RUN_TAG}" ]]; then
     fi
 fi
 [[ "${RUN_TAG}" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid run tag: ${RUN_TAG}"
+export NAVTTA_RUN_TAG="${RUN_TAG}"
 case "${CE_DATA_VERSION}" in
     v1.3-unified|v1.2-native) ;;
     *) die "invalid CE data version: ${CE_DATA_VERSION}" ;;
@@ -216,6 +219,9 @@ if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
         *) die "--order-seed supports only the eight staged-search settings" ;;
     esac
 fi
+if [[ "${SPLIT}" == "all" && -n "${TTA_CONFIG}" ]]; then
+    die "TTA jobs require one explicit split; --tta-config cannot use split all"
+fi
 MODEL_SEED=0
 if [[ "${ORDER_SEED_SET}" -eq 1 ]]; then
     MODEL_SEED="${ORDER_SEED}"
@@ -223,6 +229,7 @@ fi
 
 REPO_ROOT=/data1/wxy/code/NavTTA
 VLN_ROOT=/data1/wxy/exp_data/NavTTA/vln
+CORE_ROOT="${REPO_ROOT}/core"
 ENV_ROOT="${VLN_ROOT}/envs"
 CACHE_ROOT="${VLN_ROOT}/cache"
 TMP_ROOT="${VLN_ROOT}/tmp"
@@ -246,6 +253,7 @@ BOOTSTRAP_PYTHON="${ENV_ROOT}/${BOOTSTRAP_ENV_NAME}/bin/python"
 
 TTA_METHOD=source
 TTA_NAMESPACE=tuning
+TTA_FEEDBACK_PROVIDER=none
 TTA_TRANSLATOR="${REPO_ROOT}/vln/scripts/tta_config_cli.py"
 IDEA_SOURCE_STATS_PATH=""
 IDEA_SOURCE_STATS_SHA256=""
@@ -279,6 +287,23 @@ if [[ -n "${TTA_CONFIG}" ]]; then
         tuning|adapter_parity_audit|idea_source_statistics) ;;
         *) die "unsupported TTA result namespace: ${TTA_NAMESPACE}" ;;
     esac
+    if ! TTA_FEEDBACK_PROVIDER="$(
+        "${BOOTSTRAP_PYTHON}" - "${TTA_CONFIG}" <<'PY'
+import json
+import sys
+
+config_path = sys.argv[1]
+with open(config_path, "r", encoding="utf-8") as stream:
+    document = json.load(stream)
+parameters = document.get("parameters", {})
+provider = parameters.get("feedback_provider", "task_evaluator")
+if not isinstance(provider, str) or not provider:
+    raise SystemExit("feedback_provider must be nonempty text")
+print(provider)
+PY
+    )"; then
+        die "cannot resolve TTA feedback provider: ${TTA_CONFIG}"
+    fi
     if [[ "${TTA_METHOD}" == "idea" ]]; then
         if ! IDEA_SOURCE_STATS_BINDING_TEXT="$(
             "${BOOTSTRAP_PYTHON}" - "${TTA_CONFIG}" <<'PY'
@@ -477,8 +502,8 @@ if [[ "${RESULT_ROOT_SET}" -eq 1 ]]; then
             die "IDEA source-statistics result roots require split train"
     else
         case "${SPLIT}" in
-            val_seen|val_unseen) ;;
-            *) die "--result-root is restricted to val_seen or val_unseen tuning jobs" ;;
+            val_seen|val_unseen|test) ;;
+            *) die "--result-root is restricted to validation or test tuning jobs" ;;
         esac
     fi
     [[ "${RESULT_ROOT_OVERRIDE}" = /* ]] || \
@@ -588,6 +613,38 @@ fi
 MATTERSIM_ROOT="${DATA_ROOT}/simulators/Matterport3DSimulator"
 MATTERSIM_BUILD="${MATTERSIM_ROOT}/build"
 MATTERSIM_NATIVE_LIB="${ENV_ROOT}/mattersim-native/lib"
+if [[ "${TTA_FEEDBACK_PROVIDER}" == "qwen2_vl_2b_v1" ]]; then
+    [[ "${SETTING}" == "goat-reverie" && "${SPLIT}" == "test" ]] || \
+        die "Qwen2-VL feedback is restricted to goat-reverie test"
+    RENDER_BUILD="${NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD:-}"
+    [[ "${RENDER_BUILD}" = /* && -d "${RENDER_BUILD}" ]] || \
+        die "NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD must be an existing absolute directory"
+    "${BOOTSTRAP_PYTHON}" - "${RENDER_BUILD}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1]).resolve()
+cache = root / "CMakeCache.txt"
+if not cache.is_file():
+    raise SystemExit("render MatterSim build lacks CMakeCache.txt")
+text = cache.read_text(encoding="utf-8", errors="strict")
+values = {}
+for name in ("EGL_RENDERING", "OSMESA_RENDERING"):
+    match = re.search(r"(?m)^{}:BOOL=(ON|OFF)$".format(name), text)
+    if match is None:
+        raise SystemExit("render MatterSim build lacks {}".format(name))
+    values[name] = match.group(1) == "ON"
+if sum(values.values()) != 1:
+    raise SystemExit("render MatterSim requires exactly one of EGL/OSMesa")
+modules = list(root.glob("MatterSim*.so"))
+if len(modules) != 1:
+    raise SystemExit("render MatterSim build must contain exactly one extension")
+PY
+    MATTERSIM_BUILD="${RENDER_BUILD}"
+elif [[ -n "${NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD:-}" ]]; then
+    die "render MatterSim override is allowed only for FeedTTA-LLM"
+fi
 case "${SETTING}" in
     duet-r2r|hamt-r2r) ORDER_FAMILY=r2r_duet_hamt ;;
     duet-reverie|hamt-reverie) ORDER_FAMILY=reverie_duet_hamt ;;
@@ -600,7 +657,9 @@ esac
 if [[ "${DRY_RUN}" -eq 0 ]]; then
     case "${SETTING}" in
         duet-r2r|duet-reverie|hamt-r2r|hamt-reverie|goat-r2r|goat-reverie)
-            "${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
+            if [[ "${TTA_FEEDBACK_PROVIDER}" != "qwen2_vl_2b_v1" ]]; then
+                "${REPO_ROOT}/vln/scripts/build_mattersim.sh" --check
+            fi
             ;;
     esac
 fi
@@ -724,6 +783,9 @@ export CUDA_VISIBLE_DEVICES="${GPU}"
 export MAGNUM_LOG=quiet
 export HABITAT_SIM_LOG=quiet
 unset PYTHONPATH
+export PYTHONPATH="${CORE_ROOT}"
+export NAVTTA_EXPECTED_CORE_ROOT="${CORE_ROOT}"
+export PYTHONNOUSERSITE=1
 unset NAVTTA_SMOKE_EPISODES
 if [[ -n "${SMOKE_EPISODES}" ]]; then
     export NAVTTA_SMOKE_EPISODES="${SMOKE_EPISODES}"
@@ -780,6 +842,25 @@ select_env() {
     export CONDA_PREFIX="${ENV_PREFIX}"
     export PATH="${ENV_PREFIX}/bin:${PATH}"
     export LD_LIBRARY_PATH="${ENV_PREFIX}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    if [[ "${DRY_RUN}" -eq 0 ]]; then
+        "${PYTHON}" - <<'PY'
+import os
+from pathlib import Path
+
+import navtta_core
+
+expected = Path(os.environ["NAVTTA_EXPECTED_CORE_ROOT"]).resolve()
+actual = Path(navtta_core.__file__).resolve()
+try:
+    actual.relative_to(expected)
+except ValueError:
+    raise SystemExit(
+        "navtta_core import escaped current repository core: {} not under {}"
+        .format(actual, expected)
+    )
+print("navtta_core import OK: {}".format(actual))
+PY
+    fi
 }
 
 assert_gpu() {
@@ -790,6 +871,7 @@ assert_gpu() {
 
 append_submit_flag() {
     if [[ "${SPLIT}" == "test" || -n "${SMOKE_EPISODES}" || \
+          -n "${TTA_CONFIG}" || \
           "${TTA_NAMESPACE}" == "adapter_parity_audit" ]]; then
         COMMAND+=(--submit)
     fi
@@ -830,7 +912,7 @@ case "${SETTING}" in
         select_env duet
         export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
+        export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
             "${PYTHON}" r2r/main_nav.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
@@ -862,7 +944,7 @@ case "${SETTING}" in
         select_env duet
         export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
+        export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/duet/map_nav_src"
         COMMAND=(
             "${PYTHON}" reverie/main_nav_obj.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
@@ -899,7 +981,7 @@ case "${SETTING}" in
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
+        export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
             "${PYTHON}" r2r/main.py
             --root_dir ../datasets --dataset r2r --output_dir "${RESULT_ROOT}"
@@ -932,7 +1014,7 @@ case "${SETTING}" in
         export HF_HUB_CACHE="${CACHE_ROOT}/transformers/hamt"
         export TRANSFORMERS_CACHE="${CACHE_ROOT}/transformers/hamt"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
+        export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/hamt/finetune_src"
         COMMAND=(
             "${PYTHON}" reverie/main_navref.py
             --root_dir ../datasets --dataset reverie --output_dir "${RESULT_ROOT}"
@@ -961,7 +1043,7 @@ case "${SETTING}" in
         select_env goat
         export LD_LIBRARY_PATH="${MATTERSIM_BUILD}:${MATTERSIM_NATIVE_LIB}:${LD_LIBRARY_PATH}"
         assert_gpu
-        export PYTHONPATH="${MATTERSIM_BUILD}:${REPO_ROOT}/vln/baselines/goat/map_nav_src"
+        export PYTHONPATH="${CORE_ROOT}:${MATTERSIM_BUILD}:${REPO_ROOT}/vln:${REPO_ROOT}/vln/baselines/goat/map_nav_src"
         if [[ "${SETTING}" == "goat-r2r" ]]; then
             ENTRY=r2r/main_nav.py
             DATASET=r2r
@@ -1030,7 +1112,7 @@ case "${SETTING}" in
         export HF_DATASETS_CACHE="${CACHE_ROOT}/huggingface/datasets"
         export PYTORCH_PRETRAINED_BERT_CACHE="${CACHE_ROOT}/pytorch_pretrained_bert"
         assert_gpu
-        export PYTHONPATH="${REPO_ROOT}/core"
+        export PYTHONPATH="${CORE_ROOT}"
         if [[ "${SETTING}" == "etpnav-r2r-ce" ]]; then
             WORKDIR="${REPO_ROOT}/vln/baselines/etpnav"
             CHECKPOINT="${CHECKPOINT_ROOT}/etpnav/ckpt.iter12000.pth"

@@ -1,0 +1,529 @@
+{
+  "schema": "navtta.vln_targeted_gap_campaign.v1",
+  "schema_version": 1,
+  "spec_id": "vln-targeted-gap-campaign-v1",
+  "experiment_id": "vln-targeted-gap-campaign-v1",
+  "status": "active",
+  "supersedes": [],
+  "superseded_by": null,
+  "launch_readiness": {
+    "status": "blocked",
+    "blockers": [
+      "The tracked explicit-cell launcher and task-specific runtime require formal runtime verification on the target server before execution.",
+      "Every reused Source ledger must be tracked and its selected metric artifact must be content-bound by the corresponding formal run manifest; the legacy R2R val_seen ledger requires reauthentication.",
+      "ETPNav and BEVBert require authenticated matched Source manifests on native R2R-CE v1.2 for both validation splits; unified-v1.3 Source evidence is forbidden.",
+      "The three pinned IDEA source-training-statistics artifacts are intentionally untracked runtime inputs and must be present and SHA256-verified on the target server.",
+      "The FeedTTA-LLM hidden-test transfer requires a separate headless MatterSim build, licensed raw Matterport RGB, and a same-commit PRECHECK.json whose complete artifact graph is reauthenticated before launch."
+    ],
+    "rule": "Planning and validation are allowed. No campaign phase may launch until every applicable blocker is cleared in a successor implementation review without changing this scientific contract."
+  },
+  "purpose": {
+    "phase": "targeted_gap_development_then_frozen_evaluation",
+    "hypothesis": "Small, model-specific grids around the tracked consistency-search anchors can fill the sixteen declared unpopulated VLN model-method cells without selecting on val_seen, while preserving task-native action semantics and supervision labels.",
+    "decision": "Select exactly one configuration per cell on canonical val_unseen seed 0, freeze all sixteen winners together, and evaluate those winners once on canonical val_seen seed 0."
+  },
+  "scope": {
+    "task": "vln",
+    "matrix_type": "explicit_cells_not_cartesian",
+    "cell_count": 16,
+    "development_candidate_jobs": 55,
+    "frozen_validation_jobs": 16,
+    "hidden_test_transfer_jobs": 5,
+    "source_jobs_in_cell_queues": 0,
+    "benchmarks": ["reverie", "r2r", "r2r-ce"],
+    "models": ["duet", "hamt", "goat", "etpnav", "bevbert"],
+    "methods": ["tent", "fstta", "eam", "feedtta", "atena", "idea"],
+    "excluded": ["streamvln", "objectnav", "avn"]
+  },
+  "gap_inventory": {
+    "workbook": {
+      "path": "docs/NavTTA_benchmark_results.xlsx",
+      "sha256": "fe9149277ecc9505df32b5fb2e61f4bd54170e72ebea5585ae257911ca663bac"
+    },
+    "candidate_row_definition": "Every non-Source method row in the REVERIE, R2R, and R2R-CE sheets before exclusions.",
+    "eligibility_rule": "A row is eligible only when every benchmark metric cell is blank after excluding the entire StreamVLN block, every OURS row in the remaining model blocks, and every row with any populated prior-result metric.",
+    "metric_columns": {
+      "REVERIE": "B:M",
+      "R2R": "B:I",
+      "R2R-CE": "B:K"
+    },
+    "exclusion_precedence": [
+      "exclude_entire_streamvln_model_block",
+      "exclude_ours_rows_in_remaining_model_blocks",
+      "exclude_rows_with_any_populated_prior_result_metric"
+    ],
+    "counts": {
+      "candidate_method_rows_before_exclusions": 63,
+      "excluded_streamvln_method_rows": 7,
+      "excluded_ours_rows_after_streamvln": 8,
+      "excluded_populated_prior_result_rows": 32,
+      "eligible_blank_cells": 16
+    },
+    "eligible_cells": [
+      {"sheet": "REVERIE", "row": 6, "setting": "hamt-reverie", "method": "eam"},
+      {"sheet": "REVERIE", "row": 14, "setting": "duet-reverie", "method": "eam"},
+      {"sheet": "REVERIE", "row": 22, "setting": "goat-reverie", "method": "eam"},
+      {"sheet": "REVERIE", "row": 23, "setting": "goat-reverie", "method": "feedtta"},
+      {"sheet": "REVERIE", "row": 25, "setting": "goat-reverie", "method": "idea"},
+      {"sheet": "R2R", "row": 4, "setting": "hamt-r2r", "method": "tent"},
+      {"sheet": "R2R", "row": 5, "setting": "hamt-r2r", "method": "fstta"},
+      {"sheet": "R2R", "row": 7, "setting": "hamt-r2r", "method": "feedtta"},
+      {"sheet": "R2R", "row": 8, "setting": "hamt-r2r", "method": "atena"},
+      {"sheet": "R2R", "row": 9, "setting": "hamt-r2r", "method": "idea"},
+      {"sheet": "R2R", "row": 20, "setting": "goat-r2r", "method": "tent"},
+      {"sheet": "R2R", "row": 22, "setting": "goat-r2r", "method": "eam"},
+      {"sheet": "R2R", "row": 23, "setting": "goat-r2r", "method": "feedtta"},
+      {"sheet": "R2R", "row": 25, "setting": "goat-r2r", "method": "idea"},
+      {"sheet": "R2R-CE", "row": 6, "setting": "etpnav-r2r-ce", "method": "eam"},
+      {"sheet": "R2R-CE", "row": 14, "setting": "bevbert-r2r-ce", "method": "eam"}
+    ]
+  },
+  "protocol": {
+    "phase_order": [
+      {
+        "phase": "development_search",
+        "split": "val_unseen",
+        "split_role": "development",
+        "episode_order_seed": 0,
+        "model_seed": 0,
+        "run": "every_declared_candidate_over_the_complete_split"
+      },
+      {
+        "phase": "campaign_freeze",
+        "split": null,
+        "split_role": "selection_boundary",
+        "run": "write_one_content_addressed_freeze_artifact_binding_all_sixteen_winners"
+      },
+      {
+        "phase": "frozen_evaluation",
+        "split": "val_seen",
+        "split_role": "evaluation",
+        "episode_order_seed": 0,
+        "model_seed": 0,
+        "run": "one_fresh_process_per_frozen_cell_over_the_complete_split"
+      },
+      {
+        "phase": "optional_hidden_test_transfer",
+        "split": "test",
+        "split_role": "submission_only",
+        "episode_order_seed": 0,
+        "model_seed": 0,
+        "run": "the_four_frozen_unsupervised_reverie_winners_plus_the_separately_named_goat_reverie_feedtta_llm_variant_after_all_applicable_gates_pass"
+      }
+    ],
+    "global_barriers": [
+      "all_55_development_candidates_validated_before_selection",
+      "all_16_winners_frozen_before_any_val_seen_job",
+      "all_16_val_seen_jobs_terminal_before_the_five_optional_hidden_test_submissions"
+    ],
+    "state": {
+      "within_split": "continual_across_episodes",
+      "reset_boundary": "fresh_checkpoint_optimizer_memory_and_rng_for_every_candidate_and_every_split",
+      "state_transfer_between_splits": false,
+      "resume": "whole_job_restart_from_identical_manifest_only"
+    },
+    "action": {
+      "reverie": "discrete_model_native_argmax",
+      "r2r": "discrete_model_native_argmax",
+      "r2r-ce": "continuous_model_native_argmax",
+      "sampling_controls": "none"
+    },
+    "randomness": {
+      "model_seeds": [0],
+      "episode_order_seeds": [0],
+      "action_rng": "not_consumed_by_the_frozen_argmax_action_protocol",
+      "adaptation_rng": "fresh_process_inherits_the_model_process_seed_0",
+      "augmentation_rng": "evaluation_augmentation_is_disabled",
+      "replay_rng": "fresh_process_inherits_the_model_process_seed_0",
+      "method_rng": "feedtta_sgr_seed_0_when_applicable_otherwise_the_fresh_model_process_seed_0",
+      "note": "The episode-order seed controls only the tracked manifest. Each candidate and split starts a new process with the baseline model seed set to 0; the implementation does not claim independent hash-derived RNG streams."
+    },
+    "horizons": {
+      "reverie": {
+        "development": {"unit": "episodes", "value": 3521, "max_steps_per_episode": "task_native", "truncation": "environment_native"},
+        "evaluation": {"unit": "episodes", "value": 1423, "max_steps_per_episode": "task_native", "truncation": "environment_native"},
+        "hidden_test": {"unit": "episodes", "value": 6292, "max_steps_per_episode": "task_native", "truncation": "environment_native"}
+      },
+      "r2r": {
+        "development": {"unit": "episodes", "value": 2349, "max_steps_per_episode": "task_native", "truncation": "environment_native"},
+        "evaluation": {"unit": "episodes", "value": 1021, "max_steps_per_episode": "task_native", "truncation": "environment_native"}
+      },
+      "r2r-ce": {
+        "development": {"unit": "episodes", "value": 1839, "max_steps_per_episode": "task_native", "truncation": "environment_native"},
+        "evaluation": {"unit": "episodes", "value": 778, "max_steps_per_episode": "task_native", "truncation": "environment_native"}
+      }
+    },
+    "update_dose": {
+      "tent": {"trigger_unit": "policy_forward", "interval": 1, "optimizer_steps_per_trigger": 1, "backward_passes_per_trigger": 1, "samples_per_step": 1, "maximum": "one_attempt_per_policy_forward"},
+      "fstta": {"fast_trigger_unit": "policy_forward", "fast_optimizer_steps_per_trigger": 1, "fast_backward_passes_per_trigger": 1, "slow_trigger_unit": "completed_episodes", "slow_interval": 4, "maximum": "one_fast_attempt_per_policy_forward_plus_floor(completed_episodes/4)_slow_attempts"},
+      "eam": {"trigger_unit": "policy_forward_after_replay_warmup", "interval": 1, "optimizer_steps_per_trigger": 1, "backward_passes_per_trigger": 1, "samples_per_step": 8, "memory_size": 32, "maximum": "one_attempt_per_policy_forward_after_the_first_7_stream_steps"},
+      "feedtta": {"trigger_unit": "completed_episode", "interval": 1, "optimizer_steps_per_trigger": 1, "backward_passes_per_trigger": 1, "samples_per_step": "complete_executed_trajectory", "maximum": "one_attempt_per_completed_episode"},
+      "atena": {"trigger_unit": "completed_episode", "interval": 1, "optimizer_steps_per_trigger": 1, "backward_passes_per_trigger": 1, "samples_per_step": "exact_replay_of_complete_executed_trajectory", "maximum": "one_attempt_per_completed_episode"},
+      "idea": {"trigger_unit": "new_domain_asset_event", "interval": 1, "optimizer_steps_per_trigger": 50, "backward_passes_per_trigger": 50, "samples_per_step": 1, "maximum": "50_times_new_domain_events_and_never_more_than_50_times_policy_forwards", "policy_parameter_writes": 0}
+    }
+  },
+  "data_bindings": {
+    "asset_manifest": {"path": "vln/manifests/assets/eval_assets.json", "sha256": "0de5df0de8e029a3c440d06db63b8226e170073dfddaead3406ee2ae3e5b58de"},
+    "streams": {
+      "reverie_duet_hamt_val_unseen": {"path": "vln/manifests/episode_order/reverie_duet_hamt/val_unseen.json", "sha256": "09b2d4984d0073a6b31dc0ea6057a70c1436b8d54ebb463b901065b23f0c9e47", "order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca", "dataset_sha256": "7fec9f5cb6f81732ca3845d7f9f0326353b586d06b1e068925af436ffc7bf0f3", "episodes": 3521},
+      "reverie_duet_hamt_val_seen": {"path": "vln/manifests/episode_order/reverie_duet_hamt/val_seen.json", "sha256": "71585f6f2193a80c43c2fb99cb843ad3a3c300aaf0bcac553ee2d37bbb34952a", "order_sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1", "dataset_sha256": "f133b47279bae53bb493ff54e4d2242dee8345c35f04f4bebbdbe6dd02a77b1c", "episodes": 1423},
+      "reverie_goat_val_unseen": {"path": "vln/manifests/episode_order/reverie_goat/val_unseen.json", "sha256": "1e5ca8cd785c54def1a7225ecc3cf420a1ef28c1e90e8d02780d58f2709c2db3", "order_sha256": "67c909272166bb3d8e7ee612d597de190f9218a6342da6357b0c7aea8832baca", "dataset_sha256": "b85b8733014199f71094e7403341d3f816f500a85df36b4ec5036450deb4b7fe", "episodes": 3521},
+      "reverie_goat_val_seen": {"path": "vln/manifests/episode_order/reverie_goat/val_seen.json", "sha256": "35ac1a383a1635155899e10669b14e8924d8cbcaf4eff1b22700e19c868ac037", "order_sha256": "aef9a2b094080347dc928cc19ddc40946299f77a91d380ee00bee10449cf1fd1", "dataset_sha256": "8945f8042359e8be228c6e704c04260a503ab6d6f464093cfb5bab8fa207e8e0", "episodes": 1423},
+      "reverie_duet_hamt_test": {"path": "vln/manifests/episode_order/reverie_duet_hamt/test.json", "sha256": "003f882a1e43537b2f046590e2fd3215f3a02266b57fb8ab51b1363d41f3382e", "order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d", "dataset_sha256": "1fe65add3a7f084a3029965c3b7d1c4ce95e543c851450809b0e385efbc4820d", "episodes": 6292},
+      "reverie_goat_test": {"path": "vln/manifests/episode_order/reverie_goat/test.json", "sha256": "543b7de61221e1a4e8a29c074ea0f8abf7551da9ceeb198614a8c55288435146", "order_sha256": "5f527c1d8442ae2b003cc5b429164eaf003b2e7acc16a8babd818874d3e1ab1d", "dataset_sha256": "287c9e765d2310f07fe891d52d5b7ab2478fc6e3396864390a15f83bb1c41e6a", "episodes": 6292},
+      "r2r_duet_hamt_val_unseen": {"path": "vln/manifests/episode_order/r2r_duet_hamt/val_unseen.json", "sha256": "0608b494878bd6a87e65de78069461e8ae86680ed7038bf6eeebf5549a513ad7", "order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390", "dataset_sha256": "29110ed14c22cba6ba12bfc2e5f4d3bfdc27a253ff47f55a7a06ab97c9b71d13", "episodes": 2349},
+      "r2r_duet_hamt_val_seen": {"path": "vln/manifests/episode_order/r2r_duet_hamt/val_seen.json", "sha256": "ce1112520da64c70121a76ae604fc33b96a931f86830a21b63c452d01a8d8833", "order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80", "dataset_sha256": "80db3a10c9ff014c6f5b87798be895c30792c70f4784b7d8ce3515df14ce9cbd", "episodes": 1021},
+      "r2r_goat_val_unseen": {"path": "vln/manifests/episode_order/r2r_goat/val_unseen.json", "sha256": "61d283bdd5699ca8ba7de4ca4cbba686cc3430919614c91da85ccee4bf12258d", "order_sha256": "bfaa25c07a8755e67585b1cde3c99833377005ea70017107457761e8ad82a390", "dataset_sha256": "1f7e5f2c99d1698575a61fe8ff908fbe713e1411ff4c0521045b95bbcc90d11e", "episodes": 2349},
+      "r2r_goat_val_seen": {"path": "vln/manifests/episode_order/r2r_goat/val_seen.json", "sha256": "b0ac1a9103a9b48741dfbf32f6a835af8e1125021c803dddf72e35f02b6daf68", "order_sha256": "5692a749af8fa361d4c43e171f6dffb8f0a39d759ab6efc70dcf6f3907a1fb80", "dataset_sha256": "7aa15753ae74490364995802ee552b085996bbdb7b5b1d03f4153e8e85d74f26", "episodes": 1021},
+      "r2r_ce_v1_2_val_unseen": {"path": "vln/manifests/episode_order/r2r_ce_v1_2/val_unseen.json", "sha256": "f128a5e3376535187a125000cb364a0fb3bd61358be5ed2fa8539594b23ff8f7", "order_sha256": "e5a86bf609770d0525efc0be6527d8b88c02f932a0a35e1c4162b06172307a8a", "dataset_sha256": "7db0a39bef374cf5ce986473f8b35c9721f962c6c1a9af069257aa710df16365", "episodes": 1839, "data_version": "v1.2-native"},
+      "r2r_ce_v1_2_val_seen": {"path": "vln/manifests/episode_order/r2r_ce_v1_2/val_seen.json", "sha256": "272ef5f095a62f68452a1ad264cfde5eb488a3b38d28c48e3a26724d45661a1e", "order_sha256": "93f44aab1be2e3d96b867a323172ab3bbbaa4dd97e5b3fa450fe839a6c4bd94e", "dataset_sha256": "83b231674ae3a18cb02b3d65847377e978f45cc35682f807c03becc38b09410c", "episodes": 778, "data_version": "v1.2-native"}
+    },
+    "checkpoints": {
+      "duet-reverie": "c74aad4b4c330785c945844ba6a30490962623e938843477e0d062459a9918dc",
+      "hamt-reverie": "8b1509b4deb68a2b48bc069f8aaf57c28aa17deea91309b80b2323ac9d12f34c",
+      "goat-reverie": "7a242ba169cac9cc6d1619402dac0c4239aa6effe5b854a870f417a3e3dc26dd",
+      "hamt-r2r": "cb3c37b3e216355f0dabe6d0da3310352698ae400d982da3d10449c98b9dd657",
+      "goat-r2r": "b2c8727859d0436359317c939ac2543253ff25c2cc765d8ac5905a90d8d25bc0",
+      "etpnav-r2r-ce": "4e70d2a1b4a6cfb32158901b7300cbc2be657641f16c9a17f35ca8570470d8b3",
+      "bevbert-r2r-ce": "70dfdfff153f9d54888215e492dae6bff69b674616f32c94a4d51538a67cc0e8"
+    },
+    "idea_source_statistics": {
+      "goat-reverie": {"path": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/train/source_statistics.json", "sha256": "15657320bed1ea30396ff623446ae01defd3d36b6baecec00d5435fe5b8dafcd", "trajectory_count": 128},
+      "hamt-r2r": {"path": "vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/train/source_statistics.json", "sha256": "abfcbb9ddc1f80076d161ce9aeda9490ee785c0453a351161ebf15fd7a11d856", "trajectory_count": 128},
+      "goat-r2r": {"path": "vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/train/source_statistics.json", "sha256": "05ae69b2000bd45bdec7a6105889852dbda3ec08757f65bdf39e461e20d63338", "trajectory_count": 128}
+    }
+  },
+  "source_control": {
+    "matched_on": ["checkpoint_sha256", "dataset_sha256", "physical_split", "episode_order_sha256", "model_seed", "action_protocol", "evaluator", "horizon"],
+    "rerun_on_any_mismatch": true,
+    "bindings": {
+      "reverie_val_unseen": {"mode": "reuse", "path": "vln/manifests/reverie_val_unseen_reused_source_controls.json", "sha256": "d870a16f35ef33b8b566946a4aefda7652a086d983ffe523dfe37c5274d9a71a"},
+      "reverie_val_seen": {"mode": "reuse", "path": "vln/manifests/reverie_reused_source_controls.json", "sha256": "853c670171b0e04edf992d7c85d27a2ab999b881b8c847c8094910ae3ff62bfe"},
+      "r2r_val_unseen": {"mode": "reuse", "path": "vln/manifests/r2r_val_unseen_reused_source_controls.json", "sha256": "bd8915b12ff0b606da61b8cf5ca82a008489b65352c7edccaf876e447b4be9cd"},
+      "r2r_val_seen": {"mode": "reuse", "path": "vln/manifests/r2r_reused_source_controls.json", "sha256": "15b9a9f72bb5bcaeb26fabc5abdf94cfffcc03778b4ea8f9ec10940d8044a3b4"},
+      "r2r_ce_v1_2_val_unseen": {"mode": "rerun_required", "required_settings": ["etpnav-r2r-ce", "bevbert-r2r-ce"], "reason": "No authenticated native-v1.2 Source-control manifest is tracked."},
+      "r2r_ce_v1_2_val_seen": {"mode": "rerun_required", "required_settings": ["etpnav-r2r-ce", "bevbert-r2r-ce"], "reason": "No authenticated native-v1.2 Source-control manifest is tracked."}
+    },
+    "forbidden_reuse": ["vln/manifests/r2r_ce_reused_source_controls.json", "vln/manifests/r2r_ce_val_unseen_reused_source_controls.json"],
+    "native_v1_2_promotion_gate": {
+      "status": "blocked_pending_authenticated_source_ledgers",
+      "candidate_ledger_schema": "navtta.vln_r2r_ce_v1_2_source_controls_candidate.v1",
+      "candidate_ledger_producer": "vln/scripts/run_r2r_ce_v12_source_controls.py finalize",
+      "required_setting_split_pairs": [
+        "etpnav-r2r-ce:val_unseen",
+        "bevbert-r2r-ce:val_unseen",
+        "etpnav-r2r-ce:val_seen",
+        "bevbert-r2r-ce:val_seen"
+      ],
+      "required_review": [
+        "authenticate_each_formal_run_manifest_and_metric_artifact",
+        "match_checkpoint_dataset_physical_split_episode_order_model_seed_action_protocol_evaluator_and_horizon",
+        "confirm_data_version_v1.2-native_and_canonical_order_seed_0",
+        "write_one_tracked_content_addressed_aggregate_source_ledger_per_split"
+      ],
+      "suggested_tracked_bindings": {
+        "r2r_ce_v1_2_val_unseen": "vln/manifests/r2r_ce_v1_2_val_unseen_source_controls.json",
+        "r2r_ce_v1_2_val_seen": "vln/manifests/r2r_ce_v1_2_val_seen_source_controls.json"
+      },
+      "promotion_action": "Create a successor spec that supersedes this one and changes each native-v1.2 binding from rerun_required to reuse only after recording the reviewed ledger path and SHA256.",
+      "forbidden": [
+        "mutating_this_frozen_binding_in_place_after_execution_evidence_exists",
+        "promoting_candidate_or_partial_ledgers",
+        "reusing_unified_v1.3_evidence"
+      ]
+    }
+  },
+  "supervision_contracts": {
+    "unsupervised": {
+      "methods": ["tent", "fstta", "eam", "idea"],
+      "environment_fields": [],
+      "provider": "none",
+      "feedback_budget": 0,
+      "note": "IDEA uses only the pinned offline source-training statistics and deploy-time model inputs; it is not an LLM and consumes no target outcome."
+    },
+    "binary_episode_feedback": {
+      "methods": ["feedtta", "atena"],
+      "supervision": "feedback_supervised",
+      "signal": "exact_binary_navigation_success",
+      "provider": "task_evaluator_after_submitted_trajectory_endpoint",
+      "timing": "after_episode_termination",
+      "delay_episodes": 1,
+      "maximum_labels_per_episode": 1,
+      "affects": "future_episodes_only",
+      "grounding_success_forbidden": true,
+      "distance_reward_oracle_action_forbidden": true
+    }
+  },
+  "candidate_grids": {
+    "reverie_eam_v2": {
+      "method": "eam",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/reverie_consistency_search_v2.json", "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"},
+      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8, "update_interval": 1, "optimizer": "Adam", "action_selection": "argmax", "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"},
+      "candidates": [
+        {"id": "lr_1em6", "parameters": {"lr": 0.000001}, "provenance": "reverie_consistency_search_v2:eam:lr_1em6"},
+        {"id": "lr_3em6", "parameters": {"lr": 0.000003}, "provenance": "reverie_consistency_search_v2:eam:lr_3em6"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.00001}, "provenance": "reverie_consistency_search_v2:eam:paper_anchor"}
+      ]
+    },
+    "reverie_feedtta_v2": {
+      "method": "feedtta",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/reverie_consistency_search_v2.json", "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"},
+      "base": {"gamma": 0.99, "p": 0.05, "alpha": -0.2, "sgr_mode": "paper_main", "normalize_gradient": false, "optimizer_eps": 0.00001, "scope_profile": "paper_full", "action_selection": "argmax"},
+      "candidates": [
+        {"id": "lr_2em6", "parameters": {"lr": 0.000002}, "provenance": "reverie_consistency_search_v2:feedtta:lr_2em6"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.000005}, "provenance": "reverie_consistency_search_v2:feedtta:paper_anchor"},
+        {"id": "lr_1em5", "parameters": {"lr": 0.00001}, "provenance": "reverie_consistency_search_v2:feedtta:lr_1em5"}
+      ]
+    },
+    "reverie_idea_v2": {
+      "method": "idea",
+      "candidate_count": 4,
+      "source_spec": {"path": "vln/experiments/reverie_consistency_search_v2.json", "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"},
+      "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1, "use_fisher": true, "opt_steps": 50, "action_selection": "argmax", "policy_parameters_frozen": true},
+      "candidates": [
+        {"id": "lr_1em3_tau_0p5", "parameters": {"lr": 0.001, "tau": 0.5}, "provenance": "reverie_consistency_search_v2:idea:lr_1em3_tau_0p5"},
+        {"id": "lr_1em3_tau_0p7", "parameters": {"lr": 0.001, "tau": 0.7}, "provenance": "reverie_consistency_search_v2:idea:lr_1em3_tau_0p7"},
+        {"id": "lr_3em3_tau_0p5", "parameters": {"lr": 0.003, "tau": 0.5}, "provenance": "reverie_consistency_search_v2:idea:lr_3em3_tau_0p5"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.003, "tau": 0.7}, "provenance": "reverie_consistency_search_v2:idea:paper_anchor"}
+      ]
+    },
+    "r2r_tent_v2": {
+      "method": "tent",
+      "candidate_count": 4,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"norm_scope": "ln", "optimizer": "Adam", "action_selection": "argmax", "update_interval": 1, "max_grad_norm": 0.0},
+      "candidates": [
+        {"id": "lr_1em6", "parameters": {"lr": 0.000001}, "provenance": "r2r_consistency_search_v2:tent:lr_1em6"},
+        {"id": "lr_3em6", "parameters": {"lr": 0.000003}, "provenance": "r2r_consistency_search_v2:tent:lr_3em6"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.00001}, "provenance": "r2r_consistency_search_v2:tent:paper_anchor"},
+        {"id": "lr_3em5", "parameters": {"lr": 0.00003}, "provenance": "r2r_consistency_search_v2:tent:lr_3em5"}
+      ]
+    },
+    "r2r_fstta_v2": {
+      "method": "fstta",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"m": 3, "n": 4, "q": 0.1, "rho": 0.95, "tau": 0.7, "a": 0.9, "b": 1.1, "reset_var_hist_each_episode": false, "last_k_ln": 4, "norm_scope": "last_k_ln", "slow_optimizer": "AdamW", "beta1": 0.9, "beta2": 0.99, "fast_grad_mode": "concordant", "action_selection": "argmax", "max_grad_norm": 0.0},
+      "candidates": [
+        {"id": "scale_0p1", "parameters": {"lr_fast": 0.00006, "lr_slow": 0.0001}, "provenance": "r2r_consistency_search_v2:fstta:scale_0p1"},
+        {"id": "scale_0p3", "parameters": {"lr_fast": 0.00018, "lr_slow": 0.0003}, "provenance": "r2r_consistency_search_v2:fstta:scale_0p3"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr_fast": 0.0006, "lr_slow": 0.001}, "provenance": "r2r_consistency_search_v2:fstta:paper_anchor"}
+      ]
+    },
+    "r2r_eam_v2": {
+      "method": "eam",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8, "update_interval": 1, "optimizer": "Adam", "action_selection": "argmax", "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"},
+      "candidates": [
+        {"id": "lr_1em6", "parameters": {"lr": 0.000001}, "provenance": "r2r_consistency_search_v2:eam:lr_1em6"},
+        {"id": "lr_3em6", "parameters": {"lr": 0.000003}, "provenance": "r2r_consistency_search_v2:eam:lr_3em6"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.00001}, "provenance": "r2r_consistency_search_v2:eam:paper_anchor"}
+      ]
+    },
+    "r2r_feedtta_v2": {
+      "method": "feedtta",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"gamma": 0.99, "p": 0.05, "alpha": 0.1, "sgr_mode": "paper_main", "normalize_gradient": false, "optimizer_eps": 0.00001, "scope_profile": "paper_full", "action_selection": "argmax"},
+      "candidates": [
+        {"id": "lr_2em6", "parameters": {"lr": 0.000002}, "provenance": "r2r_consistency_search_v2:feedtta:lr_2em6"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.000005}, "provenance": "r2r_consistency_search_v2:feedtta:paper_anchor"},
+        {"id": "lr_1em5", "parameters": {"lr": 0.00001}, "provenance": "r2r_consistency_search_v2:feedtta:lr_1em5"}
+      ]
+    },
+    "r2r_atena_capped_v1": {
+      "method": "atena",
+      "candidate_count": 5,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"action_selection": "argmax", "update_scope": "replay_reachable_high_level_navigation", "optimizer": "AdamW", "beta1": 0.9, "beta2": 0.999, "weight_decay": 0.01, "episodic": false, "max_grad_norm": 0.0, "self_loss_weight": 0.1},
+      "required_diagnostics": {"exact_episode_replay_enabled": true, "gradient_reconstruction": "exact_step_replay_in_eval_mode", "retains_episode_graph": false, "requires_task_policy_scope_verification": true, "task_scope_evidence": "replay_reachable_high_level_navigation"},
+      "candidates": [
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr_query": 0.0000008, "lr_self": 0.0000001, "query_threshold": 0.1, "mix_lambda": 0.75}, "provenance": "r2r_consistency_search_v2:atena:paper_anchor"},
+        {"id": "lr_half", "parameters": {"lr_query": 0.0000004, "lr_self": 0.00000005, "query_threshold": 0.1, "mix_lambda": 0.75}, "provenance": "r2r_consistency_search_v2:atena:lr_half"},
+        {"id": "lr_double", "parameters": {"lr_query": 0.0000016, "lr_self": 0.0000002, "query_threshold": 0.1, "mix_lambda": 0.75}, "provenance": "r2r_consistency_search_v2:atena:lr_double"},
+        {"id": "delta_0p05", "parameters": {"lr_query": 0.0000008, "lr_self": 0.0000001, "query_threshold": 0.05, "mix_lambda": 0.75}, "provenance": "r2r_consistency_search_v2:atena:delta_0p05"},
+        {"id": "lambda_0p5", "parameters": {"lr_query": 0.0000008, "lr_self": 0.0000001, "query_threshold": 0.1, "mix_lambda": 0.5}, "provenance": "r2r_consistency_search_v2:atena:lambda_0p5"}
+      ],
+      "predeclared_exclusion": {"candidate_id": "delta_0p2", "reason": "Removed before launch solely to satisfy the campaign-wide maximum of five candidates per cell; it may not be restored after observing results."}
+    },
+    "r2r_idea_v2": {
+      "method": "idea",
+      "candidate_count": 4,
+      "source_spec": {"path": "vln/experiments/r2r_consistency_search_v2.json", "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"},
+      "base": {"prompt_length": 4, "k_max": 32, "lambda": 0.4, "fisher_beta": 0.1, "use_fisher": true, "opt_steps": 50, "action_selection": "argmax", "policy_parameters_frozen": true},
+      "candidates": [
+        {"id": "lr_1em3_tau_0p5", "parameters": {"lr": 0.001, "tau": 0.5}, "provenance": "r2r_consistency_search_v2:idea:lr_1em3_tau_0p5"},
+        {"id": "lr_1em3_tau_0p7", "parameters": {"lr": 0.001, "tau": 0.7}, "provenance": "r2r_consistency_search_v2:idea:lr_1em3_tau_0p7"},
+        {"id": "lr_3em3_tau_0p5", "parameters": {"lr": 0.003, "tau": 0.5}, "provenance": "r2r_consistency_search_v2:idea:lr_3em3_tau_0p5"},
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.003, "tau": 0.7}, "provenance": "r2r_consistency_search_v2:idea:paper_anchor"}
+      ]
+    },
+    "r2r_ce_v1_2_eam_v1": {
+      "method": "eam",
+      "candidate_count": 3,
+      "source_spec": {"path": "vln/experiments/r2r_ce_consistency_search_v3.json", "sha256": "5baea01736a8d68b56694cd47691520b7e9410e4068418c06a05d9b2bfca851c"},
+      "protocol_deviation": "The three tracked EAM anchors are transferred unchanged, but this campaign uses native v1.2 starts and therefore requires new matched Source controls; no v1.3 TTA or Source result may be reused.",
+      "base": {"confidence_scale": 0.4, "memory_size": 32, "batch_size": 8, "update_interval": 1, "optimizer": "Adam", "action_selection": "argmax", "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"},
+      "candidates": [
+        {"id": "paper_anchor", "role": "paper_anchor", "parameters": {"lr": 0.000001}, "provenance": "r2r_ce_consistency_search_v3:eam:paper_anchor"},
+        {"id": "lr_3em6", "parameters": {"lr": 0.000003}, "provenance": "r2r_ce_consistency_search_v3:eam:lr_3em6"},
+        {"id": "lr_1em5", "parameters": {"lr": 0.00001}, "provenance": "r2r_ce_consistency_search_v3:eam:lr_1em5"}
+      ]
+    }
+  },
+  "cells": [
+    {"queue_id": 0, "cell_id": "hamt-reverie-eam", "benchmark": "reverie", "setting": "hamt-reverie", "model": "hamt", "method": "eam", "grid": "reverie_eam_v2", "gpu_slot": 0, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 1, "cell_id": "duet-reverie-eam", "benchmark": "reverie", "setting": "duet-reverie", "model": "duet", "method": "eam", "grid": "reverie_eam_v2", "gpu_slot": 1, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 2, "cell_id": "goat-reverie-eam", "benchmark": "reverie", "setting": "goat-reverie", "model": "goat", "method": "eam", "grid": "reverie_eam_v2", "gpu_slot": 2, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 3, "cell_id": "goat-reverie-feedtta", "benchmark": "reverie", "setting": "goat-reverie", "model": "goat", "method": "feedtta", "grid": "reverie_feedtta_v2", "gpu_slot": 3, "data_version": "discrete-native", "supervision": "feedback_supervised"},
+    {"queue_id": 4, "cell_id": "goat-reverie-idea", "benchmark": "reverie", "setting": "goat-reverie", "model": "goat", "method": "idea", "grid": "reverie_idea_v2", "gpu_slot": 0, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 5, "cell_id": "hamt-r2r-tent", "benchmark": "r2r", "setting": "hamt-r2r", "model": "hamt", "method": "tent", "grid": "r2r_tent_v2", "gpu_slot": 1, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 6, "cell_id": "hamt-r2r-fstta", "benchmark": "r2r", "setting": "hamt-r2r", "model": "hamt", "method": "fstta", "grid": "r2r_fstta_v2", "gpu_slot": 2, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 7, "cell_id": "hamt-r2r-feedtta", "benchmark": "r2r", "setting": "hamt-r2r", "model": "hamt", "method": "feedtta", "grid": "r2r_feedtta_v2", "gpu_slot": 3, "data_version": "discrete-native", "supervision": "feedback_supervised"},
+    {"queue_id": 8, "cell_id": "hamt-r2r-atena", "benchmark": "r2r", "setting": "hamt-r2r", "model": "hamt", "method": "atena", "grid": "r2r_atena_capped_v1", "gpu_slot": 0, "data_version": "discrete-native", "supervision": "feedback_supervised"},
+    {"queue_id": 9, "cell_id": "hamt-r2r-idea", "benchmark": "r2r", "setting": "hamt-r2r", "model": "hamt", "method": "idea", "grid": "r2r_idea_v2", "gpu_slot": 1, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 10, "cell_id": "goat-r2r-tent", "benchmark": "r2r", "setting": "goat-r2r", "model": "goat", "method": "tent", "grid": "r2r_tent_v2", "gpu_slot": 2, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 11, "cell_id": "goat-r2r-eam", "benchmark": "r2r", "setting": "goat-r2r", "model": "goat", "method": "eam", "grid": "r2r_eam_v2", "gpu_slot": 3, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 12, "cell_id": "goat-r2r-feedtta", "benchmark": "r2r", "setting": "goat-r2r", "model": "goat", "method": "feedtta", "grid": "r2r_feedtta_v2", "gpu_slot": 0, "data_version": "discrete-native", "supervision": "feedback_supervised"},
+    {"queue_id": 13, "cell_id": "goat-r2r-idea", "benchmark": "r2r", "setting": "goat-r2r", "model": "goat", "method": "idea", "grid": "r2r_idea_v2", "gpu_slot": 1, "data_version": "discrete-native", "supervision": "unsupervised"},
+    {"queue_id": 14, "cell_id": "etpnav-r2r-ce-eam", "benchmark": "r2r-ce", "setting": "etpnav-r2r-ce", "model": "etpnav", "method": "eam", "grid": "r2r_ce_v1_2_eam_v1", "gpu_slot": 2, "data_version": "v1.2-native", "supervision": "unsupervised"},
+    {"queue_id": 15, "cell_id": "bevbert-r2r-ce-eam", "benchmark": "r2r-ce", "setting": "bevbert-r2r-ce", "model": "bevbert", "method": "eam", "grid": "r2r_ce_v1_2_eam_v1", "gpu_slot": 3, "data_version": "v1.2-native", "supervision": "unsupervised"}
+  ],
+  "schedule": {
+    "gpu_ids": [0, 1, 2, 3],
+    "queue_assignment": "gpu_slot_equals_queue_id_modulo_4",
+    "queues_per_gpu": 4,
+    "max_active_jobs_per_cell": 1,
+    "max_active_processes_per_gpu": 4,
+    "work_stealing": false,
+    "queue_migration": "forbidden_without_successor_spec",
+    "gpu_queues": {
+      "0": [0, 4, 8, 12],
+      "1": [1, 5, 9, 13],
+      "2": [2, 6, 10, 14],
+      "3": [3, 7, 11, 15]
+    },
+    "development_jobs_by_gpu": {"0": 15, "1": 15, "2": 13, "3": 12},
+    "memory_guard": "User-confirmed fixed allocation: never exceed the four declared cell queues per physical GPU, never add service processes during search or val_seen, and fail before launch if the four requested GPUs cannot be identified. No work stealing or fifth navigation worker is permitted."
+  },
+  "selection": {
+    "candidate_count": 55,
+    "per_cell": true,
+    "metrics": {
+      "reverie": {"primary": "RGSPL", "secondary": "RGS", "safety": ["SR", "SPL"]},
+      "r2r": {"primary": "SPL", "secondary": "SR", "safety": ["NDTW", "SDTW"]},
+      "r2r-ce": {"primary": "SPL", "secondary": "SR", "safety": ["NDTW", "SDTW", "COLLISIONS"]}
+    },
+    "ranking_by_benchmark": {
+      "reverie": ["highest_RGSPL", "highest_RGS", "highest_SPL", "highest_SR", "lower_parameter_drift", "fewer_accepted_updates", "lexicographically_smallest_candidate_id"],
+      "r2r": ["highest_SPL", "highest_SR", "lower_parameter_drift", "fewer_accepted_updates", "lexicographically_smallest_candidate_id"],
+      "r2r-ce": ["highest_SPL", "highest_SR", "lower_parameter_drift", "fewer_accepted_updates", "lexicographically_smallest_candidate_id"]
+    },
+    "constraints": ["complete_full_split", "finite_metrics", "authorized_supervision_only", "validated_diagnostics", "matched_source_available"],
+    "positive_delta_required": false,
+    "failed_candidates": "retained_as_terminal_evidence_and_block_campaign_freeze;_only_an_independently_classified_infrastructure_failure_may_be_retried_with_the_same_identity",
+    "source_comparison": "aggregate_descriptive_delta_against_same_setting_split_seed_checkpoint_action_evaluator_horizon_source;_no_paired_source_episode_claim"
+  },
+  "freeze": {
+    "before_evaluation": true,
+    "artifact": "vln/results/logs/targeted_gap/vln-targeted-gap-campaign-v1-seed0/FROZEN.json",
+    "required_bindings": ["spec_sha256", "all_55_development_run_manifest_sha256_values", "all_16_winner_config_sha256_values", "all_matched_source_manifest_sha256_values", "selection_code_sha256", "git_commit"],
+    "immutable_fields": ["gap_inventory", "data_bindings", "protocol", "source_control", "supervision_contracts", "candidate_grids", "cells", "selection", "hidden_test_transfer"],
+    "allowed_runtime_overrides": ["resume_same_manifest"],
+    "forbidden_overrides": ["gpu_reassignment", "candidate_addition", "split", "seed", "action_selection", "feedback_provider", "data_version", "checkpoint", "horizon"]
+  },
+  "hidden_test_transfer": {
+    "status": "ready",
+    "submission_job_count": 5,
+    "submission_cells": [
+      {"submission_id": "hamt-reverie-eam-test", "source_cell_id": "hamt-reverie-eam", "reported_method_label": "EAM", "supervision": "unsupervised", "feedback_provider": "none"},
+      {"submission_id": "duet-reverie-eam-test", "source_cell_id": "duet-reverie-eam", "reported_method_label": "EAM", "supervision": "unsupervised", "feedback_provider": "none"},
+      {"submission_id": "goat-reverie-eam-test", "source_cell_id": "goat-reverie-eam", "reported_method_label": "EAM", "supervision": "unsupervised", "feedback_provider": "none"},
+      {"submission_id": "goat-reverie-idea-test", "source_cell_id": "goat-reverie-idea", "reported_method_label": "IDEA", "supervision": "unsupervised", "feedback_provider": "none"},
+      {"submission_id": "goat-reverie-feedtta-llm-qwen2-vl-2b-v1-test", "source_cell_id": "goat-reverie-feedtta", "reported_method_label": "FeedTTA-LLM", "supervision": "pseudo_label", "feedback_provider": "qwen2_vl_2b_v1"}
+    ],
+    "base_cell_id": "goat-reverie-feedtta",
+    "variant_id": "goat-reverie-feedtta-llm-qwen2-vl-2b-v1",
+    "reported_method_label": "FeedTTA-LLM",
+    "counts_as_search_cell": false,
+    "split": "test",
+    "role": "submission_only",
+    "supervision": "pseudo_label",
+    "not_equivalent_to": ["FeedTTA", "IDEA", "exact_binary_navigation_success"],
+    "protocol_deviation": "The validation FeedTTA cell consumes evaluator-provided exact binary navigation success. Hidden REVERIE test has no legal evaluator outcome, so this separately reported transfer replaces that signal with a noisy external VLM prediction and must never be merged with FeedTTA results.",
+    "frozen_navigation_parameters": "each_submission_reuses_its_source_cell_development_winner_without_reselection;_FeedTTA-LLM_reuses_the_goat-reverie-feedtta_winner_but_changes_only_the_explicitly_declared_feedback_semantics",
+    "runtime_preflight": {
+      "required_for_submission_id": "goat-reverie-feedtta-llm-qwen2-vl-2b-v1-test",
+      "producer": "vln/scripts/verify_reverie_llm_feedback_preflight.sh",
+      "schema": "navtta.reverie_llm_feedback_preflight.v1",
+      "render_evidence_schema": "navtta.reverie_mattersim_render_preflight.v1",
+      "path_env": "NAVTTA_REVERIE_LLM_PREFLIGHT",
+      "render_build_env": "NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD",
+      "same_git_commit_required": true,
+      "required_artifacts": ["model_verify", "render_evidence", "rendered_panorama", "provider_smoke", "provider_transcript"],
+      "manifest_binding": "feedback_provider_preflight"
+    },
+    "provider": {
+      "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+      "revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+      "weights_sha256": "4faeb74ee719f9c35d7fa254d7cc2d7131e4b4ada7d0340615c66b22d5e16fc5",
+      "model_bundle_sha256": "cf7dd27d27987b7ae71458529e6a72e3dcc3db6e91fb7298577e03f88e238a7e",
+      "prompt_bundle_sha256": "9d608193a2cd444688c6f507973ab8da68940f4b11439d329195cfd2804e0ed9",
+      "decoding": {"do_sample": false, "temperature": 0.0, "response_schema": "exactly_Yes_or_No"},
+      "pipeline": [
+        {"stage": 1, "input": ["instruction_text"], "output": "simple_target_goal_phrase", "prompt_sha256": "62d6978269100d5129fa2ac612e83e033603bcba50009ab711124fee1c22f0e4"},
+        {"stage": 2, "input": ["stage_1_target_goal_phrase", "36_view_final_panorama_at_submitted_reranked_endpoint"], "output": "binary_pseudo_success", "prompt_sha256": "f023385c8c153b87aa20b28ea446ab5ef6a55e632d21fb1f13a48289a7f4d81f"}
+      ],
+      "allowed_inputs": ["instruction_text", "submitted_trajectory_viewpoint_ids", "explicitly_captured_final_36_view_rgb_panorama"],
+      "forbidden_inputs": ["gt_trajs", "_eval_item", "distance_to_goal", "reward", "oracle_action", "object_ground_truth", "goal_viewpoint", "leaderboard_feedback", "CLIP_feature_substitution", "object_logit_substitution"],
+      "timing": "once_after_trajectory_termination_and_submission_endpoint_finalization",
+      "affects": "episode_n_plus_1_and_later_only",
+      "budgets": {"binary_labels_maximum": 6292, "provider_requests_maximum": 12584, "requests_per_episode": 2, "token_budget": null, "cost_budget": null},
+      "failure_policy": "fail_closed_on_timeout_malformed_missing_or_duplicate_response_with_no_parameter_update_and_no_truth_fallback",
+      "required_record": ["model_id", "revision", "weights_sha256", "prompt_sha256_values", "request_sha256_values", "response_sha256_values", "parsed_label", "latency_seconds_values", "cache_key", "cache_hit", "token_count", "cost"],
+      "runtime": {
+        "contract": {"path": "vln/manifests/models/qwen2_vl_2b_instruct.json", "sha256": "f48aa543d41992e647007af9cc4c2e3d4d926923baf6deb452a64b956234dc4d"},
+        "contract_sha256": "f48aa543d41992e647007af9cc4c2e3d4d926923baf6deb452a64b956234dc4d",
+        "model_path": "/data1/wxy/exp_data/NavTTA/vln/models/Qwen2-VL-2B-Instruct",
+        "service_url": "http://127.0.0.1:8765",
+        "readiness": "contract_ready_with_file_digest_model_directory_and_service_health_reverified_by_formal_preflight"
+      }
+    },
+    "selection_policy": "No test response, submission score, or proxy diagnostic may select a candidate, tune a prompt, set a threshold, or revise the provider.",
+    "local_test_metrics": "forbidden"
+  },
+  "leakage_controls": {
+    "allowed_selection_inputs": ["val_unseen_seed0_metrics", "predeclared_val_unseen_seed0_diagnostics"],
+    "forbidden_selection_inputs": ["val_seen_metrics", "test_or_leaderboard_metrics", "future_episode_feedback", "undocumented_provider_outputs", "results_from_noncanonical_order_seeds"],
+    "selection_rule_frozen_before_evaluation": true,
+    "posthoc_grid_expansion_forbidden": true,
+    "state_transfer_across_splits": false,
+    "development_and_evaluation_artifact_roots_distinct": true
+  },
+  "stopping": {
+    "infrastructure_retry": "same_immutable_manifest_only",
+    "algorithmic_failure_is_result": true,
+    "abort_conditions": ["NaN_or_Inf", "unauthorized_field_access", "checkpoint_or_data_or_order_digest_mismatch", "supervision_mismatch", "queue_or_gpu_assignment_mismatch", "missing_required_diagnostic"],
+    "partial_campaign_selection": "forbidden",
+    "algorithmic_failure_handling": "retain_the_failed_attempt_and_block_freeze;_do_not_retry_or_rank_it_as_if_it_had_valid_metrics"
+  },
+  "outputs": {
+    "run_manifest_required": true,
+    "tta_per_episode_metrics_required": true,
+    "source_per_episode_metrics_required": false,
+    "paired_source_tta_analysis": "not_claimed;_source_deltas_are_aggregate_and_descriptive",
+    "resolved_config_required": true,
+    "hardware_required": true,
+    "diagnostics": ["accepted_updates", "action_steps", "parameter_drift", "trainable_tensor_names_and_counts", "feedback_queries", "feedback_provider", "episode_count", "episode_order_sha256", "method_specific_update_schedule", "idea_prompt_update_accounting", "idea_base_parameter_content_integrity"],
+    "reporting": "Unsupervised, feedback-supervised, and FeedTTA-LLM pseudo-feedback results must be separate tables or explicitly separated columns."
+  },
+  "provenance": {
+    "design_parent_git_commit": "9648d6cf3f201cf10530f8cfc92023358583d36a",
+    "run_git_commit": "bind_full_commit_in_freeze_artifact_after_this_spec_is_committed",
+    "created_at": "2026-08-31T00:00:00+08:00",
+    "created_by": "Codex experiment-design handoff"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "schema": "navtta.external_model_asset.v1",
+  "asset_id": "qwen2-vl-2b-instruct-feedtta-llm-v1",
+  "purpose": "GOAT-REVERIE hidden-test FeedTTA-LLM pseudo-feedback provider",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "source_url": "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct",
+  "revision": "895c3a49bc3fa70a340399125c650a463535e71c",
+  "license": "Apache-2.0",
+  "files": [
+    {"path": ".gitattributes", "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"},
+    {"path": "LICENSE", "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"},
+    {"path": "README.md", "sha256": "74fbe869df708593087ae2ee66a6605d33fc2025937644721dc1360963d037f4"},
+    {"path": "chat_template.json", "sha256": "ad60d90252ed0b0705ba14e2d0ad0fec0beac1ea955642b54059b36052d8bc96"},
+    {"path": "config.json", "sha256": "422adefa19e62dd175961cec85bc0400344fe5bf9b22bd1182e05aaae78556e0"},
+    {"path": "generation_config.json", "sha256": "d2864bf1edea5863d331edfff48106b586a366f5a2c41aa77731fadc53aa25d2"},
+    {"path": "merges.txt", "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"},
+    {"path": "model-00001-of-00002.safetensors", "size_bytes": 3988609112, "sha256": "994ac2b03f97de8bc647d0fe5eba2e4b632b3e28dc03574c29bdfc36cf47e1b9"},
+    {"path": "model-00002-of-00002.safetensors", "size_bytes": 429441656, "sha256": "92540d8353c8d226a589a3b179bdb33851c970ee2cc2ac7ba035f79425e7b833"},
+    {"path": "model.safetensors.index.json", "sha256": "260ab9fa1418d6d6ab79daa1d9da2c47264f3b72edb4630fc799077ac67d27c6"},
+    {"path": "preprocessor_config.json", "sha256": "b5eaad0c2815f07631535dcc58f3c462b0d73693638ad21d19f3c50820eae1cc"},
+    {"path": "tokenizer.json", "sha256": "cb63a0a23eef3d5b01063a9880a1925a65aaf4d1591d519910ee3527852950a0"},
+    {"path": "tokenizer_config.json", "sha256": "ff5c4fd898fe8c39591eb70e5d39d2782802d4204d6ae9ba1223252f354842a0"},
+    {"path": "vocab.json", "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"}
+  ],
+  "bundle_sha256": "cf7dd27d27987b7ae71458529e6a72e3dcc3db6e91fb7298577e03f88e238a7e",
+  "bundle_sha256_algorithm": "sha256 of UTF-8 lines '<relative_filename>:<file_sha256>\\n' in lexicographic filename order for all 14 files",
+  "weight_files": [
+    {
+      "path": "model-00001-of-00002.safetensors",
+      "size_bytes": 3988609112,
+      "sha256": "994ac2b03f97de8bc647d0fe5eba2e4b632b3e28dc03574c29bdfc36cf47e1b9"
+    },
+    {
+      "path": "model-00002-of-00002.safetensors",
+      "size_bytes": 429441656,
+      "sha256": "92540d8353c8d226a589a3b179bdb33851c970ee2cc2ac7ba035f79425e7b833"
+    }
+  ],
+  "weights_sha256": "4faeb74ee719f9c35d7fa254d7cc2d7131e4b4ada7d0340615c66b22d5e16fc5",
+  "weights_sha256_algorithm": "sha256 of UTF-8 lines '<relative_filename>:<file_sha256>\\n' in lexicographic filename order for every shard in model.safetensors.index.json",
+  "inference_runtime": {
+    "environment": "streamvln",
+    "python": "3.9",
+    "dtype": "float16",
+    "packages": {
+      "accelerate": "0.28.0",
+      "pillow": "11.2.1",
+      "safetensors": "0.5.3",
+      "tokenizers": "0.20.3",
+      "torch": "2.1.2",
+      "transformers": "4.45.1"
+    }
+  },
+  "local_install_template": "/data1/wxy/exp_data/NavTTA/vln/models/Qwen2-VL-2B-Instruct",
+  "tracked_binary": false
+}

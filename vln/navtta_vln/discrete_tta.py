@@ -40,6 +40,13 @@ def add_discrete_tta_args(parser):
         "--tta_audit_expected_episodes", type=int, default=-1,
         help="defer the expensive final parameter-state hash to this episode",
     )
+    group.add_argument(
+        "--tta_diagnostics_expected_episodes", type=int, default=-1,
+        help=(
+            "full-stream episode count; IDEA defers its content hash until "
+            "this final episode"
+        ),
+    )
     group.add_argument("--tta_diagnostics", default=None)
     group.add_argument(
         "--tta_action_selection",
@@ -163,6 +170,37 @@ def add_discrete_tta_args(parser):
         "--tta_feedtta_normalize_gradient", action="store_true", default=False
     )
     feed.add_argument("--tta_feedtta_eps", type=float, default=1e-5)
+    feed.add_argument(
+        "--tta_feedback_provider",
+        choices=("task_evaluator", "qwen2_vl_2b_v1"),
+        default="task_evaluator",
+        help=(
+            "binary-feedback source; qwen2_vl_2b_v1 is the separately "
+            "reported GOAT-REVERIE hidden-test FeedTTA-LLM variant"
+        ),
+    )
+    feed.add_argument("--tta_llm_feedback_url", default="")
+    feed.add_argument(
+        "--tta_llm_feedback_model_id",
+        default="Qwen/Qwen2-VL-2B-Instruct",
+    )
+    feed.add_argument("--tta_llm_feedback_revision", default="")
+    feed.add_argument("--tta_llm_feedback_weights_sha256", default="")
+    feed.add_argument("--tta_llm_feedback_bundle_sha256", default="")
+    feed.add_argument("--tta_llm_feedback_prompt_sha256", default="")
+    feed.add_argument("--tta_llm_feedback_token_file", default="")
+    feed.add_argument("--tta_llm_feedback_cache_dir", default="")
+    feed.add_argument("--tta_llm_feedback_transcript_path", default="")
+    feed.add_argument(
+        "--tta_llm_feedback_timeout_seconds", type=float, default=120.0
+    )
+    feed.add_argument(
+        "--tta_llm_feedback_allow_failure",
+        action="store_false",
+        dest="tta_llm_feedback_abort_on_failure",
+        default=True,
+        help="debug-only: continue after recording a failed-closed provider episode",
+    )
 
     atena = parser.add_argument_group("ATENA")
     atena.add_argument("--tta_atena_lr_query", type=float, default=1e-6)
@@ -753,9 +791,27 @@ class DiscreteTTAController:
         self._action_generator.manual_seed(self.action_seed)
         self.stream_name = stream_name
         self.episode_count = 0
+        expected_diagnostics = int(getattr(
+            args, "tta_diagnostics_expected_episodes", -1
+        ))
+        if expected_diagnostics == 0 or expected_diagnostics < -1:
+            raise ValueError("diagnostics expected episodes must be -1 or positive")
+        self.diagnostics_expected_episodes = (
+            None if expected_diagnostics < 0 else expected_diagnostics
+        )
         self._episode_open = False
         self._pending_policy_inputs = None
         self.binary_feedback_endpoint = None
+        requested_feedback_provider = str(
+            getattr(args, "tta_feedback_provider", "task_evaluator")
+        ).lower()
+        self.feedback_provider_name = (
+            requested_feedback_provider
+            if self.method in ("feedtta", "atena") else "none"
+        )
+        self.llm_feedback_provider = None
+        self.last_pseudo_feedback = None
+        self.failed_closed_feedback_episodes = 0
         self._trajectory_hasher = hashlib.sha256()
         self.trajectory_steps = 0
         self.idea_source_collection = None
@@ -788,6 +844,61 @@ class DiscreteTTAController:
             self.feedtta_paper_sampling_protocol
         )
         self.atena_update_scope = None
+        if requested_feedback_provider != "task_evaluator":
+            if requested_feedback_provider != "qwen2_vl_2b_v1":
+                raise ValueError("unknown discrete feedback provider")
+            if self.method != "feedtta" or self.benchmark != "reverie":
+                raise ValueError(
+                    "qwen2_vl_2b_v1 is only valid for FeedTTA on REVERIE"
+                )
+            if str(self.stream_name).lower() not in ("test", "test_unseen"):
+                raise ValueError(
+                    "qwen2_vl_2b_v1 is restricted to the REVERIE hidden test stream"
+                )
+            if _infer_discrete_model_id(model) != "goat":
+                raise ValueError(
+                    "qwen2_vl_2b_v1 is restricted to the GOAT-REVERIE variant"
+                )
+            from .reverie_llm_feedback import (
+                MODEL_ID,
+                Qwen2VLFeedbackProvider,
+            )
+
+            if str(args.tta_llm_feedback_model_id) != MODEL_ID:
+                raise ValueError(
+                    "FeedTTA-LLM model id must be {}".format(MODEL_ID)
+                )
+            required = {
+                "service URL": args.tta_llm_feedback_url,
+                "model revision": args.tta_llm_feedback_revision,
+                "weights SHA256": args.tta_llm_feedback_weights_sha256,
+                "bundle SHA256": args.tta_llm_feedback_bundle_sha256,
+                "prompt SHA256": args.tta_llm_feedback_prompt_sha256,
+                "bearer token file": args.tta_llm_feedback_token_file,
+                "cache directory": args.tta_llm_feedback_cache_dir,
+                "transcript path": args.tta_llm_feedback_transcript_path,
+            }
+            missing = [name for name, value in required.items() if not value]
+            if missing:
+                raise ValueError(
+                    "FeedTTA-LLM requires pinned {}".format(
+                        ", ".join(missing)
+                    )
+                )
+            self.llm_feedback_provider = Qwen2VLFeedbackProvider(
+                service_url=args.tta_llm_feedback_url,
+                revision=args.tta_llm_feedback_revision,
+                weights_sha256=args.tta_llm_feedback_weights_sha256,
+                bundle_sha256=args.tta_llm_feedback_bundle_sha256,
+                prompt_bundle_sha256=args.tta_llm_feedback_prompt_sha256,
+                token_file=args.tta_llm_feedback_token_file,
+                cache_dir=args.tta_llm_feedback_cache_dir,
+                transcript_path=args.tta_llm_feedback_transcript_path,
+                connectivity_dir=args.connectivity_dir,
+                scan_data_dir=args.scan_data_dir,
+                timeout_seconds=args.tta_llm_feedback_timeout_seconds,
+                abort_on_failure=args.tta_llm_feedback_abort_on_failure,
+            )
         if self.method == "eam":
             self.trainable_prefixes = tuple(
                 args.tta_trainable_prefixes
@@ -957,14 +1068,80 @@ class DiscreteTTAController:
         self._episode_open = False
         self._pending_policy_inputs = None
         self.binary_feedback_endpoint = None
+        self.last_pseudo_feedback = None
+        self.failed_closed_feedback_episodes = 0
+        if self.llm_feedback_provider is not None:
+            self.llm_feedback_provider.reset()
         self._trajectory_hasher = hashlib.sha256()
         self.trajectory_steps = 0
 
-    def diagnostics(self):
-        output = self.adapter.diagnostics()
+    def diagnostics(self, final_integrity=None):
+        if final_integrity is None:
+            final_integrity = (
+                self.diagnostics_expected_episodes is None
+                or self.episode_count >= self.diagnostics_expected_episodes
+            )
+        output = (
+            self.adapter.diagnostics(verify_base_content=final_integrity)
+            if self.method == "idea" else self.adapter.diagnostics()
+        )
         if self.idea_source_collection is not None:
             output.update(self.idea_source_collection.diagnostics())
         return output
+
+    def query_reverie_llm_feedback(
+        self, environment, trajectories, path_format
+    ):
+        """Query the post-episode pseudo-label without evaluator access."""
+        if self.llm_feedback_provider is None:
+            raise RuntimeError("FeedTTA-LLM provider is not active")
+        from .reverie_llm_feedback import (
+            BINARY_FEEDBACK_ENDPOINT,
+            deploy_time_episode_inputs,
+        )
+
+        self.binary_feedback_endpoint = BINARY_FEEDBACK_ENDPOINT
+        try:
+            episode = deploy_time_episode_inputs(
+                environment, trajectories, path_format
+            )
+            result = self.llm_feedback_provider.query(episode)
+        except Exception as error:
+            submitted = (
+                trajectories[0]
+                if isinstance(trajectories, (list, tuple))
+                and len(trajectories) == 1
+                and isinstance(trajectories[0], dict)
+                else {}
+            )
+            result = self.llm_feedback_provider.fail_closed(
+                error,
+                episode={
+                    "episode_id": submitted.get("instr_id"),
+                    "scan_id": None,
+                    "endpoint_viewpoint_id": None,
+                },
+            )
+        self.last_pseudo_feedback = result
+        return {"_navtta_llm_pseudo_feedback": result}
+
+    def _discard_feedtta_episode_gradient(self):
+        """Fail closed without treating an absent pseudo-label as failure."""
+        clear = getattr(self.adapter, "_clear_trajectory", None)
+        if clear is None:
+            raise RuntimeError("FeedTTA adapter cannot discard an episode")
+        trajectory_steps = int(
+            getattr(self.adapter, "_trajectory_step_count", 0)
+        )
+        clear()
+        # Preserve lifecycle accounting without inventing a success/failure
+        # label or executing the optimizer.
+        self.adapter.episode_count += 1
+        self.adapter.total_trajectory_steps += trajectory_steps
+        self.adapter.max_trajectory_steps = max(
+            self.adapter.max_trajectory_steps, trajectory_steps
+        )
+        self.failed_closed_feedback_episodes += 1
 
     def begin_episode(self, trajectory_id=None):
         if self._episode_open:
@@ -1098,7 +1275,28 @@ class DiscreteTTAController:
             raise RuntimeError("TTA episode_end called without episode_start")
         if self._pending_policy_inputs is not None:
             raise RuntimeError("TTA episode ended before prepare_action")
-        if self.method in ("feedtta", "atena"):
+        discard_without_update = False
+        if self.llm_feedback_provider is not None:
+            if not isinstance(episode_stats, dict) or set(episode_stats) != {
+                "_navtta_llm_pseudo_feedback"
+            }:
+                raise ValueError(
+                    "FeedTTA-LLM requires one provider-bound post-episode result"
+                )
+            result = episode_stats["_navtta_llm_pseudo_feedback"]
+            if not isinstance(result, dict) or result.get("available") not in (
+                True, False
+            ):
+                raise ValueError("FeedTTA-LLM returned an invalid result")
+            self.last_pseudo_feedback = result
+            if result["available"]:
+                if type(result.get("success")) is not bool:
+                    raise ValueError("FeedTTA-LLM pseudo-label must be boolean")
+                episode_stats = {"success": result["success"]}
+            else:
+                discard_without_update = True
+                episode_stats = None
+        if self.method in ("feedtta", "atena") and not discard_without_update:
             if episode_stats is None:
                 if self.benchmark == "reverie":
                     raise ValueError(
@@ -1130,11 +1328,17 @@ class DiscreteTTAController:
                 )
             elif self.benchmark == "reverie":
                 expected_endpoint = (
-                    "reverie_submitted_trajectory_evaluator_navigation_"
-                    "success_lazy_query"
-                    if self.method == "atena" else
-                    "reverie_submitted_trajectory_evaluator_navigation_"
-                    "success_every_episode"
+                    (
+                        "reverie_submitted_endpoint_panorama_llm_"
+                        "pseudo_success_every_episode"
+                    )
+                    if self.llm_feedback_provider is not None else (
+                        "reverie_submitted_trajectory_evaluator_navigation_"
+                        "success_lazy_query"
+                        if self.method == "atena" else
+                        "reverie_submitted_trajectory_evaluator_navigation_"
+                        "success_every_episode"
+                    )
                 )
                 if self.binary_feedback_endpoint != expected_endpoint:
                     raise ValueError(
@@ -1151,13 +1355,26 @@ class DiscreteTTAController:
                         "REVERIE FeedTTA feedback must be evaluated eagerly "
                         "once per submitted trajectory"
                     )
-        self.adapter.episode_end(episode_stats=episode_stats)
+        abort_after_cleanup = bool(
+            discard_without_update
+            and self.llm_feedback_provider is not None
+            and self.llm_feedback_provider.abort_on_failure
+        )
+        if discard_without_update:
+            self._discard_feedtta_episode_gradient()
+        else:
+            self.adapter.episode_end(episode_stats=episode_stats)
         if self.idea_source_collection is not None:
             self.idea_source_collection.end_trajectory()
         self._trajectory_hasher.update(b"episode_end\0")
         self._episode_open = False
         self.episode_count += 1
         self.write_diagnostics()
+        if abort_after_cleanup:
+            raise RuntimeError(
+                "FeedTTA-LLM provider failed closed; no parameter update was "
+                "performed and the formal run is invalid"
+            )
 
     def write_diagnostics(self):
         diagnostics = self.diagnostics()
@@ -1182,6 +1399,7 @@ class DiscreteTTAController:
             ),
             "stream": self.stream_name,
             "episode_count": self.episode_count,
+            "diagnostics_expected_episodes": self.diagnostics_expected_episodes,
             "action_steps": diagnostics["action_steps"],
             "batch_size": 1,
             "tta_step_unit": "high_level_navigation_decision",
@@ -1214,11 +1432,28 @@ class DiscreteTTAController:
             "trajectory_steps": self.trajectory_steps,
             "trajectory_sha256": self._trajectory_hasher.hexdigest(),
             "supervision": (
+                "external_mllm_pseudo_feedback"
+                if self.llm_feedback_provider is not None else (
                 "binary_navigation_success_feedback"
                 if self.method in ("feedtta", "atena")
                 else "unsupervised"
+                )
             ),
             "binary_feedback_endpoint": self.binary_feedback_endpoint,
+            "feedback_provider": self.feedback_provider_name,
+            "reported_method_label": (
+                "FeedTTA-LLM"
+                if self.llm_feedback_provider is not None else self.method.upper()
+            ),
+            "pseudo_feedback": (
+                self.llm_feedback_provider.diagnostics()
+                if self.llm_feedback_provider is not None else None
+            ),
+            "last_pseudo_feedback": self.last_pseudo_feedback,
+            "failed_closed_feedback_episodes": (
+                self.failed_closed_feedback_episodes
+                if self.llm_feedback_provider is not None else 0
+            ),
             "trainable_prefixes": list(self.trainable_prefixes),
             "feedtta_scope_profile": self.feedtta_scope_profile,
             "feedtta_sgr_mode": self.feedtta_sgr_mode,
@@ -1337,10 +1572,24 @@ class DiscreteTTAAgentMixin:
                 "FeedTTA sampling is selected internally"
             )
         stream_name = getattr(getattr(self, "env", None), "name", None)
-        if method in ("feedtta", "atena") and stream_name == "test":
+        feedback_provider = str(
+            getattr(self.args, "tta_feedback_provider", "task_evaluator")
+        ).lower()
+        hidden_test = str(stream_name).lower() in ("test", "test_unseen")
+        allowed_llm_proxy = (
+            method == "feedtta"
+            and hidden_test
+            and feedback_provider == "qwen2_vl_2b_v1"
+        )
+        if method in ("feedtta", "atena") and hidden_test and not allowed_llm_proxy:
             raise ValueError(
                 "{} consumes binary navigation-success feedback and cannot run "
                 "on the unlabeled test split".format(method.upper())
+            )
+        if feedback_provider != "task_evaluator" and not allowed_llm_proxy:
+            raise ValueError(
+                "external pseudo-feedback is restricted to GOAT-REVERIE "
+                "FeedTTA on the hidden test split"
             )
         if getattr(self, "tta_controller", None) is None:
             model = self.vln_bert.module if hasattr(self.vln_bert, "module") else self.vln_bert
@@ -1460,6 +1709,13 @@ class DiscreteTTAAgentMixin:
         controller = getattr(self, "tta_controller", None)
         if controller is None or controller.method not in ("feedtta", "atena"):
             return None
+        if getattr(controller, "llm_feedback_provider", None) is not None:
+            # This branch must remain before every evaluator/ground-truth access.
+            # It uses only instruction text, submitted trajectory identifiers,
+            # and an explicitly rendered final-endpoint panorama.
+            return controller.query_reverie_llm_feedback(
+                self.env, trajectories, path_format
+            )
         if len(trajectories) != 1:
             raise ValueError(
                 "Canonical binary-feedback REVERIE TTA requires batch size one"
