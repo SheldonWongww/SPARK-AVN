@@ -1,5 +1,10 @@
 # VLN targeted gap campaign v1
 
+> Superseded by `vln_targeted_gap_campaign_v2.json` before any TTA job was
+> launched. The Source-promotion workflow below is retained as historical
+> audit documentation and is no longer a prerequisite for the 16-cell search.
+> Use the direct `run` command documented in `vln/README.md`.
+
 ## Status and handoff
 
 The version-1 design contract, before its one permitted lifecycle transition,

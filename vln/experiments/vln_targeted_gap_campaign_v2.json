@@ -1,0 +1,42 @@
+{
+  "schema": "navtta.vln_targeted_gap_campaign.successor.v1",
+  "schema_version": 1,
+  "spec_id": "vln-targeted-gap-campaign-v2",
+  "experiment_id": "vln-targeted-gap-campaign-v2",
+  "status": "active",
+  "supersedes": [
+    {
+      "spec_id": "vln-targeted-gap-campaign-v1",
+      "path": "vln/experiments/vln_targeted_gap_campaign_v1.json",
+      "sha256": "5aa6ad5415ae99375bdc5b4df0d449a43ac158401e89ae9b7449c3b1dba4162f"
+    }
+  ],
+  "superseded_by": null,
+  "base_spec": {
+    "path": "vln/experiments/vln_targeted_gap_campaign_v1.json",
+    "sha256": "5aa6ad5415ae99375bdc5b4df0d449a43ac158401e89ae9b7449c3b1dba4162f"
+  },
+  "launch_readiness": {
+    "status": "ready",
+    "blockers": [],
+    "review": {
+      "decision": "approved_for_direct_tta_search",
+      "reviewed_by": "wxy",
+      "reviewed_at": "2026-08-31T23:36:50+08:00",
+      "reason": "Existing Source evaluations are external reporting references and do not affect val_unseen hyperparameter selection."
+    }
+  },
+  "execution_policy": {
+    "source_controls": "reporting_only_not_launch_gate",
+    "development": "run_all_55_val_unseen_candidates",
+    "freeze": "select_one_winner_for_each_of_16_cells_without_source_ledger_dependency",
+    "evaluation": "run_all_16_frozen_winners_on_val_seen",
+    "hidden_test": "run_the_5_reverie_submission_jobs_separately"
+  },
+  "freeze_artifact": "vln/results/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0/FROZEN.json",
+  "provenance": {
+    "design_parent_git_commit": "9963bbe158e1f4314623db22e38cf00eeceda530",
+    "created_at": "2026-08-31T23:36:50+08:00",
+    "created_by": "Codex following explicit user simplification"
+  }
+}

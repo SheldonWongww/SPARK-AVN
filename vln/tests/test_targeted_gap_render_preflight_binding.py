@@ -9,7 +9,7 @@ import importlib.util
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_PATH = REPO_ROOT / "vln/scripts/run_targeted_gap_campaign.py"
-SPEC_PATH = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
+SPEC_PATH = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v2.json"
 
 MODULE_SPEC = importlib.util.spec_from_file_location(
     "targeted_gap_render_preflight_runner", str(RUNNER_PATH)

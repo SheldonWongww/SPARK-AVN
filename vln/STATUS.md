@@ -8,11 +8,9 @@ been claimed.
   `val_seen` winner evaluations, and five REVERIE submission-only test jobs.
   Four immutable cell queues are assigned to each of GPUs 0--3; candidates
   inside one cell are serial. StreamVLN and `OURS` remain excluded.
-- The v1 targeted contract is planning-only. Formal launch requires a reviewed,
-  tracked v2 successor after four native-v1.2 ETPNav/BEVBert Source controls
-  and all discrete Source ledgers are authenticated. The local evidence audit
-  currently lacks the original HAMT-R2R and GOAT-R2R `val_seen` `valid.txt`
-  artifacts; retrieve or rerun them on the server if they are absent there.
+- The v1 targeted contract is superseded. The active v2 execution overlay
+  directly runs the 16-cell TTA campaign; existing Source results are used
+  only for post-hoc reporting and do not block search, freeze, or `val_seen`.
 - REVERIE FeedTTA-LLM test transfer uses the pinned Qwen2-VL-2B model only
   after a same-commit CUDA/float16 provider plus real 36-view headless
   MatterSim render preflight. `PRECHECK.json` and its nested artifact graph are
@@ -33,10 +31,9 @@ been claimed.
   NavTTA's canonical single-rank execution, so `paper-native` identifies the
   released checkpoint/data pairing rather than unpublished upstream scheduling
   or RNG state.
-- The current four-GPU Source reproduction remains a prerequisite: model seed
-  0 and canonical episode-order seed 0, with no TTA method or hyperparameter
-  search. The targeted TTA campaign may start only after this Source gate and
-  must match each model's selected dataset version and seed-0 stream.
+- Source reproduction remains useful for checking published-number parity but
+  is independent of the targeted TTA search. The TTA jobs still use model seed
+  0, canonical episode-order seed 0, and each model's selected data version.
 - The historical BEVBert Source record under
   `grouped-source-20260810T080743Z` used unified v1.3 starts, so it is not the
   paper-native v1.2 control requested for the current comparison. BEVBert has

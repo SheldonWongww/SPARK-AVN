@@ -102,6 +102,8 @@ class SourcePromotionTest(unittest.TestCase):
 
     def test_successor_changes_only_reviewed_lifecycle_and_source_fields(self):
         v1 = json.loads(MODULE.BASE_SPEC_PATH.read_text(encoding="utf-8"))
+        v1["status"] = "active"
+        v1["superseded_by"] = None
         bindings = {
             key: {
                 "mode": "reuse",
@@ -141,7 +143,15 @@ class SourcePromotionTest(unittest.TestCase):
         self.assertIsNone(v1["superseded_by"])
 
     def test_v1_supersession_preserves_hand_formatted_scientific_bytes(self):
-        original = MODULE.BASE_SPEC_PATH.read_bytes()
+        original = MODULE.BASE_SPEC_PATH.read_bytes().replace(
+            b'  "status": "superseded",\n'
+            b'  "supersedes": [],\n'
+            b'  "superseded_by": "vln-targeted-gap-campaign-v2",',
+            b'  "status": "active",\n'
+            b'  "supersedes": [],\n'
+            b'  "superseded_by": null,',
+            1,
+        )
         changed = MODULE.superseded_v1_bytes(
             original, "vln-targeted-gap-campaign-v2"
         )
@@ -255,7 +265,15 @@ class SourcePromotionTest(unittest.TestCase):
             runner_path = root / "vln/scripts/run_targeted_gap_campaign.py"
             base.parent.mkdir(parents=True)
             runner_path.parent.mkdir(parents=True)
-            original = MODULE.BASE_SPEC_PATH.read_bytes()
+            original = MODULE.BASE_SPEC_PATH.read_bytes().replace(
+                b'  "status": "superseded",\n'
+                b'  "supersedes": [],\n'
+                b'  "superseded_by": "vln-targeted-gap-campaign-v2",',
+                b'  "status": "active",\n'
+                b'  "supersedes": [],\n'
+                b'  "superseded_by": null,',
+                1,
+            )
             base.write_bytes(original)
             runner_path.write_text("# runner\n", encoding="utf-8")
 

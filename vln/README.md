@@ -411,22 +411,21 @@ commit, exact configuration, asset digests, seed, and hardware.
 
 ## Targeted 16-cell TTA campaign
 
-The active targeted design is
-[`experiments/vln_targeted_gap_campaign_v1.json`](experiments/vln_targeted_gap_campaign_v1.json).
+The active targeted design is the small execution overlay
+[`experiments/vln_targeted_gap_campaign_v2.json`](experiments/vln_targeted_gap_campaign_v2.json),
+which pins the complete matrix in the superseded v1 file; the concise protocol
+is in [`VLN_TARGETED_GAP_CAMPAIGN_V2_PLAN.md`](experiments/VLN_TARGETED_GAP_CAMPAIGN_V2_PLAN.md).
 It contains exactly 16 workbook gaps: 55 complete `val_unseen` search jobs,
 16 fresh frozen-winner `val_seen` jobs, and five REVERIE test submissions.
 StreamVLN and `OURS` are outside this campaign. Queue IDs are fixed; GPUs
 0--3 each own four cell queues, every cell runs one candidate at a time, and
-there is no work stealing. Source runs are prerequisites and are not counted
-in those queues.
+there is no work stealing. Source runs are outside these queues and are not
+launch prerequisites.
 
-The v1 file is a blocked design contract. First produce and independently
-review the four ETPNav/BEVBert native-v1.2 Source controls, authenticate the
-discrete Source ledgers, and run `create-successor` as documented in
-[`VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md`](experiments/VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md).
-Formal execution must use the resulting tracked, committed active v2 file;
-the runner default deliberately remains the blocked v1 and must not be used
-for a formal launch.
+Existing Source evaluations are reporting references only. They neither
+select candidates nor block the 16-cell TTA campaign. In particular, the
+optional native-v1.2 Source-control packaging utility is not a prerequisite
+for search, freeze, or `val_seen` evaluation.
 
 On the clean server checkout, verify the exact expansion before starting GPU
 work:
@@ -440,22 +439,23 @@ python3 vln/scripts/run_targeted_gap_campaign.py plan \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 
-Run each barrier as a separate command, in this order:
+The normal command runs all three validation phases in order and stops at the
+REVERIE test boundary:
 
 ```bash
-python3 vln/scripts/run_targeted_gap_campaign.py search \
-  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
-python3 vln/scripts/run_targeted_gap_campaign.py freeze \
-  --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
-python3 vln/scripts/run_targeted_gap_campaign.py val-seen \
+python3 vln/scripts/run_targeted_gap_campaign.py run \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
+
+`search`, `freeze`, and `val-seen` remain available separately for inspection
+or recovery. `run` preserves those same barriers; it does not transfer adapted
+state between candidates or splits.
 
 For a long phase, put only that runner in a named screen and keep the console
 log outside the formal batch directory:
 
 ```bash
-STAGE=search
+STAGE=run
 SESSION="navtta-gap-${STAGE}"
 CONSOLE_DIR="/data1/wxy/exp_data/NavTTA/vln/tmp/navtta-targeted-gap/${BATCH}"
 mkdir -p "$CONSOLE_DIR"
@@ -473,12 +473,10 @@ python3 vln/scripts/run_targeted_gap_campaign.py status \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 
-Use a fresh screen name for `val-seen`. A stopped phase is resumed with the
-same spec, batch, stage, and GPU list plus `--resume`, but only after proving
-that the old scheduler and all workers are gone. `--retry-failed` additionally
-requires `--retry-reason TEXT` and is legal only for an independently
-classified infrastructure failure; algorithmic failures remain evidence and
-block the campaign freeze.
+An interrupted `run` is resumed with the same spec, batch, and GPU list plus
+`--resume`, but only after proving that the old scheduler and all workers are
+gone. `--retry-failed` additionally requires `--retry-reason TEXT` and is
+legal only for an independently classified infrastructure failure.
 
 The hidden-test phase is launched only after all 16 `val_seen` jobs validate.
 Keep the Qwen service alive, run the real render/provider preflight described

@@ -9,6 +9,7 @@ from zipfile import ZipFile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
+ACTIVE_SPEC_PATH = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v2.json"
 PLAN_PATH = REPO_ROOT / "vln/experiments/VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md"
 WORKBOOK_PATH = REPO_ROOT / "docs/NavTTA_benchmark_results.xlsx"
 
@@ -128,18 +129,20 @@ class TargetedGapCampaignSpecTest(unittest.TestCase):
                 PLAN_PATH.read_text(encoding="utf-8"),
             )
         else:
-            successor_path = REPO_ROOT / (
-                "vln/experiments/{}.json".format(self.spec["superseded_by"])
+            successor = json.loads(
+                ACTIVE_SPEC_PATH.read_text(encoding="utf-8")
             )
-            successor = json.loads(successor_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                successor["spec_id"], self.spec["superseded_by"]
+            )
             self.assertEqual(successor["supersedes"][0]["sha256"], digest)
 
     def test_lifecycle_and_exact_cell_matrix(self):
         spec = self.spec
         self.assertEqual(spec["schema"], "navtta.vln_targeted_gap_campaign.v1")
-        self.assertEqual(spec["status"], "active")
+        self.assertEqual(spec["status"], "superseded")
         self.assertEqual(spec["supersedes"], [])
-        self.assertIsNone(spec["superseded_by"])
+        self.assertEqual(spec["superseded_by"], "vln-targeted-gap-campaign-v2")
         self.assertEqual(spec["scope"]["cell_count"], 16)
         self.assertEqual(spec["scope"]["hidden_test_transfer_jobs"], 5)
         self.assertNotIn("vln", spec["scope"]["excluded"])
@@ -166,6 +169,17 @@ class TargetedGapCampaignSpecTest(unittest.TestCase):
         self.assertEqual([(c["setting"], c["method"]) for c in cells], expected)
         self.assertEqual([c["queue_id"] for c in cells], list(range(16)))
         self.assertEqual(len({c["cell_id"] for c in cells}), 16)
+
+    def test_active_v2_removes_source_from_the_execution_gate(self):
+        successor = json.loads(ACTIVE_SPEC_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(successor["status"], "active")
+        self.assertEqual(
+            successor["execution_policy"]["source_controls"],
+            "reporting_only_not_launch_gate",
+        )
+        self.assertEqual(
+            successor["base_spec"]["sha256"], _sha256(SPEC_PATH)
+        )
 
     def test_exact_cell_matrix_is_derived_from_pinned_workbook(self):
         inventory = self.spec["gap_inventory"]

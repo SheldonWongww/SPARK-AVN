@@ -8,14 +8,16 @@ selected active campaign spec as sixteen serial queues: 55 development jobs,
 permanently assigned to GPU slot ``q % 4``; therefore at most four model
 processes can be active on one GPU.
 
-The lifecycle is deliberately split across commands::
+The detailed lifecycle remains available as separate commands::
 
     plan -> search -> freeze -> val-seen -> reverie-test
 
-No command crosses the campaign-wide freeze boundary.  ``status`` is
-read-only.  A resume skips revalidated successes, retains all failed evidence,
-and requires ``--retry-failed`` before making a new attempt for a failed,
-invalid, or orphaned job. Administrative logs live below
+For the common path, ``run`` executes ``search -> freeze -> val-seen`` in one
+foreground command while retaining the same barriers. ``reverie-test`` stays
+separate because its FeedTTA-LLM submission needs a live provider. ``status``
+is read-only. A resume skips revalidated successes, retains all failed
+evidence, and requires ``--retry-failed`` before making a new attempt for a
+failed, invalid, or orphaned job. Administrative logs live below
 ``vln/results/logs/targeted_gap/BATCH`` and model outputs below
 ``vln/results/tuning/targeted_gap/BATCH``.
 """
@@ -48,7 +50,8 @@ import urllib.request
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = Path(__file__).resolve()
 BASE_SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
-DEFAULT_SPEC = BASE_SPEC
+SUCCESSOR_SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v2.json"
+DEFAULT_SPEC = SUCCESSOR_SPEC
 RUNNER = REPO_ROOT / "vln/scripts/run_source_eval.sh"
 TRANSLATOR = REPO_ROOT / "vln/scripts/tta_config_cli.py"
 ENVIRONMENT_MANIFEST = (
@@ -57,9 +60,10 @@ ENVIRONMENT_MANIFEST = (
 LOG_ROOT = REPO_ROOT / "vln/results/logs/targeted_gap"
 TUNING_ROOT = REPO_ROOT / "vln/results/tuning/targeted_gap"
 FORMAL_ROOT = REPO_ROOT / "vln/results/runs"
-DEFAULT_BATCH_ID = "vln-targeted-gap-campaign-v1-seed0"
+DEFAULT_BATCH_ID = "vln-targeted-gap-campaign-v2-seed0"
 
 SPEC_SCHEMA = "navtta.vln_targeted_gap_campaign.v1"
+SUCCESSOR_SPEC_SCHEMA = "navtta.vln_targeted_gap_campaign.successor.v1"
 BATCH_SCHEMA = "navtta.vln_targeted_gap_batch.v1"
 PLAN_SCHEMA = "navtta.vln_targeted_gap_plan.v1"
 JOB_SCHEMA = "navtta.vln_targeted_gap_job.v1"
@@ -402,10 +406,125 @@ def _validate_successor_contract(spec_path, spec):
         raise CampaignError("native-v1.2 Source promotion gate is not complete")
 
 
+def _expand_simple_successor(spec_path, successor):
+    """Resolve the small v2 execution overlay against the frozen v1 matrix.
+
+    The user-facing campaign only needs the reviewed 16-cell matrix and its
+    search/evaluation barriers. Existing Source runs are useful for reporting,
+    but their ledger packaging must not prevent TTA jobs from starting.
+    Keeping this as a narrow overlay avoids duplicating the 55-candidate matrix
+    while making the one intentional protocol change explicit.
+    """
+    allowed_keys = {
+        "schema", "schema_version", "spec_id", "experiment_id", "status",
+        "supersedes", "superseded_by", "base_spec", "launch_readiness",
+        "execution_policy", "freeze_artifact", "provenance",
+    }
+    if set(successor) != allowed_keys:
+        raise CampaignError("simple successor contains unsupported fields")
+    if (
+        successor.get("schema") != SUCCESSOR_SPEC_SCHEMA
+        or successor.get("schema_version") != 1
+        or successor.get("spec_id") != "vln-targeted-gap-campaign-v2"
+        or successor.get("experiment_id") != successor.get("spec_id")
+        or successor.get("status") != "active"
+        or successor.get("superseded_by") is not None
+    ):
+        raise CampaignError("invalid simple successor lifecycle")
+
+    base_binding = successor.get("base_spec")
+    base_path = _validate_reference(base_binding, "simple successor base spec")
+    if base_path != BASE_SPEC.resolve():
+        raise CampaignError("simple successor must extend the tracked v1 matrix")
+    require_tracked(base_path, "simple successor base spec")
+    expected_predecessor = {
+        "spec_id": "vln-targeted-gap-campaign-v1",
+        "path": str(BASE_SPEC.relative_to(REPO_ROOT)),
+        "sha256": sha256(base_path),
+    }
+    if successor.get("supersedes") != [expected_predecessor]:
+        raise CampaignError("simple successor predecessor binding mismatch")
+    base = read_json(base_path)
+    if (
+        base.get("schema") != SPEC_SCHEMA
+        or base.get("schema_version") != 1
+        or base.get("spec_id") != "vln-targeted-gap-campaign-v1"
+        or base.get("status") != "superseded"
+        or base.get("superseded_by") != successor["spec_id"]
+    ):
+        raise CampaignError("v1 lifecycle does not point to the simple successor")
+
+    readiness = successor.get("launch_readiness")
+    review = readiness.get("review") if isinstance(readiness, dict) else None
+    if (
+        not isinstance(readiness, dict)
+        or readiness.get("status") != "ready"
+        or readiness.get("blockers") != []
+        or not isinstance(review, dict)
+        or review.get("decision") != "approved_for_direct_tta_search"
+        or any(
+            not isinstance(review.get(key), str) or not review[key].strip()
+            for key in ("reviewed_by", "reviewed_at", "reason")
+        )
+    ):
+        raise CampaignError("simple successor lacks its execution review")
+    expected_policy = {
+        "source_controls": "reporting_only_not_launch_gate",
+        "development": "run_all_55_val_unseen_candidates",
+        "freeze": (
+            "select_one_winner_for_each_of_16_cells_without_source_ledger_dependency"
+        ),
+        "evaluation": "run_all_16_frozen_winners_on_val_seen",
+        "hidden_test": "run_the_5_reverie_submission_jobs_separately",
+    }
+    if successor.get("execution_policy") != expected_policy:
+        raise CampaignError("simple successor execution policy changed")
+    expected_freeze = (
+        "vln/results/logs/targeted_gap/{}-seed0/FROZEN.json"
+        .format(successor["spec_id"])
+    )
+    if successor.get("freeze_artifact") != expected_freeze:
+        raise CampaignError("simple successor freeze artifact changed")
+
+    resolved = json.loads(json.dumps(base))
+    for key in (
+        "spec_id", "experiment_id", "status", "supersedes",
+        "superseded_by", "launch_readiness", "provenance",
+    ):
+        resolved[key] = successor[key]
+    resolved["execution_policy"] = successor["execution_policy"]
+    resolved["source_control"]["execution_gate"] = False
+    resolved["source_control"]["role"] = (
+        "existing_source_results_are_posthoc_reporting_references_only"
+    )
+    resolved["source_control"]["native_v1_2_promotion_gate"] = {
+        "status": "not_required_for_tta_execution",
+        "reason": (
+            "Source results do not select hyperparameters and are compared "
+            "after the TTA campaign."
+        ),
+    }
+    resolved["selection"]["constraints"] = [
+        item for item in resolved["selection"]["constraints"]
+        if item != "matched_source_available"
+    ]
+    resolved["selection"]["source_comparison"] = (
+        "posthoc_only_using_the_users_existing_source_results"
+    )
+    resolved["freeze"]["artifact"] = successor["freeze_artifact"]
+    resolved["freeze"]["required_bindings"] = [
+        item for item in resolved["freeze"]["required_bindings"]
+        if item != "all_matched_source_manifest_sha256_values"
+    ]
+    return resolved
+
+
 def load_spec(path=DEFAULT_SPEC):
     """Load and validate the complete static campaign contract."""
     path = repo_file(str(path), "campaign spec", require=True)
     spec = read_json(path)
+    if spec.get("schema") == SUCCESSOR_SPEC_SCHEMA:
+        spec = _expand_simple_successor(path, spec)
     if spec.get("schema") != SPEC_SCHEMA or spec.get("schema_version") != 1:
         raise CampaignError("unsupported targeted-gap campaign schema")
     spec_id = spec.get("spec_id")
@@ -544,15 +663,10 @@ def load_spec(path=DEFAULT_SPEC):
 
 
 def require_launch_ready(spec_path, spec):
-    """Permit execution only from an active, reviewed, ready successor.
-
-    The frozen v1 file is intentionally useful for planning and read-only
-    status inspection, but its launch_readiness block explicitly forbids any
-    campaign phase from executing.  A successor keeps the v1 scientific
-    schema while advancing the content-addressed spec identity.
-    """
+    """Permit execution only from the active reviewed successor."""
     spec_path = Path(spec_path).resolve()
-    if canonical(read_json(spec_path)) != canonical(spec):
+    loaded_path, loaded = load_spec(spec_path)
+    if loaded_path != spec_path or canonical(loaded) != canonical(spec):
         raise CampaignError("in-memory campaign spec differs from spec_path")
     spec_id = spec.get("spec_id")
     match = SPEC_ID_RE.fullmatch(spec_id) if isinstance(spec_id, str) else None
@@ -570,8 +684,16 @@ def require_launch_ready(spec_path, spec):
     if blockers not in (None, []):
         raise CampaignError("ready successor must have no launch blockers")
     if revision < 2:
-        raise CampaignError("campaign execution requires a reviewed successor spec v2+")
-    _validate_successor_contract(Path(spec_path).resolve(), spec)
+        raise CampaignError("campaign execution requires the active v2 spec")
+    require_tracked(spec_path, "campaign successor spec")
+    raw = read_json(spec_path)
+    if raw.get("schema") == SUCCESSOR_SPEC_SCHEMA:
+        base_path = _validate_reference(
+            raw.get("base_spec"), "simple successor base spec"
+        )
+        require_tracked(base_path, "simple successor base spec")
+    else:
+        _validate_successor_contract(spec_path, spec)
 
 
 def combine_parameters(spec, cell, candidate):
@@ -1912,10 +2034,18 @@ def validate_provider(spec):
     }
 
 
+def source_controls_are_execution_gate(spec):
+    return spec.get("source_control", {}).get("execution_gate", True) is not False
+
+
 def formal_preflight(spec_path, spec, stage):
     assert_clean_formal_tree(spec_path)
     validate_runtime_assets(spec, stage)
-    sources = validate_source_controls(spec)
+    sources = (
+        validate_source_controls(spec)
+        if source_controls_are_execution_gate(spec)
+        else {}
+    )
     ideas = validate_idea_assets(spec)
     provider = validate_provider(spec) if stage == "reverie-test" else None
     if provider is not None:
@@ -2341,7 +2471,8 @@ def _create_run_manifest(metadata):
     path = Path(metadata["formal_manifest"])
     if path.exists():
         raise CampaignError("formal run manifest already exists: {}".format(path))
-    asset_manifest = read_json(metadata["spec_path"])["data_bindings"]["asset_manifest"]
+    _, spec = load_spec(metadata["spec_path"])
+    asset_manifest = spec["data_bindings"]["asset_manifest"]
     pinned = {
         "experiment_spec": _file_metadata(metadata["spec_path"]),
         "assets": _file_metadata(repo_file(asset_manifest["path"], "asset manifest", True)),
@@ -2375,16 +2506,14 @@ def _create_run_manifest(metadata):
         record["name"] = "idea_source_statistics"
         auxiliary.append(record)
     if metadata["feedback_provider"] == "qwen2_vl_2b_v1":
-        provider_runtime = read_json(metadata["spec_path"])[
-            "hidden_test_transfer"
-        ]["provider"]["runtime"]
+        provider_runtime = spec["hidden_test_transfer"]["provider"]["runtime"]
         record = _file_metadata(repo_file(
             provider_runtime["contract"]["path"], "provider contract", True
         ))
         record["name"] = "feedback_provider_contract"
         auxiliary.append(record)
         preflight = validate_provider_preflight_binding(
-            read_json(metadata["spec_path"]),
+            spec,
             metadata.get("feedback_provider_preflight"),
         )
         record = _file_metadata(preflight["path"])
@@ -3196,7 +3325,7 @@ def _validate_feedback_transcript(path, diagnostics, metadata):
         raise CampaignError("cannot read FeedTTA-LLM prediction: {}".format(error))
     if not isinstance(predictions, list) or len(predictions) != len(rows):
         raise CampaignError("FeedTTA-LLM prediction/transcript count mismatch")
-    spec = read_json(metadata["spec_path"])
+    _, spec = load_spec(metadata["spec_path"])
     provider = spec["hidden_test_transfer"]["provider"]
     prompt_hashes = [item["prompt_sha256"] for item in provider["pipeline"]]
     expected_identity = {
@@ -3475,8 +3604,9 @@ def validate_run_manifest(metadata, require_success=True):
         if campaign.get(key) != expected_value:
             raise CampaignError("formal run campaign.{} mismatch".format(key))
     if metadata["feedback_provider"] == "qwen2_vl_2b_v1":
+        _, spec = load_spec(metadata["spec_path"])
         validated_preflight = validate_provider_preflight_binding(
-            read_json(metadata["spec_path"]),
+            spec,
             metadata.get("feedback_provider_preflight"),
         )
         auxiliary_preflight = auxiliary_by_name[
@@ -4519,8 +4649,14 @@ def load_frozen(spec_path, spec, batch_id, root, binding):
         if sha256(config) != winner.get("frozen_config_sha256"):
             raise CampaignError("frozen winner config changed")
     source_manifests = frozen.get("source_manifests")
-    if not isinstance(source_manifests, dict) or not source_manifests:
+    if not isinstance(source_manifests, dict):
+        raise CampaignError("FROZEN.json source_manifests must be an object")
+    if source_controls_are_execution_gate(spec) and not source_manifests:
         raise CampaignError("FROZEN.json does not bind Source manifests")
+    if not source_controls_are_execution_gate(spec) and source_manifests:
+        raise CampaignError(
+            "reporting-only Source results must not be frozen into selection"
+        )
     for binding_key, source in source_manifests.items():
         ledger = repo_file(source.get("path"), "frozen Source ledger", True)
         if sha256(ledger) != source.get("sha256"):
@@ -4806,13 +4942,20 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, _term)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "stage", choices=("plan", "search", "freeze", "val-seen", "reverie-test", "status")
+        "stage",
+        choices=(
+            "plan", "run", "search", "freeze", "val-seen",
+            "reverie-test", "status",
+        ),
+        help=(
+            "run executes search, freeze, and val-seen in order; "
+            "reverie-test remains a separate submission phase"
+        ),
     )
     parser.add_argument(
         "--spec", default=str(DEFAULT_SPEC),
         help=(
-            "campaign JSON; formal execution requires the reviewed active "
-            "v2+ successor, while the default v1 is planning-only"
+            "campaign JSON; defaults to the active direct-search v2 spec"
         ),
     )
     parser.add_argument(
@@ -4871,6 +5014,33 @@ def main(argv=None):
                          sort_keys=True, ensure_ascii=False))
         return 0
 
+    if args.stage == "run":
+        if args.dry_run:
+            print_plan(
+                spec_path, spec, args.batch_id, gpus, "search",
+                expand_search_jobs(spec, gpus),
+            )
+            return 0
+        forwarded_common = [
+            "--spec", str(spec_path),
+            "--batch-id", args.batch_id,
+            "--gpus", ",".join(str(value) for value in gpus),
+        ]
+        for phase in ("search", "freeze", "val-seen"):
+            forwarded = [phase] + forwarded_common
+            if args.resume and phase in ("search", "val-seen"):
+                forwarded.append("--resume")
+            if args.retry_failed and phase in ("search", "val-seen"):
+                forwarded.extend([
+                    "--retry-failed", "--retry-reason", args.retry_reason,
+                ])
+            main(forwarded)
+        print(
+            "completed search, freeze, and val-seen for {}"
+            .format(args.batch_id)
+        )
+        return 0
+
     require_launch_ready(spec_path, spec)
 
     root = batch_root(args.batch_id)
@@ -4906,7 +5076,11 @@ def main(argv=None):
             }, indent=2, sort_keys=True))
             return 0
         assert_clean_formal_tree(spec_path)
-        sources = validate_source_controls(spec)
+        sources = (
+            validate_source_controls(spec)
+            if source_controls_are_execution_gate(spec)
+            else {}
+        )
         validate_idea_assets(spec)
         with campaign_lock(args.batch_id):
             freeze_campaign(

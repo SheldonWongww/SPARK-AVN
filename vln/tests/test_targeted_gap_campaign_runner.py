@@ -10,7 +10,8 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "vln/scripts/run_targeted_gap_campaign.py"
-SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
+BASE_SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
+SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v2.json"
 
 MODULE_SPEC = importlib.util.spec_from_file_location(
     "targeted_gap_campaign_runner", MODULE_PATH
@@ -281,17 +282,50 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[command.index("--diagnostics") + 1], str(diagnostics.resolve()))
 
-    def test_blocked_v1_is_inspectable_but_not_executable(self):
-        with self.assertRaisesRegex(RUNNER.CampaignError, "launch_readiness"):
+    def test_active_v2_is_launch_ready_without_source_gate(self):
+        with mock.patch.object(RUNNER, "require_tracked"):
             RUNNER.require_launch_ready(SPEC, self.spec)
-        successor = json.loads(json.dumps(self.spec))
-        successor.update({
-            "spec_id": "vln-targeted-gap-campaign-v2",
-            "experiment_id": "vln-targeted-gap-campaign-v2",
-            "supersedes": ["vln-targeted-gap-campaign-v1"],
-            "superseded_by": None,
-        })
-        successor["launch_readiness"] = {"status": "ready", "blockers": []}
+        self.assertFalse(RUNNER.source_controls_are_execution_gate(self.spec))
+        self.assertNotIn(
+            "matched_source_available", self.spec["selection"]["constraints"]
+        )
+        self.assertNotIn(
+            "all_matched_source_manifest_sha256_values",
+            self.spec["freeze"]["required_bindings"],
+        )
+
+    def test_direct_preflight_does_not_read_source_ledgers(self):
+        with mock.patch.object(RUNNER, "assert_clean_formal_tree"), \
+                mock.patch.object(RUNNER, "validate_runtime_assets"), \
+                mock.patch.object(RUNNER, "validate_idea_assets", return_value={}), \
+                mock.patch.object(
+                    RUNNER, "validate_source_controls",
+                    side_effect=AssertionError("Source must not be consulted"),
+                ):
+            result = RUNNER.formal_preflight(SPEC, self.spec, "search")
+        self.assertEqual(result["source_controls"], {})
+
+    def test_run_command_dispatches_search_freeze_and_val_seen(self):
+        entrypoint = RUNNER.main
+        with mock.patch.object(RUNNER, "main", return_value=0) as phase:
+            entrypoint([
+                "run", "--spec", str(SPEC),
+                "--batch-id", "vln-targeted-gap-campaign-v2-seed0",
+                "--gpus", "0,1,2,3",
+            ])
+        self.assertEqual(
+            [call.args[0][0] for call in phase.call_args_list],
+            ["search", "freeze", "val-seen"],
+        )
+
+    def test_superseded_v1_is_inspectable_but_not_executable(self):
+        _, predecessor = RUNNER.load_spec(BASE_SPEC)
+        with self.assertRaisesRegex(RUNNER.CampaignError, "launch_readiness"):
+            RUNNER.require_launch_ready(BASE_SPEC, predecessor)
+
+    def test_successor_rejects_wrong_predecessor_digest(self):
+        successor = json.loads(SPEC.read_text(encoding="utf-8"))
+        successor["base_spec"]["sha256"] = "0" * 64
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", dir=str(REPO_ROOT),
             encoding="utf-8", delete=False,
@@ -299,97 +333,12 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
             json.dump(successor, stream)
             successor_path = Path(stream.name)
         try:
-            _, loaded = RUNNER.load_spec(successor_path)
-            self.assertEqual(loaded["spec_id"], "vln-targeted-gap-campaign-v2")
-            with mock.patch.object(RUNNER, "require_tracked"):
-                with self.assertRaisesRegex(
-                    RUNNER.CampaignError, "content-addressed"
-                ):
-                    RUNNER.require_launch_ready(successor_path, loaded)
+            with self.assertRaisesRegex(RUNNER.CampaignError, "SHA256"):
+                RUNNER.load_spec(successor_path)
         finally:
             successor_path.unlink()
 
-    def _reviewed_successor(self, directory):
-        predecessor = json.loads(json.dumps(self.spec))
-        predecessor["status"] = "superseded"
-        predecessor["superseded_by"] = "vln-targeted-gap-campaign-v2"
-        predecessor_path = Path(directory) / "vln_targeted_gap_campaign_v1.json"
-        RUNNER.atomic_json(predecessor_path, predecessor)
-
-        successor = json.loads(json.dumps(predecessor))
-        successor.update({
-            "spec_id": "vln-targeted-gap-campaign-v2",
-            "experiment_id": "vln-targeted-gap-campaign-v2",
-            "status": "active",
-            "superseded_by": None,
-            "supersedes": [{
-                "spec_id": "vln-targeted-gap-campaign-v1",
-                "path": str(predecessor_path.relative_to(REPO_ROOT)),
-                "sha256": RUNNER.sha256(predecessor_path),
-            }],
-        })
-        successor["launch_readiness"] = {
-            "status": "ready", "blockers": [],
-            "review": {
-                "decision": "approved_for_formal_execution",
-                "predecessor_sha256": RUNNER.sha256(predecessor_path),
-                "runner_sha256": RUNNER.sha256(MODULE_PATH),
-                "reviewed_by": "unit-test-reviewer",
-                "reviewed_at": "2026-08-31T00:00:00+08:00",
-            },
-        }
-        successor["freeze"]["artifact"] = (
-            "vln/results/logs/targeted_gap/"
-            "vln-targeted-gap-campaign-v2-seed0/FROZEN.json"
-        )
-        successor["source_control"]["native_v1_2_promotion_gate"][
-            "status"
-        ] = "promoted_authenticated_source_ledgers"
-        for key, name in (
-            ("r2r_ce_v1_2_val_unseen", "r2r_ce_v1_2_val_unseen_source_controls.json"),
-            ("r2r_ce_v1_2_val_seen", "r2r_ce_v1_2_val_seen_source_controls.json"),
-        ):
-            ledger = REPO_ROOT / "vln/manifests" / name
-            successor["source_control"]["bindings"][key] = {
-                "mode": "reuse", "path": str(ledger.relative_to(REPO_ROOT)),
-                "sha256": "a" * 64,
-            }
-        successor_path = Path(directory) / "vln_targeted_gap_campaign_v2.json"
-        RUNNER.atomic_json(successor_path, successor)
-        return predecessor_path, successor_path, successor
-
-    def test_successor_requires_predecessor_digest_and_immutable_science(self):
-        with tempfile.TemporaryDirectory(dir=str(REPO_ROOT)) as directory:
-            predecessor_path, successor_path, successor = self._reviewed_successor(
-                directory
-            )
-            with mock.patch.object(RUNNER, "BASE_SPEC", predecessor_path), \
-                    mock.patch.object(RUNNER, "require_tracked"), \
-                    mock.patch.object(RUNNER, "_validate_reference", side_effect=lambda binding, _label: REPO_ROOT / binding["path"]):
-                RUNNER.require_launch_ready(successor_path, successor)
-                changed = json.loads(json.dumps(successor))
-                changed["candidate_grids"]["r2r_tent_v2"]["candidates"][0][
-                    "parameters"
-                ]["lr"] = 9e-4
-                RUNNER.atomic_json(successor_path, changed)
-                with self.assertRaisesRegex(
-                    RUNNER.CampaignError, "scientific contract"
-                ):
-                    RUNNER.require_launch_ready(successor_path, changed)
-
-    def test_successor_rejects_wrong_predecessor_digest(self):
-        with tempfile.TemporaryDirectory(dir=str(REPO_ROOT)) as directory:
-            predecessor_path, successor_path, successor = self._reviewed_successor(
-                directory
-            )
-            successor["supersedes"][0]["sha256"] = "0" * 64
-            RUNNER.atomic_json(successor_path, successor)
-            with mock.patch.object(RUNNER, "BASE_SPEC", predecessor_path), \
-                    mock.patch.object(RUNNER, "require_tracked"):
-                with self.assertRaisesRegex(RUNNER.CampaignError, "path/SHA256"):
-                    RUNNER.require_launch_ready(successor_path, successor)
-
-    def test_v1_source_validation_reports_ce_rerun_gate_first(self):
+    def test_optional_source_auditor_still_reports_unpromoted_ce_ledger(self):
         with self.assertRaisesRegex(
             RUNNER.CampaignError,
             "r2r_ce_v1_2_val_unseen.*not ready",

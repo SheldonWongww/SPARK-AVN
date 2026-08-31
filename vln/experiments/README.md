@@ -2,17 +2,18 @@
 
 ## Targeted sixteen-cell gap campaign
 
-`vln_targeted_gap_campaign_v1.json` and
-`VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md` define the active pre-execution
-contract for the 16 blank non-StreamVLN, non-`OURS` workbook rows. The
+`vln_targeted_gap_campaign_v2.json` and
+`VLN_TARGETED_GAP_CAMPAIGN_V2_PLAN.md` define the active direct-search overlay for
+the matrix frozen in `vln_targeted_gap_campaign_v1.json` and
+`VLN_TARGETED_GAP_CAMPAIGN_V1_PLAN.md`. It covers the 16 blank non-StreamVLN,
+non-`OURS` workbook rows. The
 executable matrix is 55 full `val_unseen` candidates, a campaign-wide freeze,
 16 fresh `val_seen` winner runs, and five REVERIE submission-only test runs.
 `run_targeted_gap_campaign.py` fixes four cell queues per GPU on GPUs 0--3.
 
-The v1 contract is blocked and planning-only. Native-v1.2 ETPNav/BEVBert
-Source controls and all discrete Source ledgers must first be authenticated;
-the promotion tool then creates a reviewed, tracked v2 successor. Every
-formal runner invocation must pass that v2 path explicitly. The sole
+The v1 contract is superseded. Existing Source evaluations are post-hoc
+reporting references and are not an execution gate. The default `run` command
+executes search, freeze, and `val_seen` in sequence. The sole
 FeedTTA-LLM test transfer also requires the same-commit render/provider
 `PRECHECK.json`; that evidence is bound into its stage plan, job identity, and
 formal manifest. No new formal result is implied by these specifications.
