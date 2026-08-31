@@ -35,7 +35,21 @@ venv/
 /vln/results/smoke/
 /vln/results/tuning/
 /vln/results/audits/
-/vln/results/idea_source_statistics/
+# IDEA's three reviewed source-domain moment files are small, immutable model
+# inputs required by the active 16-cell VLN campaign. Keep every other
+# collection output ignored.
+/vln/results/idea_source_statistics/**
+!/vln/results/idea_source_statistics/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/train/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-reverie/train/source_statistics.json
+!/vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/train/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/hamt-r2r/train/source_statistics.json
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/train/
+!/vln/results/idea_source_statistics/idea-source-train128-v1/goat-r2r/train/source_statistics.json
 /objectnav/data/
 /objectnav/checkpoints/
 

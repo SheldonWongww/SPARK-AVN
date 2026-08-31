@@ -499,8 +499,8 @@ class TargetedGapCampaignSpecTest(unittest.TestCase):
                 self.spec["data_bindings"]["checkpoints"][setting],
             )
             local_path = REPO_ROOT / binding["path"]
-            if local_path.is_file():
-                self.assertEqual(_sha256(local_path), binding["sha256"], setting)
+            self.assertTrue(local_path.is_file(), setting)
+            self.assertEqual(_sha256(local_path), binding["sha256"], setting)
         self.assertTrue(
             any(
                 "IDEA source-training-statistics" in blocker

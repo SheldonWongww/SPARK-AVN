@@ -23,20 +23,23 @@ job counts on GPUs 0, 1, 2, and 3 are respectively 15, 15, 13, and 12.
 ETPNav and BEVBert continue to use R2R-CE v1.2-native. Their existing Source
 results may be compared after the campaign, but Source values and ledgers are
 not read by candidate selection and are not frozen into winner evidence.
-The three IDEA cells still consume their pinned offline source-training
-statistics because those statistics are part of IDEA itself.
+The three IDEA cells consume the three reviewed, Git-tracked offline
+source-training-statistics JSON files at the paths pinned by the base spec.
+The launcher verifies their content before it creates a campaign batch.
 
 ## One-command validation campaign
 
 ```bash
 cd /data1/wxy/code/NavTTA
 
-python3 vln/scripts/run_targeted_gap_campaign.py plan \
+PYTHON=/data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python
+
+"$PYTHON" vln/scripts/run_targeted_gap_campaign.py plan \
   --spec vln/experiments/vln_targeted_gap_campaign_v2.json \
   --batch-id vln-targeted-gap-campaign-v2-seed0 \
   --gpus 0,1,2,3
 
-python3 vln/scripts/run_targeted_gap_campaign.py run \
+"$PYTHON" vln/scripts/run_targeted_gap_campaign.py run \
   --spec vln/experiments/vln_targeted_gap_campaign_v2.json \
   --batch-id vln-targeted-gap-campaign-v2-seed0 \
   --gpus 0,1,2,3

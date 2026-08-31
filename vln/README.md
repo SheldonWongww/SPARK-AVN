@@ -427,10 +427,11 @@ select candidates nor block the 16-cell TTA campaign. In particular, the
 optional native-v1.2 Source-control packaging utility is not a prerequisite
 for search, freeze, or `val_seen` evaluation.
 
-The three IDEA cells still require their method-native 128-trajectory
-source-training statistics (`goat-reverie`, `hamt-r2r`, and `goat-r2r`). The
-runner verifies those files and their pinned SHA256 values; this is an IDEA
-model input check, not a Source-baseline rerun.
+The three IDEA cells use the reviewed 128-trajectory source-training
+statistics for `goat-reverie`, `hamt-r2r`, and `goat-r2r`. These three small,
+immutable JSON model inputs are tracked at their spec-pinned paths; the runner
+verifies their SHA256 and provenance before creating a campaign batch. This is
+an IDEA model-input check, not a Source-baseline rerun.
 
 On the clean server checkout, verify the exact expansion before starting GPU
 work:
@@ -440,7 +441,8 @@ cd /data1/wxy/code/NavTTA
 SPEC=vln/experiments/vln_targeted_gap_campaign_v2.json
 BATCH=vln-targeted-gap-campaign-v2-seed0
 
-python3 vln/scripts/run_targeted_gap_campaign.py plan \
+/data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
+  vln/scripts/run_targeted_gap_campaign.py plan \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 
@@ -448,7 +450,8 @@ The normal command runs all three validation phases in order and stops at the
 REVERIE test boundary:
 
 ```bash
-python3 vln/scripts/run_targeted_gap_campaign.py run \
+/data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
+  vln/scripts/run_targeted_gap_campaign.py run \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 
@@ -468,13 +471,15 @@ screen -L -Logfile "$CONSOLE_DIR/${STAGE}.console.log" \
   -dmS "$SESSION" env PYTHONUNBUFFERED=1 SPEC="$SPEC" BATCH="$BATCH" \
   STAGE="$STAGE" bash -lc '
     cd /data1/wxy/code/NavTTA || exit 97
-    exec python3 vln/scripts/run_targeted_gap_campaign.py "$STAGE" \
+    exec /data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
+      vln/scripts/run_targeted_gap_campaign.py "$STAGE" \
       --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
   '
 screen -r "$SESSION"
 # Detach with Ctrl-a d. From another terminal:
 tail -f "$CONSOLE_DIR/${STAGE}.console.log"
-python3 vln/scripts/run_targeted_gap_campaign.py status \
+/data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
+  vln/scripts/run_targeted_gap_campaign.py status \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 
@@ -495,7 +500,8 @@ export NAVTTA_LLM_FEEDBACK_TOKEN_FILE="$TOKEN_FILE"
 export NAVTTA_REVERIE_RENDER_MATTERSIM_BUILD="$RENDER_BUILD"
 export NAVTTA_REVERIE_LLM_PREFLIGHT="$PREFLIGHT_ROOT/PRECHECK.json"
 
-python3 vln/scripts/run_targeted_gap_campaign.py reverie-test \
+/data1/wxy/exp_data/NavTTA/vln/envs/duet/bin/python \
+  vln/scripts/run_targeted_gap_campaign.py reverie-test \
   --spec "$SPEC" --batch-id "$BATCH" --gpus 0,1,2,3
 ```
 

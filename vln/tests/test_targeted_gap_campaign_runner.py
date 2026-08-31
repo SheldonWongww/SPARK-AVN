@@ -322,16 +322,23 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
             self.spec["freeze"]["required_bindings"],
         )
 
-    def test_direct_preflight_does_not_read_source_ledgers(self):
-        with mock.patch.object(RUNNER, "assert_clean_formal_tree"), \
-                mock.patch.object(RUNNER, "validate_runtime_assets"), \
-                mock.patch.object(RUNNER, "validate_idea_assets", return_value={}), \
+    def test_direct_preflight_validates_inputs_without_reading_source_ledgers(self):
+        with mock.patch.object(
+            RUNNER, "assert_clean_formal_tree"
+        ) as clean, mock.patch.object(
+            RUNNER, "validate_runtime_assets"
+        ) as runtime, mock.patch.object(
+            RUNNER, "validate_idea_assets", return_value={}
+        ) as ideas, \
                 mock.patch.object(
                     RUNNER, "validate_source_controls",
                     side_effect=AssertionError("Source must not be consulted"),
                 ):
             result = RUNNER.formal_preflight(SPEC, self.spec, "search")
         self.assertEqual(result["source_controls"], {})
+        clean.assert_called_once_with(SPEC)
+        runtime.assert_called_once_with(self.spec, "search")
+        ideas.assert_called_once_with(self.spec)
 
     def test_run_command_dispatches_search_freeze_and_val_seen(self):
         entrypoint = RUNNER.main

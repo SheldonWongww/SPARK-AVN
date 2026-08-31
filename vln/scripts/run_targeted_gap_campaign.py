@@ -1041,7 +1041,7 @@ def order_binding(spec, setting, split, require_dataset=False):
     dataset_path = runtime_file(
         dataset_value, "{} dataset".format(key), require=require_dataset
     )
-    if require_dataset and not direct_execution_mode(spec):
+    if require_dataset:
         identity = (str(dataset_path), document["dataset"]["sha256"])
         if identity not in _VERIFIED_LARGE_FILES:
             if sha256(dataset_path) != document["dataset"]["sha256"]:
@@ -1073,7 +1073,7 @@ def checkpoint_binding(spec, setting, require_file=False):
         asset.get("path"), "{} checkpoint".format(setting),
         require=require_file,
     )
-    if require_file and not direct_execution_mode(spec):
+    if require_file:
         identity = (str(path), expected)
         if identity not in _VERIFIED_LARGE_FILES:
             if sha256(path) != expected:
@@ -2073,8 +2073,6 @@ def source_controls_are_execution_gate(spec):
 
 
 def formal_preflight(spec_path, spec, stage):
-    if direct_execution_mode(spec) and stage != "reverie-test":
-        return {"source_controls": {}, "idea_assets": {}, "provider": None}
     assert_clean_formal_tree(spec_path)
     validate_runtime_assets(spec, stage)
     sources = (

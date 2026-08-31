@@ -1,4 +1,0 @@
-interface:
-  display_name: "NavTTA 方法复现"
-  short_description: "审计 TTA 论文、官方代码与导航任务移植的语义一致性和证据链"
-  default_prompt: "Use $navtta-method-reproducer to build and validate an auditable paper-to-port contract for this TTA method."

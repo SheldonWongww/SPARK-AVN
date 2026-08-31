@@ -1,4 +1,0 @@
-interface:
-  display_name: "NavTTA 实验设计"
-  short_description: "设计并冻结可审计的实验协议、对照、种子与防泄漏边界"
-  default_prompt: "Use $navtta-experiment-designer to create or review a decision-complete NavTTA experiment specification."
