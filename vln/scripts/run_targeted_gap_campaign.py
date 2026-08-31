@@ -48,6 +48,8 @@ import urllib.request
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 SCRIPT_PATH = Path(__file__).resolve()
 BASE_SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v1.json"
 SUCCESSOR_SPEC = REPO_ROOT / "vln/experiments/vln_targeted_gap_campaign_v2.json"
@@ -4605,7 +4607,13 @@ def freeze_campaign(spec_path, spec, batch_id, root, binding, search_jobs,
         "rankings": ranking_payload,
     }
     path = Path(root) / "FROZEN.json"
-    expected_path = repo_file(spec["freeze"]["artifact"], "freeze artifact", require=False)
+    expected_path = (
+        path.resolve()
+        if direct_execution_mode(spec)
+        else repo_file(
+            spec["freeze"]["artifact"], "freeze artifact", require=False
+        )
+    )
     if path.resolve() != expected_path:
         raise CampaignError("batch_id does not map to the spec-pinned FROZEN.json path")
     if path.exists() and canonical(read_json(path)) != canonical(payload):
@@ -5083,7 +5091,10 @@ def main(argv=None):
         if args.dry_run:
             print_plan(spec_path, spec, args.batch_id, gpus, "search", jobs)
             return 0
-        if args.batch_id != _actual_batch_id_from_spec(spec):
+        if (
+            not direct_execution_mode(spec)
+            and args.batch_id != _actual_batch_id_from_spec(spec)
+        ):
             raise CampaignError("formal batch id must match freeze.artifact")
         formal_preflight(spec_path, spec, "search")
         with campaign_lock(args.batch_id):
