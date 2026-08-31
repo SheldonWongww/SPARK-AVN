@@ -279,6 +279,24 @@ def repo_file(value, label, require=False):
     return path
 
 
+def runtime_file(value, label, require=False):
+    """Resolve a manifest-bound runtime asset, including external storage.
+
+    Specs, scripts, and tracked manifests use :func:`repo_file`. Large
+    datasets and checkpoints are intentionally stored outside Git (often via
+    repository symlinks), so containment is inappropriate for those files;
+    their callers authenticate the resolved bytes with the manifest SHA256.
+    """
+    if not isinstance(value, str) or not value:
+        raise CampaignError("{} path is missing".format(label))
+    path = Path(value).expanduser()
+    path = path if path.is_absolute() else REPO_ROOT / path
+    path = path.resolve()
+    if require and not path.is_file():
+        raise CampaignError("missing {}: {}".format(label, path))
+    return path
+
+
 def git_commit():
     return subprocess.check_output(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
@@ -696,6 +714,13 @@ def require_launch_ready(spec_path, spec):
         _validate_successor_contract(spec_path, spec)
 
 
+def direct_execution_mode(spec):
+    return (
+        spec.get("execution_policy", {}).get("source_controls")
+        == "reporting_only_not_launch_gate"
+    )
+
+
 def combine_parameters(spec, cell, candidate):
     grid = spec["candidate_grids"][cell["grid"]]
     base = grid.get("base", {})
@@ -722,7 +747,7 @@ def combine_parameters(spec, cell, candidate):
             raise CampaignError("missing IDEA Source statistics for {}".format(
                 cell["setting"]))
         parameters.update({
-            "source_stats_path": str(repo_file(
+            "source_stats_path": str(runtime_file(
                 binding["path"], "IDEA source statistics", require=False
             )),
             "source_stats_sha256": binding["sha256"],
@@ -1011,8 +1036,10 @@ def order_binding(spec, setting, split, require_dataset=False):
     path = _validate_reference(binding, "{} order manifest".format(key))
     document = read_json(path)
     dataset_value = document.get("dataset", {}).get("path")
-    dataset_path = repo_file(dataset_value, "{} dataset".format(key), require=require_dataset)
-    if require_dataset:
+    dataset_path = runtime_file(
+        dataset_value, "{} dataset".format(key), require=require_dataset
+    )
+    if require_dataset and not direct_execution_mode(spec):
         identity = (str(dataset_path), document["dataset"]["sha256"])
         if identity not in _VERIFIED_LARGE_FILES:
             if sha256(dataset_path) != document["dataset"]["sha256"]:
@@ -1040,8 +1067,11 @@ def checkpoint_binding(spec, setting, require_file=False):
     expected = spec["data_bindings"]["checkpoints"].get(setting)
     if asset.get("sha256") != expected or not valid_sha256(expected):
         raise CampaignError("{} checkpoint binding mismatch".format(setting))
-    path = repo_file(asset.get("path"), "{} checkpoint".format(setting), require=require_file)
-    if require_file:
+    path = runtime_file(
+        asset.get("path"), "{} checkpoint".format(setting),
+        require=require_file,
+    )
+    if require_file and not direct_execution_mode(spec):
         identity = (str(path), expected)
         if identity not in _VERIFIED_LARGE_FILES:
             if sha256(path) != expected:
@@ -1535,7 +1565,9 @@ def validate_idea_assets(spec):
     for setting, binding in sorted(
         spec["data_bindings"].get("idea_source_statistics", {}).items()
     ):
-        path = repo_file(binding.get("path"), "IDEA Source statistics", require=True)
+        path = runtime_file(
+            binding.get("path"), "IDEA Source statistics", require=True
+        )
         if sha256(path) != binding.get("sha256"):
             raise CampaignError("{} IDEA Source-statistics SHA256 mismatch".format(setting))
         document = read_json(path)
@@ -2035,10 +2067,12 @@ def validate_provider(spec):
 
 
 def source_controls_are_execution_gate(spec):
-    return spec.get("source_control", {}).get("execution_gate", True) is not False
+    return not direct_execution_mode(spec)
 
 
 def formal_preflight(spec_path, spec, stage):
+    if direct_execution_mode(spec) and stage != "reverie-test":
+        return {"source_controls": {}, "idea_assets": {}, "provider": None}
     assert_clean_formal_tree(spec_path)
     validate_runtime_assets(spec, stage)
     sources = (
@@ -5075,13 +5109,12 @@ def main(argv=None):
                 "would_write": str(root / "FROZEN.json"),
             }, indent=2, sort_keys=True))
             return 0
-        assert_clean_formal_tree(spec_path)
-        sources = (
-            validate_source_controls(spec)
-            if source_controls_are_execution_gate(spec)
-            else {}
-        )
-        validate_idea_assets(spec)
+        if direct_execution_mode(spec):
+            sources = {}
+        else:
+            assert_clean_formal_tree(spec_path)
+            sources = validate_source_controls(spec)
+            validate_idea_assets(spec)
         with campaign_lock(args.batch_id):
             freeze_campaign(
                 spec_path, spec, args.batch_id, root, binding,

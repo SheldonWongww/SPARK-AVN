@@ -38,6 +38,34 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
         }
         self.assertEqual(counts, {0: 15, 1: 15, 2: 13, 3: 12})
 
+    def test_manifest_bound_checkpoint_symlink_may_target_external_storage(self):
+        with tempfile.TemporaryDirectory() as outside, \
+                tempfile.TemporaryDirectory(dir=str(REPO_ROOT)) as inside:
+            target = Path(outside) / "checkpoint.bin"
+            target.write_bytes(b"checkpoint")
+            link = Path(inside) / "checkpoint.bin"
+            link.symlink_to(target)
+            relative_link = link.relative_to(REPO_ROOT).as_posix()
+            digest = RUNNER.sha256(target)
+            spec = json.loads(json.dumps(self.spec))
+            spec["data_bindings"]["checkpoints"]["hamt-reverie"] = digest
+            assets = {
+                "hamt_reverie_checkpoint": {
+                    "path": relative_link,
+                    "sha256": digest,
+                    "size": target.stat().st_size,
+                }
+            }
+            with mock.patch.object(
+                RUNNER, "asset_index", return_value=(SPEC, assets)
+            ):
+                binding = RUNNER.checkpoint_binding(
+                    spec, "hamt-reverie", require_file=True
+                )
+            self.assertEqual(binding["path"], target.resolve())
+            with self.assertRaisesRegex(RUNNER.CampaignError, "escapes repository"):
+                RUNNER.repo_file(relative_link, "tracked file", require=True)
+
     def test_canonical_seed_zero_commands_omit_order_seed_and_pin_ce_v12(self):
         jobs = RUNNER.expand_search_jobs(self.spec, (0, 1, 2, 3))
         for job in jobs:
