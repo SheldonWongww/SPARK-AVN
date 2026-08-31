@@ -23,6 +23,8 @@ job counts on GPUs 0, 1, 2, and 3 are respectively 15, 15, 13, and 12.
 ETPNav and BEVBert continue to use R2R-CE v1.2-native. Their existing Source
 results may be compared after the campaign, but Source values and ledgers are
 not read by candidate selection and are not frozen into winner evidence.
+The three IDEA cells still consume their pinned offline source-training
+statistics because those statistics are part of IDEA itself.
 
 ## One-command validation campaign
 

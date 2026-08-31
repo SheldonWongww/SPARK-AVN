@@ -427,6 +427,11 @@ select candidates nor block the 16-cell TTA campaign. In particular, the
 optional native-v1.2 Source-control packaging utility is not a prerequisite
 for search, freeze, or `val_seen` evaluation.
 
+The three IDEA cells still require their method-native 128-trajectory
+source-training statistics (`goat-reverie`, `hamt-r2r`, and `goat-r2r`). The
+runner verifies those files and their pinned SHA256 values; this is an IDEA
+model input check, not a Source-baseline rerun.
+
 On the clean server checkout, verify the exact expansion before starting GPU
 work:
 
