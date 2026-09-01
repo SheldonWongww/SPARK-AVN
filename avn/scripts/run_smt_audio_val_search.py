@@ -33,9 +33,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SPEC = (
     REPO_ROOT / "avn/experiments/smt_audio_four_method_val_search_v1.json"
 )
+MODEL = "smt_audio"
+SPEC_SCHEMA = "navtta.avn.smt_audio_val_search.v1"
+BATCH_SCHEMA = "navtta.avn.smt_audio_val_search.batch.v1"
+CAMPAIGN_TITLE = "SMT+Audio four-method AVN val search"
+BATCH_ID_PREFIX = "smt-four-val-v1"
+RUN_TAG_PREFIX = "smtv1"
+REQUIRE_PINNED_IDEA_MANIFESTS = True
 LOG_ROOT = REPO_ROOT / "avn/results/logs/smt_audio_val_search"
 RUN_ROOT = REPO_ROOT / "avn/results/runs"
 RUNNER = REPO_ROOT / "avn/scripts/eval_smt_audio.sh"
+BASELINE_ROOT = REPO_ROOT / "avn/baselines/smt_audio"
 FINGERPRINT_TOOL = REPO_ROOT / "avn/scripts/fingerprint_episode_stream.py"
 MANIFEST_VALIDATOR = REPO_ROOT / "tools/validate_run_manifest.py"
 IDEA_COLLECTOR = REPO_ROOT / "avn/scripts/collect_smt_audio_idea_source_stats.sh"
@@ -108,6 +116,7 @@ RUNTIME_FILES = (
     REPO_ROOT / "avn/baselines/smt_audio/ss_baselines/savi/config/tta_avn/multi_source/smt_audio_idea_source_stats.yaml",
     *IDEA_MANIFESTS.values(),
 )
+AUXILIARY_CHECKPOINTS: Tuple[Path, ...] = ()
 
 
 class UserError(RuntimeError):
@@ -236,9 +245,7 @@ def parse_gpus(value: str) -> Tuple[str, ...]:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Run the frozen 118-job SMT+Audio EAM/FeedTTA/ATENA/IDEA val search."
-        )
+        description="Run a frozen AVN validation hyperparameter search."
     )
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC)
     parser.add_argument("--gpus", type=parse_gpus, default=parse_gpus("0,1,2,3"))
@@ -280,7 +287,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--resume/--status requires an explicit --batch-id")
     if not args.batch_id:
         suffix = "smoke-" if args.smoke else ""
-        args.batch_id = "smt-four-val-v1-{}{}".format(suffix, utc_now(True))
+        args.batch_id = "{}-{}{}".format(BATCH_ID_PREFIX, suffix, utc_now(True))
     if len(args.batch_id) > 80 or SAFE_ID.fullmatch(args.batch_id) is None:
         parser.error("--batch-id must contain at most 80 safe characters")
     return args
@@ -293,14 +300,14 @@ def load_spec(path: Path) -> Mapping[str, object]:
         raise UserError("cannot read experiment spec: {}".format(error)) from error
     require(isinstance(spec, dict), "experiment spec must be an object")
     require(
-        spec.get("schema") == "navtta.avn.smt_audio_val_search.v1",
+        spec.get("schema") == SPEC_SCHEMA,
         "unexpected experiment schema",
     )
     require(spec.get("status") == "active", "experiment spec is not active")
     scope = spec.get("scope")
     require(isinstance(scope, dict), "spec scope is missing")
     require(scope.get("task") == "avn", "spec task must be avn")
-    require(scope.get("model") == "smt_audio", "spec model must be smt_audio")
+    require(scope.get("model") == MODEL, "spec model must be {}".format(MODEL))
     require(tuple(scope.get("methods", ())) == METHODS, "spec method order mismatch")
     require(
         tuple(scope.get("source_settings_in_order", ())) == SOURCE_SETTINGS,
@@ -326,15 +333,12 @@ def load_spec(path: Path) -> Mapping[str, object]:
     )
     scheduler = spec.get("scheduler", {})
     require(
-        scheduler.get("gpu_method_mapping") == {
-            "eam": 0, "feedtta": 1, "atena": 2, "idea": 3
-        },
+        scheduler.get("gpu_method_mapping")
+        == {method: index for index, method in enumerate(METHODS)},
         "spec GPU-method mapping mismatch",
     )
     require(
-        scheduler.get("hard_caps") == {
-            "eam": 10, "feedtta": 10, "atena": 10, "idea": 10
-        },
+        scheduler.get("hard_caps") == {method: 10 for method in METHODS},
         "spec concurrency caps mismatch",
     )
     feedtta = spec["protocol"]["methods"]["feedtta"]
@@ -354,8 +358,41 @@ def load_spec(path: Path) -> Mapping[str, object]:
 
 def method_points(spec: Mapping[str, object], method: str) -> List[Dict[str, object]]:
     search = spec["search"][method]
-    if method in ("feedtta", "atena"):
+    if "candidates" in search:
         points = [dict(item) for item in search["candidates"]]
+    elif method == "feedtta":
+        points = []
+        profiles = search["grid"]["sgr_profiles"]
+        for index, (lr, gamma, profile) in enumerate(itertools.product(
+            search["grid"]["lr"], search["grid"]["gamma"], profiles
+        )):
+            points.append({
+                "id": "f{:02d}".format(index),
+                "lr": str(lr),
+                "gamma": str(gamma),
+                "p": str(profile["p"]),
+                "alpha": str(profile["alpha"]),
+                "variant": str(profile["id"]),
+            })
+    elif method == "atena":
+        points = []
+        fixed = search["fixed"]
+        for index, (lr_pair, threshold, mix_lambda) in enumerate(
+            itertools.product(
+                search["grid"]["lr_pairs"],
+                search["grid"]["query_threshold"],
+                search["grid"]["mix_lambda"],
+            )
+        ):
+            points.append({
+                "id": "a{:02d}".format(index),
+                "lr_query": str(lr_pair["lr_query"]),
+                "lr_self": str(lr_pair["lr_self"]),
+                "mix_lambda": str(mix_lambda),
+                "query_threshold": str(threshold),
+                "self_loss_weight": str(fixed["self_loss_weight"]),
+                "variant": "low_lr_cartesian",
+            })
     elif method == "eam":
         points = []
         for index, (lr, interval) in enumerate(itertools.product(
@@ -411,8 +448,8 @@ def build_jobs(
                 )
                 if selected:
                     point_id = str(point["id"])
-                    run_tag = "smtv1-{}-{}-{}-{}".format(
-                        digest,
+                    run_tag = "{}-{}-{}-{}-{}".format(
+                        RUN_TAG_PREFIX, digest,
                         method,
                         "single" if source_setting == "single_source" else "multi",
                         point_id,
@@ -432,7 +469,10 @@ def build_jobs(
                     ))
                 global_job_id += 1
                 method_job_ids[method] += 1
-    expected = len(METHODS) if args.smoke else 118
+    expected = len(METHODS) if args.smoke else sum(
+        int(spec["search"][method]["candidate_count_per_source_setting"])
+        for method in METHODS
+    ) * len(SOURCE_SETTINGS)
     require(len(jobs) == expected, "expanded plan must contain {} jobs".format(expected))
     require(len({job.key for job in jobs}) == len(jobs), "duplicate job identity")
     require(len({job.run_tag for job in jobs}) == len(jobs), "duplicate run tag")
@@ -440,12 +480,13 @@ def build_jobs(
 
 
 def concurrency(args: argparse.Namespace) -> Mapping[str, int]:
-    return {
+    values = {
         "eam": args.eam_concurrency,
         "feedtta": args.feedtta_concurrency,
         "atena": args.atena_concurrency,
         "idea": args.idea_concurrency,
     }
+    return {method: values[method] for method in METHODS}
 
 
 def validate_runtime_limits(spec: Mapping[str, object], args: argparse.Namespace) -> None:
@@ -487,9 +528,10 @@ def validate_preflight(
         *DATASETS.values(),
         *SOURCE_DATASETS.values(),
         *CHECKPOINTS.values(),
-        *IDEA_MANIFESTS.values(),
+        *AUXILIARY_CHECKPOINTS,
+        *(IDEA_MANIFESTS.values() if REQUIRE_PINNED_IDEA_MANIFESTS else ()),
         *(
-            REPO_ROOT / "avn/baselines/smt_audio" / MODEL_CONFIG.format(setting)
+            BASELINE_ROOT / MODEL_CONFIG.format(setting)
             for setting in SOURCE_SETTINGS
         ),
     )
@@ -550,22 +592,27 @@ def validate_preflight(
         )
         expected_manifest = idea_source[setting]
         require(
-            Path(expected_manifest["manifest"]) == IDEA_MANIFESTS[setting].relative_to(REPO_ROOT),
+            Path(expected_manifest["manifest"])
+            == IDEA_MANIFESTS[setting].relative_to(REPO_ROOT),
             "{} IDEA manifest path differs from the frozen spec".format(setting),
         )
-        require(
-            sha256_file(IDEA_MANIFESTS[setting]) == expected_manifest["manifest_sha256"],
-            "{} IDEA source manifest SHA256 mismatch".format(setting),
-        )
-        manifest, _ = validate_idea_manifest(setting)
-        require(
-            manifest["dataset"]["bundle_sha256"] == expected_manifest["dataset_bundle_sha256"],
-            "{} IDEA source dataset-bundle SHA256 mismatch".format(setting),
-        )
-        require(
-            manifest["episode_order_sha256"] == expected_manifest["episode_order_sha256"],
-            "{} IDEA source episode-order SHA256 mismatch".format(setting),
-        )
+        if REQUIRE_PINNED_IDEA_MANIFESTS:
+            require(
+                sha256_file(IDEA_MANIFESTS[setting])
+                == expected_manifest["manifest_sha256"],
+                "{} IDEA source manifest SHA256 mismatch".format(setting),
+            )
+            manifest, _ = validate_idea_manifest(setting)
+            require(
+                manifest["dataset"]["bundle_sha256"]
+                == expected_manifest["dataset_bundle_sha256"],
+                "{} IDEA source dataset-bundle SHA256 mismatch".format(setting),
+            )
+            require(
+                manifest["episode_order_sha256"]
+                == expected_manifest["episode_order_sha256"],
+                "{} IDEA source episode-order SHA256 mismatch".format(setting),
+            )
 
     return Provenance(
         git_commit=commit,
@@ -608,7 +655,7 @@ def validate_idea_manifest(setting: str) -> Tuple[Mapping[str, object], str]:
         manifest, _ = load_source_manifest(
             manifest_path,
             manifest_sha,
-            model="smt_audio",
+            model=MODEL,
             source_setting=setting,
         )
         verify_manifest_assets(
@@ -647,7 +694,7 @@ def validate_idea_asset(setting: str) -> Mapping[str, str]:
         "episode_selection_manifest_sha256": manifest_sha,
         "selection_protocol_sha256": manifest["protocol_sha256"],
         "action_selection": "sample",
-        "model": "smt_audio",
+        "model": MODEL,
         "source_setting": setting,
         "trajectory_count": 128,
     }
@@ -873,17 +920,18 @@ def plan_csv(jobs: Sequence[Job]) -> str:
 
 
 def print_plan(args: argparse.Namespace, jobs: Sequence[Job]) -> None:
-    print("SMT+Audio four-method AVN val search")
+    print(CAMPAIGN_TITLE)
     print("  batch: {}".format(args.batch_id))
     print("  action protocol: sample (actual executed action)")
     print("  episodes/job: {}".format(args.episodes))
     print("  jobs: {}".format(len(jobs)))
     limits = concurrency(args)
-    for index, method in enumerate(METHODS):
+    mapping = load_spec(args.spec)["scheduler"]["gpu_method_mapping"]
+    for method in METHODS:
         count = sum(job.method == method for job in jobs)
         print(
             "  GPU {}: {:8s} jobs={} concurrency={}".format(
-                args.gpus[index], method, count, limits[method]
+                args.gpus[int(mapping[method])], method, count, limits[method]
             )
         )
     for setting in SOURCE_SETTINGS:
@@ -903,7 +951,7 @@ def batch_identity(
     jobs: Sequence[Job],
 ) -> Mapping[str, object]:
     return {
-        "schema": "navtta.avn.smt_audio_val_search.batch.v1",
+        "schema": BATCH_SCHEMA,
         "batch_id": args.batch_id,
         "created_at": utc_now(),
         "git_commit": provenance.git_commit,
@@ -1274,7 +1322,7 @@ def validate_job(
             str(MANIFEST_VALIDATOR),
             "--manifest", str(manifest_path),
             "--run-tag", job.run_tag,
-            "--model", "smt_audio",
+            "--model", MODEL,
             "--method", job.method,
             "--source-setting", job.source_setting,
             "--seed", str(SEED),
@@ -1690,7 +1738,8 @@ def phase_complete(
 def prepare_idea_assets_only(
     batch_dir: Path, args: argparse.Namespace
 ) -> int:
-    gpu = args.gpus[3]
+    spec = load_spec(args.spec)
+    gpu = args.gpus[int(spec["scheduler"]["gpu_method_mapping"]["idea"])]
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     global_lock = acquire_lock(LOG_ROOT / ".global_scheduler.lock", args.resume)
     try:
@@ -1853,7 +1902,12 @@ def run_scheduler(
                             pending.pop(job.key, None)
                     log("IDEA {} blocked: {}".format(setting, reason))
                 elif setting not in assets and setting not in collecting_settings:
-                    worker = launch_idea_collection(batch_dir, setting, args.gpus[3])
+                    idea_slot = int(
+                        spec["scheduler"]["gpu_method_mapping"]["idea"]
+                    )
+                    worker = launch_idea_collection(
+                        batch_dir, setting, args.gpus[idea_slot]
+                    )
                     active[worker.process.pid] = worker
                     collecting_settings.add(setting)
                     log("launched IDEA source collection setting={} gpu={} pid={}".format(setting, worker.gpu, worker.process.pid))

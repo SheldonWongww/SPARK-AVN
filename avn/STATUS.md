@@ -7,10 +7,12 @@ Current phase: implementation recovery and reproducibility validation.
 - ATENA has a paper/official-aligned argmax prototype.  The active AVN campaign
   deliberately selects the reviewed task-native sampled-action variant and
   enables its run-specific preflight gate without changing the shared default.
-- The active SMT+Audio development campaign is
-  `experiments/smt_audio_four_method_val_search_v1.json`: 118 validation jobs
-  for EAM, FeedTTA, the explicitly named ATENA-AVN(sample) port, and IDEA.
-  Single-source precedes multi-source independently within each fixed GPU lane.
+- The active blank-row campaign uses
+  `experiments/smt_audio_blank_val_search_v1.json` and
+  `experiments/enmus_blank_val_search_v1.json`: 384 validation jobs per model
+  for FeedTTA, the explicitly named ATENA-AVN(sample) port, and IDEA. Each of
+  the 12 model/method/source cells has 64 sub-`1e-6` candidates. Single-source
+  precedes multi-source independently within each fixed method lane.
 - AVN uses its native sampled-action protocol throughout this campaign.  The
   historical full ATENA argmax grid remains available only as a superseded
   protocol; it is not part of the active campaign.

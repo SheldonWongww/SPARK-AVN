@@ -44,8 +44,13 @@ RUN_DIR="${REPO_ROOT}/avn/results/runs/${RUN_ID}"
 STREAM_ORDER_SHA256="${NAVTTA_STREAM_ORDER_SHA256:-}"
 STREAM_CONTENT_SHA256="${NAVTTA_STREAM_CONTENT_SHA256:-}"
 EPISODE_COUNT=2000
+IDEA_SOURCE_MANIFEST=""
 
 overrides=("$@")
+if (( ${#overrides[@]} % 2 != 0 )); then
+    printf 'config overrides must be KEY VALUE pairs\n' >&2
+    exit 2
+fi
 split_override_found=0
 for ((index = 0; index + 1 < ${#overrides[@]}; index += 2)); do
     case "${overrides[$index]}" in
@@ -75,6 +80,9 @@ for ((index = 0; index + 1 < ${#overrides[@]}; index += 2)); do
     fi
     if [[ "${overrides[$index]}" == "TEST_EPISODE_COUNT" ]]; then
         EPISODE_COUNT="${overrides[$((index + 1))]}"
+    fi
+    if [[ "${overrides[$index]}" == "TTA.IDEA.SOURCE_EPISODE_MANIFEST" ]]; then
+        IDEA_SOURCE_MANIFEST="${overrides[$((index + 1))]}"
     fi
 done
 if [[ -n "${NAVTTA_EVAL_SPLIT:-}" ]]; then
@@ -118,6 +126,15 @@ mkdir -p "${REPO_ROOT}/avn/results/runs"
 mkdir "${RUN_DIR}" || { printf 'run directory already exists: %s\n' "${RUN_DIR}" >&2; exit 1; }
 mkdir -p "${RUN_DIR}/raw/model"
 
+manifest_options=()
+if [[ "${METHOD}" == "idea" ]]; then
+    test -f "${IDEA_SOURCE_MANIFEST}" || {
+        printf 'missing IDEA source episode manifest: %s\n' "${IDEA_SOURCE_MANIFEST}" >&2
+        exit 1
+    }
+    manifest_options+=(--asset-manifest "${IDEA_SOURCE_MANIFEST}")
+fi
+
 python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --output "${RUN_DIR}/manifest.json" \
     --run-id "${RUN_ID}" --task avn --benchmark mp3d \
@@ -130,6 +147,7 @@ python3 "${REPO_ROOT}/tools/create_run_manifest.py" \
     --dataset "${DATASET}" --dataset-version v1 \
     --stream-order-sha256 "${STREAM_ORDER_SHA256}" \
     --stream-content-sha256 "${STREAM_CONTENT_SHA256}" \
+    "${manifest_options[@]}" \
     --extra "$@"
 
 cd "${BASELINE_ROOT}"

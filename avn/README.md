@@ -26,11 +26,24 @@ bash avn/scripts/eval_smt_audio.sh single_source source 0
 bash avn/scripts/eval_enmus.sh multi_source tent 0
 ```
 
-The active SMT+Audio development campaign searches EAM, FeedTTA,
-ATENA-AVN(sample), and IDEA directly on the fixed single-source and
-multi-source validation streams.  It contains 118 TTA jobs, uses one fixed
-method lane per GPU, and enforces a single-before-multi barrier within each
-lane:
+The active blank-row campaign searches FeedTTA, ATENA-AVN(sample), and IDEA
+for both SMT+Audio and ENMuS on the fixed single-source and multi-source
+validation streams. Each of the 12 model/method/source cells has 64 candidates
+with every adaptation learning rate below `1e-6`; see
+[`experiments/AVN_BLANK_VAL_SEARCH_V1.md`](experiments/AVN_BLANK_VAL_SEARCH_V1.md).
+
+Inspect either 384-job model plan with:
+
+```bash
+python3 avn/scripts/run_avn_blank_val_search.py smt_audio --dry-run \
+  --batch-id avn-smt-audio-blank-val-v1-seed0
+python3 avn/scripts/run_avn_blank_val_search.py enmus --dry-run \
+  --batch-id avn-enmus-blank-val-v1-seed0
+```
+
+The earlier SMT+Audio four-method development campaign is retained for
+provenance. It contains 118 TTA jobs, uses one fixed method lane per GPU, and
+enforces a single-before-multi barrier within each lane:
 
 ```bash
 python3 avn/scripts/run_smt_audio_val_search.py --dry-run \

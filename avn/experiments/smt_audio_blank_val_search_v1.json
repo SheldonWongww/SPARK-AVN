@@ -1,0 +1,338 @@
+{
+  "schema": "navtta.avn.blank_val_search.v1",
+  "spec_id": "avn-smt-audio-blank-val-search-v1",
+  "status": "active",
+  "supersedes": [
+    "avn-smt-audio-four-method-val-search-v1"
+  ],
+  "purpose": {
+    "phase": "development",
+    "workbook_rows": [
+      7,
+      8,
+      9
+    ],
+    "hypothesis": "AVN requires sub-1e-6 adaptation rates; search FeedTTA, ATENA, and IDEA independently on each source setting.",
+    "decision": "Select one configuration per model, method, and source setting using only the complete val stream."
+  },
+  "scope": {
+    "task": "avn",
+    "benchmark": "mp3d",
+    "model": "smt_audio",
+    "source_settings_in_order": [
+      "single_source",
+      "multi_source"
+    ],
+    "methods": [
+      "feedtta",
+      "atena",
+      "idea"
+    ],
+    "cell_count": 6,
+    "candidate_count_per_cell": 64,
+    "development_jobs": 384
+  },
+  "data": {
+    "split": {
+      "name": "val",
+      "role": "development"
+    },
+    "seed": 0,
+    "episodes": 2000,
+    "max_steps_per_episode": 500,
+    "streams": {
+      "single_source": {
+        "dataset_index_sha256": "838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80",
+        "stream_order_sha256": "07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c",
+        "stream_content_sha256": "dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
+      },
+      "multi_source": {
+        "dataset_index_sha256": "45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d",
+        "stream_order_sha256": "cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525",
+        "stream_content_sha256": "deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d"
+      }
+    }
+  },
+  "source_control": {
+    "mode": "reuse_existing_sampled_action_result",
+    "rerun_in_campaign": false,
+    "evidence_status": "provisional_incomplete_provenance",
+    "action_selection": "sample",
+    "checkpoint_sha256": {
+      "single_source": "8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03",
+      "multi_source": "c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8"
+    },
+    "metrics": {
+      "single_source": {
+        "success": 0.5415,
+        "spl": 0.294229,
+        "softspl": 0.365105
+      },
+      "multi_source": {
+        "success": 0.259,
+        "spl": 0.134196,
+        "softspl": 0.248589
+      }
+    },
+    "formal_use_condition": "Revalidate matched Source manifests before promoting validation-selected rows to formal results."
+  },
+  "protocol": {
+    "processes": 1,
+    "batch_size": 1,
+    "causal_online": true,
+    "continual_across_episodes": true,
+    "reset_boundary": "fresh_process_per_candidate_and_source_setting",
+    "action_selection": "sample",
+    "action_rng": "torch_seed_0_in_each_fresh_process",
+    "method_rng": {
+      "feedtta_sgr": "dedicated_torch_generator_seed_0",
+      "atena_self_head": "forked_torch_rng_state_restored_before_next_action",
+      "idea": "dedicated_cpu_torch_generator_seed_0"
+    },
+    "augmentation_rng": "none_during_eval",
+    "episode_order_seed": 0,
+    "model_seed": 0,
+    "selection_is_independent_per_source_setting": true,
+    "methods": {
+      "feedtta": {
+        "supervision": "feedback_supervised",
+        "feedback": "binary_episode_success_after_termination",
+        "update_unit": "episode",
+        "action_port": "sample_from_policy_and_optimize_executed_action",
+        "trainable_scope": "smt_state_encoder_plus_action_head"
+      },
+      "atena": {
+        "reported_label": "ATENA-AVN(sample)",
+        "supervision": "feedback_supervised",
+        "feedback": "active_binary_episode_success_after_termination_or_self_prediction",
+        "update_unit": "episode",
+        "action_port": "sample_from_policy_and_use_executed_action_as_pseudo_expert",
+        "official_divergence": "Official VLN executes policy argmax; this AVN task-native variant samples and optimizes the action actually executed.",
+        "trainable_scope": "replay_reachable_actor_navigation_policy_plus_self_prediction_head"
+      },
+      "idea": {
+        "supervision": "unsupervised",
+        "update_unit": "action_step_prompt_only",
+        "base_policy_trainable": false,
+        "source_statistics": {
+          "description": "128_digest_pinned_source_train_trajectories_per_source_setting",
+          "action_selection": "sample",
+          "single_source": {
+            "manifest": "avn/manifests/idea_source/smt_audio_single_source_sample_seed0.json",
+            "manifest_sha256": "695c901045ca1c8234c98432cf7c8c0769ab43b7b2445e47ca6af168567345e3",
+            "dataset_bundle_sha256": "23e27db47746b427fc78f4cc4ffc4661320ab092e2dc57706ff301533cd75c9b",
+            "episode_order_sha256": "766fa784299684f72b262d2bdca5c8879eb3be223c30c9c80667a673cb53b5d9"
+          },
+          "multi_source": {
+            "manifest": "avn/manifests/idea_source/smt_audio_multi_source_sample_seed0.json",
+            "manifest_sha256": "59b0616440cfb281e50eb5b11b5126eb57bf2535f306bde4d434191590d7b49b",
+            "dataset_bundle_sha256": "6919d650ee7a55f6ca0a730e6b5947aa5ef156466a9a1bc2a572ec0a2c0b3f96",
+            "episode_order_sha256": "a6d96bdc8451c135285ea4686a41239362aed60fd759a8a758fe54ebd24580d9"
+          }
+        }
+      }
+    }
+  },
+  "search": {
+    "feedtta": {
+      "candidate_count_per_source_setting": 64,
+      "provenance": "Low-LR grid from AVN Stage-1 evidence: 1e-8/3e-8 were strongest on SMT+Audio, 3e-7 interacted favorably with gamma=1.0 on ENMuS, and >=1e-6 degraded both.",
+      "fixed": {
+        "optimizer": "Adam",
+        "sgr_mode": "paper_main",
+        "trainable_prefixes": [
+          "net.smt_state_encoder",
+          "action_distribution"
+        ]
+      },
+      "grid": {
+        "lr": [
+          "1e-10",
+          "3e-10",
+          "1e-9",
+          "3e-9",
+          "1e-8",
+          "3e-8",
+          "1e-7",
+          "3e-7"
+        ],
+        "gamma": [
+          "0.90",
+          "0.95",
+          "0.99",
+          "1.0"
+        ],
+        "sgr_profiles": [
+          {
+            "id": "paper_sgr",
+            "p": "0.05",
+            "alpha": "-0.2"
+          },
+          {
+            "id": "mild_sgr",
+            "p": "0.1",
+            "alpha": "-0.1"
+          }
+        ]
+      }
+    },
+    "atena": {
+      "candidate_count_per_source_setting": 64,
+      "provenance": "Sub-1e-6 query/self pairs; paused SMT results showed monotonic collapse at the published high-rate anchors. Threshold and lambda values are restricted to prior AVN grids.",
+      "fixed": {
+        "optimizer": "AdamW",
+        "weight_decay": 0.01,
+        "parameter_scope": "all_replay_reachable_noncritic",
+        "action_selection_protocol": "sample_from_policy",
+        "self_loss_weight": "0.1"
+      },
+      "grid": {
+        "lr_pairs": [
+          {
+            "id": "q1em9_s3em10",
+            "lr_query": "1e-9",
+            "lr_self": "3e-10"
+          },
+          {
+            "id": "q3em9_s1em9",
+            "lr_query": "3e-9",
+            "lr_self": "1e-9"
+          },
+          {
+            "id": "q1em8_s3em9",
+            "lr_query": "1e-8",
+            "lr_self": "3e-9"
+          },
+          {
+            "id": "q3em8_s1em8",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8"
+          },
+          {
+            "id": "q5em8_s1em8",
+            "lr_query": "5e-8",
+            "lr_self": "1e-8"
+          },
+          {
+            "id": "q1em7_s1em8",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8"
+          },
+          {
+            "id": "q2em7_s2em8",
+            "lr_query": "2e-7",
+            "lr_self": "2e-8"
+          },
+          {
+            "id": "q3em7_s3em8",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8"
+          }
+        ],
+        "query_threshold": [
+          "0.25",
+          "0.5",
+          "0.75",
+          "1.0"
+        ],
+        "mix_lambda": [
+          "0.25",
+          "0.5"
+        ]
+      }
+    },
+    "idea": {
+      "candidate_count_per_source_setting": 64,
+      "provenance": "The prior 3e-4 to 1e-2 IDEA grid was too aggressive for AVN; retain the implemented prompt mechanism and search only sub-1e-6 LR with the existing tau dimension.",
+      "fixed": {
+        "prompt_length": 4,
+        "capacity": 32,
+        "lambda": 0.4,
+        "fisher_beta": 0.1,
+        "optimization_steps": 50,
+        "optimizer": "AdamW",
+        "prompt_layers": 0,
+        "source_trajectories": 128
+      },
+      "grid": {
+        "lr": [
+          "1e-10",
+          "3e-10",
+          "1e-9",
+          "3e-9",
+          "1e-8",
+          "3e-8",
+          "1e-7",
+          "3e-7"
+        ],
+        "tau": [
+          "0.3",
+          "0.4",
+          "0.5",
+          "0.6",
+          "0.7",
+          "0.8",
+          "0.9",
+          "1.0"
+        ]
+      }
+    }
+  },
+  "selection": {
+    "unit": "method_and_source_setting",
+    "eligibility": [
+      "runner_exitcode_zero",
+      "manifest_valid",
+      "exact_2000_episode_stream",
+      "finite_metrics",
+      "success_not_below_matched_sampled_source"
+    ],
+    "primary_metric": "spl",
+    "tie_breakers": [
+      "success",
+      "softspl",
+      "lower_relative_parameter_drift",
+      "lower_job_id"
+    ],
+    "atena_additional_constraint": "query_rate_between_0.05_and_0.95",
+    "no_eligible_candidate": "report_pareto_frontier_and_stop_without_posthoc_grid_expansion"
+  },
+  "freeze": {
+    "grid_expansion_after_results": false,
+    "state_transfer_between_candidates_or_source_settings": false,
+    "allowed_runtime_overrides": [
+      "gpu_ids",
+      "concurrency_within_hard_caps",
+      "resume",
+      "batch_id"
+    ]
+  },
+  "scheduler": {
+    "launcher": "avn/scripts/run_avn_blank_val_search.py",
+    "gpu_method_mapping": {
+      "feedtta": 0,
+      "atena": 1,
+      "idea": 2
+    },
+    "default_concurrency": {
+      "feedtta": 5,
+      "atena": 4,
+      "idea": 2
+    },
+    "hard_caps": {
+      "feedtta": 10,
+      "atena": 10,
+      "idea": 10
+    },
+    "hard_cap_basis": "Inherited from the user-approved four-GPU AVN operational ceiling; actual values remain operator-selected.",
+    "barrier": "within_each_method_single_source_must_finish_before_multi_source",
+    "cross_method_execution": "three_method_lanes_run_concurrently"
+  },
+  "outputs": {
+    "result_role": "validation_selected",
+    "run_manifest_required": true,
+    "episode_metrics_required": true,
+    "diagnostics_required": true,
+    "raw_logs_are_git_ignored": true
+  }
+}
