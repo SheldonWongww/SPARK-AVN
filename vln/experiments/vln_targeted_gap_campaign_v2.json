@@ -28,15 +28,1451 @@
   },
   "execution_policy": {
     "source_controls": "reporting_only_not_launch_gate",
-    "development": "run_all_55_val_unseen_candidates",
+    "development": "run_all_1024_val_unseen_candidates",
     "freeze": "select_one_winner_for_each_of_16_cells_without_source_ledger_dependency",
     "evaluation": "run_all_16_frozen_winners_on_val_seen",
     "hidden_test": "run_the_5_reverie_submission_jobs_separately"
   },
   "freeze_artifact": "vln/results/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0/FROZEN.json",
   "provenance": {
-    "design_parent_git_commit": "9963bbe158e1f4314623db22e38cf00eeceda530",
-    "created_at": "2026-08-31T23:36:50+08:00",
-    "created_by": "Codex following explicit user simplification"
+    "design_parent_git_commit": "9f8debd8d5760bd7c8f5af44bbfebbf4e289944e",
+    "redesigned_at": "2026-09-01T00:00:00+08:00",
+    "redesigned_by": "Codex following explicit user request",
+    "rationale": "Paused v2 results favored lower learning rates; expand every one of the 16 cells to 64 candidates using only hyperparameter dimensions already exercised in the imported AutoDL analysis."
+  },
+  "development_candidate_jobs": 1024,
+  "development_jobs_by_gpu": {
+    "0": 256,
+    "1": 256,
+    "2": 256,
+    "3": 256
+  },
+  "candidate_grids": {
+    "reverie_eam_v2": {
+      "method": "eam",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/reverie_consistency_search_v2.json",
+        "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "optimizer": "Adam",
+        "action_selection": "argmax",
+        "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_5em8",
+              "parameters": {
+                "lr": 5e-8
+              }
+            },
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_2em7",
+              "parameters": {
+                "lr": 2e-7
+              }
+            },
+            {
+              "id": "lr_4em7",
+              "parameters": {
+                "lr": 4e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_8em7",
+              "parameters": {
+                "lr": 8e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            }
+          ]
+        },
+        {
+          "name": "replay_profile",
+          "options": [
+            {
+              "id": "m16_b4_c0p3_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m16_b4_c0p4_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p3_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p4_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p5_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.5,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p6_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.6,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m64_b8_c0p4_i2",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "m64_b16_c0p5_i4",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 16,
+                "confidence_scale": 0.5,
+                "update_interval": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "reverie_feedtta_v2": {
+      "method": "feedtta",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/reverie_consistency_search_v2.json",
+        "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "sgr_mode": "paper_main",
+        "normalize_gradient": false,
+        "optimizer_eps": 0.00001,
+        "scope_profile": "paper_full",
+        "action_selection": "argmax"
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_2em7",
+              "parameters": {
+                "lr": 2e-7
+              }
+            },
+            {
+              "id": "lr_4em7",
+              "parameters": {
+                "lr": 4e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_8em7",
+              "parameters": {
+                "lr": 8e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            },
+            {
+              "id": "lr_4em6",
+              "parameters": {
+                "lr": 0.000004
+              }
+            }
+          ]
+        },
+        {
+          "name": "feedback_profile",
+          "options": [
+            {
+              "id": "g0p7_p0p05_am0p2",
+              "parameters": {
+                "gamma": 0.7,
+                "p": 0.05,
+                "alpha": -0.2
+              }
+            },
+            {
+              "id": "g0p8_p0p05_am0p2",
+              "parameters": {
+                "gamma": 0.8,
+                "p": 0.05,
+                "alpha": -0.2
+              }
+            },
+            {
+              "id": "g0p9_p0p05_am0p2",
+              "parameters": {
+                "gamma": 0.9,
+                "p": 0.05,
+                "alpha": -0.2
+              }
+            },
+            {
+              "id": "g0p95_p0p05_am0p2",
+              "parameters": {
+                "gamma": 0.95,
+                "p": 0.05,
+                "alpha": -0.2
+              }
+            },
+            {
+              "id": "g0p99_p0p05_am0p2",
+              "parameters": {
+                "gamma": 0.99,
+                "p": 0.05,
+                "alpha": -0.2
+              }
+            },
+            {
+              "id": "g0p8_p0_a0",
+              "parameters": {
+                "gamma": 0.8,
+                "p": 0,
+                "alpha": 0
+              }
+            },
+            {
+              "id": "g0p9_p0p1_am0p1",
+              "parameters": {
+                "gamma": 0.9,
+                "p": 0.1,
+                "alpha": -0.1
+              }
+            },
+            {
+              "id": "g0p99_p0p1_am0p1",
+              "parameters": {
+                "gamma": 0.99,
+                "p": 0.1,
+                "alpha": -0.1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "reverie_idea_v2": {
+      "method": "idea",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/reverie_consistency_search_v2.json",
+        "sha256": "bdf32f658c90cbfeb31c4ff2d2e8498813c6cfc2637906fe6a66ff162d987ef0"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "prompt_length": 4,
+        "k_max": 32,
+        "lambda": 0.4,
+        "fisher_beta": 0.1,
+        "use_fisher": true,
+        "opt_steps": 50,
+        "action_selection": "argmax",
+        "policy_parameters_frozen": true
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_3em6",
+              "parameters": {
+                "lr": 0.000003
+              }
+            },
+            {
+              "id": "lr_1em5",
+              "parameters": {
+                "lr": 0.00001
+              }
+            },
+            {
+              "id": "lr_3em5",
+              "parameters": {
+                "lr": 0.00003
+              }
+            },
+            {
+              "id": "lr_1em4",
+              "parameters": {
+                "lr": 0.0001
+              }
+            },
+            {
+              "id": "lr_2em4",
+              "parameters": {
+                "lr": 0.0002
+              }
+            },
+            {
+              "id": "lr_4em4",
+              "parameters": {
+                "lr": 0.0004
+              }
+            },
+            {
+              "id": "lr_8em4",
+              "parameters": {
+                "lr": 0.0008
+              }
+            }
+          ]
+        },
+        {
+          "name": "coverage_threshold",
+          "options": [
+            {
+              "id": "tau_0p3",
+              "parameters": {
+                "tau": 0.3
+              }
+            },
+            {
+              "id": "tau_0p4",
+              "parameters": {
+                "tau": 0.4
+              }
+            },
+            {
+              "id": "tau_0p5",
+              "parameters": {
+                "tau": 0.5
+              }
+            },
+            {
+              "id": "tau_0p6",
+              "parameters": {
+                "tau": 0.6
+              }
+            },
+            {
+              "id": "tau_0p7",
+              "parameters": {
+                "tau": 0.7
+              }
+            },
+            {
+              "id": "tau_0p8",
+              "parameters": {
+                "tau": 0.8
+              }
+            },
+            {
+              "id": "tau_0p9",
+              "parameters": {
+                "tau": 0.9
+              }
+            },
+            {
+              "id": "tau_1p0",
+              "parameters": {
+                "tau": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_tent_v2": {
+      "method": "tent",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "optimizer": "Adam",
+        "action_selection": "argmax",
+        "max_grad_norm": 0
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_1em8",
+              "parameters": {
+                "lr": 1e-8
+              }
+            },
+            {
+              "id": "lr_3em8",
+              "parameters": {
+                "lr": 3e-8
+              }
+            },
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_3em7",
+              "parameters": {
+                "lr": 3e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            },
+            {
+              "id": "lr_5em6",
+              "parameters": {
+                "lr": 0.000005
+              }
+            }
+          ]
+        },
+        {
+          "name": "normalization_profile",
+          "options": [
+            {
+              "id": "all_ln_i1",
+              "parameters": {
+                "norm_scope": "ln",
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "all_ln_i2",
+              "parameters": {
+                "norm_scope": "ln",
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "last4_ln_i1",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "last4_ln_i2",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 4,
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "last9_ln_i1",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 9,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "last9_ln_i2",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 9,
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "last15_ln_i1",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 15,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "last15_ln_i2",
+              "parameters": {
+                "norm_scope": "last_k_ln",
+                "last_k_ln": 15,
+                "update_interval": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_fstta_v2": {
+      "method": "fstta",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "q": 0.1,
+        "rho": 0.95,
+        "tau": 0.7,
+        "a": 0.9,
+        "b": 1.1,
+        "reset_var_hist_each_episode": false,
+        "last_k_ln": 4,
+        "norm_scope": "last_k_ln",
+        "slow_optimizer": "AdamW",
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "fast_grad_mode": "concordant",
+        "action_selection": "argmax",
+        "max_grad_norm": 0
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate_pair",
+          "options": [
+            {
+              "id": "lf_6em7_ls_1em6",
+              "parameters": {
+                "lr_fast": 6e-7,
+                "lr_slow": 0.000001
+              }
+            },
+            {
+              "id": "lf_18em7_ls_3em6",
+              "parameters": {
+                "lr_fast": 0.0000018,
+                "lr_slow": 0.000003
+              }
+            },
+            {
+              "id": "lf_3em6_ls_5em6",
+              "parameters": {
+                "lr_fast": 0.000003,
+                "lr_slow": 0.000005
+              }
+            },
+            {
+              "id": "lf_6em6_ls_1em5",
+              "parameters": {
+                "lr_fast": 0.000006,
+                "lr_slow": 0.00001
+              }
+            },
+            {
+              "id": "lf_12em6_ls_2em5",
+              "parameters": {
+                "lr_fast": 0.000012,
+                "lr_slow": 0.00002
+              }
+            },
+            {
+              "id": "lf_18em6_ls_3em5",
+              "parameters": {
+                "lr_fast": 0.000018,
+                "lr_slow": 0.00003
+              }
+            },
+            {
+              "id": "lf_3em5_ls_5em5",
+              "parameters": {
+                "lr_fast": 0.00003,
+                "lr_slow": 0.00005
+              }
+            },
+            {
+              "id": "lf_6em5_ls_1em4",
+              "parameters": {
+                "lr_fast": 0.00006,
+                "lr_slow": 0.0001
+              }
+            }
+          ]
+        },
+        {
+          "name": "update_windows",
+          "options": [
+            {
+              "id": "m1_n4",
+              "parameters": {
+                "m": 1,
+                "n": 4
+              }
+            },
+            {
+              "id": "m1_n8",
+              "parameters": {
+                "m": 1,
+                "n": 8
+              }
+            },
+            {
+              "id": "m1_n16",
+              "parameters": {
+                "m": 1,
+                "n": 16
+              }
+            },
+            {
+              "id": "m2_n4",
+              "parameters": {
+                "m": 2,
+                "n": 4
+              }
+            },
+            {
+              "id": "m2_n8",
+              "parameters": {
+                "m": 2,
+                "n": 8
+              }
+            },
+            {
+              "id": "m3_n4",
+              "parameters": {
+                "m": 3,
+                "n": 4
+              }
+            },
+            {
+              "id": "m3_n8",
+              "parameters": {
+                "m": 3,
+                "n": 8
+              }
+            },
+            {
+              "id": "m3_n16",
+              "parameters": {
+                "m": 3,
+                "n": 16
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_eam_v2": {
+      "method": "eam",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "optimizer": "Adam",
+        "action_selection": "argmax",
+        "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_5em8",
+              "parameters": {
+                "lr": 5e-8
+              }
+            },
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_2em7",
+              "parameters": {
+                "lr": 2e-7
+              }
+            },
+            {
+              "id": "lr_4em7",
+              "parameters": {
+                "lr": 4e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_8em7",
+              "parameters": {
+                "lr": 8e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            }
+          ]
+        },
+        {
+          "name": "replay_profile",
+          "options": [
+            {
+              "id": "m16_b4_c0p3_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m16_b4_c0p4_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p3_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p4_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p5_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.5,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p6_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.6,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m64_b8_c0p4_i2",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "m64_b16_c0p5_i4",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 16,
+                "confidence_scale": 0.5,
+                "update_interval": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_feedtta_v2": {
+      "method": "feedtta",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "sgr_mode": "paper_main",
+        "normalize_gradient": false,
+        "optimizer_eps": 0.00001,
+        "scope_profile": "paper_full",
+        "action_selection": "argmax"
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_2em7",
+              "parameters": {
+                "lr": 2e-7
+              }
+            },
+            {
+              "id": "lr_4em7",
+              "parameters": {
+                "lr": 4e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_8em7",
+              "parameters": {
+                "lr": 8e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            },
+            {
+              "id": "lr_4em6",
+              "parameters": {
+                "lr": 0.000004
+              }
+            }
+          ]
+        },
+        {
+          "name": "feedback_profile",
+          "options": [
+            {
+              "id": "g0p7_p0p05_a0p1",
+              "parameters": {
+                "gamma": 0.7,
+                "p": 0.05,
+                "alpha": 0.1
+              }
+            },
+            {
+              "id": "g0p8_p0p05_a0p1",
+              "parameters": {
+                "gamma": 0.8,
+                "p": 0.05,
+                "alpha": 0.1
+              }
+            },
+            {
+              "id": "g0p9_p0p05_a0p1",
+              "parameters": {
+                "gamma": 0.9,
+                "p": 0.05,
+                "alpha": 0.1
+              }
+            },
+            {
+              "id": "g0p95_p0p05_a0p1",
+              "parameters": {
+                "gamma": 0.95,
+                "p": 0.05,
+                "alpha": 0.1
+              }
+            },
+            {
+              "id": "g0p99_p0p05_a0p1",
+              "parameters": {
+                "gamma": 0.99,
+                "p": 0.05,
+                "alpha": 0.1
+              }
+            },
+            {
+              "id": "g0p8_p0_a0",
+              "parameters": {
+                "gamma": 0.8,
+                "p": 0,
+                "alpha": 0
+              }
+            },
+            {
+              "id": "g0p8_p0p1_am0p1",
+              "parameters": {
+                "gamma": 0.8,
+                "p": 0.1,
+                "alpha": -0.1
+              }
+            },
+            {
+              "id": "g0p9_p0p1_am0p1",
+              "parameters": {
+                "gamma": 0.9,
+                "p": 0.1,
+                "alpha": -0.1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_atena_capped_v1": {
+      "method": "atena",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "action_selection": "argmax",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "optimizer": "AdamW",
+        "beta1": 0.9,
+        "beta2": 0.999,
+        "weight_decay": 0.01,
+        "episodic": false,
+        "max_grad_norm": 0,
+        "self_loss_weight": 0.1
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate_pair",
+          "options": [
+            {
+              "id": "lq_25em9_ls_3125em12",
+              "parameters": {
+                "lr_query": 2.5e-8,
+                "lr_self": 3.125e-9
+              }
+            },
+            {
+              "id": "lq_5em8_ls_625em11",
+              "parameters": {
+                "lr_query": 5e-8,
+                "lr_self": 6.25e-9
+              }
+            },
+            {
+              "id": "lq_1em7_ls_125em10",
+              "parameters": {
+                "lr_query": 1e-7,
+                "lr_self": 1.25e-8
+              }
+            },
+            {
+              "id": "lq_15em8_ls_1875em11",
+              "parameters": {
+                "lr_query": 1.5e-7,
+                "lr_self": 1.875e-8
+              }
+            },
+            {
+              "id": "lq_2em7_ls_25em9",
+              "parameters": {
+                "lr_query": 2e-7,
+                "lr_self": 2.5e-8
+              }
+            },
+            {
+              "id": "lq_25em8_ls_3125em11",
+              "parameters": {
+                "lr_query": 2.5e-7,
+                "lr_self": 3.125e-8
+              }
+            },
+            {
+              "id": "lq_3em7_ls_375em10",
+              "parameters": {
+                "lr_query": 3e-7,
+                "lr_self": 3.75e-8
+              }
+            },
+            {
+              "id": "lq_4em7_ls_5em8",
+              "parameters": {
+                "lr_query": 4e-7,
+                "lr_self": 5e-8
+              }
+            }
+          ]
+        },
+        {
+          "name": "query_threshold",
+          "options": [
+            {
+              "id": "delta_0p1",
+              "parameters": {
+                "query_threshold": 0.1
+              }
+            },
+            {
+              "id": "delta_0p15",
+              "parameters": {
+                "query_threshold": 0.15
+              }
+            },
+            {
+              "id": "delta_0p2",
+              "parameters": {
+                "query_threshold": 0.2
+              }
+            },
+            {
+              "id": "delta_0p25",
+              "parameters": {
+                "query_threshold": 0.25
+              }
+            }
+          ]
+        },
+        {
+          "name": "mixture",
+          "options": [
+            {
+              "id": "lambda_0",
+              "parameters": {
+                "mix_lambda": 0
+              }
+            },
+            {
+              "id": "lambda_0p1",
+              "parameters": {
+                "mix_lambda": 0.1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_idea_v2": {
+      "method": "idea",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_consistency_search_v2.json",
+        "sha256": "3826a042e50cf5d314dacbcb49dd344e70bc6fd09c7852932116574723023288"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "prompt_length": 4,
+        "k_max": 32,
+        "lambda": 0.4,
+        "fisher_beta": 0.1,
+        "use_fisher": true,
+        "opt_steps": 50,
+        "action_selection": "argmax",
+        "policy_parameters_frozen": true
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_3em6",
+              "parameters": {
+                "lr": 0.000003
+              }
+            },
+            {
+              "id": "lr_1em5",
+              "parameters": {
+                "lr": 0.00001
+              }
+            },
+            {
+              "id": "lr_3em5",
+              "parameters": {
+                "lr": 0.00003
+              }
+            },
+            {
+              "id": "lr_1em4",
+              "parameters": {
+                "lr": 0.0001
+              }
+            },
+            {
+              "id": "lr_2em4",
+              "parameters": {
+                "lr": 0.0002
+              }
+            },
+            {
+              "id": "lr_4em4",
+              "parameters": {
+                "lr": 0.0004
+              }
+            },
+            {
+              "id": "lr_8em4",
+              "parameters": {
+                "lr": 0.0008
+              }
+            }
+          ]
+        },
+        {
+          "name": "coverage_threshold",
+          "options": [
+            {
+              "id": "tau_0p3",
+              "parameters": {
+                "tau": 0.3
+              }
+            },
+            {
+              "id": "tau_0p4",
+              "parameters": {
+                "tau": 0.4
+              }
+            },
+            {
+              "id": "tau_0p5",
+              "parameters": {
+                "tau": 0.5
+              }
+            },
+            {
+              "id": "tau_0p6",
+              "parameters": {
+                "tau": 0.6
+              }
+            },
+            {
+              "id": "tau_0p7",
+              "parameters": {
+                "tau": 0.7
+              }
+            },
+            {
+              "id": "tau_0p8",
+              "parameters": {
+                "tau": 0.8
+              }
+            },
+            {
+              "id": "tau_0p9",
+              "parameters": {
+                "tau": 0.9
+              }
+            },
+            {
+              "id": "tau_1p0",
+              "parameters": {
+                "tau": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "r2r_ce_v1_2_eam_v1": {
+      "method": "eam",
+      "candidate_count": 64,
+      "source_spec": {
+        "path": "vln/experiments/r2r_ce_consistency_search_v3.json",
+        "sha256": "5baea01736a8d68b56694cd47691520b7e9410e4068418c06a05d9b2bfca851c"
+      },
+      "design_basis": {
+        "paused_campaign": "中间结果/logs/targeted_gap/vln-targeted-gap-campaign-v2-seed0",
+        "prior_analysis": "autodl-analysis/vln/results/analysis/hparam_search",
+        "direction": "lower_learning_rates_with_previously_used_non_lr_dimensions"
+      },
+      "base": {
+        "optimizer": "Adam",
+        "action_selection": "argmax",
+        "trainable_scope": "task_adapter_model_specific_step_replay_prefixes"
+      },
+      "dimensions": [
+        {
+          "name": "learning_rate",
+          "options": [
+            {
+              "id": "lr_5em8",
+              "parameters": {
+                "lr": 5e-8
+              }
+            },
+            {
+              "id": "lr_1em7",
+              "parameters": {
+                "lr": 1e-7
+              }
+            },
+            {
+              "id": "lr_2em7",
+              "parameters": {
+                "lr": 2e-7
+              }
+            },
+            {
+              "id": "lr_4em7",
+              "parameters": {
+                "lr": 4e-7
+              }
+            },
+            {
+              "id": "lr_6em7",
+              "parameters": {
+                "lr": 6e-7
+              }
+            },
+            {
+              "id": "lr_8em7",
+              "parameters": {
+                "lr": 8e-7
+              }
+            },
+            {
+              "id": "lr_1em6",
+              "parameters": {
+                "lr": 0.000001
+              }
+            },
+            {
+              "id": "lr_2em6",
+              "parameters": {
+                "lr": 0.000002
+              }
+            }
+          ]
+        },
+        {
+          "name": "replay_profile",
+          "options": [
+            {
+              "id": "m16_b4_c0p3_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m16_b4_c0p4_i1",
+              "parameters": {
+                "memory_size": 16,
+                "batch_size": 4,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p3_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.3,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p4_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p5_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.5,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m32_b8_c0p6_i1",
+              "parameters": {
+                "memory_size": 32,
+                "batch_size": 8,
+                "confidence_scale": 0.6,
+                "update_interval": 1
+              }
+            },
+            {
+              "id": "m64_b8_c0p4_i2",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 8,
+                "confidence_scale": 0.4,
+                "update_interval": 2
+              }
+            },
+            {
+              "id": "m64_b16_c0p5_i4",
+              "parameters": {
+                "memory_size": 64,
+                "batch_size": 16,
+                "confidence_scale": 0.5,
+                "update_interval": 4
+              }
+            }
+          ]
+        }
+      ]
+    }
   }
 }

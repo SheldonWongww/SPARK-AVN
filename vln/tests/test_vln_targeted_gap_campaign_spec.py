@@ -180,6 +180,17 @@ class TargetedGapCampaignSpecTest(unittest.TestCase):
         self.assertEqual(
             successor["base_spec"]["sha256"], _sha256(SPEC_PATH)
         )
+        self.assertEqual(successor["development_candidate_jobs"], 1024)
+        self.assertEqual(
+            successor["development_jobs_by_gpu"],
+            {"0": 256, "1": 256, "2": 256, "3": 256},
+        )
+        self.assertTrue(
+            all(
+                grid["candidate_count"] == 64
+                for grid in successor["candidate_grids"].values()
+            )
+        )
 
     def test_exact_cell_matrix_is_derived_from_pinned_workbook(self):
         inventory = self.spec["gap_inventory"]

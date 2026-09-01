@@ -27,7 +27,7 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
 
     def test_exact_search_expansion_and_fixed_gpu_queues(self):
         jobs = RUNNER.expand_search_jobs(self.spec, (0, 1, 2, 3))
-        self.assertEqual(len(jobs), 55)
+        self.assertEqual(len(jobs), 1024)
         self.assertEqual({job["queue_id"] for job in jobs}, set(range(16)))
         for job in jobs:
             self.assertEqual(job["gpu_slot"], job["queue_id"] % 4)
@@ -36,7 +36,7 @@ class TargetedGapCampaignRunnerTest(unittest.TestCase):
         counts = {
             gpu: sum(job["gpu"] == gpu for job in jobs) for gpu in range(4)
         }
-        self.assertEqual(counts, {0: 15, 1: 15, 2: 13, 3: 12})
+        self.assertEqual(counts, {0: 256, 1: 256, 2: 256, 3: 256})
 
     def test_manifest_bound_checkpoint_symlink_may_target_external_storage(self):
         with tempfile.TemporaryDirectory() as outside, \

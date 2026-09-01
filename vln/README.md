@@ -415,8 +415,9 @@ The active targeted design is the small execution overlay
 [`experiments/vln_targeted_gap_campaign_v2.json`](experiments/vln_targeted_gap_campaign_v2.json),
 which pins the complete matrix in the superseded v1 file; the concise protocol
 is in [`VLN_TARGETED_GAP_CAMPAIGN_V2_PLAN.md`](experiments/VLN_TARGETED_GAP_CAMPAIGN_V2_PLAN.md).
-It contains exactly 16 workbook gaps: 55 complete `val_unseen` search jobs,
-16 fresh frozen-winner `val_seen` jobs, and five REVERIE test submissions.
+It contains exactly 16 workbook gaps: 1,024 complete `val_unseen` search jobs
+(64 candidates per cell), 16 fresh frozen-winner `val_seen` jobs, and five
+REVERIE test submissions.
 StreamVLN and `OURS` are outside this campaign. Queue IDs are fixed; GPUs
 0--3 each own four cell queues, every cell runs one candidate at a time, and
 there is no work stealing. Source runs are outside these queues and are not

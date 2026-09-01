@@ -3,7 +3,7 @@
 
 This launcher intentionally does not reuse the older Cartesian/three-seed
 search scheduler. It executes the sixteen cells declared by the explicitly
-selected active campaign spec as sixteen serial queues: 55 development jobs,
+selected active campaign spec as sixteen serial queues: 1,024 development jobs,
 16 frozen validation jobs, and five REVERIE test submissions. Queue ``q`` is
 permanently assigned to GPU slot ``q % 4``; therefore at most four model
 processes can be active on one GPU.
@@ -29,6 +29,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -426,19 +427,90 @@ def _validate_successor_contract(spec_path, spec):
         raise CampaignError("native-v1.2 Source promotion gate is not complete")
 
 
+def _materialize_candidate_grid(name, grid):
+    """Expand a compact, ordered Cartesian grid into immutable candidates."""
+    if not isinstance(grid, dict):
+        raise CampaignError("candidate grid {} must be an object".format(name))
+    if "dimensions" not in grid:
+        return grid
+    if "candidates" in grid:
+        raise CampaignError("grid {} cannot mix dimensions and candidates".format(name))
+    dimensions = grid.get("dimensions")
+    if not isinstance(dimensions, list) or not dimensions:
+        raise CampaignError("grid {} dimensions must be a non-empty list".format(name))
+    option_sets = []
+    dimension_names = set()
+    for dimension in dimensions:
+        if not isinstance(dimension, dict) or set(dimension) != {"name", "options"}:
+            raise CampaignError("grid {} has an invalid dimension".format(name))
+        dimension_name = dimension["name"]
+        options = dimension["options"]
+        if (
+            not isinstance(dimension_name, str)
+            or not SAFE_ID_RE.fullmatch(dimension_name)
+            or dimension_name in dimension_names
+            or not isinstance(options, list)
+            or not options
+        ):
+            raise CampaignError("grid {} has an invalid dimension definition".format(name))
+        dimension_names.add(dimension_name)
+        option_ids = set()
+        for option in options:
+            if not isinstance(option, dict) or set(option) != {"id", "parameters"}:
+                raise CampaignError("grid {} has an invalid dimension option".format(name))
+            option_id = option["id"]
+            if (
+                not isinstance(option_id, str)
+                or not SAFE_ID_RE.fullmatch(option_id)
+                or option_id in option_ids
+                or not isinstance(option["parameters"], dict)
+            ):
+                raise CampaignError("grid {} has an invalid dimension option".format(name))
+            option_ids.add(option_id)
+        option_sets.append(options)
+
+    candidates = []
+    for combination in itertools.product(*option_sets):
+        candidate_id = "__".join(option["id"] for option in combination)
+        parameters = {}
+        for option in combination:
+            overlap = set(parameters).intersection(option["parameters"])
+            if overlap:
+                raise CampaignError(
+                    "grid {} dimensions both set {}".format(
+                        name, ", ".join(sorted(overlap))
+                    )
+                )
+            parameters.update(option["parameters"])
+        candidates.append({
+            "id": candidate_id,
+            "parameters": parameters,
+            "provenance": "vln-targeted-gap-campaign-v2:low-lr:" + candidate_id,
+        })
+    if len(candidates) != grid.get("candidate_count"):
+        raise CampaignError("grid {} candidate_count does not match dimensions".format(name))
+    expanded = dict(grid)
+    expanded.pop("dimensions")
+    expanded["candidates"] = candidates
+    return expanded
+
+
 def _expand_simple_successor(spec_path, successor):
-    """Resolve the small v2 execution overlay against the frozen v1 matrix.
+    """Resolve the reviewed v2 execution/search overlay against v1.
 
     The user-facing campaign only needs the reviewed 16-cell matrix and its
     search/evaluation barriers. Existing Source runs are useful for reporting,
     but their ledger packaging must not prevent TTA jobs from starting.
-    Keeping this as a narrow overlay avoids duplicating the 55-candidate matrix
-    while making the one intentional protocol change explicit.
+    The overlay may replace only the candidate grids and their derived job
+    counts.  Model code, data, checkpoints, cells, metrics, and split barriers
+    remain inherited from v1.
     """
     allowed_keys = {
         "schema", "schema_version", "spec_id", "experiment_id", "status",
         "supersedes", "superseded_by", "base_spec", "launch_readiness",
         "execution_policy", "freeze_artifact", "provenance",
+        "candidate_grids", "development_candidate_jobs",
+        "development_jobs_by_gpu",
     }
     if set(successor) != allowed_keys:
         raise CampaignError("simple successor contains unsupported fields")
@@ -488,9 +560,19 @@ def _expand_simple_successor(spec_path, successor):
         )
     ):
         raise CampaignError("simple successor lacks its execution review")
+    development_jobs = successor.get("development_candidate_jobs")
+    jobs_by_gpu = successor.get("development_jobs_by_gpu")
+    if (
+        type(development_jobs) is not int
+        or development_jobs < 64 * 16
+        or jobs_by_gpu != {"0": 256, "1": 256, "2": 256, "3": 256}
+    ):
+        raise CampaignError("simple successor development job counts changed")
     expected_policy = {
         "source_controls": "reporting_only_not_launch_gate",
-        "development": "run_all_55_val_unseen_candidates",
+        "development": "run_all_{}_val_unseen_candidates".format(
+            development_jobs
+        ),
         "freeze": (
             "select_one_winner_for_each_of_16_cells_without_source_ledger_dependency"
         ),
@@ -513,6 +595,21 @@ def _expand_simple_successor(spec_path, successor):
     ):
         resolved[key] = successor[key]
     resolved["execution_policy"] = successor["execution_policy"]
+    grids = successor.get("candidate_grids")
+    if not isinstance(grids, dict) or set(grids) != set(base["candidate_grids"]):
+        raise CampaignError("simple successor candidate-grid set changed")
+    resolved["candidate_grids"] = {
+        name: _materialize_candidate_grid(name, grid)
+        for name, grid in grids.items()
+    }
+    resolved["scope"]["development_candidate_jobs"] = development_jobs
+    resolved["schedule"]["development_jobs_by_gpu"] = jobs_by_gpu
+    resolved["selection"]["candidate_count"] = development_jobs
+    resolved["protocol"]["global_barriers"][0] = (
+        "all_{}_development_candidates_validated_before_selection".format(
+            development_jobs
+        )
+    )
     resolved["source_control"]["execution_gate"] = False
     resolved["source_control"]["role"] = (
         "existing_source_results_are_posthoc_reporting_references_only"
@@ -532,6 +629,12 @@ def _expand_simple_successor(spec_path, successor):
         "posthoc_only_using_the_users_existing_source_results"
     )
     resolved["freeze"]["artifact"] = successor["freeze_artifact"]
+    resolved["freeze"]["required_bindings"] = [
+        item.replace("all_55_development", "all_{}_development".format(
+            development_jobs
+        ))
+        for item in resolved["freeze"]["required_bindings"]
+    ]
     resolved["freeze"]["required_bindings"] = [
         item for item in resolved["freeze"]["required_bindings"]
         if item != "all_matched_source_manifest_sha256_values"
@@ -554,7 +657,7 @@ def load_spec(path=DEFAULT_SPEC):
     scope = spec.get("scope", {})
     expected_scope = {
         "task": "vln", "matrix_type": "explicit_cells_not_cartesian",
-        "cell_count": 16, "development_candidate_jobs": 55,
+        "cell_count": 16,
         "frozen_validation_jobs": 16, "hidden_test_transfer_jobs": 5,
         "source_jobs_in_cell_queues": 0,
     }
@@ -583,8 +686,6 @@ def load_spec(path=DEFAULT_SPEC):
         or schedule.get("max_active_processes_per_gpu") != 4
         or schedule.get("work_stealing") is not False
         or schedule.get("gpu_queues") != expected_queues
-        or schedule.get("development_jobs_by_gpu")
-        != {"0": 15, "1": 15, "2": 13, "3": 12}
     ):
         raise CampaignError("the immutable four-GPU queue schedule changed")
 
@@ -606,6 +707,7 @@ def load_spec(path=DEFAULT_SPEC):
     grids = spec.get("candidate_grids")
     if not isinstance(grids, dict):
         raise CampaignError("candidate_grids must be an object")
+    minimum_candidates = 64 if int(match.group(1)) >= 2 else 1
     count = 0
     for cell in cells:
         grid = grids.get(cell["grid"])
@@ -615,7 +717,7 @@ def load_spec(path=DEFAULT_SPEC):
         if (
             not isinstance(candidates, list)
             or len(candidates) != grid.get("candidate_count")
-            or not 1 <= len(candidates) <= 5
+            or not minimum_candidates <= len(candidates) <= 128
         ):
             raise CampaignError("invalid candidate count for {}".format(cell["grid"]))
         ids = [item.get("id") for item in candidates]
@@ -631,8 +733,20 @@ def load_spec(path=DEFAULT_SPEC):
         count += len(candidates)
         source_spec = grid.get("source_spec")
         _validate_reference(source_spec, "{} source spec".format(cell["grid"]))
-    if count != 55 or spec.get("selection", {}).get("candidate_count") != 55:
-        raise CampaignError("campaign must expand to exactly 55 candidates")
+    declared_count = scope.get("development_candidate_jobs")
+    if (
+        type(declared_count) is not int
+        or count != declared_count
+        or spec.get("selection", {}).get("candidate_count") != declared_count
+    ):
+        raise CampaignError("campaign candidate counts are inconsistent")
+    expected_jobs_by_gpu = Counter()
+    for cell in cells:
+        expected_jobs_by_gpu[str(cell["gpu_slot"])] += len(
+            grids[cell["grid"]]["candidates"]
+        )
+    if schedule.get("development_jobs_by_gpu") != dict(expected_jobs_by_gpu):
+        raise CampaignError("development job counts do not match GPU queues")
 
     data_bindings = spec.get("data_bindings", {})
     _validate_reference(data_bindings.get("asset_manifest"), "asset manifest")
@@ -792,8 +906,11 @@ def expand_search_jobs(spec, gpus):
                 "parameters": combine_parameters(spec, cell, candidate),
             })
             ordinal += 1
-    if len(jobs) != 55:
-        raise CampaignError("search expansion did not produce 55 jobs")
+    expected = spec["scope"]["development_candidate_jobs"]
+    if len(jobs) != expected:
+        raise CampaignError(
+            "search expansion did not produce {} jobs".format(expected)
+        )
     return jobs
 
 
@@ -887,7 +1004,7 @@ def plan_payload(spec_path, spec, batch_id, gpus):
         "gpus": list(gpus),
         "queue_count": 16,
         "queues_per_gpu": 4,
-        "development_job_count": 55,
+        "development_job_count": spec["scope"]["development_candidate_jobs"],
         "frozen_validation_job_count": 16,
         "reverie_test_job_count": 5,
         "jobs": search,
@@ -4487,8 +4604,13 @@ def freeze_campaign(spec_path, spec, batch_id, root, binding, search_jobs,
         # Recompute below and require byte-equivalent scientific content.
         pass
     results = _completed_results(root, search_jobs, require_paired=True)
-    if len(results) != 55:
-        raise CampaignError("freeze requires exactly 55 validated development runs")
+    expected_development = spec["scope"]["development_candidate_jobs"]
+    if len(results) != expected_development:
+        raise CampaignError(
+            "freeze requires exactly {} validated development runs".format(
+                expected_development
+            )
+        )
     expected_keys = {_job_key(job) for job in search_jobs}
     if {_job_key(row) for row in results} != expected_keys:
         raise CampaignError("development evidence does not match the immutable plan")
@@ -4647,12 +4769,17 @@ def load_frozen(spec_path, spec, batch_id, root, binding):
     runs = frozen.get("development_runs")
     if not isinstance(winners, list) or len(winners) != 16:
         raise CampaignError("FROZEN.json does not bind sixteen winners")
-    if not isinstance(runs, list) or len(runs) != 55:
-        raise CampaignError("FROZEN.json does not bind 55 development runs")
+    expected_development = spec["scope"]["development_candidate_jobs"]
+    if not isinstance(runs, list) or len(runs) != expected_development:
+        raise CampaignError(
+            "FROZEN.json does not bind {} development runs".format(
+                expected_development
+            )
+        )
     retry_histories = frozen.get("retry_history")
     if (
         not isinstance(retry_histories, list)
-        or len(retry_histories) != 55
+        or len(retry_histories) != expected_development
         or not valid_sha256(frozen.get("retry_history_sha256"))
         or hashlib.sha256(canonical(retry_histories).encode("utf-8")).hexdigest()
         != frozen["retry_history_sha256"]
@@ -4941,7 +5068,11 @@ def status_payload(spec, batch_id, gpus, spec_path=None):
         "runner_sha256": sha256(SCRIPT_PATH),
         "log_root": str(root.resolve()),
         "tuning_root": str(tuning_batch_root(batch_id).resolve()),
-        "expected": {"search": 55, "val-seen": 16, "reverie-test": 5},
+        "expected": {
+            "search": spec["scope"]["development_candidate_jobs"],
+            "val-seen": 16,
+            "reverie-test": 5,
+        },
         "batch_exists": (root / "BATCH.json").is_file(),
         "stages": {},
         "frozen": (root / "FROZEN.json").is_file(),
