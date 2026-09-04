@@ -6,7 +6,7 @@ from typing import List, Optional, Union, Tuple
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
-from transformers import Qwen2ForCausalLM
+from transformers import Qwen2ForCausalLM, LogitsProcessorList
 from llava.model.language_model.llava_qwen import LlavaQwenModel
 from llava.model.llava_arch import LlavaMetaForCausalLM
 from utils.utils import IGNORE_INDEX, IMAGE_TOKEN_INDEX, MEMORY_TOKEN_INDEX
@@ -362,6 +362,7 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         task_ids: Optional[torch.LongTensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
+        tta_controller = kwargs.pop("tta_controller", None)
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
         time_ids = kwargs.pop("time_ids", None)
@@ -399,12 +400,64 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         else:
             self.cache[env_id]["inputs_embeds"] = torch.cat([self.cache[env_id]["inputs_embeds"], inputs_embeds],dim=1)
         self.curr_t[env_id] += 1
-        return super().generate(
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-            inputs_embeds=self.cache[env_id]["inputs_embeds"],
-            **kwargs
-        )
+        captured = []
+        hook = None
+        action_processor = None
+        if tta_controller is not None:
+            # StreamVLN emits an action symbol as its first generated token.
+            # Capture the hidden state immediately before Qwen's final norm on
+            # the first decoding pass; a small differentiable action readout
+            # can then replay the exact four-token decision without retaining
+            # the multi-billion-parameter generation graph.
+            def capture_first_pre_norm(_module, inputs):
+                if not captured:
+                    captured.append(inputs[0][:, -1].detach().clone())
+
+            hook = self.model.norm.register_forward_pre_hook(
+                capture_first_pre_norm
+            )
+            previous_processors = kwargs.pop("logits_processor", None)
+            processors = LogitsProcessorList(
+                [] if previous_processors is None else list(previous_processors)
+            )
+
+            class FirstActionTTAProcessor(object):
+                def __init__(self):
+                    self.called = False
+
+                def __call__(self, input_ids, scores):
+                    if self.called:
+                        return scores
+                    if len(captured) != 1:
+                        raise RuntimeError(
+                            "StreamVLN action state was not captured before logits"
+                        )
+                    action = tta_controller.adapt_first_token(captured[0])
+                    forced = torch.full_like(scores, -float("inf"))
+                    token_id = tta_controller.action_token_id(action)
+                    forced[:, token_id] = scores[:, token_id]
+                    self.called = True
+                    return forced
+
+            action_processor = FirstActionTTAProcessor()
+            processors.append(action_processor)
+            kwargs["logits_processor"] = processors
+        try:
+            output = super().generate(
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                inputs_embeds=self.cache[env_id]["inputs_embeds"],
+                **kwargs
+            )
+        finally:
+            if hook is not None:
+                hook.remove()
+        if tta_controller is not None:
+            if len(captured) != 1 or not action_processor.called:
+                raise RuntimeError(
+                    "StreamVLN failed to execute first-token TTA"
+                )
+        return output
     
     def prepare_inputs_for_generation(
         self,

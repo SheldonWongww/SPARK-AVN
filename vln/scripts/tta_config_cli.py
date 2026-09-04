@@ -29,6 +29,7 @@ DISCRETE_SETTINGS = {
     "goat-r2r", "goat-reverie",
 }
 CONTINUOUS_SETTINGS = {"etpnav-r2r-ce", "bevbert-r2r-ce"}
+STREAM_SETTINGS = {"streamvln-r2r-ce"}
 METHODS = {"source", "tent", "fstta", "eam", "feedtta", "atena", "idea"}
 FEEDTTA_SCOPE_PROFILES = {
     "configured_prefixes", "paper_full", "last_crossmodal", "action_head",
@@ -605,7 +606,7 @@ def _validate_setting(setting, method, params):
         raise ValueError(
             "diagnostics_expected_episodes is supported only by discrete VLN"
         )
-    if setting not in DISCRETE_SETTINGS | CONTINUOUS_SETTINGS:
+    if setting not in DISCRETE_SETTINGS | CONTINUOUS_SETTINGS | STREAM_SETTINGS:
         raise ValueError("TTA search does not support setting {!r}".format(setting))
 
 
@@ -628,7 +629,7 @@ def translate(setting, config_path, diagnostics):
                 "FeedTTA-LLM transcript must be the current job evidence file {}"
                 .format(expected_transcript)
             )
-    if setting in DISCRETE_SETTINGS:
+    if setting in DISCRETE_SETTINGS | STREAM_SETTINGS:
         return method, _discrete(
             method, params, diagnostics,
             audit_zero_update=audit_zero_update,

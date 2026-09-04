@@ -1,6 +1,7 @@
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 import re
 import tqdm
 import torch
@@ -38,6 +39,8 @@ from habitat.tasks.utils import cartesian_to_polar
 from habitat.utils.geometry_utils import quaternion_rotate_vector
 
 from model.stream_video_vln import StreamVLNForCausalLM
+from streamvln_tta import StreamVLNTTAController
+from navtta_vln.discrete_tta import add_discrete_tta_args
 from utils.utils import dict_to_cuda
 from utils.dist import *
 from utils.utils import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
@@ -160,6 +163,15 @@ class VLNEvaluator:
         self.num_frames = args.num_frames
         self.num_future_steps = args.num_future_steps
         self.num_history = args.num_history
+        self.tta_controller = None
+        if args.tta_method != "source":
+            if env_num != 1:
+                raise ValueError("StreamVLN online TTA requires world_size=1")
+            if not args.tta_diagnostics:
+                raise ValueError("StreamVLN TTA requires --tta_diagnostics")
+            self.tta_controller = StreamVLNTTAController(
+                args, model, tokenizer
+            )
         
     
     def preprocess_depth_image(self, depth_image, do_depth_scale=True, depth_scale=1000):
@@ -333,6 +345,8 @@ class VLNEvaluator:
                 self.model.reset_for_env(idx)
                 env.current_episode = episode
                 observations = env.reset()
+                if self.tta_controller is not None:
+                    self.tta_controller.begin_episode()
                 if self.episode_order is not None:
                     reset_episode = env.current_episode
                     reset_actual = {
@@ -457,7 +471,13 @@ class VLNEvaluator:
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
                                 input_dict[key] = input_dict[key].to(torch.bfloat16)
                         
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        outputs = self.model.generate(
+                            **input_dict, do_sample=False, num_beams=1,
+                            max_new_tokens=10000, use_cache=True,
+                            return_dict_in_generate=True,
+                            past_key_values=past_key_values,
+                            tta_controller=self.tta_controller,
+                        )
                         
                         output_ids = outputs.sequences
                         past_key_values = outputs.past_key_values
@@ -487,6 +507,10 @@ class VLNEvaluator:
                 process_bar.update(1)
                 # episode_id += 1
                 metrics = env.get_metrics()
+                if self.tta_controller is not None:
+                    self.tta_controller.end_episode(
+                        0.0 if self.is_submission else metrics['success']
+                    )
                 if self.save_video:
                     images_to_video(
                         vis_frames, os.path.join(self.output_path, f'vis_{self.epoch}'), f'{scene_id}_{episode_id}', fps=6, quality=9
@@ -702,7 +726,8 @@ def eval():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    
+    add_discrete_tta_args(parser)
+
     args = parser.parse_args()
     init_distributed_mode(args)
     local_rank = args.local_rank

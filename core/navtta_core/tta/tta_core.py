@@ -20,6 +20,20 @@ import torch.nn.functional as F
 BN_LAYERS = (nn.BatchNorm1d, nn.BatchNorm2d)
 
 
+def _is_layer_norm(module):
+    """Recognize PyTorch LayerNorm and transformer RMSNorm variants.
+
+    Hugging Face keeps RMSNorm implementations model-local (for example
+    ``Qwen2RMSNorm``), so there is no stable common base class to import.
+    These modules expose the same single affine ``weight`` used by Tent-style
+    normalization adaptation.
+    """
+    return isinstance(module, nn.LayerNorm) or (
+        module.__class__.__name__.endswith("RMSNorm")
+        and isinstance(getattr(module, "weight", None), nn.Parameter)
+    )
+
+
 def softmax_entropy(logits):
     """Per-sample Shannon entropy for categorical logits."""
     return -(logits.softmax(dim=-1) * logits.log_softmax(dim=-1)).sum(dim=-1)
@@ -68,10 +82,10 @@ def configure_tta_model(
     """Freeze ``model`` and enable only the requested norm affine parameters.
 
     Supported scopes:
-      * ``first_ln``: first LayerNorm module
-      * ``last_ln``: last LayerNorm module
-      * ``last_k_ln``: last K LayerNorm modules (recommended for AVN/FSTTA)
-      * ``ln``: all LayerNorm modules
+      * ``first_ln``: first LayerNorm/RMSNorm module
+      * ``last_ln``: last LayerNorm/RMSNorm module
+      * ``last_k_ln``: last K LayerNorm/RMSNorm modules
+      * ``ln``: all LayerNorm/RMSNorm modules
       * ``gn``: all GroupNorm modules
       * ``bn``: all BatchNorm modules
       * ``all``: LayerNorm + GroupNorm + BatchNorm
@@ -94,7 +108,7 @@ def configure_tta_model(
     modules = list(model.named_modules())
     if scope in ("first_ln", "last_ln", "last_k_ln"):
         candidates = [(name, module) for name, module in modules
-                      if isinstance(module, nn.LayerNorm)]
+                      if _is_layer_norm(module)]
         if not candidates:
             raise ValueError(
                 "No LayerNorm modules found for TTA scope={!r}".format(scope)
@@ -117,7 +131,7 @@ def configure_tta_model(
         selected = []
         for name, module in modules:
             is_selected = (
-                (scope in ("ln", "all") and isinstance(module, nn.LayerNorm))
+                (scope in ("ln", "all") and _is_layer_norm(module))
                 or (scope in ("gn", "all") and isinstance(module, nn.GroupNorm))
                 or (scope in ("bn", "all") and isinstance(module, BN_LAYERS))
             )
