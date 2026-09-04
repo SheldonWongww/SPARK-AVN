@@ -1183,7 +1183,9 @@ case "${SETTING}" in
         # The two-episode smoke does not reach the second canonical scene.
         # Validate the scene that exposed the corrupted semantic PLY before
         # loading the multi-billion-parameter checkpoint.
-        if [[ "${DRY_RUN}" -eq 0 ]]; then
+        # 1pXnuDYAj8r is a val_seen scene.  Do not block val_unseen/test jobs
+        # on an asset that their canonical episode manifests never reference.
+        if [[ "${DRY_RUN}" -eq 0 && "${SPLIT}" == "val_seen" ]]; then
             "${PYTHON}" \
                 "${REPO_ROOT}/vln/scripts/verify_streamvln_scene_assets.py" \
                 1pXnuDYAj8r \

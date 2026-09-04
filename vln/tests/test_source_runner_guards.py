@@ -175,7 +175,9 @@ class SourceRunnerGuardTest(unittest.TestCase):
         )
         self.assertIn(checker, source)
         self.assertIn("1pXnuDYAj8r", source)
-        guard = 'if [[ "${DRY_RUN}" -eq 0 ]]; then'
+        guard = (
+            'if [[ "${DRY_RUN}" -eq 0 && "${SPLIT}" == "val_seen" ]]; then'
+        )
         self.assertLess(source.rindex(guard, 0, source.index(checker)), source.index(checker))
         self.assertLess(source.index(checker), source.index('MODEL_DIR="${CHECKPOINT_ROOT}/streamvln/'))
 
