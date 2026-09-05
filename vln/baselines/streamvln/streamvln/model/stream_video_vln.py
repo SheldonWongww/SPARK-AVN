@@ -404,17 +404,22 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         hook = None
         action_processor = None
         if tta_controller is not None:
-            # StreamVLN emits an action symbol as its first generated token.
-            # Capture the hidden state immediately before Qwen's final norm on
-            # the first decoding pass; a small differentiable action readout
-            # can then replay the exact four-token decision without retaining
-            # the multi-billion-parameter generation graph.
-            def capture_first_pre_norm(_module, inputs):
-                if not captured:
-                    captured.append(inputs[0][:, -1].detach().clone())
+            # The decoded response starts with the Qwen chat prefix
+            # ``<|im_start|>assistant\n``; the action is therefore not the
+            # first generation token.  Retain the latest pre-norm state and
+            # invoke TTA only when the native next token is one of the four
+            # action tokens.  Forcing the first generation token corrupts the
+            # chat prefix, which is subsequently fed back into StreamVLN's
+            # cache and leaves a <memory> token without memory features.
+            def capture_latest_pre_norm(_module, inputs):
+                hidden = inputs[0][:, -1].detach().clone()
+                if captured:
+                    captured[0] = hidden
+                else:
+                    captured.append(hidden)
 
             hook = self.model.norm.register_forward_pre_hook(
-                capture_first_pre_norm
+                capture_latest_pre_norm
             )
             previous_processors = kwargs.pop("logits_processor", None)
             processors = LogitsProcessorList(
@@ -427,6 +432,13 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
 
                 def __call__(self, input_ids, scores):
                     if self.called:
+                        return scores
+                    if scores.ndim != 2 or scores.shape[0] != 1:
+                        raise RuntimeError(
+                            "StreamVLN first-action TTA requires batch size 1"
+                        )
+                    native_token = int(scores.argmax(dim=-1).item())
+                    if native_token not in tta_controller.action_token_ids:
                         return scores
                     if len(captured) != 1:
                         raise RuntimeError(

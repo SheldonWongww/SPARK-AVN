@@ -25,7 +25,7 @@ import run_streamvln_val_unseen_search as shared
 REPO_ROOT = shared.REPO_ROOT
 RUNNER = shared.RUNNER
 TRANSLATOR = shared.TRANSLATOR
-RESULTS = REPO_ROOT / "vln/results/tuning/streamvln_val_unseen_compact_v2"
+RESULTS = REPO_ROOT / "vln/results/tuning/streamvln_val_unseen_compact_v3"
 EXPECTED_EPISODES = shared.EXPECTED_EPISODES
 METHOD_ORDER = ("tent", "fstta", "eam", "feedtta", "atena")
 
@@ -311,7 +311,7 @@ def build_jobs(methods):
         if len(candidates) != 3:
             raise RuntimeError("{} must have exactly three candidates".format(method))
         for index, (profile, parameters) in enumerate(candidates, 1):
-            tag = "streamvln-vu-compact-{}-{:02d}-v2".format(method, index)
+            tag = "streamvln-vu-compact-{}-{:02d}-v3".format(method, index)
             config = RESULTS / "configs" / (tag + ".json")
             output = RESULTS / "jobs" / tag / "val_unseen"
             shared.atomic_json(config, {

@@ -1,10 +1,11 @@
 """Online TTA binding for StreamVLN's generated action-token policy.
 
-StreamVLN emits one short autoregressive action chunk at each policy call.
-The first generated token is one of STOP/UP/LEFT/RIGHT and is therefore the
-online decision used by the shared adapters.  We adapt Qwen's final RMSNorm,
-which keeps replay small: replay inputs are the detached pre-norm hidden state
-rather than RGB-D frames or a language-model computation graph.
+StreamVLN emits one short autoregressive response at each policy call.  The
+response contains a Qwen chat prefix followed by an action chunk; the first
+action token is one of STOP/UP/LEFT/RIGHT and is the online decision used by
+the shared adapters.  We adapt Qwen's final RMSNorm, which keeps replay small:
+replay inputs are the detached pre-norm hidden state rather than RGB-D frames
+or a language-model computation graph.
 """
 
 import json
