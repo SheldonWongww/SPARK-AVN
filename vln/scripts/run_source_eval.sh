@@ -1195,10 +1195,9 @@ case "${SETTING}" in
         WORKDIR="${REPO_ROOT}/vln/baselines/streamvln"
         MODEL_DIR="${CHECKPOINT_ROOT}/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3"
         VISION_TOWER="${CACHE_ROOT}/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3"
-        PORT="$((21000 + GPU))"
         COMMAND=(
-            "${PYTHON}" -m torch.distributed.run --nproc_per_node=1
-            --master_port "${PORT}" streamvln/streamvln_eval.py
+            "${PYTHON}" -m torch.distributed.run --standalone --nnodes=1
+            --nproc_per_node=1 streamvln/streamvln_eval.py
             --model_path "${MODEL_DIR}" --habitat_config_path config/vln_r2r.yaml
             --vision_tower_path "${VISION_TOWER}"
             --eval_split "${SPLIT}" --output_path "${RESULT_ROOT}"

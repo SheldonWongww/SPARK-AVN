@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Run the 15-job compact StreamVLN val-unseen TTA search on GPUs 0, 1, 3.
+"""Run the 16-job compact StreamVLN val-unseen campaign on GPUs 0, 1, 2, 3.
 
-Source is intentionally excluded because it is run independently on GPU 2.
-Each of Tent, FSTTA, EAM, FeedTTA, and ATENA has three candidates.  Candidate
-1/2/3 of every method is assigned to GPU 0/1/3 respectively, so every GPU
-runs five jobs serially.  A failed job is recorded but does not prevent the
-remaining jobs assigned to that GPU from starting.
+The campaign contains one fresh Source evaluation plus three candidates for
+each of Tent, FSTTA, EAM, FeedTTA, and ATENA.  Jobs are distributed evenly, so
+every GPU runs four jobs serially.  A failed job is recorded but does not
+prevent the remaining jobs assigned to that GPU from starting.
 """
 
 import argparse
@@ -25,9 +24,10 @@ import run_streamvln_val_unseen_search as shared
 REPO_ROOT = shared.REPO_ROOT
 RUNNER = shared.RUNNER
 TRANSLATOR = shared.TRANSLATOR
-RESULTS = REPO_ROOT / "vln/results/tuning/streamvln_val_unseen_compact_v3"
+RESULTS = REPO_ROOT / "vln/results/tuning/streamvln_val_unseen_compact_v4"
 EXPECTED_EPISODES = shared.EXPECTED_EPISODES
-METHOD_ORDER = ("tent", "fstta", "eam", "feedtta", "atena")
+TTA_METHOD_ORDER = ("tent", "fstta", "eam", "feedtta", "atena")
+METHOD_ORDER = ("source",) + TTA_METHOD_ORDER
 
 
 # The StreamVLN adapter updates only a float32 copy of Qwen's final RMSNorm
@@ -304,14 +304,22 @@ SEARCH = {
 
 def build_jobs(methods):
     jobs = []
-    for method in METHOD_ORDER:
+    if "source" in methods:
+        tag = "streamvln-vu-compact-source-v4"
+        output = (
+            REPO_ROOT / "vln/results/source" / tag
+            / "streamvln-r2r-ce/val_unseen"
+        )
+        jobs.append((tag, "source", None, output))
+
+    for method in TTA_METHOD_ORDER:
         if method not in methods:
             continue
         candidates = SEARCH[method]
         if len(candidates) != 3:
             raise RuntimeError("{} must have exactly three candidates".format(method))
         for index, (profile, parameters) in enumerate(candidates, 1):
-            tag = "streamvln-vu-compact-{}-{:02d}-v3".format(method, index)
+            tag = "streamvln-vu-compact-{}-{:02d}-v4".format(method, index)
             config = RESULTS / "configs" / (tag + ".json")
             output = RESULTS / "jobs" / tag / "val_unseen"
             shared.atomic_json(config, {
@@ -350,13 +358,16 @@ def run_queue(gpu, jobs, dry_run):
         cmd = shared.command(job, gpu, dry_run=dry_run)
         print("launch gpu={} {}".format(gpu, " ".join(cmd)), flush=True)
         if dry_run:
-            status = subprocess.call([
-                sys.executable,
-                str(TRANSLATOR),
-                "--setting", "streamvln-r2r-ce",
-                "--config", str(config),
-                "--diagnostics", str(output / "tta_diagnostics.json"),
-            ], cwd=str(REPO_ROOT))
+            if config is None:
+                status = 0
+            else:
+                status = subprocess.call([
+                    sys.executable,
+                    str(TRANSLATOR),
+                    "--setting", "streamvln-r2r-ce",
+                    "--config", str(config),
+                    "--diagnostics", str(output / "tta_diagnostics.json"),
+                ], cwd=str(REPO_ROOT))
         else:
             try:
                 manifest = shared.create_manifest(job, gpu, cmd)
@@ -378,11 +389,11 @@ def run_queue(gpu, jobs, dry_run):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--gpus", default="0,1,3")
+    parser.add_argument("--gpus", default="0,1,2,3")
     parser.add_argument(
         "--methods",
         default=",".join(METHOD_ORDER),
-        help="comma-separated TTA subset; Source and IDEA are intentionally absent",
+        help="comma-separated subset; IDEA is intentionally absent",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -391,8 +402,8 @@ def main():
         gpus = [int(value.strip()) for value in args.gpus.split(",")]
     except ValueError as error:
         raise SystemExit("--gpus must be a comma-separated integer list") from error
-    if gpus != [0, 1, 3]:
-        raise SystemExit("this campaign is fixed to --gpus 0,1,3")
+    if gpus != [0, 1, 2, 3]:
+        raise SystemExit("this campaign is fixed to --gpus 0,1,2,3")
 
     methods = [value.strip().lower() for value in args.methods.split(",")]
     allowed = set(METHOD_ORDER)
@@ -408,7 +419,7 @@ def main():
         "gpu{}={}".format(gpu, len(queues[gpu])) for gpu in gpus
     )
     print(
-        "jobs={} {} concurrency=1/card source_gpu2=untouched".format(
+        "jobs={} {} concurrency=1/card".format(
             len(jobs), counts
         ),
         flush=True,
