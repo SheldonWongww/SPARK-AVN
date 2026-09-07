@@ -41,6 +41,7 @@ COMMON = {
     "beta2", "weight_decay", "max_grad_norm", "update_interval",
     "max_updates_per_episode", "episodic", "action_selection", "action_seed",
     "matched_feedtta_source", "diagnostics_expected_episodes",
+    "streamvln_readout_protocol",
 }
 METHOD_KEYS = {
     "source": {
@@ -494,6 +495,7 @@ def _discrete(
         "action_seed": "--tta_action_seed",
         "matched_feedtta_source": "--tta_matched_feedtta_source",
         "diagnostics_expected_episodes": "--tta_diagnostics_expected_episodes",
+        "streamvln_readout_protocol": "--tta_streamvln_readout_protocol",
     }
     method_map = {
         "lr_fast": "--tta_lr", "lr_slow": "--tta_fstta_lr_slow",
@@ -594,6 +596,15 @@ def _discrete(
 
 
 def _validate_setting(setting, method, params):
+    if "streamvln_readout_protocol" in params:
+        if setting not in STREAM_SETTINGS or method == "source":
+            raise ValueError(
+                "streamvln_readout_protocol is supported only by StreamVLN TTA"
+            )
+        if params["streamvln_readout_protocol"] not in (
+            "legacy_v4", "native_residual"
+        ):
+            raise ValueError("invalid streamvln_readout_protocol")
     feedback_provider = params.get("feedback_provider", "task_evaluator")
     if feedback_provider == "qwen2_vl_2b_v1" and setting != "goat-reverie":
         raise ValueError(

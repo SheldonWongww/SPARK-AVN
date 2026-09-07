@@ -1,0 +1,2707 @@
+{
+  "archive_inputs": [
+    {
+      "bytes": 1069718,
+      "path": "中间结果/streamvln-vu-compact-source-v4.zip",
+      "sha256": "f7aa97e33ce22a4a7606680e7fd07e1c373513ac78ca088d1da89175f2d814ef"
+    },
+    {
+      "bytes": 12780850,
+      "path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "sha256": "6ba3aae23233b77c9fdbf49538ce7289098fed18600277752f7dc9ce392dd9ab"
+    }
+  ],
+  "expected_episode_order": {
+    "binding_status": "all recorded episode-key orders match expected manifest prefix; runtime file digest not archived",
+    "dataset": {
+      "path": "vln/data/datasets/r2r/val_unseen/val_unseen.json.gz",
+      "sha256": "d173d8028537f30ab652dc5d24ead737e2b6010b6a4599f974351685710d18e8"
+    },
+    "episode_count": 1839,
+    "manifest_file_sha256": "a59f45e7fc6bbde7fdb9578e2721a0479f91e84aab4a95063edb46464899b522",
+    "order_sha256": "e5a86bf609770d0525efc0be6527d8b88c02f932a0a35e1c4162b06172307a8a",
+    "path": "vln/manifests/episode_order/r2r_vlnce_v1_3/val_unseen.json"
+  },
+  "findings": [
+    {
+      "id": "complete_and_partial",
+      "statement": "Source and 11 TTA runs contain 1839 unique episodes and final summaries. FeedTTA03 and all ATENA runs are partial snapshots (307, 284, 312, 294 episodes). Partial snapshot logs end during an unfinished episode without a traceback."
+    },
+    {
+      "id": "result_equivalence",
+      "statement": "Nine full TTA result.json files are byte-identical. Their common SR is 56.878738 and SPL 50.504075. Relative to Source, SR increases 0.217509 percentage points (93 wins, 89 losses), while SPL decreases 0.013832 percentage points."
+    },
+    {
+      "id": "trajectory_equivalence",
+      "statement": "FSTTA01/02, EAM01/02/03 and FeedTTA01/02 have exactly the same recorded action chunks as Tent01 across 1839 episodes. Tent02 differs in one action sequence with identical episode metrics. FSTTA03 differs in four sequences; Tent03 in 867. All four partial runs exactly match the corresponding Tent01 prefix."
+    },
+    {
+      "id": "source_path_confound",
+      "statement": "Tent01 and FeedTTA01/02 differ from Source in recorded action chunks for 1061/1839 episodes, although FeedTTA01/02 report final relative parameter drift 0.0. Their common small SR gain cannot be attributed to effective adaptation from these archives. The local v4 binding recomputes a float32 action readout and forces its token, so a native-score-aligned zero-update control is required to attribute changes."
+    },
+    {
+      "id": "diagnostic_limits",
+      "statement": "updates counts optimizer invocations, not confirmed nonzero parameter changes. relative_param_drift is an end-of-run measure, not a per-update trace. overridden_first_actions compares adapter decision with the controller readout decision, not with the native decoder token; all-zero values do not establish source-action equality."
+    },
+    {
+      "id": "feedback_and_gates",
+      "statement": "FSTTA01 performs only 1/459 slow updates; FeedTTA01/02 have final drift 0 despite 1839 feedback updates; EAM03 has drift 0.00271665 but zero action-sequence changes relative to Tent01. ATENA query rates are 96.13%, 63.46%, 99.66% in partial snapshots, so thresholds 0.1 and 0.15 barely limit feedback."
+    },
+    {
+      "id": "winner_scope",
+      "statement": "Tent01 wins the prescribed SPL/SR/lowest-LR rule; Tent02 is metrically tied. This is selection among archived v4 runs on a development split, not evidence of improvement over Source SPL or validation of a new runtime."
+    }
+  ],
+  "formal_result_eligible": false,
+  "full_result_sha256_equivalence_groups": {
+    "483f62cb6b66404ced94db4a16488280317e79c66c2c7eb0d31ed3e65958880a": [
+      "streamvln-vu-compact-fstta-03-v4"
+    ],
+    "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557": [
+      "streamvln-vu-compact-eam-01-v4",
+      "streamvln-vu-compact-eam-02-v4",
+      "streamvln-vu-compact-eam-03-v4",
+      "streamvln-vu-compact-feedtta-01-v4",
+      "streamvln-vu-compact-feedtta-02-v4",
+      "streamvln-vu-compact-fstta-01-v4",
+      "streamvln-vu-compact-fstta-02-v4",
+      "streamvln-vu-compact-tent-01-v4",
+      "streamvln-vu-compact-tent-02-v4"
+    ],
+    "65f479b3849cdee47d5115385b6e3bf1d06cdf80bdd9d9f5de58afca83bd8ed7": [
+      "streamvln-vu-compact-tent-03-v4"
+    ],
+    "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069": [
+      "streamvln-vu-compact-source-v4"
+    ]
+  },
+  "generated_at_utc": "2026-09-07T17:04:06.410399+00:00",
+  "missing_provenance": [
+    "actual_top_level_git_commit_at_run",
+    "actual_run_manifest",
+    "verified_runtime_checkpoint_digest",
+    "per_run_dataset_digest_binding"
+  ],
+  "provenance_status": "legacy_archive_without_actual_run_manifest",
+  "reuse_bindings": {
+    "source_val_unseen": {
+      "archive_path": "中间结果/streamvln-vu-compact-source-v4.zip",
+      "archive_sha256": "f7aa97e33ce22a4a7606680e7fd07e1c373513ac78ca088d1da89175f2d814ef",
+      "complete": true,
+      "config_sha256": null,
+      "episodes": 1839,
+      "formal_result_eligible": false,
+      "metrics": {
+        "ne": 4.878191599383334,
+        "os": 0.6438281674823274,
+        "spl": 0.5051790757291771,
+        "steps": 85.17672648178358,
+        "success": 0.5666122892876564
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "raw_config_path": null,
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln-vu-compact-source-v4/streamvln-r2r-ce/val_unseen/result.json",
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/source/streamvln-vu-compact-source-v4/streamvln-r2r-ce/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069",
+      "run_tag": "streamvln-vu-compact-source-v4"
+    },
+    "tent_val_seen_candidate": {
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "archive_sha256": "6ba3aae23233b77c9fdbf49538ce7289098fed18600277752f7dc9ce392dd9ab",
+      "complete": true,
+      "config_sha256": "2f4d750357927aad20214f30afb043cf389664490b02657677c0f96a4722d54a",
+      "episodes": 1839,
+      "formal_result_eligible": false,
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "lr": 3e-08,
+        "max_grad_norm": 1.0,
+        "norm_scope": "last_ln",
+        "optimizer": "Adam",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-01-v4/val_unseen/result.json",
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-tent-01-v4",
+      "runtime_constraint": "Archive winner belongs to v4 absolute-fp32-readout runtime. Preserve that runtime for paired legacy val_seen; a new native-score/delta parameterization is a different runtime and must be labeled accordingly.",
+      "selection_rule": "highest complete val_unseen SPL, then SR, then lowest learning rate"
+    }
+  },
+  "runs": [
+    {
+      "archive_member": "streamvln-vu-compact-source-v4/streamvln-r2r-ce/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln-vu-compact-source-v4.zip",
+      "complete": true,
+      "config": null,
+      "config_archive_member": null,
+      "config_sha256": null,
+      "console_has_traceback": false,
+      "console_log_sha256": "122c9d85a1463f05c52d9fedd0a00919f269c5b1343b31d3d66968029333aecb",
+      "diagnostics": {},
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "source",
+      "metrics": {
+        "ne": 4.878191599383334,
+        "os": 0.6438281674823274,
+        "spl": 0.5051790757291771,
+        "steps": 85.17672648178358,
+        "success": 0.5666122892876564
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.013832124854185057,
+        "delta_success_percentage_points": -0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 93,
+        "success_wins": 89
+      },
+      "raw_config_path": null,
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln-vu-compact-source-v4/streamvln-r2r-ce/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "8ce17b24b496740fcecc6f4a5bd5112793fda8fa222d09d29ff92de0101a8888",
+      "recorded_generation_calls": 39771,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/source/streamvln-vu-compact-source-v4/streamvln-r2r-ce/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069",
+      "run_tag": "streamvln-vu-compact-source-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-01-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": false,
+      "config": {
+        "candidate_id": "hamt_r2r_shape_low_lr",
+        "episodes": 1839,
+        "method": "atena",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr_query": 3e-08,
+          "lr_self": 3e-09,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.1,
+          "optimizer": "AdamW",
+          "query_threshold": 0.15,
+          "self_loss_weight": 0.1,
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.01
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "atena",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-01-v4.json",
+      "config_sha256": "e51c0cac8789020ae7022dfee17bea6f9b25117f454178c3562b1c1dca5e7c8b",
+      "console_has_traceback": false,
+      "console_log_sha256": "1c45d32d2c77a5119fcc1319d710be8a989577a4adaa5a904af8da031e0dab39",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "feedback_observation_rate": 0.9612676056338029,
+        "feedback_observed_episodes": 273,
+        "generation_calls": 5899,
+        "last_grad_norm": 5.083387851715088,
+        "max_replay_feature_abs_error": 0.0,
+        "mean_entropy": 0.36230512117619057,
+        "overridden_first_actions": 0,
+        "queried_feedback_successes": 142,
+        "queries": 273,
+        "query_prediction_accuracy": 0.4835164835164835,
+        "query_rate": 0.9612676056338029,
+        "query_threshold": 0.15,
+        "relative_param_drift": 2.4043633750636673e-09,
+        "replay_determinism_validated_episodes": 284,
+        "self_feedback_successes": 0,
+        "self_label_episodes": 11,
+        "slow_updates": 0,
+        "updates": 284
+      },
+      "episodes": 284,
+      "expected_episodes": 1839,
+      "has_final_summary": false,
+      "matches_expected_episode_order_prefix": true,
+      "method": "atena",
+      "metrics": {
+        "ne": 5.081310326997584,
+        "os": 0.6584507042253521,
+        "spl": 0.46743323120923985,
+        "steps": 81.82042253521126,
+        "success": 0.5387323943661971
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.15216214843785658,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 155,
+          "os": 17,
+          "spl": 76,
+          "steps": 136,
+          "success": 22
+        },
+        "differing_recorded_action_chunk_episode_count": 161,
+        "episodes": 284,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 129,
+        "reference_metrics": {
+          "ne": 5.2084792991509845,
+          "os": 0.6549295774647887,
+          "spl": 0.4689548526936184,
+          "steps": 81.80281690140845,
+          "success": 0.5387323943661971
+        },
+        "success_losses": 11,
+        "success_wins": 11
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 284,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 284,
+        "reference_metrics": {
+          "ne": 5.081310326997584,
+          "os": 0.6584507042253521,
+          "spl": 0.46743323120923985,
+          "steps": 81.82042253521126,
+          "success": 0.5387323943661971
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-01-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "3e71aee0d73b77966d3b414e34db6da8c300f0a69121d75645e4562ca0ec5fa4",
+      "recorded_generation_calls": 5899,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "fa74b430948085636c6f0b60cdfcd7c87005b8a350a1a3391de144625e8802d0",
+      "run_tag": "streamvln-vu-compact-atena-01-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 284
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-02-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": false,
+      "config": {
+        "candidate_id": "etpnav_r2r_ce_shape_middle_lr",
+        "episodes": 1839,
+        "method": "atena",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr_query": 1e-07,
+          "lr_self": 1e-08,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.3,
+          "self_loss_weight": 0.1,
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.01
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "atena",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-02-v4.json",
+      "config_sha256": "0e71279687472b55ea0129a6a563592ba0a382bc09e89918ed76c4b2f191466d",
+      "console_has_traceback": false,
+      "console_log_sha256": "3ec3ce390a0e73033bd7dc55b0ee35633f3ceed775fbf47f025dc919f1683c1c",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "feedback_observation_rate": 0.6346153846153846,
+        "feedback_observed_episodes": 198,
+        "generation_calls": 6495,
+        "last_grad_norm": 3.8322486877441406,
+        "max_replay_feature_abs_error": 0.0,
+        "mean_entropy": 0.25479422767204946,
+        "overridden_first_actions": 0,
+        "queried_feedback_successes": 82,
+        "queries": 198,
+        "query_prediction_accuracy": 0.5858585858585859,
+        "query_rate": 0.6346153846153846,
+        "query_threshold": 0.3,
+        "relative_param_drift": 3.659853931026191e-08,
+        "replay_determinism_validated_episodes": 312,
+        "self_feedback_successes": 0,
+        "self_label_episodes": 114,
+        "slow_updates": 0,
+        "updates": 312
+      },
+      "episodes": 312,
+      "expected_episodes": 1839,
+      "has_final_summary": false,
+      "matches_expected_episode_order_prefix": true,
+      "method": "atena",
+      "metrics": {
+        "ne": 5.0596458426682664,
+        "os": 0.6698717948717948,
+        "spl": 0.46850787848706243,
+        "steps": 81.98717948717949,
+        "success": 0.5448717948717948
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": 0.16030133190629292,
+        "delta_success_percentage_points": 0.6410256410256387,
+        "differing_metric_episode_counts": {
+          "ne": 175,
+          "os": 22,
+          "spl": 91,
+          "steps": 155,
+          "success": 28
+        },
+        "differing_recorded_action_chunk_episode_count": 181,
+        "episodes": 312,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 137,
+        "reference_metrics": {
+          "ne": 5.187631912081717,
+          "os": 0.657051282051282,
+          "spl": 0.4669048651679995,
+          "steps": 83.9198717948718,
+          "success": 0.5384615384615384
+        },
+        "success_losses": 13,
+        "success_wins": 15
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 312,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 312,
+        "reference_metrics": {
+          "ne": 5.0596458426682664,
+          "os": 0.6698717948717948,
+          "spl": 0.46850787848706243,
+          "steps": 81.98717948717949,
+          "success": 0.5448717948717948
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-02-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-02-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "e780aba2848f467d270f844662212c4040fdbeed8860deb5e280d176bb9efea7",
+      "recorded_generation_calls": 6495,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-02-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "8a8cc50147bd184e840a67d2da516e51c085d00c96e729a15c83e6b5adcc0d21",
+      "run_tag": "streamvln-vu-compact-atena-02-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 312
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-03-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": false,
+      "config": {
+        "candidate_id": "bevbert_r2r_ce_shape_high_lr",
+        "episodes": 1839,
+        "method": "atena",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr_query": 3e-07,
+          "lr_self": 3e-08,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.25,
+          "optimizer": "AdamW",
+          "query_threshold": 0.1,
+          "self_loss_weight": 0.1,
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.01
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "atena",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-03-v4.json",
+      "config_sha256": "3cac2299f2a3e0072b82c0736c2f8f3fc4a0dcd62429f8f7a6ece5a1b0f4342d",
+      "console_has_traceback": false,
+      "console_log_sha256": "9efbb282e18e60dd35d529b105f8407005bb80ed9c863fc087babf502c6600f3",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "feedback_observation_rate": 0.9965986394557823,
+        "feedback_observed_episodes": 293,
+        "generation_calls": 6051,
+        "last_grad_norm": 4.969085216522217,
+        "max_replay_feature_abs_error": 0.0,
+        "mean_entropy": 0.3263624957257195,
+        "overridden_first_actions": 0,
+        "queried_feedback_successes": 161,
+        "queries": 293,
+        "query_prediction_accuracy": 0.5017064846416383,
+        "query_rate": 0.9965986394557823,
+        "query_threshold": 0.1,
+        "relative_param_drift": 2.3023271751299035e-06,
+        "replay_determinism_validated_episodes": 294,
+        "self_feedback_successes": 0,
+        "self_label_episodes": 1,
+        "slow_updates": 0,
+        "updates": 294
+      },
+      "episodes": 294,
+      "expected_episodes": 1839,
+      "has_final_summary": false,
+      "matches_expected_episode_order_prefix": true,
+      "method": "atena",
+      "metrics": {
+        "ne": 4.995322734728886,
+        "os": 0.6666666666666666,
+        "spl": 0.4741585721444567,
+        "steps": 81.05442176870748,
+        "success": 0.5510204081632653
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": 0.4629633349094775,
+        "delta_success_percentage_points": 1.0204081632652962,
+        "differing_metric_episode_counts": {
+          "ne": 164,
+          "os": 20,
+          "spl": 85,
+          "steps": 145,
+          "success": 25
+        },
+        "differing_recorded_action_chunk_episode_count": 170,
+        "episodes": 294,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 130,
+        "reference_metrics": {
+          "ne": 5.156515289788597,
+          "os": 0.6530612244897959,
+          "spl": 0.46952893879536195,
+          "steps": 83.73469387755102,
+          "success": 0.5408163265306123
+        },
+        "success_losses": 11,
+        "success_wins": 14
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 294,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 294,
+        "reference_metrics": {
+          "ne": 4.995322734728886,
+          "os": 0.6666666666666666,
+          "spl": 0.4741585721444567,
+          "steps": 81.05442176870748,
+          "success": 0.5510204081632653
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-atena-03-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-03-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "a873d43e23dc86ebd9a9a1724dceec5cf6a98bfe7ed58a42fad232fd1963495b",
+      "recorded_generation_calls": 6051,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-atena-03-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "31d3189e11940251f1e4c0db57c793b9cdf0f56d9a90ee0d8cb2c9971b86aed6",
+      "run_tag": "streamvln-vu-compact-atena-03-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 294
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-01-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "bevbert_r2r_ce_transfer",
+        "episodes": 1839,
+        "method": "eam",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 16,
+          "confidence_scale": 0.5,
+          "lr": 5e-08,
+          "max_grad_norm": 1.0,
+          "memory_size": 64,
+          "optimizer": "Adam",
+          "update_interval": 4,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "eam",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-01-v4.json",
+      "config_sha256": "b9b03788c00fb4292e3ec77b7e1248ae2ae9afa60d4817cbc5adc971e6b50670",
+      "console_has_traceback": false,
+      "console_log_sha256": "7e9e5b66451fd352f4d3353b252953f98d6b293a2c0a6147c045b29e97b3db13",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "aux_gate_rate": 0.8451195219123506,
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.060063686221838,
+        "mean_entropy": 0.33995378309058105,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 1.7828958220889035e-07,
+        "slow_updates": 0,
+        "source_gate_rate": 0.8451195219123506,
+        "update_attempts": 10037,
+        "updates": 10037,
+        "updates_skipped_no_reliable": 0
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "eam",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-01-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-eam-01-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-02-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "reverie_transfer",
+        "episodes": 1839,
+        "method": "eam",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 8,
+          "confidence_scale": 0.4,
+          "lr": 2e-07,
+          "max_grad_norm": 1.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "eam",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-02-v4.json",
+      "config_sha256": "3c580ec5024a38c869e2294a91f6f476ce63501b5e2c867cf3bba5a8344f9b35",
+      "console_has_traceback": false,
+      "console_log_sha256": "b5b0235c92c1480d03f2f3984f996f8a474e803560b20d6a967d91abddabefad",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "aux_gate_rate": 0.7248754980079681,
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.06904775649309158,
+        "mean_entropy": 0.3399106139328938,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 0.00025849841767922044,
+        "slow_updates": 0,
+        "source_gate_rate": 0.7249003984063745,
+        "update_attempts": 40153,
+        "updates": 40146,
+        "updates_skipped_no_reliable": 7
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "eam",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-02-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-02-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-02-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-eam-02-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-03-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "etpnav_r2r_ce_transfer",
+        "episodes": 1839,
+        "method": "eam",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 8,
+          "confidence_scale": 0.4,
+          "lr": 6e-07,
+          "max_grad_norm": 1.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "eam",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-03-v4.json",
+      "config_sha256": "14b6f2a34aae71edd9b505e89cf97e9909f1814e37b0769b0114bc518b686014",
+      "console_has_traceback": false,
+      "console_log_sha256": "ec7b27a027c8ddbd8e12e16137be6afa268506a54c776b7da65bc83616612aa7",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "aux_gate_rate": 0.7265189243027889,
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.06326127052307129,
+        "mean_entropy": 0.33911095137478775,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 0.002716649789363146,
+        "slow_updates": 0,
+        "source_gate_rate": 0.7249003984063745,
+        "update_attempts": 40153,
+        "updates": 40146,
+        "updates_skipped_no_reliable": 7
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "eam",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-eam-03-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-03-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-eam-03-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-eam-03-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-01-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "hamt_r2r_shape_low_lr",
+        "episodes": 1839,
+        "method": "feedtta",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "gamma": 0.7,
+          "lr": 3e-09,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "paper_full",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "feedtta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-01-v4.json",
+      "config_sha256": "8d0aa25ab926588f7e6a8c3fcd75e2e377a7507ceb6f66a44f1d1f8e3dd4a0f9",
+      "console_has_traceback": false,
+      "console_log_sha256": "3434073bd3cf5c6cdc112111ab13ea153ea2fd2e3e77fa023cf587c813ed3a28",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "failed_feedback_episodes": 793,
+        "feedback_episodes": 1839,
+        "feedback_type": "binary_episode_success",
+        "gamma": 0.7,
+        "generation_calls": 40160,
+        "last_grad_norm": 0.0701468363404274,
+        "mean_entropy": 0.3399536987978345,
+        "overridden_first_actions": 0,
+        "regularizer_variant": "gradient_scaling",
+        "relative_param_drift": 0.0,
+        "reversal_probability": 0.05,
+        "reversal_scale": 0.1,
+        "slow_updates": 0,
+        "successful_feedback_episodes": 1046,
+        "updates": 1839
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "feedtta",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-01-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-feedtta-01-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-02-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "goat_r2r_shape_middle_lr",
+        "episodes": 1839,
+        "method": "feedtta",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "gamma": 0.95,
+          "lr": 1e-08,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "paper_full",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "feedtta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-02-v4.json",
+      "config_sha256": "d707710fd023f696f637b47a35c8d14697170e30947bace5d9f01edc7e13ac38",
+      "console_has_traceback": false,
+      "console_log_sha256": "6e1a16196d295a8911e69b2e8d2e43d9ecd00dcd2a22eefaa095450c54f6bc65",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "failed_feedback_episodes": 793,
+        "feedback_episodes": 1839,
+        "feedback_type": "binary_episode_success",
+        "gamma": 0.95,
+        "generation_calls": 40160,
+        "last_grad_norm": 0.2869555354118347,
+        "mean_entropy": 0.3399536992378315,
+        "overridden_first_actions": 0,
+        "regularizer_variant": "gradient_scaling",
+        "relative_param_drift": 0.0,
+        "reversal_probability": 0.05,
+        "reversal_scale": 0.1,
+        "slow_updates": 0,
+        "successful_feedback_episodes": 1046,
+        "updates": 1839
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "feedtta",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-02-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-02-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-02-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-feedtta-02-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-03-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": false,
+      "config": {
+        "candidate_id": "reverie_shape_high_lr",
+        "episodes": 1839,
+        "method": "feedtta",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": -0.2,
+          "gamma": 0.7,
+          "lr": 3e-08,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "paper_full",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "feedtta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-03-v4.json",
+      "config_sha256": "5608c6720f9fc4e2fa6e8c3c7022804e0a88249ab91daf74f9d9237e6746f6b9",
+      "console_has_traceback": false,
+      "console_log_sha256": "453ee761bbae472ee6bfe892890a5e79054e6897b5eea851a4de34fc9de91362",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "failed_feedback_episodes": 139,
+        "feedback_episodes": 307,
+        "feedback_type": "binary_episode_success",
+        "gamma": 0.7,
+        "generation_calls": 6406,
+        "last_grad_norm": 0.16133961081504822,
+        "mean_entropy": 0.388777376712509,
+        "overridden_first_actions": 0,
+        "regularizer_variant": "stochastic_gradient_reversion",
+        "relative_param_drift": 1.7174023314581177e-09,
+        "reversal_probability": 0.05,
+        "reversal_scale": -0.2,
+        "slow_updates": 0,
+        "successful_feedback_episodes": 168,
+        "updates": 307
+      },
+      "episodes": 307,
+      "expected_episodes": 1839,
+      "has_final_summary": false,
+      "matches_expected_episode_order_prefix": true,
+      "method": "feedtta",
+      "metrics": {
+        "ne": 5.073628697025587,
+        "os": 0.6644951140065146,
+        "spl": 0.4702347984680402,
+        "steps": 82.19543973941369,
+        "success": 0.5472312703583062
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": 0.46429135675071787,
+        "delta_success_percentage_points": 0.9771986970684043,
+        "differing_metric_episode_counts": {
+          "ne": 174,
+          "os": 22,
+          "spl": 90,
+          "steps": 154,
+          "success": 27
+        },
+        "differing_recorded_action_chunk_episode_count": 180,
+        "episodes": 307,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 133,
+        "reference_metrics": {
+          "ne": 5.21067196162909,
+          "os": 0.6514657980456026,
+          "spl": 0.46559188490053305,
+          "steps": 84.25732899022802,
+          "success": 0.5374592833876222
+        },
+        "success_losses": 12,
+        "success_wins": 15
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 307,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 307,
+        "reference_metrics": {
+          "ne": 5.073628697025587,
+          "os": 0.6644951140065146,
+          "spl": 0.4702347984680402,
+          "steps": 82.19543973941369,
+          "success": 0.5472312703583062
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-feedtta-03-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-03-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "341b27e61ec2e48913a2d918e9514a7b2bfe61d90c0b60179319af16955d6bc6",
+      "recorded_generation_calls": 6406,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-feedtta-03-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "792ab61540c9f0d303d190da6a393b04ada820cdd42b62ab33212755749ee216",
+      "run_tag": "streamvln-vu-compact-feedtta-03-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 307
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-01-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "conservative_m3_n4",
+        "episodes": 1839,
+        "method": "fstta",
+        "namespace": "tuning",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 3e-08,
+          "lr_slow": 1e-07,
+          "m": 3,
+          "max_grad_norm": 1.0,
+          "n": 4,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "fstta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-01-v4.json",
+      "config_sha256": "f6cad34a198f495171489fa1c27520edc33d7adc339aa88a4e9b3404a77b1c3f",
+      "console_has_traceback": false,
+      "console_log_sha256": "f0ace870e8e73ddc85a7e33dc66b26dc13039df45593528169d301c35aa5048e",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.11119038611650467,
+        "last_slow_step_norm": 0.0,
+        "mean_entropy": 0.3399536905860614,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 7.442076954689014e-10,
+        "relative_slow_anchor_drift": 4.007272291772779e-10,
+        "slow_attempts": 459,
+        "slow_skipped_updates": 458,
+        "slow_updates": 1,
+        "updates": 12746
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "fstta",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-01-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-fstta-01-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-02-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "middle_m3_n4",
+        "episodes": 1839,
+        "method": "fstta",
+        "namespace": "tuning",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 1e-07,
+          "lr_slow": 3e-07,
+          "m": 3,
+          "max_grad_norm": 1.0,
+          "n": 4,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "fstta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-02-v4.json",
+      "config_sha256": "372f97a6f66c66596a0fbb168d0c1d3db3665dd3da1274d5e99a37cf94ac0421",
+      "console_has_traceback": false,
+      "console_log_sha256": "cf2ca20598a4ff47451c7d87f2fa5e097fab39bfba3bb38d6b54dd63eecff115",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.11119262874126434,
+        "last_slow_step_norm": 2.3888378564151935e-07,
+        "mean_entropy": 0.33995361811717933,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 5.413320991465298e-07,
+        "relative_slow_anchor_drift": 5.430713940768328e-07,
+        "slow_attempts": 459,
+        "slow_skipped_updates": 139,
+        "slow_updates": 320,
+        "updates": 12746
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "fstta",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-02-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-02-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-02-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-fstta-02-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-03-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "r2r_ce_m4_n16_transfer",
+        "episodes": 1839,
+        "method": "fstta",
+        "namespace": "tuning",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 3e-07,
+          "lr_slow": 1e-06,
+          "m": 4,
+          "max_grad_norm": 1.0,
+          "n": 16,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "fstta",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-03-v4.json",
+      "config_sha256": "4f7fd745a6072da843d087bdec0cd2b45b6808e44c429b636860f727f3e0ef09",
+      "console_has_traceback": false,
+      "console_log_sha256": "bc160c8873f88a64aa2ccc6c16d56a83e0846a45e14d7d389e4281c5b1653ead",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.019518882036209106,
+        "last_slow_step_norm": 3.691035453812219e-05,
+        "mean_entropy": 0.3398756649522915,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 1.859626718214713e-05,
+        "relative_slow_anchor_drift": 1.778253135853447e-05,
+        "slow_attempts": 114,
+        "slow_skipped_updates": 0,
+        "slow_updates": 114,
+        "updates": 9372
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "fstta",
+      "metrics": {
+        "ne": 4.794515587128658,
+        "os": 0.6438281674823274,
+        "spl": 0.5044990441497811,
+        "steps": 85.99510603588907,
+        "success": 0.5682436106579662
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.0680031579396001,
+        "delta_success_percentage_points": 0.16313213703098572,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 134,
+          "spl": 562,
+          "steps": 900,
+          "success": 181
+        },
+        "differing_recorded_action_chunk_episode_count": 1060,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 816,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 92
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": -0.054171033085415043,
+        "delta_success_percentage_points": -0.05437737901033968,
+        "differing_metric_episode_counts": {
+          "ne": 3,
+          "os": 1,
+          "spl": 3,
+          "steps": 3,
+          "success": 1
+        },
+        "differing_recorded_action_chunk_episode_count": 4,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "oLBMNvg9in8",
+            1452
+          ],
+          [
+            "oLBMNvg9in8",
+            1456
+          ],
+          [
+            "oLBMNvg9in8",
+            1457
+          ]
+        ],
+        "identical_full_episode_result_rows": 1836,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 1,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-fstta-03-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-03-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "b8b49520549a4e1dfad20262b9b397d52e9fdfb0ac1a56dbd21edc0b48d93581",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-fstta-03-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "483f62cb6b66404ced94db4a16488280317e79c66c2c7eb0d31ed3e65958880a",
+      "run_tag": "streamvln-vu-compact-fstta-03-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-01-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "low_lr_bracket",
+        "episodes": 1839,
+        "method": "tent",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr": 3e-08,
+          "max_grad_norm": 1.0,
+          "norm_scope": "last_ln",
+          "optimizer": "Adam",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "tent",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-01-v4.json",
+      "config_sha256": "2f4d750357927aad20214f30afb043cf389664490b02657677c0f96a4722d54a",
+      "console_has_traceback": false,
+      "console_log_sha256": "930c6bd364f9dba6a855dff0950c7502e25c9a7664c4877bb6294471dbc90957",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.10709145665168762,
+        "mean_entropy": 0.3399533830564478,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 2.028871506354335e-07,
+        "slow_updates": 0,
+        "updates": 40160
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "tent",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 0,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-01-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-01-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "9012b63a257c50839353889fec5fb795a996755d14bf39517c3d2b8ff3936769",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-01-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-tent-01-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-02-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "middle_lr_bracket",
+        "episodes": 1839,
+        "method": "tent",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr": 1e-07,
+          "max_grad_norm": 1.0,
+          "norm_scope": "last_ln",
+          "optimizer": "Adam",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "tent",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-02-v4.json",
+      "config_sha256": "6911a6a906cd0636a9391dcb5ea63d6be588f9f513060b9f1e2ef1f77e46d0df",
+      "console_has_traceback": false,
+      "console_log_sha256": "87cd8eea320e9d1afb1a3991aa5820dd88e2cbe4d306c75a3d36a69e827141fa",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 40160,
+        "last_grad_norm": 0.10705142468214035,
+        "mean_entropy": 0.3399468326214654,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 1.3150650374882389e-05,
+        "slow_updates": 0,
+        "updates": 40160
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "tent",
+      "metrics": {
+        "ne": 4.7914122397945045,
+        "os": 0.6443719412724307,
+        "spl": 0.5050407544806352,
+        "steps": 85.99293094072866,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.013832124854185057,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 1011,
+          "os": 133,
+          "spl": 563,
+          "steps": 902,
+          "success": 182
+        },
+        "differing_recorded_action_chunk_episode_count": 1061,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 815,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 89,
+        "success_wins": 93
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": 0.0,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 0,
+          "os": 0,
+          "spl": 0,
+          "steps": 0,
+          "success": 0
+        },
+        "differing_recorded_action_chunk_episode_count": 1,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "QUCTc6BB5sX",
+            190
+          ]
+        ],
+        "identical_full_episode_result_rows": 1839,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 0,
+        "success_wins": 0
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-02-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-02-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "8799c104191acd013332a2d18ab3dad71bd776b2ab308aab1bac6db1cda19690",
+      "recorded_generation_calls": 40160,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-02-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-tent-02-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    },
+    {
+      "archive_config_matches_local_tracked_config": true,
+      "archive_member": "streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-03-v4/val_unseen/result.json",
+      "archive_path": "中间结果/streamvln_val_unseen_compact_v4.zip",
+      "complete": true,
+      "config": {
+        "candidate_id": "r2r_ce_low_lr_transfer",
+        "episodes": 1839,
+        "method": "tent",
+        "namespace": "tuning",
+        "parameters": {
+          "action_selection": "argmax",
+          "lr": 3e-07,
+          "max_grad_norm": 1.0,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "schema": "navtta.vln_tta_job.v1",
+        "search_method": "tent",
+        "selection_basis": "R2R/REVERIE transfer; EAM also uses ETPNav/BEVBert R2R-CE targeted-gap evidence",
+        "setting": "streamvln-r2r-ce",
+        "split": "val_unseen",
+        "stage": "compact_val_unseen_search"
+      },
+      "config_archive_member": "streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-03-v4.json",
+      "config_sha256": "fa26d0278271f7a3772c1243f76266f93286884005381e644374b35c52001020",
+      "console_has_traceback": false,
+      "console_log_sha256": "45260e051aab58b1a97b76d6af8f0ef177acb44c9773ac21d35c79ad501b5ec8",
+      "diagnostics": {
+        "adaptation_scope": "float32_qwen_final_rmsnorm_action_readout",
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "decision_space": "first_generated_action_token",
+        "generation_calls": 39742,
+        "last_grad_norm": 0.14216025173664093,
+        "mean_entropy": 0.3370767752345535,
+        "overridden_first_actions": 0,
+        "relative_param_drift": 0.0003705585841089487,
+        "slow_updates": 0,
+        "updates": 39742
+      },
+      "episodes": 1839,
+      "expected_episodes": 1839,
+      "has_final_summary": true,
+      "matches_expected_episode_order_prefix": true,
+      "method": "tent",
+      "metrics": {
+        "ne": 4.814420138588028,
+        "os": 0.6438281674823274,
+        "spl": 0.5047373943965482,
+        "steps": 85.09135399673735,
+        "success": 0.5687873844480696
+      },
+      "metrics_unit": "fraction_for_success_spl_os;meters_for_ne;actions_for_steps",
+      "paired_vs_source": {
+        "delta_spl_percentage_points": -0.0441681332628896,
+        "delta_success_percentage_points": 0.2175095160413254,
+        "differing_metric_episode_counts": {
+          "ne": 995,
+          "os": 138,
+          "spl": 562,
+          "steps": 900,
+          "success": 184
+        },
+        "differing_recorded_action_chunk_episode_count": 1039,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            43
+          ],
+          [
+            "2azQ1b91cZZ",
+            71
+          ],
+          [
+            "2azQ1b91cZZ",
+            72
+          ]
+        ],
+        "identical_full_episode_result_rows": 832,
+        "reference_metrics": {
+          "ne": 4.878191599383334,
+          "os": 0.6438281674823274,
+          "spl": 0.5051790757291771,
+          "steps": 85.17672648178358,
+          "success": 0.5666122892876564
+        },
+        "success_losses": 90,
+        "success_wins": 94
+      },
+      "paired_vs_tent01": {
+        "delta_spl_percentage_points": -0.03033600840870454,
+        "delta_success_percentage_points": 0.0,
+        "differing_metric_episode_counts": {
+          "ne": 829,
+          "os": 119,
+          "spl": 485,
+          "steps": 741,
+          "success": 168
+        },
+        "differing_recorded_action_chunk_episode_count": 867,
+        "episodes": 1839,
+        "first_differing_recorded_action_chunk_episode_keys": [
+          [
+            "2azQ1b91cZZ",
+            723
+          ],
+          [
+            "2azQ1b91cZZ",
+            757
+          ],
+          [
+            "2azQ1b91cZZ",
+            759
+          ]
+        ],
+        "identical_full_episode_result_rows": 1003,
+        "reference_metrics": {
+          "ne": 4.7914122397945045,
+          "os": 0.6443719412724307,
+          "spl": 0.5050407544806352,
+          "steps": 85.99293094072866,
+          "success": 0.5687873844480696
+        },
+        "success_losses": 84,
+        "success_wins": 84
+      },
+      "raw_config_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/configs/streamvln-vu-compact-tent-03-v4.json",
+      "raw_result_path": "vln/results/legacy/streamvln_compact_v4_audit/raw/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-03-v4/val_unseen/result.json",
+      "recorded_action_chunk_hash_serialization": "json.dumps(list(ordered_episode_to_chunk_items), sort_keys=True); utf8; default Python separators; keys are (scene_id, integer_episode_id)",
+      "recorded_action_chunk_sha256": "e21649402e40ce9345f64c1f9e01d8e481146f6d71f5748fabb4449dd02ce79c",
+      "recorded_generation_calls": 39742,
+      "reported_protocol": {
+        "device": "cuda",
+        "distributed_one_process": true,
+        "episode_order_manifest": "/data1/wxy/code/NavTTA/vln/manifests/episode_order/r2r_vlnce_v1_3",
+        "eval_split": "val_unseen",
+        "gpu": "0",
+        "habitat_config_path": "config/vln_r2r.yaml",
+        "model_path": "/data1/wxy/code/NavTTA/vln/checkpoints/streamvln/StreamVLN_Video_qwen_1_5_r2r_rxr_envdrop_scalevln_v1_3",
+        "num_frames": "32",
+        "num_future_steps": "4",
+        "num_history": "8",
+        "output_path": "/data1/wxy/code/NavTTA/vln/results/tuning/streamvln_val_unseen_compact_v4/jobs/streamvln-vu-compact-tent-03-v4/val_unseen",
+        "rank": "0",
+        "reported_torch_and_hardware": "2.1.2+cu121 NVIDIA GeForce RTX 3090",
+        "seed": "0",
+        "strict_checkpoint_keys_passed": true,
+        "vision_tower_path": "/data1/wxy/exp_data/NavTTA/vln/cache/huggingface/hub/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3",
+        "world_size": "1"
+      },
+      "result_sha256": "65f479b3849cdee47d5115385b6e3bf1d06cdf80bdd9d9f5de58afca83bd8ed7",
+      "run_tag": "streamvln-vu-compact-tent-03-v4",
+      "split": "val_unseen",
+      "unique_episode_keys": 1839
+    }
+  ],
+  "schema": "navtta.streamvln_archived_search_audit.v1",
+  "split_usage": "val_unseen_development_search",
+  "tent_ranking": [
+    "streamvln-vu-compact-tent-01-v4",
+    "streamvln-vu-compact-tent-02-v4",
+    "streamvln-vu-compact-tent-03-v4"
+  ],
+  "trajectory_definition": "Ordered actions[] chunks parsed from console.log and closed by scene_episode records; chunks for the unfinished final episode are excluded. This verifies recorded action plans, not physical simulator poses. No per-episode action list is included in this tracked summary."
+}

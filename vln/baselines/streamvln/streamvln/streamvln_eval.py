@@ -39,7 +39,7 @@ from habitat.tasks.utils import cartesian_to_polar
 from habitat.utils.geometry_utils import quaternion_rotate_vector
 
 from model.stream_video_vln import StreamVLNForCausalLM
-from streamvln_tta import StreamVLNTTAController
+from streamvln_tta import StreamVLNTTAController, add_streamvln_tta_args
 from navtta_vln.discrete_tta import add_discrete_tta_args
 from utils.utils import dict_to_cuda
 from utils.dist import *
@@ -727,6 +727,7 @@ def eval():
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     add_discrete_tta_args(parser)
+    add_streamvln_tta_args(parser)
 
     args = parser.parse_args()
     init_distributed_mode(args)

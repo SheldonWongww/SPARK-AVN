@@ -151,6 +151,44 @@ class TTAConfigCLITest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown tent parameters"):
             self._translate("hamt-r2r", "tent", {"typo": 1})
 
+    def test_streamvln_existing_configs_do_not_silently_switch_readout(self):
+        _, tokens = self._translate("streamvln-r2r-ce", "tent", {"lr": 1e-6})
+        self.assertNotIn("--tta_streamvln_readout_protocol", tokens)
+
+    def test_streamvln_readout_protocol_requires_explicit_mapping(self):
+        for protocol in ("legacy_v4", "native_residual"):
+            with self.subTest(protocol=protocol):
+                _, tokens = self._translate(
+                    "streamvln-r2r-ce", "tent",
+                    {"lr": 1e-6, "streamvln_readout_protocol": protocol},
+                )
+                self.assertEqual(
+                    tokens[tokens.index("--tta_streamvln_readout_protocol") + 1],
+                    protocol,
+                )
+
+    def test_streamvln_readout_protocol_rejects_unknown_values(self):
+        for protocol in ("fp32", "", None, True):
+            with self.subTest(protocol=protocol), self.assertRaisesRegex(
+                    ValueError, "invalid streamvln_readout_protocol"):
+                self._translate(
+                    "streamvln-r2r-ce", "tent",
+                    {"streamvln_readout_protocol": protocol},
+                )
+
+    def test_streamvln_readout_protocol_cannot_apply_to_other_policies(self):
+        for setting, method in (
+            ("hamt-r2r", "tent"),
+            ("etpnav-r2r-ce", "tent"),
+            ("streamvln-r2r-ce", "source"),
+        ):
+            with self.subTest(setting=setting, method=method):
+                with self.assertRaisesRegex(ValueError, "only by StreamVLN TTA"):
+                    self._translate(
+                        setting, method,
+                        {"streamvln_readout_protocol": "native_residual"},
+                    )
+
     def test_adapter_parity_schema_maps_only_explicit_audit_modes(self):
         common = {
             "schema": "navtta.vln_tta_adapter_parity_job.v1",

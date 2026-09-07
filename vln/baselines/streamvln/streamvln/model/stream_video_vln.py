@@ -444,7 +444,13 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                         raise RuntimeError(
                             "StreamVLN action state was not captured before logits"
                         )
-                    action = tta_controller.adapt_first_token(captured[0])
+                    action = tta_controller.adapt_first_token(
+                        captured[0],
+                        native_action_logits=scores[:, list(
+                            tta_controller.action_token_ids
+                        )].detach(),
+                        native_token_id=native_token,
+                    )
                     forced = torch.full_like(scores, -float("inf"))
                     token_id = tta_controller.action_token_id(action)
                     forced[:, token_id] = scores[:, token_id]
