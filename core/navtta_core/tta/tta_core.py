@@ -1362,6 +1362,7 @@ class EAMAdapter(_AdapterDiagnostics):
         model,
         lr=1e-5,
         confidence_scale=0.4,
+        aux_weight=0.5,
         memory_size=32,
         batch_size=8,
         update_interval=1,
@@ -1408,6 +1409,7 @@ class EAMAdapter(_AdapterDiagnostics):
         numeric_values = {
             "LR": float(lr),
             "CONFIDENCE_SCALE": float(confidence_scale),
+            "AUX_WEIGHT": float(aux_weight),
             "MAX_GRAD_NORM": float(max_grad_norm),
         }
         if any(not math.isfinite(value) for value in numeric_values.values()):
@@ -1416,6 +1418,8 @@ class EAMAdapter(_AdapterDiagnostics):
             raise ValueError("EAM.LR must be positive")
         if float(confidence_scale) < 0.0:
             raise ValueError("EAM.CONFIDENCE_SCALE must be nonnegative")
+        if not 0.0 <= float(aux_weight) <= 1.0:
+            raise ValueError("EAM.AUX_WEIGHT must be in [0, 1]")
         if float(max_grad_norm) < 0.0:
             raise ValueError("EAM.MAX_GRAD_NORM must be nonnegative")
 
@@ -1433,6 +1437,7 @@ class EAMAdapter(_AdapterDiagnostics):
         self.base_lr = float(lr)
         self.max_grad_norm = float(max_grad_norm)
         self.confidence_scale = float(confidence_scale)
+        self.aux_weight = float(aux_weight)
         self.episodic = False
         self.optimizer = _make_optimizer(
             self.params,
@@ -1690,9 +1695,12 @@ class EAMAdapter(_AdapterDiagnostics):
             source_logits, valid_mask
         ).exp()
         aux_probs = self._masked_log_probs(aux_logits, valid_mask).exp()
+        gated_aux_weight = (
+            use_aux.to(aux_probs.dtype).unsqueeze(-1) * self.aux_weight
+        )
         combined_probs = (
-            source_probs
-            + use_aux.to(aux_probs.dtype).unsqueeze(-1) * aux_probs
+            (1.0 - gated_aux_weight) * source_probs
+            + gated_aux_weight * aux_probs
         )
         combined_probs = combined_probs / combined_probs.sum(
             dim=-1, keepdim=True
@@ -1702,6 +1710,33 @@ class EAMAdapter(_AdapterDiagnostics):
         combined_log_probs = combined_probs.clamp_min(1e-8).log()
         combined_log_probs = combined_log_probs.masked_fill(~valid_mask, -math.inf)
         return combined_log_probs, use_aux
+
+    @torch.no_grad()
+    def combine_for_inference(
+        self,
+        source_logits,
+        policy_inputs=None,
+        valid_action_count=None,
+        valid_action_mask=None,
+    ):
+        """Fuse source and auxiliary predictions without replay or an update.
+
+        Task integrations can deploy the already-adapted auxiliary branch at a
+        higher frequency than they write replay samples or run optimizer steps.
+        This method intentionally leaves all replay and action-step state
+        untouched.
+        """
+
+        if policy_inputs is None:
+            raise ValueError("EAM requires policy_inputs for inference fusion")
+        auxiliary_logits = self._forward_aux(policy_inputs)
+        combined, use_aux = self._combine(
+            source_logits.detach(),
+            auxiliary_logits,
+            valid_action_count=valid_action_count,
+            valid_action_mask=valid_action_mask,
+        )
+        return combined, use_aux, auxiliary_logits
 
     def before_inference(
         self,
@@ -2115,6 +2150,7 @@ class EAMAdapter(_AdapterDiagnostics):
             ),
             "last_train_loss": self.last_train_loss,
             "confidence_scale": self.confidence_scale,
+            "aux_weight": self.aux_weight,
             "optimizer": self.optimizer.__class__.__name__,
             "adapted_parameter_count": sum(
                 parameter.numel() for parameter in self.params

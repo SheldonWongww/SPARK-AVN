@@ -1,0 +1,6 @@
+# This directory is a local archival copy of raw PONI experiment artifacts.
+# Keep only the human-readable index in Git; hashes and provenance live in
+# objectnav/manifests/.
+*
+!.gitignore
+!README.md

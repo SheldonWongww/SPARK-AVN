@@ -1128,6 +1128,44 @@ class TTACoreTest(unittest.TestCase):
         )
         adapter.adapt(source_logits, action=torch.tensor([[0]]))
 
+    def test_eam_stateless_inference_fusion_does_not_touch_replay(self):
+        policy = _TinyPolicy()
+        adapter = EAMAdapter(
+            policy,
+            batch_size=2,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        inputs = _inputs()
+        with torch.no_grad():
+            _, source_logits = _forward(policy, inputs)
+        combined, use_aux, auxiliary = adapter.combine_for_inference(
+            source_logits,
+            policy_inputs=inputs,
+        )
+        torch.testing.assert_close(auxiliary, source_logits)
+        torch.testing.assert_close(combined.exp(), source_logits.softmax(dim=-1))
+        self.assertTrue(bool(use_aux.all()))
+        self.assertEqual(adapter.seen_samples, 0)
+        self.assertEqual(adapter.action_steps, 0)
+        self.assertEqual(adapter.replay, [])
+        self.assertIsNone(adapter._pending_replay)
+        self.assertIsNone(adapter._cached_current)
+
+    def test_eam_aux_weight_controls_inference_fusion(self):
+        adapter = EAMAdapter(
+            _TinyPolicy(),
+            batch_size=1,
+            confidence_scale=10.0,
+            aux_weight=0.25,
+            trainable_prefixes=("net.norms", "action_distribution"),
+        )
+        source = torch.tensor([[2.0, 1.0, 0.0, -1.0]])
+        auxiliary = torch.tensor([[10.0, -10.0, -10.0, -10.0]])
+        combined, use_aux = adapter._combine(source, auxiliary)
+        expected = 0.75 * source.softmax(dim=-1) + 0.25 * auxiliary.softmax(dim=-1)
+        self.assertTrue(bool(use_aux.item()))
+        torch.testing.assert_close(combined.exp(), expected)
+
     def test_eam_accepts_task_specific_forward_policy(self):
         policy = _TinyPolicy()
         calls = []

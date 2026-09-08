@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "archive_id": "poni_mp3d_tta_20260908",
+  "classification": "legacy",
+  "created_at": "2026-09-08",
+  "source_workspace": "/home/king/workspace/PONI",
+  "source_base_commit": "30682c2bdcd820eec8f72043b2579eb045d547bf",
+  "navtta_commit_at_import": "9648d6cf3f201cf10530f8cfc92023358583d36a",
+  "code_snapshot": "objectnav/implementations/poni_tta_snapshot_20260908",
+  "result_archive": "objectnav/results/legacy/poni_mp3d_tta_20260908",
+  "assets_not_copied": {
+    "poni_checkpoint": {
+      "source_path": "/home/king/workspace/PONI/pretrained_models/mp3d_models/poni_seed_123.ckpt",
+      "bytes": 52570961,
+      "sha256": "0b2460ef3dfb8f4b8cab44815340eb638753fa4d8fa4d4ee1ec2f88bf8f3a6fa"
+    },
+    "rednet_checkpoint": {
+      "source_path": "/home/king/workspace/PONI/pretrained_models/rednet_mp3d.pth",
+      "bytes": 656482964,
+      "sha256": "a50eca38d1babf992c9bfd24de24f9287190942cba7c2b606d7270c3781820cd"
+    },
+    "mp3d_val_parts": {
+      "episodes": 2195,
+      "scenes": 11,
+      "sha256": "9578c01b6355ff06e073cf9dae08184b560de1fb211b339c28fa22d57d82a17e"
+    }
+  },
+  "source_metrics": {
+    "episodes": 2195,
+    "seed": 100,
+    "result_path": "runs/Source/mp3d_poni_seed_123",
+    "layout": "eleven tb_seed_100_val_part_* scene-part result trees",
+    "success": 0.3084282460136674,
+    "spl": 0.11791577033100896,
+    "softspl": 0.17560147097058337,
+    "distance_to_goal": 5.2231712235200805
+  },
+  "final_runs": {
+    "Tent": {
+      "supervision": "unsupervised",
+      "protocol": "global_continual",
+      "run_id": "selected_full_20260905_final_tent_valid_lr3e8",
+      "episodes": 2195,
+      "result_path": "runs/Tent/selected_full_20260905_final_tent_valid_lr3e8",
+      "metrics": {
+        "success": 0.29658314350797266,
+        "spl": 0.11839527878536586,
+        "softspl": 0.17305808345897716,
+        "distance_to_goal": 5.283681355510225
+      },
+      "parameters": {
+        "lr": "3e-8",
+        "steps": "1",
+        "episodic": "false",
+        "reset_bn_stats": "false",
+        "norm_scope": "bn_all",
+        "entropy_mode": "valid_depth",
+        "min_adaptation_pixels": "128",
+        "optimizer": "Adam",
+        "beta1": "0.9",
+        "beta2": "0.999",
+        "weight_decay": "0.0",
+        "update_interval": "32",
+        "max_updates_per_episode": "16",
+        "max_grad_norm": "1.0"
+      }
+    },
+    "FSTTA": {
+      "supervision": "unsupervised",
+      "protocol": "global_continual",
+      "run_id": "selected_full_20260905_final_fstta_slow1e7_n128_fg",
+      "episodes": 2195,
+      "result_path": "runs/FSTTA/selected_full_20260905_final_fstta_slow1e7_n128_fg",
+      "selection_reason": "best completed FSTTA by composite score, SPL, and SoftSPL",
+      "metrics": {
+        "success": 0.30751708428246016,
+        "spl": 0.11779714098538555,
+        "softspl": 0.17348387835670298,
+        "distance_to_goal": 5.317694365280386
+      },
+      "parameters": {
+        "lr_fast": "1e-8",
+        "lr_slow": "1e-7",
+        "M": "16",
+        "N": "128",
+        "q": "0.1",
+        "rho": "0.95",
+        "tau": "0.7",
+        "a": "0.9",
+        "b": "1.1",
+        "use_slow": "true",
+        "entropy_mode": "foreground_valid_depth",
+        "min_adaptation_pixels": "128",
+        "optimizer": "AdamW",
+        "beta1": "0.9",
+        "beta2": "0.99",
+        "weight_decay": "0.0",
+        "max_grad_norm": "1.0",
+        "reset_optimizer_each_episode": "true",
+        "reset_slow_optimizer_each_window": "true",
+        "fast_grad_mode": "concordant",
+        "use_fast_lr_scaler": "true"
+      }
+    },
+    "FeedTTA": {
+      "supervision": "binary_episode_feedback",
+      "protocol": "global_continual",
+      "run_id": "20260828_172439_feedtta",
+      "episodes": 2195,
+      "result_path": "runs/FeedTTA/20260828_172439_feedtta",
+      "metrics": {
+        "success": 0.3316628701594533,
+        "spl": 0.13065838436891872,
+        "softspl": 0.19456939178108992,
+        "distance_to_goal": 5.2222380058574736
+      },
+      "parameters": {
+        "lr": "3e-7",
+        "alpha": "-0.2",
+        "gamma": "0.99",
+        "p": "0.05",
+        "eps": "1e-5",
+        "optimizer": "Adam",
+        "beta1": "0.9",
+        "beta2": "0.999",
+        "weight_decay": "0",
+        "normalize_gradient": "false",
+        "max_grad_norm": "0",
+        "sgr_seed": "0",
+        "trainable_prefixes": "deconv4,agant0,final_conv,final_deconv_custom"
+      }
+    },
+    "EAM": {
+      "supervision": "unsupervised",
+      "protocol": "global_continual",
+      "run_id": "selected_full_20260905_final_eam_always_all_lr1e8",
+      "episodes": 2195,
+      "result_path": "runs/EAM/selected_full_20260905_final_eam_always_all_lr1e8",
+      "metrics": {
+        "success": 0.3111617312072893,
+        "spl": 0.11960828901313465,
+        "softspl": 0.17644014212248701,
+        "distance_to_goal": 5.285021741636382
+      },
+      "parameters": {
+        "lr": "1e-8",
+        "aux_weight": "0.5",
+        "confidence_scale": "0.4",
+        "memory_size": "32",
+        "batch_size": "4",
+        "navigation_update_interval": "64",
+        "inference_interval": "1",
+        "max_reliable_pixels": "2048",
+        "deployment_scope": "all_valid",
+        "pixel_selection": "low_entropy",
+        "optimizer": "Adam",
+        "weight_decay": "0",
+        "max_grad_norm": "1.0",
+        "trainable_prefixes": "deconv4,agant0,final_conv,final_deconv_custom"
+      }
+    },
+    "ATENA": {
+      "supervision": "active_binary_episode_feedback",
+      "protocol": "global_continual",
+      "run_id": "selected_full_20260905_final_atena_lr3e7_wd0",
+      "episodes": 2195,
+      "result_path": "runs/ATENA/selected_full_20260905_final_atena_lr3e7_wd0",
+      "metrics": {
+        "success": 0.31890660592255127,
+        "spl": 0.12259245133012096,
+        "softspl": 0.17977315080442471,
+        "distance_to_goal": 5.304061048948323
+      },
+      "parameters": {
+        "lr_query": "3e-7",
+        "lr_self": "3e-8",
+        "mix_lambda": "0.5",
+        "query_threshold": "0.01",
+        "self_loss_weight": "0.1",
+        "param_scope": "bn",
+        "optimizer": "AdamW",
+        "weight_decay": "0",
+        "max_grad_norm": "1.0"
+      },
+      "diagnostic_note": "query_rate=1.0; all 2195 episodes consumed true Habitat success feedback"
+    }
+  },
+  "excluded": [
+    "datasets and scene assets",
+    "checkpoint binaries",
+    "Conda environment directory",
+    "Python bytecode and __pycache__",
+    "older FeedTTA, EAM, and ATENA runs",
+    "smoke, part, optimized, failed, and interrupted runs",
+    "all hyperparameter and structural-search result trees",
+    "other Tent and FSTTA result trees"
+  ]
+}
