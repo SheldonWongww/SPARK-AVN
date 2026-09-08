@@ -1,0 +1,126 @@
+{
+  "elapsed_seconds": 158672.67969703674,
+  "end_time_epoch": 1788067798.8101494,
+  "ended_at": "2026-08-30T13:29:58+08:00",
+  "gpu_id": "0",
+  "launcher_pid": 3784,
+  "method": "feedtta",
+  "model_path": "/root/autodl-tmp/PONI/pretrained_models/mp3d_models/poni_seed_123.ckpt",
+  "navtta_root": "/root/autodl-tmp/NavTTA",
+  "poni_root": "/root/autodl-tmp/PONI",
+  "protocol": "global_continual",
+  "resume_supported": false,
+  "run_id": "20260828_172439_feedtta",
+  "save_root": "/root/autodl-tmp/PONI/experiments/global_continual/FeedTTA/runs/20260828_172439_feedtta",
+  "schema_version": 1,
+  "start_time_epoch": 1787909126.1304524,
+  "started_at": "2026-08-28T17:25:26+08:00",
+  "status": "complete",
+  "stream": {
+    "dataset_path_template": "/root/autodl-tmp/PONI/experiments/global_continual_dataset/{split}/{split}.json.gz",
+    "iterator_options": {
+      "group_by_scene": true,
+      "max_scene_repeat_episodes": -1,
+      "max_scene_repeat_steps": -1,
+      "shuffle": false
+    },
+    "protocol": "global_continual",
+    "scene_order": [
+      {
+        "episodes": 200,
+        "order": 0,
+        "ordered_scene_file": "00__2azQ1b91cZZ.json.gz",
+        "part": "val_part_0",
+        "source_scene_file": "2azQ1b91cZZ.json.gz"
+      },
+      {
+        "episodes": 201,
+        "order": 1,
+        "ordered_scene_file": "01__8194nk5LbLH.json.gz",
+        "part": "val_part_1",
+        "source_scene_file": "8194nk5LbLH.json.gz"
+      },
+      {
+        "episodes": 198,
+        "order": 2,
+        "ordered_scene_file": "02__EU6Fwq7SyZv.json.gz",
+        "part": "val_part_2",
+        "source_scene_file": "EU6Fwq7SyZv.json.gz"
+      },
+      {
+        "episodes": 197,
+        "order": 3,
+        "ordered_scene_file": "03__QUCTc6BB5sX.json.gz",
+        "part": "val_part_3",
+        "source_scene_file": "QUCTc6BB5sX.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 4,
+        "ordered_scene_file": "04__TbHJrupSAjP.json.gz",
+        "part": "val_part_4",
+        "source_scene_file": "TbHJrupSAjP.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 5,
+        "ordered_scene_file": "05__X7HyMhZNoso.json.gz",
+        "part": "val_part_5",
+        "source_scene_file": "X7HyMhZNoso.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 6,
+        "ordered_scene_file": "06__Z6MFQCViBuw.json.gz",
+        "part": "val_part_6",
+        "source_scene_file": "Z6MFQCViBuw.json.gz"
+      },
+      {
+        "episodes": 201,
+        "order": 7,
+        "ordered_scene_file": "07__oLBMNvg9in8.json.gz",
+        "part": "val_part_7",
+        "source_scene_file": "oLBMNvg9in8.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 8,
+        "ordered_scene_file": "08__pLe4wQe7qrG.json.gz",
+        "part": "val_part_8",
+        "source_scene_file": "pLe4wQe7qrG.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 9,
+        "ordered_scene_file": "09__x8F5xyUWy9e.json.gz",
+        "part": "val_part_9",
+        "source_scene_file": "x8F5xyUWy9e.json.gz"
+      },
+      {
+        "episodes": 198,
+        "order": 10,
+        "ordered_scene_file": "10__zsNo4HB9uLZ.json.gz",
+        "part": "val_part_10",
+        "source_scene_file": "zsNo4HB9uLZ.json.gz"
+      }
+    ],
+    "split": "val_tta_all",
+    "total_episodes": 2195
+  },
+  "tta": {
+    "alpha": "-0.2",
+    "beta1": "0.9",
+    "beta2": "0.999",
+    "eps": "1e-5",
+    "gamma": "0.99",
+    "lr": "3e-7",
+    "max_grad_norm": "0",
+    "momentum": "0.9",
+    "normalize_gradient": "false",
+    "optimizer": "Adam",
+    "p": "0.05",
+    "sgr_seed": "0",
+    "trainable_prefixes": "deconv4,agant0,final_conv,final_deconv_custom",
+    "weight_decay": "0"
+  }
+}

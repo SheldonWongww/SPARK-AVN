@@ -16,8 +16,10 @@ and FSTTA runs.
 
 Each TTA directory under `runs/` contains its complete `stats.json`, run and
 console logs, diagnostics, TensorBoard events, run manifest, merged result, and
-launcher log. `runs/Source/mp3d_poni_seed_123/` preserves the original eleven
-scene-part result trees, logs, TensorBoard events, and merged result.
+launcher log. Git tracks the compact `stats.json`, diagnostics, run manifests,
+and merged results; raw logs and TensorBoard events remain local.
+`runs/Source/mp3d_poni_seed_123/` preserves the original eleven scene-part
+result trees locally and tracks their compact statistics and merged result.
 
 No older TTA full run, smoke run, part run, interrupted attempt, or
 hyperparameter-search result is retained here. Those originals remain in the
@@ -29,6 +31,6 @@ and Tent are unsupervised; keep these supervision classes separate in formal
 comparisons.
 
 This remains a `legacy` archive because the original run manifests were not
-tied to the NavTTA top-level Git commit. Raw contents are ignored by Git; the
-file-level SHA256 list is
+tied to the NavTTA top-level Git commit. Raw logs and TensorBoard contents are
+ignored by Git; the file-level SHA256 list is
 `objectnav/manifests/poni_tta_archive_20260908.sha256`.

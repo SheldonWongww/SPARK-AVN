@@ -15,5 +15,6 @@ global-continual Tent and FSTTA runs is available under
 task-specific code snapshot under `implementations/poni_tta_snapshot_20260908/`
 and provenance under `manifests/poni_tta_archive_20260908.json`.
 
-This import does not activate a new formal ObjectNav protocol. Raw logs,
-TensorBoard events, and result payloads remain local and must not be committed.
+This import does not activate a new formal ObjectNav protocol. Compact metrics,
+manifests, and diagnostics are tracked as legacy evidence; raw logs and
+TensorBoard events remain local and must not be committed.

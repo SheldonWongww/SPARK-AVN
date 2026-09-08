@@ -1,0 +1,138 @@
+{
+  "elapsed_seconds": 192645.61926960945,
+  "end_time_epoch": 1788776813.1468134,
+  "ended_at": "2026-09-07T18:26:53+08:00",
+  "gpu_id": "0",
+  "launcher_pid": 1221,
+  "method": "fstta",
+  "model_path": "/root/autodl-tmp/PONI/pretrained_models/mp3d_models/poni_seed_123.ckpt",
+  "navtta_root": "/root/autodl-tmp/NavTTA",
+  "poni_root": "/root/autodl-tmp/PONI",
+  "protocol": "global_continual",
+  "resume_supported": false,
+  "run_id": "selected_full_20260905_final_fstta_slow1e7_n128_fg",
+  "save_root": "/root/autodl-tmp/PONI/experiments/global_continual/campaigns/selected_full_20260905_final/results/fstta_slow1e7_n128_fg/runs/selected_full_20260905_final_fstta_slow1e7_n128_fg",
+  "schema_version": 1,
+  "start_time_epoch": 1788584167.5275438,
+  "started_at": "2026-09-05T12:56:07+08:00",
+  "status": "complete",
+  "stream": {
+    "dataset_path_template": "/root/autodl-tmp/PONI/experiments/global_continual_dataset/{split}/{split}.json.gz",
+    "iterator_options": {
+      "group_by_scene": true,
+      "max_scene_repeat_episodes": -1,
+      "max_scene_repeat_steps": -1,
+      "shuffle": false
+    },
+    "protocol": "global_continual",
+    "scene_order": [
+      {
+        "episodes": 200,
+        "order": 0,
+        "ordered_scene_file": "00__2azQ1b91cZZ.json.gz",
+        "part": "val_part_0",
+        "source_scene_file": "2azQ1b91cZZ.json.gz"
+      },
+      {
+        "episodes": 201,
+        "order": 1,
+        "ordered_scene_file": "01__8194nk5LbLH.json.gz",
+        "part": "val_part_1",
+        "source_scene_file": "8194nk5LbLH.json.gz"
+      },
+      {
+        "episodes": 198,
+        "order": 2,
+        "ordered_scene_file": "02__EU6Fwq7SyZv.json.gz",
+        "part": "val_part_2",
+        "source_scene_file": "EU6Fwq7SyZv.json.gz"
+      },
+      {
+        "episodes": 197,
+        "order": 3,
+        "ordered_scene_file": "03__QUCTc6BB5sX.json.gz",
+        "part": "val_part_3",
+        "source_scene_file": "QUCTc6BB5sX.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 4,
+        "ordered_scene_file": "04__TbHJrupSAjP.json.gz",
+        "part": "val_part_4",
+        "source_scene_file": "TbHJrupSAjP.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 5,
+        "ordered_scene_file": "05__X7HyMhZNoso.json.gz",
+        "part": "val_part_5",
+        "source_scene_file": "X7HyMhZNoso.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 6,
+        "ordered_scene_file": "06__Z6MFQCViBuw.json.gz",
+        "part": "val_part_6",
+        "source_scene_file": "Z6MFQCViBuw.json.gz"
+      },
+      {
+        "episodes": 201,
+        "order": 7,
+        "ordered_scene_file": "07__oLBMNvg9in8.json.gz",
+        "part": "val_part_7",
+        "source_scene_file": "oLBMNvg9in8.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 8,
+        "ordered_scene_file": "08__pLe4wQe7qrG.json.gz",
+        "part": "val_part_8",
+        "source_scene_file": "pLe4wQe7qrG.json.gz"
+      },
+      {
+        "episodes": 200,
+        "order": 9,
+        "ordered_scene_file": "09__x8F5xyUWy9e.json.gz",
+        "part": "val_part_9",
+        "source_scene_file": "x8F5xyUWy9e.json.gz"
+      },
+      {
+        "episodes": 198,
+        "order": 10,
+        "ordered_scene_file": "10__zsNo4HB9uLZ.json.gz",
+        "part": "val_part_10",
+        "source_scene_file": "zsNo4HB9uLZ.json.gz"
+      }
+    ],
+    "split": "val_tta_all",
+    "total_episodes": 2195
+  },
+  "tta": {
+    "M": "16",
+    "N": "128",
+    "a": "0.9",
+    "b": "1.1",
+    "beta1": "0.9",
+    "beta2": "0.99",
+    "eigen_eps": "1e-6",
+    "entropy_mode": "foreground_valid_depth",
+    "fast_grad_mode": "concordant",
+    "lr_fast": "1e-8",
+    "lr_slow": "1e-7",
+    "max_grad_norm": "1.0",
+    "min_adaptation_pixels": "128",
+    "momentum": "0.9",
+    "norm_scope": "bn_all",
+    "optimizer": "AdamW",
+    "q": "0.1",
+    "reset_optimizer_each_episode": "true",
+    "reset_slow_optimizer_each_window": "true",
+    "rho": "0.95",
+    "slow_momentum": "-1",
+    "slow_optimizer": "",
+    "tau": "0.7",
+    "use_fast_lr_scaler": "true",
+    "use_slow": "true",
+    "weight_decay": "0.0"
+  }
+}

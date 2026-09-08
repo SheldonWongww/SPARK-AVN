@@ -1,6 +1,12 @@
-# This directory is a local archival copy of raw PONI experiment artifacts.
-# Keep only the human-readable index in Git; hashes and provenance live in
-# objectnav/manifests/.
+# This directory is a local archival copy of PONI experiment evidence.
+# Track compact metrics, manifests, and diagnostics; keep raw logs and
+# TensorBoard files local. Hashes and provenance live in objectnav/manifests/.
 *
 !.gitignore
 !README.md
+!runs/
+!runs/**/
+!runs/**/merged_results.txt
+!runs/**/run_manifest.json
+!runs/**/*_diagnostics.json
+!runs/**/stats.json
