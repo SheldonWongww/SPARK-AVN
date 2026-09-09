@@ -31,6 +31,11 @@ from habitat.core.simulator import (
 from soundspaces.utils import load_metadata
 from soundspaces.mp3d_utils import HouseReader
 
+from navtta_avn.audio_schedule import (
+    episode_schedule_record, generate_sound_intervals, random_duration,
+    schedule_record, schedule_rng,
+)
+
 logging.basicConfig(filename="data/log/sen_log.txt", level=logging.ERROR)
 
 
@@ -107,6 +112,7 @@ class SoundEventNavSim(Simulator, ABC):
         self._audio_interval_upper_limit = None
         self._audio_interval_lower_limit = None
         self._audio_interval_determine = None
+        self._audio_schedule_records = {}
 
         self._source_sound_dict = dict()
         self._sampling_rate = None
@@ -355,7 +361,7 @@ class SoundEventNavSim(Simulator, ABC):
 
     @property
     def current_scene_name(self):
-        return self._current_scene.split('/')[3]
+        return os.path.basename(os.path.dirname(self._current_scene))
 
     @property
     def current_scene_observation_file(self):
@@ -388,41 +394,45 @@ class SoundEventNavSim(Simulator, ABC):
         return self._sim.get_agent(agent_id)
     
     def _get_random_duration(self, mean, upper, lower):
-        sigma = min(np.abs(mean - upper), np.abs(mean - lower)) / 2
-        duration = int(np.abs(np.random.normal(mean, sigma)))
-        if duration == 0:
-            duration = 1
-        elif duration > upper:
-            duration = upper
-        elif duration < lower:
-            duration = lower
-        return duration
+        return random_duration(mean, upper, lower, np.random)
 
     def _generate_sound_intervals(
-            self, offset, duration, audio_length, interval_mean, interval_upper_limit, interval_lower_limit
+            self, offset, duration, audio_length, interval_mean, interval_upper_limit, interval_lower_limit,
+            source_role="target",
     ):
-        sound_intervals = []
-        sound_intervals.extend([0] * offset)
-
-        if interval_mean == -1:
-            sound_intervals.extend([1] * duration)
-        else:
-            while len(sound_intervals) < (duration + offset) and len(sound_intervals) < 500:
-                sound_intervals.extend([1] * audio_length)
-                interval_len = self._get_random_duration(interval_mean, interval_upper_limit, interval_lower_limit)
-                sound_intervals.extend([0] * interval_len)
-
-        sound_intervals = sound_intervals[ :duration + offset]
-
-        if len(sound_intervals) < 500:
-            sound_intervals.extend([0] * (500 - len(sound_intervals)))
-
-        sound_intervals.extend([0])
-        
+        audio = self.config.AUDIO
+        rng, derived_seed = schedule_rng(
+            getattr(audio, "SCHEDULE_MODE", "legacy_global"),
+            getattr(audio, "SCHEDULE_SEED", 0),
+            getattr(audio, "SCHEDULE_SOURCE_SETTING", ""),
+            getattr(audio, "SCHEDULE_SCENE_ID", ""),
+            getattr(audio, "SCHEDULE_EPISODE_ID", ""),
+            source_role,
+        )
+        sound_intervals = generate_sound_intervals(
+            offset, duration, audio_length, interval_mean,
+            interval_upper_limit, interval_lower_limit, rng,
+        )
+        self._audio_schedule_records[source_role] = schedule_record(
+            sound_intervals, derived_seed, {
+                "offset": offset, "duration": duration, "audio_length": audio_length,
+                "interval_mean": interval_mean,
+                "interval_upper_limit": interval_upper_limit,
+                "interval_lower_limit": interval_lower_limit,
+            },
+        )
         return sound_intervals
+
+    def get_audio_schedule_audit(self):
+        return episode_schedule_record(
+            self.config.AUDIO.SCHEDULE_SCENE_ID,
+            self.config.AUDIO.SCHEDULE_EPISODE_ID,
+            self._audio_schedule_records,
+        )
 
     def reconfigure(self, config: Config) -> None:
         self.config = config
+        self._audio_schedule_records = {}
         if hasattr(self.config.AGENT_0, 'OFFSET'):
             self._offset = int(self.config.AGENT_0.OFFSET)
         else:
@@ -556,7 +566,8 @@ class SoundEventNavSim(Simulator, ABC):
                 self._distractor_audio_length,
                 self._distractor_interval_mean,
                 self._distractor_interval_upper_limit,
-                self._distractor_interval_lower_limit
+                self._distractor_interval_lower_limit,
+                source_role="distractor",
             )
             
             self._distractor_position_index = self._position_to_index(self.config.AGENT_0.DISTRACTOR_POSITION)
@@ -576,7 +587,8 @@ class SoundEventNavSim(Simulator, ABC):
                 self._noise_audio_length,
                 self._noise_interval_mean,
                 self._noise_interval_upper_limit,
-                self._noise_interval_lower_limit
+                self._noise_interval_lower_limit,
+                source_role="noise",
             )
             noise_positions = self.config.AGENT_0.NOISE_POSITIONS
             noise_position_index = []

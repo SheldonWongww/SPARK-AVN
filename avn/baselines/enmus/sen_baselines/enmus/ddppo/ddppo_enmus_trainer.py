@@ -40,6 +40,10 @@ from ss_baselines.savi.ppo.ppo_trainer import PPOTrainer
 
 from sen_baselines.enmus.ppo.msmt_policy import AudioNavMSMTPolicyWithGD
 from sen_baselines.enmus.models.rollout_storage_multi_len import RolloutStorageMultiLen, ExternalMemoryMultiLen
+from navtta_avn.enmus_eval_protocol import (
+    AUDIT_MEASURE, AUDIT_UUID, build_eval_protocol, plain_config,
+    record_completed_episode, write_audio_schedule, write_json,
+)
 
 
 @baseline_registry.register_trainer(name="ddppo_enmus")
@@ -684,9 +688,28 @@ class DDPPOTrainer(PPOTrainer):
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
             config.freeze()
 
+        config.defrost()
+        if int(getattr(config.TASK_CONFIG.DATASET, "TTA_EPISODES_PER_SCENE", -1)) > 0:
+            config.TASK_CONFIG.DATASET.TTA_EPISODE_SEED = int(config.SEED)
+        eval_protocol = build_eval_protocol(config)
+        config.TASK_CONFIG.SIMULATOR.AUDIO.SCHEDULE_SOURCE_SETTING = eval_protocol["source_setting"]
+        if AUDIT_MEASURE not in config.TASK_CONFIG.TASK.MEASUREMENTS:
+            config.TASK_CONFIG.TASK.MEASUREMENTS.append(AUDIT_MEASURE)
+        eval_protocol["resolved_config"] = plain_config(config)
+        config.freeze()
+        protocol_path = os.path.join(config.TENSORBOARD_DIR, "eval_protocol_{}.json".format(config.SEED))
+        schedule_path = os.path.join(config.TENSORBOARD_DIR, "audio_schedule_{}.json".format(config.SEED))
+        audio_schedule_episodes = {}
+        write_json(protocol_path, eval_protocol)
+        write_audio_schedule(schedule_path, eval_protocol, audio_schedule_episodes)
+
         logger.info(f"env config: {config}")
         logging.info("[EVAL] action_selection=%s", action_selection)
         self.envs = construct_envs(config, get_env_class(config.ENV_NAME))
+        eval_protocol["resolved_config"] = plain_config(config)
+        eval_protocol["observed_action_count"] = self.envs.action_spaces[0].n
+        if eval_protocol["profile"] and self.envs.action_spaces[0].n != 4:
+            raise ValueError("ENMuS aligned evaluation requires the four CL-AVN actions")
         
         if self.config.DISPLAY_RESOLUTION != model_resolution:
             observation_space = self.envs.observation_spaces[0]
@@ -699,11 +722,22 @@ class DDPPOTrainer(PPOTrainer):
         
         self._setup_actor_critic_agent(ppo_cfg, observation_space)
 
-        self.agent.load_state_dict(ckpt_dict["state_dict"])
+        checkpoint_load = self.agent.load_state_dict(ckpt_dict["state_dict"], strict=True)
         self.actor_critic = self.agent.actor_critic
+        from navtta_avn.idea_source import file_sha256
+        eval_protocol["checkpoint_load"] = {
+            "strict": True,
+            "checkpoint_sha256": file_sha256(checkpoint_path),
+            "missing_keys": list(checkpoint_load.missing_keys),
+            "unexpected_keys": list(checkpoint_load.unexpected_keys),
+            "state_dict_tensors": len(ckpt_dict["state_dict"]),
+        }
+        write_json(protocol_path, eval_protocol)
 
         self.metric_uuids = []
-        for metric_name in self.config.TASK_CONFIG.TASK.MEASUREMENTS:
+        for metric_name in config.TASK_CONFIG.TASK.MEASUREMENTS:
+            if metric_name == AUDIT_MEASURE:
+                continue
             metric_cfg = getattr(self.config.TASK_CONFIG.TASK, metric_name)
             measure_type = baseline_registry.get_measure(metric_cfg.TYPE)
             assert measure_type is not None, "invalid measurement type {}".format(metric_cfg.TYPE)
@@ -782,6 +816,10 @@ class DDPPOTrainer(PPOTrainer):
         tta_method = str(
             getattr(tta_cfg, "METHOD", "none") if tta_cfg is not None else "none"
         ).lower()
+        source_audit_state_digest = None
+        if tta_method in ("none", "", "source"):
+            from navtta_core.tta import module_state_sha256
+            source_audit_state_digest = module_state_sha256(self.actor_critic)
         idea_cfg = getattr(tta_cfg, "IDEA", None) if tta_cfg is not None else None
         idea_source_collection = None
         source_model_state_sha256 = None
@@ -1214,9 +1252,8 @@ class DDPPOTrainer(PPOTrainer):
                 prev_actions.copy_(actions)
 
             actions = [a[0].item() for a in actions]
-            if tta_adapter is not None or idea_source_collection is not None:
-                for action in actions:
-                    tta_action_counts[action] += 1
+            for action in actions:
+                tta_action_counts[action] += 1
             outputs = self.envs.step(actions)
 
             observations, rewards, dones, infos = [
@@ -1281,6 +1318,15 @@ class DDPPOTrainer(PPOTrainer):
                     envs_to_pause.append(i)
 
                 if not_done_masks[i].item() == 0:
+                    record_completed_episode(
+                        audio_schedule_episodes,
+                        current_episodes[i].scene_id,
+                        current_episodes[i].episode_id,
+                        infos[i].get(AUDIT_UUID),
+                        strict=bool(eval_protocol["profile"]),
+                    )
+                    if len(audio_schedule_episodes) % 50 == 0:
+                        write_audio_schedule(schedule_path, eval_protocol, audio_schedule_episodes)
                     episode_stats = dict()
                     for metric_uuid in self.metric_uuids:
                         episode_stats[metric_uuid] = infos[i][metric_uuid]
@@ -1401,6 +1447,10 @@ class DDPPOTrainer(PPOTrainer):
                                   '{}_stats_{}.json'.format(config.EVAL.SPLIT, config.SEED))
         with open(stats_file, 'w') as fo:
             json.dump({','.join(key): value for key, value in stats_episodes.items()}, fo, cls=NpEncoder)
+        write_audio_schedule(
+            schedule_path, eval_protocol, audio_schedule_episodes,
+            complete=len(stats_episodes) == config.TEST_EPISODE_COUNT,
+        )
 
         if idea_source_collection is not None:
             if not idea_source_collection.complete:
@@ -1421,7 +1471,22 @@ class DDPPOTrainer(PPOTrainer):
         elif tta_adapter is not None:
             diagnostics = tta_adapter.diagnostics()
         else:
-            diagnostics = None
+            source_audit_state_after = module_state_sha256(self.actor_critic)
+            if source_audit_state_digest != source_audit_state_after:
+                raise RuntimeError("Source policy state changed during evaluation")
+            diagnostics = {
+                "method": "source",
+                "episodes": len(stats_episodes),
+                "action_steps": sum(tta_action_counts),
+                "updates": 0,
+                "slow_updates": 0,
+                "adapted_parameter_names": [],
+                "adapted_parameter_count": 0,
+                "relative_param_drift": 0.0,
+                "source_model_state_sha256": source_audit_state_digest,
+                "final_model_state_sha256": source_audit_state_after,
+                "source_policy_frozen": True,
+            }
 
         if diagnostics is not None:
             diagnostics["task_action_space_contract"] = (
@@ -1429,6 +1494,9 @@ class DDPPOTrainer(PPOTrainer):
             )
             diagnostics["task_valid_action_count"] = tta_valid_action_count
             diagnostics["task_action_selection"] = action_selection
+            diagnostics["action_steps"] = sum(tta_action_counts)
+            diagnostics["eval_protocol_profile"] = eval_protocol["profile"]
+            diagnostics["eval_semantic_digest"] = eval_protocol["semantic_digest"]
             diagnostics["tent_canonical_update_interval"] = (
                 int(getattr(tta_cfg, "UPDATE_INTERVAL", 1)) == 1
                 if tta_method == "tent" else None
@@ -1477,6 +1545,7 @@ class DDPPOTrainer(PPOTrainer):
                 diagnostics["action_counts"] = tta_action_counts
                 diagnostics["mean_max_action_probability"] = (
                     tta_max_prob_sum / max(1, tta_probability_steps)
+                    if tta_probability_steps else None
                 )
             diagnostics_file = os.path.join(
                 config.TENSORBOARD_DIR,

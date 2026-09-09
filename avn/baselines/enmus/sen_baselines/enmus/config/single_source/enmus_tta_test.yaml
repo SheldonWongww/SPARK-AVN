@@ -11,6 +11,8 @@ EVAL:
   SPLIT: "val"
   # Keep the TTA config below instead of replacing it with the training config.
   USE_CKPT_CONFIG: False
+  ACTION_SELECTION: "sample"
+  PROTOCOL_PROFILE: ""
 
 TTA:
   METHOD: "tent"

@@ -1101,6 +1101,11 @@ class PPOTrainer(BaseRLTrainer):
                 tta_cfg.LAST_K_LN,
             )
 
+        source_audit_state_digest = None
+        if tta_adapter is None and source_collection is None:
+            from navtta_core.tta import module_state_sha256
+            source_audit_state_digest = module_state_sha256(self.actor_critic)
+
         tta_action_counts = [0 for _ in range(self.envs.action_spaces[0].n)]
         tta_valid_action_count = len(tta_action_counts)
         tta_max_prob_sum = 0.0
@@ -1244,9 +1249,8 @@ class PPOTrainer(BaseRLTrainer):
                 prev_actions.copy_(actions)
 
             actions = [a[0].item() for a in actions]
-            if tta_adapter is not None or source_collection is not None:
-                for action in actions:
-                    tta_action_counts[action] += 1
+            for action in actions:
+                tta_action_counts[action] += 1
             outputs = self.envs.step(actions)
 
             observations, rewards, dones, infos = [
@@ -1463,7 +1467,22 @@ class PPOTrainer(BaseRLTrainer):
         elif tta_adapter is not None:
             diagnostics = tta_adapter.diagnostics()
         else:
-            diagnostics = None
+            source_audit_state_after = module_state_sha256(self.actor_critic)
+            if source_audit_state_digest != source_audit_state_after:
+                raise RuntimeError("Source policy state changed during evaluation")
+            diagnostics = {
+                "method": "source",
+                "episodes": len(stats_episodes),
+                "action_steps": sum(tta_action_counts),
+                "updates": 0,
+                "slow_updates": 0,
+                "adapted_parameter_names": [],
+                "adapted_parameter_count": 0,
+                "relative_param_drift": 0.0,
+                "source_model_state_sha256": source_audit_state_digest,
+                "final_model_state_sha256": source_audit_state_after,
+                "source_policy_frozen": True,
+            }
 
         if diagnostics is not None:
             diagnostics["task_action_space_contract"] = (
@@ -1514,8 +1533,9 @@ class PPOTrainer(BaseRLTrainer):
                 False if tta_method == "atena" else None
             )
             diagnostics["action_counts"] = tta_action_counts
+            diagnostics["action_steps"] = sum(tta_action_counts)
             diagnostics["task_action_selection"] = action_selection
-            if source_collection is None:
+            if tta_probability_steps:
                 diagnostics["mean_max_action_probability"] = (
                     tta_max_prob_sum / max(1, tta_probability_steps)
                 )

@@ -165,6 +165,16 @@ python3 sen_baselines/enmus/run.py \
     TTA.METHOD "${CONFIG_METHOD}"
 status=$?
 set -e
+artifacts=()
+STATS="${RUN_DIR}/raw/model/tb/${EVAL_SPLIT}_stats_${SEED}.json"
+DIAGNOSTICS="${RUN_DIR}/raw/model/tb/tta_diagnostics_${SEED}.json"
+PROTOCOL="${RUN_DIR}/raw/model/tb/eval_protocol_${SEED}.json"
+AUDIO_SCHEDULE="${RUN_DIR}/raw/model/tb/audio_schedule_${SEED}.json"
+[[ -f "${STATS}" ]] && artifacts+=(--artifact "episode_metrics=${STATS}")
+[[ -f "${DIAGNOSTICS}" ]] && artifacts+=(--artifact "tta_diagnostics=${DIAGNOSTICS}")
+[[ -f "${PROTOCOL}" ]] && artifacts+=(--artifact "eval_protocol=${PROTOCOL}")
+[[ -f "${AUDIO_SCHEDULE}" ]] && artifacts+=(--artifact "audio_schedule=${AUDIO_SCHEDULE}")
 python3 "${REPO_ROOT}/tools/finalize_run_manifest.py" \
-    --manifest "${RUN_DIR}/manifest.json" --exit-code "${status}"
+    --manifest "${RUN_DIR}/manifest.json" --exit-code "${status}" \
+    "${artifacts[@]}"
 exit "${status}"

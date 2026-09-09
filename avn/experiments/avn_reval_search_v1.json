@@ -1,0 +1,1211 @@
+{
+  "schema": "navtta.avn.reval_search.v1",
+  "spec_id": "avn-reval-search-v1",
+  "status": "frozen_before_execution",
+  "seed": 0,
+  "audio_seed": 0,
+  "episodes": 2000,
+  "purpose": {
+    "phase": "validation_development",
+    "source_repository": "https://github.com/SheldonWongww/SPARK-AVN",
+    "description": "Re-evaluate ENMuS Source/Tent/FSTTA/EAM with paired episode-local audio schedules, re-evaluate SMT+Audio Source, then run the frozen 96-job FeedTTA/ATENA-AVN(sample) search.",
+    "historical_results_reused": false,
+    "publication_status": "runtime_certification_and_validation_selection_are_not_publication_final",
+    "source_branch": "navtta-eval-fixes-20260909"
+  },
+  "runtime": {
+    "server_repo_hint": "/data1/wxy/code/NavTTA",
+    "python_by_model": {
+      "smt_audio": "/data1/wxy/anaconda3/envs/enmus/bin/python3",
+      "enmus": "/data1/wxy/anaconda3/envs/enmus/bin/python3"
+    },
+    "cli_python_arguments_are_authoritative": true,
+    "checkpoint_training_provenance": "avn/checkpoints/manifests/imported_pretrained.yaml"
+  },
+  "data": {
+    "split": "val",
+    "role": "development",
+    "dataset_version": "v1",
+    "episodes_per_scene": 100,
+    "expected_scenes": 20,
+    "global_shuffle": true,
+    "streams": {
+      "single_source": {
+        "dataset_index_sha256": "838532d8e10064dd2bccbdbb7e75b8ca7cb5c4e7a3db579c3b40cfab18081c80",
+        "stream_order_sha256": "07f327590ccee2999b3f6bcb2fc412f39d9802cf932b14933fd0bdd9e5ca380c",
+        "stream_content_sha256": "dd411c4aafaf626b2848d20b92d1832ea46a5380c57107043fc639996837fdf2"
+      },
+      "multi_source": {
+        "dataset_index_sha256": "45d8dbdea540e78b01b252a3958afc4657745374d45185100d731df6a6cb849d",
+        "stream_order_sha256": "cc2f1ce8319fae6a1313750c2b1235ac39985e8d2fe6270a70fda7b12d2a6525",
+        "stream_content_sha256": "deab5e0c91abeb999563927b6c80c05bc6dfcbdd94b455b815bd303386918f2d"
+      }
+    }
+  },
+  "checkpoints": {
+    "smt_audio": {
+      "single_source": {
+        "path": "avn/checkpoints/source/smt_audio/single_best_val.pth",
+        "sha256": "8007dc0de8b0e994244d4f2fdb4a642bcc6213b4e9694568c93b10141f53ef03"
+      },
+      "multi_source": {
+        "path": "avn/checkpoints/source/smt_audio/multi_best_val.pth",
+        "sha256": "c5c039a35da13a58a8f771738208603c93d3727dbebbea0a6dbfcccd16bdddd8"
+      }
+    },
+    "enmus": {
+      "single_source": {
+        "path": "avn/checkpoints/source/enmus/single_source_best_val.pth",
+        "sha256": "4f37a377cc7fcb888c545850c91883560a908ba5366072df787e4c8238ecefcd"
+      },
+      "multi_source": {
+        "path": "avn/checkpoints/source/enmus/multi_source_best_val.pth",
+        "sha256": "3b1ccc9421b8fd6b9bad8a165528fa2323161d8b3c74642be13b2a59a5ae0464"
+      }
+    }
+  },
+  "auxiliary_checkpoints": {
+    "smt_audio": {},
+    "enmus": {
+      "audio_encoder": {
+        "path": "avn/baselines/enmus/data/pretrained_weights/semantic_audionav/enmus/audio_encoder_best_val.pth",
+        "sha256": "0939d0546f47b291eac35f6570c3fdb97c46dd45e0730d5e559f5696d4233b47"
+      },
+      "visual_encoder": {
+        "path": "avn/baselines/enmus/data/pretrained_weights/semantic_audionav/enmus/visual_encoder_best_val.pth",
+        "sha256": "daa326623772a5fb2db3abd74413ea0bbc822f2dc66029db5a25828df95a69b5"
+      },
+      "seld_encoder": {
+        "path": "avn/baselines/enmus/data/pretrained_weights/semantic_audionav/enmus/seld_crnn_best_val.h5",
+        "sha256": "7d36aa62eb6fa8043bebb8ebb8bb11a972f5fec9e039ae7260400dbdc38646db"
+      }
+    }
+  },
+  "protocol": {
+    "processes": 1,
+    "batch_size": 1,
+    "causal_online": true,
+    "continual_across_episodes": true,
+    "reset_boundary": "fresh_process_per_candidate_and_source_setting",
+    "action_selection": "sample",
+    "source_pairing": "same_batch_model_source_setting_full_stream_checkpoint_runtime_and_for_enmus_actual_episode_audio_schedule_hashes",
+    "audio_semantics": {
+      "enmus": {
+        "profile": "enmus_clavn_aligned_v1",
+        "mode": "episode_seeded_v1",
+        "schedule_seed": 0,
+        "seed_identity": [
+          "mode",
+          "audio_seed",
+          "source_setting",
+          "scene_id",
+          "episode_id",
+          "role"
+        ],
+        "preserves": "CL-AVN interval-generation formula, episode parameters, sensor/task/audio semantics",
+        "declared_deviations": [
+          "one sequential environment over one globally shuffled 2000-episode stream",
+          "episode-local audio RNG independent of worker/global NumPy RNG history",
+          "strict checkpoint loading"
+        ],
+        "not_a_replay_of_historical_eight_environment_audio_sequences": true
+      },
+      "smt_audio": "task-native audio path; paired controls use the identical current runtime and fixed stream"
+    },
+    "supervision_by_method": {
+      "source": "no_adaptation",
+      "tent": "unsupervised_tta",
+      "fstta": "unsupervised_tta",
+      "eam": "unsupervised_tta",
+      "feedtta": "binary_episode_feedback_tta",
+      "atena": "active_binary_episode_feedback_with_self_labels"
+    },
+    "atena_reported_label": "ATENA-AVN(sample)",
+    "fixed_overrides_by_method": {
+      "source": {},
+      "tent": {
+        "TTA.OPTIMIZER": "Adam",
+        "TTA.BETA1": 0.9,
+        "TTA.BETA2": 0.999,
+        "TTA.WEIGHT_DECAY": "0.0",
+        "TTA.MAX_GRAD_NORM": "1.0",
+        "TTA.LAST_K_LN": 4,
+        "TTA.RESET_BN_STATS": true,
+        "TTA.MAX_UPDATES_PER_EPISODE": -1
+      },
+      "fstta": {
+        "TTA.NORM_SCOPE": "last_k_ln",
+        "TTA.LAST_K_LN": 4,
+        "TTA.MAX_GRAD_NORM": "1.0",
+        "TTA.RESET_BN_STATS": true,
+        "TTA.FSTTA.Q": 0.1,
+        "TTA.FSTTA.RHO": 0.95,
+        "TTA.FSTTA.TAU": 0.7,
+        "TTA.FSTTA.A": 0.9,
+        "TTA.FSTTA.B": 1.1,
+        "TTA.FSTTA.USE_SLOW": true,
+        "TTA.FSTTA.FAST_GRAD_MODE": "concordant",
+        "TTA.FSTTA.USE_FAST_LR_SCALER": true,
+        "TTA.FSTTA.OPTIMIZER": "AdamW",
+        "TTA.FSTTA.SLOW_OPTIMIZER": "AdamW",
+        "TTA.FSTTA.BETA1": 0.9,
+        "TTA.FSTTA.BETA2": 0.99,
+        "TTA.FSTTA.WEIGHT_DECAY": "0.0",
+        "TTA.FSTTA.SLOW_MOMENTUM": "0.0",
+        "TTA.FSTTA.RESET_OPTIMIZER_EACH_EPISODE": true,
+        "TTA.FSTTA.RESET_SLOW_OPTIMIZER_EACH_WINDOW": false,
+        "TTA.FSTTA.RESET_VAR_HIST_EACH_EPISODE": false,
+        "TTA.FSTTA.EIGEN_EPS": "1e-6"
+      },
+      "eam": {
+        "TTA.EAM.PARAM_SCOPE": "module_prefixes",
+        "TTA.EAM.TRAINABLE_PREFIXES": [
+          "net.smt_state_encoder.transformer",
+          "action_distribution"
+        ],
+        "TTA.EAM.CONFIDENCE_SCALE": 0.4,
+        "TTA.EAM.MEMORY_SIZE": 32,
+        "TTA.EAM.BATCH_SIZE": 8,
+        "TTA.EAM.OPTIMIZER": "Adam",
+        "TTA.EAM.BETA1": 0.9,
+        "TTA.EAM.BETA2": 0.999,
+        "TTA.EAM.WEIGHT_DECAY": "0.0",
+        "TTA.EAM.MAX_GRAD_NORM": "0.0"
+      },
+      "feedtta": {
+        "TTA.FEEDTTA.PARAM_SCOPE": "module_prefixes",
+        "TTA.FEEDTTA.TRAINABLE_PREFIXES": [
+          "net.smt_state_encoder",
+          "action_distribution"
+        ],
+        "TTA.FEEDTTA.OPTIMIZER": "Adam",
+        "TTA.FEEDTTA.BETA1": 0.9,
+        "TTA.FEEDTTA.BETA2": 0.999,
+        "TTA.FEEDTTA.EPS": "1e-5",
+        "TTA.FEEDTTA.WEIGHT_DECAY": "0.0",
+        "TTA.FEEDTTA.MAX_GRAD_NORM": "0.0",
+        "TTA.FEEDTTA.NORMALIZE_GRADIENT": false,
+        "TTA.FEEDTTA.SGR_MODE": "paper_main",
+        "TTA.FEEDTTA.SGR_SEED": 0,
+        "TTA.FEEDTTA.ACTION_SELECTION_PROTOCOL": "sample_from_policy"
+      },
+      "atena": {
+        "TTA.ATENA.PREFLIGHT_APPROVED": true,
+        "TTA.ATENA.PARAM_SCOPE": "all",
+        "TTA.ATENA.ACTION_SELECTION_PROTOCOL": "sample_from_policy",
+        "TTA.ATENA.TASK_UPDATE_SCOPE": "replay_reachable_actor_navigation_policy",
+        "TTA.ATENA.OPTIMIZER": "AdamW",
+        "TTA.ATENA.BETA1": 0.9,
+        "TTA.ATENA.BETA2": 0.999,
+        "TTA.ATENA.WEIGHT_DECAY": 0.01,
+        "TTA.ATENA.MAX_GRAD_NORM": "0.0"
+      }
+    },
+    "overrides_by_model": {
+      "smt_audio": {},
+      "enmus": {
+        "EVAL.PROTOCOL_PROFILE": "enmus_clavn_aligned_v1",
+        "TASK_CONFIG.SIMULATOR.AUDIO.SCHEDULE_MODE": "episode_seeded_v1",
+        "TASK_CONFIG.SIMULATOR.AUDIO.SCHEDULE_SEED": 0
+      }
+    }
+  },
+  "scheduler": {
+    "rounds": 4,
+    "candidates_per_cell_per_round": 3,
+    "max_jobs_per_gpu": 6,
+    "max_concurrent_search_jobs": 24,
+    "global_barrier_between_rounds": true,
+    "lanes": [
+      {
+        "model": "smt_audio",
+        "method": "feedtta",
+        "gpu": 0
+      },
+      {
+        "model": "smt_audio",
+        "method": "atena",
+        "gpu": 1
+      },
+      {
+        "model": "enmus",
+        "method": "feedtta",
+        "gpu": 2
+      },
+      {
+        "model": "enmus",
+        "method": "atena",
+        "gpu": 3
+      }
+    ]
+  },
+  "smoke": {
+    "episodes": 20,
+    "source_jobs": 4,
+    "feedback_jobs": 8,
+    "role": "technical_validation_only_not_ranked"
+  },
+  "revaluation": [
+    {
+      "model": "smt_audio",
+      "method": "source",
+      "source_setting": "single_source",
+      "point": {}
+    },
+    {
+      "model": "smt_audio",
+      "method": "source",
+      "source_setting": "multi_source",
+      "point": {}
+    },
+    {
+      "model": "enmus",
+      "method": "source",
+      "source_setting": "single_source",
+      "point": {}
+    },
+    {
+      "model": "enmus",
+      "method": "source",
+      "source_setting": "multi_source",
+      "point": {}
+    },
+    {
+      "model": "enmus",
+      "method": "tent",
+      "source_setting": "single_source",
+      "selection_basis": "Historical SR-first/Pareto winner j030; not SPL-only winner j080 or uniform main-table Tent.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/TENT_HYPERPARAMETER_SEARCH_REPORT.md"
+      ],
+      "point": {
+        "id": "tent-historical-j030",
+        "lr": "1e-8",
+        "scope": "last_ln",
+        "update_interval": 1
+      }
+    },
+    {
+      "model": "enmus",
+      "method": "fstta",
+      "source_setting": "single_source",
+      "selection_basis": "ENMuS single-source historical job 0; identical frozen method parameters on multi-source.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/FSTTA_HYPERPARAMETER_SEARCH_REPORT.md",
+        "avn/scripts/run_fstta_enmus_multi.py"
+      ],
+      "point": {
+        "id": "fstta-historical-j000",
+        "fast_lr": "1e-8",
+        "fast_window": 16,
+        "slow_lr": "1e-5",
+        "slow_window": 32
+      }
+    },
+    {
+      "model": "enmus",
+      "method": "eam",
+      "source_setting": "single_source",
+      "selection_basis": "ENMuS boundary-grid job 11; identical frozen method parameters on multi-source.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/EAM_HYPERPARAMETER_SEARCH_REPORT.md",
+        "avn/results/AVN_MAIN_COMPARISON.md"
+      ],
+      "point": {
+        "id": "eam-historical-j011",
+        "lr": "3e-9",
+        "update_interval": 128
+      }
+    },
+    {
+      "model": "enmus",
+      "method": "tent",
+      "source_setting": "multi_source",
+      "selection_basis": "Historical multi-source grid best balanced SR/SPL point, last_ln/1e-7/u1.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/TENT_HYPERPARAMETER_SEARCH_REPORT.md"
+      ],
+      "point": {
+        "id": "tent-historical-multi-lastln",
+        "lr": "1e-7",
+        "scope": "last_ln",
+        "update_interval": 1
+      }
+    },
+    {
+      "model": "enmus",
+      "method": "fstta",
+      "source_setting": "multi_source",
+      "selection_basis": "ENMuS single-source historical job 0; identical frozen method parameters on multi-source.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/FSTTA_HYPERPARAMETER_SEARCH_REPORT.md",
+        "avn/scripts/run_fstta_enmus_multi.py"
+      ],
+      "point": {
+        "id": "fstta-historical-j000",
+        "fast_lr": "1e-8",
+        "fast_window": 16,
+        "slow_lr": "1e-5",
+        "slow_window": 32
+      }
+    },
+    {
+      "model": "enmus",
+      "method": "eam",
+      "source_setting": "multi_source",
+      "selection_basis": "ENMuS boundary-grid job 11; identical frozen method parameters on multi-source.",
+      "evidence": [
+        "avn/results/analysis/hparam_search/EAM_HYPERPARAMETER_SEARCH_REPORT.md",
+        "avn/results/AVN_MAIN_COMPARISON.md"
+      ],
+      "point": {
+        "id": "eam-historical-j011",
+        "lr": "3e-9",
+        "update_interval": 128
+      }
+    }
+  ],
+  "search": {
+    "cell_count": 8,
+    "candidates_per_cell": 12,
+    "total_jobs": 96,
+    "candidate_order": "Every consecutive three candidates in a cell form one round; both source settings share the same predeclared candidate order.",
+    "feedtta_design": {
+      "lrs_by_model": {
+        "smt_audio": [
+          "3e-9",
+          "1e-8",
+          "3e-8",
+          "1e-7"
+        ],
+        "enmus": [
+          "1e-8",
+          "3e-8",
+          "1e-7",
+          "3e-7"
+        ]
+      },
+      "gammas": [
+        "0.95",
+        "0.99",
+        "1.0"
+      ],
+      "p": 0.05,
+      "alpha": -0.2,
+      "evidence": [
+        "avn/results/analysis/hparam_search/FEEDTTA_HYPERPARAMETER_SEARCH_REPORT.md"
+      ],
+      "rationale": "Retain the SMT+Audio 3e-8/gamma0.95 and provisional ENMuS 3e-7/gamma1.0 regions; history supplies candidate design, not completed runs or matched controls."
+    },
+    "cells": [
+      {
+        "model": "smt_audio",
+        "method": "feedtta",
+        "source_setting": "single_source",
+        "candidates": [
+          {
+            "id": "f00",
+            "lr": "3e-9",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f01",
+            "lr": "3e-9",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f02",
+            "lr": "3e-9",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f03",
+            "lr": "1e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f04",
+            "lr": "1e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f05",
+            "lr": "1e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f06",
+            "lr": "3e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f07",
+            "lr": "3e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f08",
+            "lr": "3e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f09",
+            "lr": "1e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f10",
+            "lr": "1e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f11",
+            "lr": "1e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          }
+        ]
+      },
+      {
+        "model": "smt_audio",
+        "method": "feedtta",
+        "source_setting": "multi_source",
+        "candidates": [
+          {
+            "id": "f00",
+            "lr": "3e-9",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f01",
+            "lr": "3e-9",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f02",
+            "lr": "3e-9",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f03",
+            "lr": "1e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f04",
+            "lr": "1e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f05",
+            "lr": "1e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f06",
+            "lr": "3e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f07",
+            "lr": "3e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f08",
+            "lr": "3e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f09",
+            "lr": "1e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f10",
+            "lr": "1e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f11",
+            "lr": "1e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          }
+        ]
+      },
+      {
+        "model": "smt_audio",
+        "method": "atena",
+        "source_setting": "single_source",
+        "candidates": [
+          {
+            "id": "a00",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a01",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a02",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a03",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a04",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a05",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a06",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a07",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a08",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.1,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a09",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": "1.0",
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a10",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.25,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a11",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.75,
+            "self_loss_weight": 0.1
+          }
+        ]
+      },
+      {
+        "model": "smt_audio",
+        "method": "atena",
+        "source_setting": "multi_source",
+        "candidates": [
+          {
+            "id": "a00",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a01",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a02",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a03",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a04",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a05",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a06",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a07",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a08",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.1,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a09",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": "1.0",
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a10",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.25,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a11",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.75,
+            "self_loss_weight": 0.1
+          }
+        ]
+      },
+      {
+        "model": "enmus",
+        "method": "feedtta",
+        "source_setting": "single_source",
+        "candidates": [
+          {
+            "id": "f00",
+            "lr": "1e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f01",
+            "lr": "1e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f02",
+            "lr": "1e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f03",
+            "lr": "3e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f04",
+            "lr": "3e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f05",
+            "lr": "3e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f06",
+            "lr": "1e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f07",
+            "lr": "1e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f08",
+            "lr": "1e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f09",
+            "lr": "3e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f10",
+            "lr": "3e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f11",
+            "lr": "3e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          }
+        ]
+      },
+      {
+        "model": "enmus",
+        "method": "feedtta",
+        "source_setting": "multi_source",
+        "candidates": [
+          {
+            "id": "f00",
+            "lr": "1e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f01",
+            "lr": "1e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f02",
+            "lr": "1e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f03",
+            "lr": "3e-8",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f04",
+            "lr": "3e-8",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f05",
+            "lr": "3e-8",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f06",
+            "lr": "1e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f07",
+            "lr": "1e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f08",
+            "lr": "1e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f09",
+            "lr": "3e-7",
+            "gamma": "0.95",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f10",
+            "lr": "3e-7",
+            "gamma": "0.99",
+            "p": 0.05,
+            "alpha": -0.2
+          },
+          {
+            "id": "f11",
+            "lr": "3e-7",
+            "gamma": "1.0",
+            "p": 0.05,
+            "alpha": -0.2
+          }
+        ]
+      },
+      {
+        "model": "enmus",
+        "method": "atena",
+        "source_setting": "single_source",
+        "candidates": [
+          {
+            "id": "a00",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a01",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a02",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a03",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a04",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a05",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a06",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a07",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a08",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.1,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a09",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": "1.0",
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a10",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.25,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a11",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.75,
+            "self_loss_weight": 0.1
+          }
+        ]
+      },
+      {
+        "model": "enmus",
+        "method": "atena",
+        "source_setting": "multi_source",
+        "candidates": [
+          {
+            "id": "a00",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a01",
+            "lr_query": "3e-8",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a02",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a03",
+            "lr_query": "1e-7",
+            "lr_self": "1e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a04",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a05",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a06",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.5,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a07",
+            "lr_query": "1e-6",
+            "lr_self": "1e-7",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a08",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.1,
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a09",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": "1.0",
+            "mix_lambda": 0.5,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a10",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.25,
+            "self_loss_weight": 0.1
+          },
+          {
+            "id": "a11",
+            "lr_query": "3e-7",
+            "lr_self": "3e-8",
+            "query_threshold": 0.75,
+            "mix_lambda": 0.75,
+            "self_loss_weight": 0.1
+          }
+        ]
+      }
+    ],
+    "atena_design": {
+      "shared_grid_across_models_and_source_settings": true,
+      "selection_independent_per_cell": true,
+      "rationale": "Twelve predeclared points separate update intensity, entropy-query threshold and mixture weight. Query/self 1e-6/1e-7 is an upper-intensity probe, not an assumed AVN optimum. PONI and VLN observations motivate probes but do not establish transferable entropy thresholds or AVN gains.",
+      "evidence": [
+        "avn/experiments/ATENA_AVN_SAMPLE_REPRODUCTION_CONTRACT.md",
+        "objectnav/results/legacy/poni_mp3d_tta_20260908/README.md",
+        "vln/results/final/r2r-ce/registry.json",
+        "autodl-analysis/vln/results/tuning/consistency_v2_five_41c128d/r2r/consistency-v2-five-41c128d/hamt-r2r/atena/FROZEN.json"
+      ],
+      "threshold_units": "raw mean policy entropy in natural-log units",
+      "query_rate_use": "report_all_including_near_zero_or_one_without_filtering",
+      "self_loss_weight": 0.1
+    }
+  },
+  "selection": {
+    "unit": "model_method_source_setting",
+    "eligibility": "technical_validity_only",
+    "ranking": [
+      "spl_desc",
+      "success_desc",
+      "softspl_desc",
+      "relative_param_drift_asc",
+      "candidate_id_asc"
+    ],
+    "requires_all_12_candidates_for_complete_selection": true,
+    "partial_rankings_are_provisional": true,
+    "retain_negative_source_deltas": true,
+    "source_performance_floor": false,
+    "atena_query_rate": "report_only_not_an_eligibility_filter_or_ranking_key",
+    "smoke_excluded": true,
+    "qualification": "validation_selected_only; no independent test or order-robustness claim; old results remain unchanged"
+  }
+}

@@ -53,6 +53,7 @@ _C.EVAL.USE_CKPT_CONFIG = True
 # The source policy historically samples actions.  ATENA executes argmax as in
 # the official code, so its matched Source-argmax control overrides this field.
 _C.EVAL.ACTION_SELECTION = "sample"
+_C.EVAL.PROTOCOL_PROFILE = ""
 # -----------------------------------------------------------------------------
 # REINFORCEMENT LEARNING (RL) ENVIRONMENT CONFIG
 # -----------------------------------------------------------------------------
@@ -318,6 +319,13 @@ _TC.SIMULATOR.AUDIO.GRAPH_FILE = 'graph.pkl'
 _TC.SIMULATOR.AUDIO.HAS_DISTRACTOR_SOUND = False
 _TC.SIMULATOR.AUDIO.EVERLASTING = True
 _TC.SIMULATOR.AUDIO.CROSSFADE = False
+_TC.SIMULATOR.AUDIO.SCHEDULE_MODE = "legacy_global"
+_TC.SIMULATOR.AUDIO.SCHEDULE_SEED = 0
+_TC.SIMULATOR.AUDIO.SCHEDULE_SOURCE_SETTING = ""
+_TC.SIMULATOR.AUDIO.SCHEDULE_SCENE_ID = ""
+_TC.SIMULATOR.AUDIO.SCHEDULE_EPISODE_ID = ""
+_TC.TASK.AUDIO_SCHEDULE_AUDIT = CN()
+_TC.TASK.AUDIO_SCHEDULE_AUDIT.TYPE = "AudioScheduleAudit"
 # -----------------------------------------------------------------------------
 # DistanceToGoal Measure
 # -----------------------------------------------------------------------------

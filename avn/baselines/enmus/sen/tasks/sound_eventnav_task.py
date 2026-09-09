@@ -5,6 +5,9 @@ from habitat.config import Config
 from habitat.core.dataset import Episode
 from habitat.tasks.nav.nav import NavigationTask
 from habitat.core.registry import registry
+from habitat.core.embodied_task import Measure
+
+from navtta_avn.audio_schedule import SEEDED_MODE, canonical_scene_id, episode_key
 
 
 @registry.register_task(name="SoundEventNav")
@@ -21,6 +24,12 @@ def merge_sim_episode_config(
 ) -> Any:
     sim_config.defrost()
     sim_config.SCENE = episode.scene_id
+    schedule_mode = getattr(sim_config.AUDIO, "SCHEDULE_MODE", "legacy_global")
+    episode_id = getattr(episode, "episode_id", None)
+    if schedule_mode == SEEDED_MODE:
+        episode_key(episode.scene_id, episode_id)
+    sim_config.AUDIO.SCHEDULE_SCENE_ID = canonical_scene_id(episode.scene_id)
+    sim_config.AUDIO.SCHEDULE_EPISODE_ID = "" if episode_id is None else str(episode_id)
     sim_config.freeze()
     if (
         episode.start_position is not None
@@ -61,3 +70,22 @@ def merge_sim_episode_config(
         agent_cfg.IS_SET_START_STATE = True
         agent_cfg.freeze()
     return sim_config
+
+
+@registry.register_measure
+class AudioScheduleAudit(Measure):
+    cls_uuid = "audio_schedule_audit"
+
+    def __init__(self, sim, config, *args, **kwargs):
+        self._sim = sim
+        super().__init__()
+
+    def _get_uuid(self, *args, **kwargs):
+        return self.cls_uuid
+
+    def reset_metric(self, *args, **kwargs):
+        # Habitat captures terminal metrics before VectorEnv auto-resets.
+        self._metric = self._sim.get_audio_schedule_audit()
+
+    def update_metric(self, *args, **kwargs):
+        pass

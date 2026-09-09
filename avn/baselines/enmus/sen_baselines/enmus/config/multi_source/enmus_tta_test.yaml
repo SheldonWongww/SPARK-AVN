@@ -10,6 +10,8 @@ EVAL:
   # Use exactly the same fixed 20 x 100 TTA set as SMT+Audio.
   SPLIT: "val"
   USE_CKPT_CONFIG: False
+  ACTION_SELECTION: "sample"
+  PROTOCOL_PROFILE: ""
 
 TTA:
   METHOD: "tent"
