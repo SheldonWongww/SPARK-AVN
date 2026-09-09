@@ -119,11 +119,11 @@ FeedTTA 在 episode 结束后使用真实二值成功/失败反馈；ATENA 仅�
 ```bash
 cd /data1/wxy/code/NavTTA
 git status --short
-git fetch https://github.com/SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909
+git fetch git@github.com:SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909
 git switch -c navtta-eval-fixes-20260909 FETCH_HEAD
 ```
 
-先保存服务器上自己尚未提交的代码变更，再切换分支。若该分支已存在，使用 `git switch navtta-eval-fixes-20260909`，随后再次 fetch 并 `git merge --ff-only FETCH_HEAD`。数据、场景、音频和 checkpoint 继续使用服务器现有的 AVN 路径，不通过 Git 同步。
+服务器已配置 GitHub SSH key，拉取和更新均使用 SSH 地址。先保存服务器上自己尚未提交的代码变更，再切换分支。若该分支已存在，使用 `git switch navtta-eval-fixes-20260909`，随后执行 `git pull --ff-only git@github.com:SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909`。数据、场景、音频和 checkpoint 继续使用服务器现有的 AVN 路径，不通过 Git 同步。
 
 设置解释器与本次唯一 batch ID，安装共享包，然后查看计划和预检：
 

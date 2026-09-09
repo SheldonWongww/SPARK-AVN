@@ -42,14 +42,14 @@ GitHub 的 `SPARK-AVN/main` 与当前 NavTTA 历史独立，本次完整 NavTTA 
 
 ```bash
 cd /data1/wxy/code/NavTTA
-git fetch https://github.com/SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909
+git fetch git@github.com:SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909
 git switch -c navtta-eval-fixes-20260909 FETCH_HEAD
 STREAM_PY=/data1/wxy/exp_data/NavTTA/vln/envs/streamvln/bin/python
 "$STREAM_PY" -m pip install -e core
 "$STREAM_PY" vln/scripts/run_streamvln_search_v6.py --stage all --gpus 0,1,2,3 --dry-run
 ```
 
-已在该分支时，更新使用 `git pull --ff-only https://github.com/SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909`。StreamVLN 使用上面的独立环境，不使用 AVN 的 `enmus` 环境。确认旧任务已经退出并释放 GPU 后启动：
+服务器已配置 GitHub SSH key，拉取和更新均使用 SSH 地址。已在该分支时，更新使用 `git pull --ff-only git@github.com:SheldonWongww/SPARK-AVN.git navtta-eval-fixes-20260909`。StreamVLN 使用上面的独立环境，不使用 AVN 的 `enmus` 环境。确认旧任务已经退出并释放 GPU 后启动：
 
 ```bash
 mkdir -p vln/results/tuning/streamvln_val_unseen_search_v6
