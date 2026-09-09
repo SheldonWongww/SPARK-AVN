@@ -41,6 +41,7 @@ from habitat.utils.geometry_utils import quaternion_rotate_vector
 from model.stream_video_vln import StreamVLNForCausalLM
 from streamvln_tta import StreamVLNTTAController, add_streamvln_tta_args
 from navtta_vln.discrete_tta import add_discrete_tta_args
+from navtta_vln.streamvln_memory import history_frame_indices
 from utils.utils import dict_to_cuda
 from utils.dist import *
 from utils.utils import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX, DEFAULT_MEMORY_TOKEN, MEMORY_TOKEN_INDEX, DEFAULT_VIDEO_TOKEN
@@ -430,10 +431,19 @@ class VLNEvaluator:
                             vis_frames.append(frame)
                     # import ipdb; ipdb.set_trace()
                     if len(action_seq) == 0:
+                        # A generated action chunk can straddle a cache reset
+                        # (e.g. step 192 -> next generate at 194). The prompt
+                        # and image history must use the same context boundary.
+                        history_ids = history_frame_indices(
+                            starts_new_context=output_ids is None,
+                            segment_start=time_ids[0],
+                            num_history=self.num_history,
+                            num_future_steps=self.num_future_steps,
+                        )
                         if output_ids is None:
                             sources = copy.deepcopy(self.conversation)
                             sources[0]["value"] = sources[0]["value"].replace(' Where should you go next to stay on track?', f' Please devise an action sequence to follow the instruction which may include turning left or right by a certain degree, moving forward by a certain distance or stopping once the task is complete.')
-                            if step_id != 0 :
+                            if history_ids:
                                 sources[0]["value"] += f' These are your historical observations {DEFAULT_MEMORY_TOKEN}.'
                             sources[0]["value"] = sources[0]["value"].replace(DEFAULT_VIDEO_TOKEN+'\n', '')
                             sources[0]["value"] = sources[0]["value"].replace('<instruction>.', episode.instruction.instruction_text)
@@ -452,15 +462,11 @@ class VLNEvaluator:
                         poses = pose_list[-1:]
                         intrinsics = intrinsic_list[-1:]
                         # import ipdb; ipdb.set_trace()
-                        if step_id != 0 and step_id % self.num_frames == 0:
-                            if self.num_history is None:
-                                history_ids = slice(0, time_ids[0], self.num_future_steps)
-                            else:
-                                history_ids = slice(0, time_ids[0], (time_ids[0] // self.num_history))
-                            images = rgb_list[history_ids] + images
-                            depths = depth_list[history_ids] + depths
-                            poses = pose_list[history_ids] + poses
-                            intrinsics = intrinsic_list[history_ids] + intrinsics
+                        if history_ids:
+                            images = [rgb_list[i] for i in history_ids] + images
+                            depths = [depth_list[i] for i in history_ids] + depths
+                            poses = [pose_list[i] for i in history_ids] + poses
+                            intrinsics = [intrinsic_list[i] for i in history_ids] + intrinsics
                                 
                         input_dict = {'images':torch.stack(images).unsqueeze(0), 'depths':torch.stack(depths).unsqueeze(0), \
                                         'poses':torch.stack(poses).unsqueeze(0), 'intrinsics':torch.stack(intrinsics).unsqueeze(0), 'inputs':input_ids, 'env_id':idx, 'time_ids':[time_ids],'task_type':[0]}
@@ -726,7 +732,7 @@ def eval():
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    add_discrete_tta_args(parser)
+    add_discrete_tta_args(parser, feedtta_scope_profiles=("configured_prefixes",))
     add_streamvln_tta_args(parser)
 
     args = parser.parse_args()

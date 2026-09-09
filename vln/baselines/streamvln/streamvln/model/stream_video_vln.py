@@ -221,6 +221,12 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                         cur_new_input_embeds.append(cur_image_feature)
                         cur_new_labels.append(torch.full((cur_image_feature.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
                     elif special_token == MEMORY_TOKEN_INDEX:
+                        if memory_features[batch_idx] is None:
+                            raise ValueError(
+                                "StreamVLN memory prompt has no history frames; "
+                                "a fresh generation context must include its "
+                                "history even when an action chunk crosses the cache reset"
+                            )
                         cur_memory_feature = memory_features[batch_idx][cur_mem_id]
                         cur_mem_id += 1
                         # print(batch_idx, i, 'cur_memory_feature shape:', cur_memory_feature.shape)

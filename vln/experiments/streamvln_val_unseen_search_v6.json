@@ -1,0 +1,306 @@
+{
+  "schema": "navtta.streamvln_search.v6",
+  "experiment_id": "streamvln_val_unseen_search_v6",
+  "seed": 0,
+  "expected_episodes": {
+    "val_seen": 778,
+    "val_unseen": 1839
+  },
+  "selection": {
+    "primary_metric": "SPL",
+    "secondary_metric": "SR"
+  },
+  "methods": {
+    "eam": [
+      {
+        "candidate_id": "lr1em6_conf04",
+        "parameters": {
+          "lr": 1e-06,
+          "confidence_scale": 0.4,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 1,
+          "optimizer": "Adam",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr1em6_conf08",
+        "parameters": {
+          "lr": 1e-06,
+          "confidence_scale": 0.8,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 1,
+          "optimizer": "Adam",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_conf04",
+        "parameters": {
+          "lr": 3e-06,
+          "confidence_scale": 0.4,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 1,
+          "optimizer": "Adam",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_conf08",
+        "parameters": {
+          "lr": 3e-06,
+          "confidence_scale": 0.8,
+          "memory_size": 32,
+          "batch_size": 8,
+          "update_interval": 1,
+          "optimizer": "Adam",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      }
+    ],
+    "feedtta": [
+      {
+        "candidate_id": "lr1em6_gamma07",
+        "parameters": {
+          "lr": 1e-06,
+          "gamma": 0.7,
+          "p": 0.05,
+          "alpha": -0.2,
+          "sgr_seed": 0,
+          "sgr_mode": "paper_main",
+          "scope_profile": "configured_prefixes",
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr1em6_gamma095",
+        "parameters": {
+          "lr": 1e-06,
+          "gamma": 0.95,
+          "p": 0.05,
+          "alpha": -0.2,
+          "sgr_seed": 0,
+          "sgr_mode": "paper_main",
+          "scope_profile": "configured_prefixes",
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_gamma07",
+        "parameters": {
+          "lr": 3e-06,
+          "gamma": 0.7,
+          "p": 0.05,
+          "alpha": -0.2,
+          "sgr_seed": 0,
+          "sgr_mode": "paper_main",
+          "scope_profile": "configured_prefixes",
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_gamma095",
+        "parameters": {
+          "lr": 3e-06,
+          "gamma": 0.95,
+          "p": 0.05,
+          "alpha": -0.2,
+          "sgr_seed": 0,
+          "sgr_mode": "paper_main",
+          "scope_profile": "configured_prefixes",
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      }
+    ],
+    "atena": [
+      {
+        "candidate_id": "lr3em7_query03",
+        "parameters": {
+          "lr_query": 3e-07,
+          "lr_self": 3e-08,
+          "query_threshold": 0.3,
+          "mix_lambda": 0.25,
+          "self_loss_weight": 0.1,
+          "optimizer": "AdamW",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em7_query05",
+        "parameters": {
+          "lr_query": 3e-07,
+          "lr_self": 3e-08,
+          "query_threshold": 0.5,
+          "mix_lambda": 0.25,
+          "self_loss_weight": 0.1,
+          "optimizer": "AdamW",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_query03",
+        "parameters": {
+          "lr_query": 3e-06,
+          "lr_self": 3e-07,
+          "query_threshold": 0.3,
+          "mix_lambda": 0.25,
+          "self_loss_weight": 0.1,
+          "optimizer": "AdamW",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      },
+      {
+        "candidate_id": "lr3em6_query05",
+        "parameters": {
+          "lr_query": 3e-06,
+          "lr_self": 3e-07,
+          "query_threshold": 0.5,
+          "mix_lambda": 0.25,
+          "self_loss_weight": 0.1,
+          "optimizer": "AdamW",
+          "weight_decay": 0.0,
+          "max_grad_norm": 1.0,
+          "episodic": false,
+          "action_selection": "argmax",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "streamvln_readout_protocol": "native_residual"
+        }
+      }
+    ]
+  },
+  "historical_audit": {
+    "path": "vln/results/legacy/streamvln_v5_failure_audit/summary.json",
+    "sha256": "0760f55167b75d1f13b5980248a9cc6ef215f8ad33ce0324799400e67552fca5"
+  },
+  "frozen_selections": {
+    "fstta": {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "36eb80679f8eafd53068bd1ab8d5ce07657f475f3e524089062a78167b04236a",
+      "diagnostics_sha256": "63bf63d22f1082ff4a81185c9e1ae3262bce93aea9ae3e8d6207182506d90812",
+      "episodes": 1839,
+      "formal_result_eligible": false,
+      "metrics": {
+        "SPL": 51.374064514702724,
+        "SR": 57.85753130912781,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "bb2b25d757590276107c146d2605dfa6d5594541347281453fae609382340ae9",
+      "run_tag": "streamvln-vu-fstta-02-v5",
+      "selection_rule": "highest complete archived val_unseen SPL, then SR; compare all seven available v4/v5 runs"
+    },
+    "tent": {
+      "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+      "config_sha256": "2f4d750357927aad20214f30afb043cf389664490b02657677c0f96a4722d54a",
+      "diagnostics_sha256": "f75d2e8ff859250b2f658d9072a0156f2e5043bc7bc6175b9b5a229d8b1b0227",
+      "metrics": {
+        "SPL": 50.50407544806351,
+        "SR": 56.87873959541321,
+        "episodes": 1839
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "lr": 3e-08,
+        "max_grad_norm": 1.0,
+        "norm_scope": "last_ln",
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "legacy_v4",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-tent-01-v4",
+      "runtime_constraint": "The winning parameters were measured on legacy_v4; preserve that protocol for the frozen val_seen run. Its archived val_unseen metrics are not native_residual metrics.",
+      "selection_rule": "highest complete val_unseen SPL, then SR, then lowest learning rate"
+    }
+  }
+}

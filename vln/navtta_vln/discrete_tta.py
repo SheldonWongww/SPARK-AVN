@@ -21,7 +21,9 @@ from navtta_core.tta import build_adapter, module_state_sha256
 TTA_METHODS = ("source", "tent", "fstta", "eam", "feedtta", "atena", "idea")
 
 
-def add_discrete_tta_args(parser):
+def add_discrete_tta_args(
+    parser, feedtta_scope_profiles=("paper_full", "last_crossmodal", "action_head")
+):
     """Install the identical TTA CLI on every discrete VLN parser."""
     group = parser.add_argument_group("discrete VLN test-time adaptation")
     group.add_argument("--tta_method", choices=TTA_METHODS, default="source")
@@ -157,8 +159,8 @@ def add_discrete_tta_args(parser):
     feed.add_argument("--tta_feedtta_gamma", type=float, default=0.99)
     feed.add_argument(
         "--tta_feedtta_scope_profile",
-        choices=("paper_full", "last_crossmodal", "action_head"),
-        default="paper_full",
+        choices=feedtta_scope_profiles,
+        default=feedtta_scope_profiles[0],
         help=(
             "model-aware FeedTTA parameter scope; paper_full updates the full "
             "cross-modal decision stack, last_crossmodal updates its final "

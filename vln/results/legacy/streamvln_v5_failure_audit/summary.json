@@ -1,0 +1,1850 @@
+{
+  "archive_root": "中间结果/streamvln_val_unseen_search_v5",
+  "episode_order": {
+    "all_observed_prefixes_match": true,
+    "expected_episodes": 1839,
+    "manifest_path": "vln/manifests/episode_order/r2r_vlnce_v1_3/val_unseen.json",
+    "manifest_sha256": "a59f45e7fc6bbde7fdb9578e2721a0479f91e84aab4a95063edb46464899b522",
+    "order_policy": "scene_id_then_natural_episode_id_v1",
+    "order_sha256": "e5a86bf609770d0525efc0be6527d8b88c02f932a0a35e1c4162b06172307a8a",
+    "seed": 0
+  },
+  "formal_result_eligible": false,
+  "frozen_selections": {
+    "fstta": {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "36eb80679f8eafd53068bd1ab8d5ce07657f475f3e524089062a78167b04236a",
+      "diagnostics_sha256": "63bf63d22f1082ff4a81185c9e1ae3262bce93aea9ae3e8d6207182506d90812",
+      "episodes": 1839,
+      "formal_result_eligible": false,
+      "metrics": {
+        "SPL": 51.374064514702724,
+        "SR": 57.85753130912781,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "bb2b25d757590276107c146d2605dfa6d5594541347281453fae609382340ae9",
+      "run_tag": "streamvln-vu-fstta-02-v5",
+      "selection_rule": "highest complete archived val_unseen SPL, then SR; compare all seven available v4/v5 runs"
+    },
+    "tent": {
+      "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+      "config_sha256": "2f4d750357927aad20214f30afb043cf389664490b02657677c0f96a4722d54a",
+      "diagnostics_sha256": "f75d2e8ff859250b2f658d9072a0156f2e5043bc7bc6175b9b5a229d8b1b0227",
+      "metrics": {
+        "SPL": 50.50407544806351,
+        "SR": 56.87873959541321,
+        "episodes": 1839
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "lr": 3e-08,
+        "max_grad_norm": 1.0,
+        "norm_scope": "last_ln",
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "legacy_v4",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-tent-01-v4",
+      "runtime_constraint": "The winning parameters were measured on legacy_v4; preserve that protocol for the frozen val_seen run. Its archived val_unseen metrics are not native_residual metrics.",
+      "selection_rule": "highest complete val_unseen SPL, then SR, then lowest learning rate"
+    }
+  },
+  "fstta_historical_comparison": [
+    {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "36eb80679f8eafd53068bd1ab8d5ce07657f475f3e524089062a78167b04236a",
+      "diagnostics_sha256": "63bf63d22f1082ff4a81185c9e1ae3262bce93aea9ae3e8d6207182506d90812",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 51.374064514702724,
+        "SR": 57.85753130912781,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "bb2b25d757590276107c146d2605dfa6d5594541347281453fae609382340ae9",
+      "run_tag": "streamvln-vu-fstta-02-v5"
+    },
+    {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "cc1bc0db99990b4ecfc3edf9a6d9d6d3f7348e6be403f32ec2cf700a71299ee0",
+      "diagnostics_sha256": "1d43c90c4cdaa9e9db96bacbc6f88beac6a3d0e847e934202c146f760e09d076",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.84973905580289,
+        "SR": 57.041871547698975,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-06,
+        "lr_slow": 9e-06,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "c6ed08d8bb15e3b138fe12c0f4cdf47166cc05b4fa46c9b6a6d7383ce9d611a7",
+      "run_tag": "streamvln-vu-fstta-03-v5"
+    },
+    {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "5a78a3e98189b846af32b6d20131a7ed124eb2334be137a51123c0be28a696ba",
+      "diagnostics_sha256": "fa78732f5b3c54e352712de40a342e75d53928fbe88da2a867a1220113011c3a",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.80704962170866,
+        "SR": 56.9331169128418,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-06,
+        "lr_slow": 9e-06,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "6f09076bd69fc01ab25430124c9d3e011afa257917b92a045a947adc97f188a0",
+      "run_tag": "streamvln-vu-fstta-04-v5"
+    },
+    {
+      "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+      "campaign": "compact_v4",
+      "complete": true,
+      "config_sha256": "f6cad34a198f495171489fa1c27520edc33d7adc339aa88a4e9b3404a77b1c3f",
+      "diagnostics_sha256": "de5adcf1fb565682615cedbda4d3f6a32930df31c02e5264c98d6705b31eb099",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.50407544806351,
+        "SR": 56.87873959541321,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-08,
+        "lr_slow": 1e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "legacy_v4",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-fstta-01-v4"
+    },
+    {
+      "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+      "campaign": "compact_v4",
+      "complete": true,
+      "config_sha256": "372f97a6f66c66596a0fbb168d0c1d3db3665dd3da1274d5e99a37cf94ac0421",
+      "diagnostics_sha256": "eb5ea1bb0a92a9ce00a705fe9a1b9a0edcb80ec2325593f3044715d36dd39a7b",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.50407544806351,
+        "SR": 56.87873959541321,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 1e-07,
+        "lr_slow": 3e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "legacy_v4",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "648ea1160c2de45c5470146645c595e11fcac9588e7a68cace90c43625fc1557",
+      "run_tag": "streamvln-vu-compact-fstta-02-v4"
+    },
+    {
+      "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+      "campaign": "compact_v4",
+      "complete": true,
+      "config_sha256": "4f7fd745a6072da843d087bdec0cd2b45b6808e44c429b636860f727f3e0ef09",
+      "diagnostics_sha256": "30191f8229b0d88675418522d89fb7029d3834a4fbba636333d868365f816aca",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.4499044149781,
+        "SR": 56.82436227798462,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 1e-06,
+        "m": 4,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "legacy_v4",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "483f62cb6b66404ced94db4a16488280317e79c66c2c7eb0d31ed3e65958880a",
+      "run_tag": "streamvln-vu-compact-fstta-03-v4"
+    },
+    {
+      "campaign": "search_v5",
+      "complete": true,
+      "config_sha256": "5c2ecab7fb77012886e39094777f97d21f8369b73ff0a77d4c6364944c61a124",
+      "diagnostics_sha256": "77619d54776a2d69f4320fc4c6af8fed7d93cd4f1737b8704a94d3a790a31287",
+      "episodes": 1839,
+      "metrics": {
+        "SPL": 50.35648980345688,
+        "SR": 56.498098373413086,
+        "episodes": 1839
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "result_sha256": "f24096f023ecaa6fd15429c8bf16c98c956fb1e1a69607460d5c1f956af5c83d",
+      "run_tag": "streamvln-vu-fstta-01-v5"
+    }
+  ],
+  "generated_at_utc": "2026-09-09T14:02:15.184236+00:00",
+  "historical_comparison_limits": "The available complete FSTTA runs comprise three legacy_v4 runs and four native_residual v5 runs. The selected v5-02 has the largest archived SPL and SR among these seven, but differing readout protocols prevent a causal learning-rate-only comparison. v1-v3 configurations exist locally without result artifacts.",
+  "inputs": {
+    "vln/manifests/episode_order/r2r_vlnce_v1_3/val_unseen.json": {
+      "sha256": "a59f45e7fc6bbde7fdb9578e2721a0479f91e84aab4a95063edb46464899b522"
+    },
+    "vln/results/legacy/streamvln_compact_v4_audit/summary.json": {
+      "sha256": "e19417fbc011f012e7ff283d79b4a8d3f281d716504e55c538c1d3442dae6588"
+    },
+    "中间结果/streamvln_val_unseen_search_v5/campaign.json": {
+      "sha256": "d5b498e54a77566d5dc9728b1d1a4e392ec471d3385b69dd35d94fc813df0ad8"
+    },
+    "中间结果/streamvln_val_unseen_search_v5/legacy_reuse.json": {
+      "sha256": "50f1f3fa4b2ea946e1b506bfdac676f43f358b9c8c756c1077c8630105eaf790"
+    },
+    "中间结果/streamvln_val_unseen_search_v5/scheduler.log": {
+      "sha256": "48e606652399c167f3eff926b977be5bceb6010bbb7eedd9a6f084fbea459542"
+    }
+  },
+  "missing_provenance": [
+    "Actual top-level per-run manifests are absent from the supplied archive; completion.json references their hashes but cannot authenticate their contents or asset/environment binding."
+  ],
+  "provenance_status": "legacy_archive_without_actual_run_manifest",
+  "reported_campaign_git_commit": "3da09b96b4dccc266ab15db9519fb8a9d3654cf9",
+  "rerun_requirements": [
+    "Do not run another Tent/FSTTA search; freeze the recorded winner parameters and protocols.",
+    "Search EAM, FeedTTA and ATENA from episode one after the repairs; partial metrics cannot select winners.",
+    "Restart continual TTA streams from episode one because the archive does not contain adaptation-state checkpoints that could resume the prefix exactly.",
+    "Use the canonical seed-0 order independently for val_unseen search and val_seen evaluation; do not select parameters on val_seen.",
+    "Create fresh complete run manifests for new results. The legacy records here remain legacy."
+  ],
+  "runs": [
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-01-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-atena-01-v5.json",
+          "sha256": "fb5eedc46443f6ed0ec79298f2eb30318036515e7696ba4d1afcfc400d182ec8"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-01-v5/val_unseen/console.log",
+          "sha256": "24540648931835d9ed635f816ee4f28fc9192f8cbff2865265f7a6d1ec38c810"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-01-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "4134ff3f819592a69254b5fd0d86a561b828e8ae3a705c6dbea2216ac53ad3a6"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-atena-01-v5.log",
+          "sha256": "24540648931835d9ed635f816ee4f28fc9192f8cbff2865265f7a6d1ec38c810"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-01-v5/val_unseen/result.json",
+          "sha256": "b25ae92b59fcc9fe79f25f4db89d094bc262de021e6bac3a7e5cdc0f7c827110"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 17843,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 701,
+        "queries": 435,
+        "query_rate": 0.6205420827389444,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 1.1114912012999412e-05,
+        "slow_updates": 0,
+        "updates": 701
+      },
+      "episodes": 701,
+      "error": {
+        "cause": "The pending action chunk crossed the step-192 context reset. The next generate call at step 194 added a memory token but the historical-image branch required step_id % num_frames == 0; encode_rgbd therefore supplied memory_features=[None].",
+        "completed_episodes_before_failure": 701,
+        "episode_id": "171",
+        "evidence": {
+          "line": 58990,
+          "message": "TypeError: 'NoneType' object is not subscriptable",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-atena-01-v5.log"
+        },
+        "kind": "memory_token_without_history_features",
+        "scene_id": "TbHJrupSAjP",
+        "step_id": 194,
+        "traceback_source": "vln/baselines/streamvln/streamvln/model/stream_video_vln.py:224"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "atena",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "171",
+        "scene_id": "TbHJrupSAjP"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-07,
+        "lr_self": 3e-08,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.3,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-01-v5",
+      "split": "val_unseen",
+      "status": "failed_missing_memory_features",
+      "unique_episode_keys": 701
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-02-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-atena-02-v5.json",
+          "sha256": "b14215fe8cf7438d7b6e600e5ac5c94bd918f075268949141902d0764e9cb3de"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-02-v5/val_unseen/console.log",
+          "sha256": "036c7a414613f1cbce19939d11605e4c44b371ba9889a92cd79562a3f256b0bc"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-02-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "b89928473118dff1bb9c828971d68e23a86d0b58c06841fde99139b877a343c8"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-atena-02-v5.log",
+          "sha256": "8e8f7fc6d1cfaa1674dedb524ec7851077658666b4a633d1c64c9334e4a6ce37"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-02-v5/val_unseen/result.json",
+          "sha256": "92417191b6e241cbe2aafaf5dd0953609f074fd5636c886494d3f7547d65d41a"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 32826,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1420,
+        "queries": 177,
+        "query_rate": 0.12464788732394366,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 7.940340765344445e-06,
+        "slow_updates": 0,
+        "updates": 1420
+      },
+      "episodes": 1420,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "atena",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "413",
+        "scene_id": "pLe4wQe7qrG"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-07,
+        "lr_self": 3e-08,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.5,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-02-v5",
+      "split": "val_unseen",
+      "status": "partial_at_snapshot",
+      "unique_episode_keys": 1420
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-03-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-atena-03-v5.json",
+          "sha256": "0af0a0ac151d2227d35c25cde1fdc294c79aae185ce1395a9fc0b07fc1a48b56"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-03-v5/val_unseen/console.log",
+          "sha256": "43e1f1a4d2cf842ea15454398506fbf2fc348271bf5eedb7397dbd4ec52b502c"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-03-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "82b0c7c9f7e915d2836314443f50123e0df2e5acabfeffa6d46fd283ffc3747f"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-atena-03-v5.log",
+          "sha256": "5212b09c0c0241a6899befc05dccb27439f9fe09122a0267550a48ea6bdc19ae"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-03-v5/val_unseen/result.json",
+          "sha256": "828817ba60a666cb1b90796f0887227f540f4a4e2f5c2037ae195875da0ece1f"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 32585,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1423,
+        "queries": 832,
+        "query_rate": 0.5846802529866479,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 9.680409857537597e-05,
+        "slow_updates": 0,
+        "updates": 1423
+      },
+      "episodes": 1423,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "atena",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "650",
+        "scene_id": "pLe4wQe7qrG"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-06,
+        "lr_self": 3e-07,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.3,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-03-v5",
+      "split": "val_unseen",
+      "status": "partial_at_snapshot",
+      "unique_episode_keys": 1423
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-04-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-atena-04-v5.json",
+          "sha256": "d8fb347f60c958745157ffb9524ce85764cef97371a1b5934adb9327f8bc7069"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-04-v5/val_unseen/console.log",
+          "sha256": "5d65922185953d1ba71374789fbc7fa0ee1db6665674a0691d0fe1715eab35bd"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-04-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "2f0a4b8c6f1c355a419dea1f87b5d09abbe06760339f2fee8ef3a94ec2616a86"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-atena-04-v5.log",
+          "sha256": "60839d20f0d17b745ccf5b4bd1d74b791070dca843c3975cad03cb725826a6bc"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-atena-04-v5/val_unseen/result.json",
+          "sha256": "91df8a4b4ad5dbfbc3a3c8d8e40873970cb78e38c3d15624210da5cb734b36e7"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 32623,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1420,
+        "queries": 199,
+        "query_rate": 0.14014084507042254,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.00012077288556611165,
+        "slow_updates": 0,
+        "updates": 1420
+      },
+      "episodes": 1420,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "atena",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "413",
+        "scene_id": "pLe4wQe7qrG"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-06,
+        "lr_self": 3e-07,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.5,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-04-v5",
+      "split": "val_unseen",
+      "status": "partial_at_snapshot",
+      "unique_episode_keys": 1420
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-01-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-eam-01-v5.json",
+          "sha256": "0a05f061fa35399e68ebe441c798247d2615d8718a5c8fa220c203d205acc5bc"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-01-v5/val_unseen/console.log",
+          "sha256": "406a167c7ef8df9b5cbb51d35b9df6cd98ac242dda6e373fb7a4401b828288bf"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-01-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "3067891dce9d2d9ed8802d4f9e9d6c8a7e4004b78eb26623b0bd483d41a9607d"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-01-v5.log",
+          "sha256": "406a167c7ef8df9b5cbb51d35b9df6cd98ac242dda6e373fb7a4401b828288bf"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-01-v5/val_unseen/result.json",
+          "sha256": "c744729024a936a7b20721ba177505ab6f01d1ba77dab1fb1959f7ed919adab0"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 23716,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1033,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.0034505578223615885,
+        "slow_updates": 0,
+        "updates": 23708
+      },
+      "episodes": 1033,
+      "error": {
+        "cause": "torchrun received SIGHUP on 2026-09-09 around 06:44. The archive does not identify the signal sender or show an EAM algorithm exception.",
+        "completed_episodes_before_interruption": 1033,
+        "evidence": {
+          "line": 78442,
+          "message": "[2026-09-09 06:44:08,644] torch.distributed.elastic.agent.server.api: [WARNING] Received Signals.SIGHUP death signal, shutting down workers",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-01-v5.log"
+        },
+        "kind": "external_signal_sighup"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "eam",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "1169",
+        "scene_id": "X7HyMhZNoso"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.4,
+        "episodic": false,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-01-v5",
+      "split": "val_unseen",
+      "status": "interrupted_sighup",
+      "unique_episode_keys": 1033
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-02-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-eam-02-v5.json",
+          "sha256": "d49a30c9af6dcbb1b1f8870a718df551561ff5214954f6d9c5636c0b8bcfce5a"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-02-v5/val_unseen/console.log",
+          "sha256": "2e649f892ffd40ffbf7e9a8b2969a3c5769eb6b563983bcdf7ba9293ea3da1be"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-02-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "97bff3d4872dc6db2217da159d1effc801dfef5a419e7a1cf9ff7ab9beac15e8"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-02-v5.log",
+          "sha256": "2e649f892ffd40ffbf7e9a8b2969a3c5769eb6b563983bcdf7ba9293ea3da1be"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-02-v5/val_unseen/result.json",
+          "sha256": "5116b48247dda201957b0cea1a81e1a67695a25a2416cd2bcbce3c3ef789b71a"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 23625,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1016,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.001578809809871018,
+        "slow_updates": 0,
+        "updates": 23618
+      },
+      "episodes": 1016,
+      "error": {
+        "cause": "torchrun received SIGHUP on 2026-09-09 around 06:44. The archive does not identify the signal sender or show an EAM algorithm exception.",
+        "completed_episodes_before_interruption": 1016,
+        "evidence": {
+          "line": 78074,
+          "message": "[2026-09-09 06:44:08,645] torch.distributed.elastic.agent.server.api: [WARNING] Received Signals.SIGHUP death signal, shutting down workers",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-02-v5.log"
+        },
+        "kind": "external_signal_sighup"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "eam",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "858",
+        "scene_id": "X7HyMhZNoso"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.8,
+        "episodic": false,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-02-v5",
+      "split": "val_unseen",
+      "status": "interrupted_sighup",
+      "unique_episode_keys": 1016
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-03-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-eam-03-v5.json",
+          "sha256": "bd178cee9d4ef61f498766d70a0608ad7ee34273bb51c2eafb80c3553bc758c4"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-03-v5/val_unseen/console.log",
+          "sha256": "d960a025f80f61979ca19fc3725f105c5fc085734331e7b8fc57d458ce840dc0"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-03-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "73014c3ae59b263b71cf83e97b183a3befa895ded58b188b4a500245bb001237"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-03-v5.log",
+          "sha256": "d960a025f80f61979ca19fc3725f105c5fc085734331e7b8fc57d458ce840dc0"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-03-v5/val_unseen/result.json",
+          "sha256": "fa421fdfce6983b043ac28bd37373687321f0b68f7f209ff26e6289d9f0794ad"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 23571,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1022,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.009846897795796394,
+        "slow_updates": 0,
+        "updates": 23563
+      },
+      "episodes": 1022,
+      "error": {
+        "cause": "torchrun received SIGHUP on 2026-09-09 around 06:44. The archive does not identify the signal sender or show an EAM algorithm exception.",
+        "completed_episodes_before_interruption": 1022,
+        "evidence": {
+          "line": 77927,
+          "message": "[2026-09-09 06:44:08,641] torch.distributed.elastic.agent.server.api: [WARNING] Received Signals.SIGHUP death signal, shutting down workers",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-03-v5.log"
+        },
+        "kind": "external_signal_sighup"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "eam",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "927",
+        "scene_id": "X7HyMhZNoso"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.4,
+        "episodic": false,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-03-v5",
+      "split": "val_unseen",
+      "status": "interrupted_sighup",
+      "unique_episode_keys": 1022
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-04-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-eam-04-v5.json",
+          "sha256": "66d77e5e9e70fb65aad191a20f498b499bd9931bebedfd29b27d476b09eb942c"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-04-v5/val_unseen/console.log",
+          "sha256": "1d40cdefabc72d33ae9f31fbadc28f62b6cb4e43d243cd0adbc6054be5090ca2"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-04-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "1b84ef21448f247f67d6d10901a99fe8e2e445d736221bec11eb09d7c1743a95"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-04-v5.log",
+          "sha256": "1d40cdefabc72d33ae9f31fbadc28f62b6cb4e43d243cd0adbc6054be5090ca2"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-eam-04-v5/val_unseen/result.json",
+          "sha256": "9dc03d0994e4e6422f5a36bb84c1e5ada38dac22f6df9f8520cf3499f6a9676e"
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {
+        "action_steps": 23647,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1018,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.004570720251649618,
+        "slow_updates": 0,
+        "updates": 23640
+      },
+      "episodes": 1018,
+      "error": {
+        "cause": "torchrun received SIGHUP on 2026-09-09 around 06:44. The archive does not identify the signal sender or show an EAM algorithm exception.",
+        "completed_episodes_before_interruption": 1018,
+        "evidence": {
+          "line": 78165,
+          "message": "[2026-09-09 06:44:08,642] torch.distributed.elastic.agent.server.api: [WARNING] Received Signals.SIGHUP death signal, shutting down workers",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-eam-04-v5.log"
+        },
+        "kind": "external_signal_sighup"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "eam",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "902",
+        "scene_id": "X7HyMhZNoso"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.8,
+        "episodic": false,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-04-v5",
+      "split": "val_unseen",
+      "status": "interrupted_sighup",
+      "unique_episode_keys": 1018
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-01-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-feedtta-01-v5.json",
+          "sha256": "deac06291978d61fc4a141e49a30077c0a24b5d9f8effa37b31d25b40f8aa73c"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-01-v5/val_unseen/console.log",
+          "sha256": "6d364f8ce8229b2168c5e10bd2260b29739cd0be8d2fedaf74ff110335268343"
+        },
+        "diagnostics": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-01-v5/val_unseen/tta_diagnostics.json",
+          "sha256": null
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-01-v5.log",
+          "sha256": "6d364f8ce8229b2168c5e10bd2260b29739cd0be8d2fedaf74ff110335268343"
+        },
+        "result": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-01-v5/val_unseen/result.json",
+          "sha256": null
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {},
+      "episodes": 0,
+      "error": {
+        "cause": "configured_prefixes is absent from the CLI choices paper_full, last_crossmodal, action_head.",
+        "completed_episodes_before_failure": 0,
+        "evidence": {
+          "line": 116,
+          "message": "streamvln_eval.py: error: argument --tta_feedtta_scope_profile: invalid choice: 'configured_prefixes' (choose from 'paper_full', 'last_crossmodal', 'action_head')",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-01-v5.log"
+        },
+        "kind": "invalid_argument_choice"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "feedtta",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "10",
+        "scene_id": "2azQ1b91cZZ"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.7,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-01-v5",
+      "split": "val_unseen",
+      "status": "failed_cli",
+      "unique_episode_keys": 0
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-02-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-feedtta-02-v5.json",
+          "sha256": "51f20fc49f2db17b85442a6a10f243051c6341c244820bdab4ee28aef5e667f6"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-02-v5/val_unseen/console.log",
+          "sha256": "0a9ec7ccba1434a43e3426a78289d717bf1cbd001df4a2cdb9497cb3a20fd13b"
+        },
+        "diagnostics": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-02-v5/val_unseen/tta_diagnostics.json",
+          "sha256": null
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-02-v5.log",
+          "sha256": "0a9ec7ccba1434a43e3426a78289d717bf1cbd001df4a2cdb9497cb3a20fd13b"
+        },
+        "result": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-02-v5/val_unseen/result.json",
+          "sha256": null
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {},
+      "episodes": 0,
+      "error": {
+        "cause": "configured_prefixes is absent from the CLI choices paper_full, last_crossmodal, action_head.",
+        "completed_episodes_before_failure": 0,
+        "evidence": {
+          "line": 116,
+          "message": "streamvln_eval.py: error: argument --tta_feedtta_scope_profile: invalid choice: 'configured_prefixes' (choose from 'paper_full', 'last_crossmodal', 'action_head')",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-02-v5.log"
+        },
+        "kind": "invalid_argument_choice"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "feedtta",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "10",
+        "scene_id": "2azQ1b91cZZ"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.95,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-02-v5",
+      "split": "val_unseen",
+      "status": "failed_cli",
+      "unique_episode_keys": 0
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-03-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-feedtta-03-v5.json",
+          "sha256": "ace7b2bf9db28719f179d0f74975b82d46f330d8771425bb3fee2c940ee2a546"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-03-v5/val_unseen/console.log",
+          "sha256": "dde13296494ed6771c988b3d5d0d2bec715e781be917fc01ceb868623bbd47f8"
+        },
+        "diagnostics": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-03-v5/val_unseen/tta_diagnostics.json",
+          "sha256": null
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-03-v5.log",
+          "sha256": "dde13296494ed6771c988b3d5d0d2bec715e781be917fc01ceb868623bbd47f8"
+        },
+        "result": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-03-v5/val_unseen/result.json",
+          "sha256": null
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {},
+      "episodes": 0,
+      "error": {
+        "cause": "configured_prefixes is absent from the CLI choices paper_full, last_crossmodal, action_head.",
+        "completed_episodes_before_failure": 0,
+        "evidence": {
+          "line": 116,
+          "message": "streamvln_eval.py: error: argument --tta_feedtta_scope_profile: invalid choice: 'configured_prefixes' (choose from 'paper_full', 'last_crossmodal', 'action_head')",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-03-v5.log"
+        },
+        "kind": "invalid_argument_choice"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "feedtta",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "10",
+        "scene_id": "2azQ1b91cZZ"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.7,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-03-v5",
+      "split": "val_unseen",
+      "status": "failed_cli",
+      "unique_episode_keys": 0
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-04-v5/val_unseen/completion.json",
+          "sha256": null
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-feedtta-04-v5.json",
+          "sha256": "a04c34cd428b793b1b121ab0ac46ad39e07eeab98ee41e55a305a91b60e65bb5"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-04-v5/val_unseen/console.log",
+          "sha256": "34944b4760b017a5ed9e6aae71a3724d4412d85c888401fa4569d20a9f914237"
+        },
+        "diagnostics": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-04-v5/val_unseen/tta_diagnostics.json",
+          "sha256": null
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-04-v5.log",
+          "sha256": "34944b4760b017a5ed9e6aae71a3724d4412d85c888401fa4569d20a9f914237"
+        },
+        "result": {
+          "exists": false,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-feedtta-04-v5/val_unseen/result.json",
+          "sha256": null
+        }
+      },
+      "complete": false,
+      "completion_referenced_manifest_sha256": null,
+      "diagnostics": {},
+      "episodes": 0,
+      "error": {
+        "cause": "configured_prefixes is absent from the CLI choices paper_full, last_crossmodal, action_head.",
+        "completed_episodes_before_failure": 0,
+        "evidence": {
+          "line": 116,
+          "message": "streamvln_eval.py: error: argument --tta_feedtta_scope_profile: invalid choice: 'configured_prefixes' (choose from 'paper_full', 'last_crossmodal', 'action_head')",
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-feedtta-04-v5.log"
+        },
+        "kind": "invalid_argument_choice"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": false,
+      "has_final_aggregate": false,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": false,
+      "method": "feedtta",
+      "metrics": null,
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": {
+        "episode_id": "10",
+        "scene_id": "2azQ1b91cZZ"
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.95,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-04-v5",
+      "split": "val_unseen",
+      "status": "failed_cli",
+      "unique_episode_keys": 0
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-01-v5/val_unseen/completion.json",
+          "sha256": "35d4d5fa0b8a4a1112ce76555d414b75c4ca58beb43df3435c0f78b5a35258f4"
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-fstta-01-v5.json",
+          "sha256": "5c2ecab7fb77012886e39094777f97d21f8369b73ff0a77d4c6364944c61a124"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-01-v5/val_unseen/console.log",
+          "sha256": "43ff9c7941acdc47c3e2daecf3a53149ae9706110b8399ec324e1348e0224640"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-01-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "77619d54776a2d69f4320fc4c6af8fed7d93cd4f1737b8704a94d3a790a31287"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-fstta-01-v5.log",
+          "sha256": "43ff9c7941acdc47c3e2daecf3a53149ae9706110b8399ec324e1348e0224640"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-01-v5/val_unseen/result.json",
+          "sha256": "f24096f023ecaa6fd15429c8bf16c98c956fb1e1a69607460d5c1f956af5c83d"
+        }
+      },
+      "complete": true,
+      "completion_referenced_manifest_sha256": "2918c04d5fc179b7bf76a91205e12145e6958a06cbd44d8da9ab62b2c14d364c",
+      "diagnostics": {
+        "action_steps": 39625,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1839,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 4.505080505623482e-05,
+        "slow_updates": 459,
+        "updates": 12566
+      },
+      "episodes": 1839,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": true,
+      "has_final_aggregate": true,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": true,
+      "method": "fstta",
+      "metrics": {
+        "SPL": 50.35648980345688,
+        "SR": 56.498098373413086,
+        "episodes": 1839
+      },
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": null,
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-fstta-01-v5",
+      "split": "val_unseen",
+      "status": "complete_legacy",
+      "unique_episode_keys": 1839
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-02-v5/val_unseen/completion.json",
+          "sha256": "e994d3067a28017319ad93ff43c44b2e28743f075185e2d8175ec3a67f0fd70e"
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-fstta-02-v5.json",
+          "sha256": "36eb80679f8eafd53068bd1ab8d5ce07657f475f3e524089062a78167b04236a"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-02-v5/val_unseen/console.log",
+          "sha256": "2ec0ff2c649e1a3e1e21fe509713229694571116adda9c1f185dd1a65e36f603"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-02-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "63bf63d22f1082ff4a81185c9e1ae3262bce93aea9ae3e8d6207182506d90812"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-fstta-02-v5.log",
+          "sha256": "2ec0ff2c649e1a3e1e21fe509713229694571116adda9c1f185dd1a65e36f603"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-02-v5/val_unseen/result.json",
+          "sha256": "bb2b25d757590276107c146d2605dfa6d5594541347281453fae609382340ae9"
+        }
+      },
+      "complete": true,
+      "completion_referenced_manifest_sha256": "94d5324d0870e4705a6446404860873a03bf70cf7cebc7ab60236fa2fd380237",
+      "diagnostics": {
+        "action_steps": 39766,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1839,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 1.6724159650038928e-05,
+        "slow_updates": 114,
+        "updates": 12608
+      },
+      "episodes": 1839,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": true,
+      "has_final_aggregate": true,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": true,
+      "method": "fstta",
+      "metrics": {
+        "SPL": 51.374064514702724,
+        "SR": 57.85753130912781,
+        "episodes": 1839
+      },
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": null,
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-fstta-02-v5",
+      "split": "val_unseen",
+      "status": "complete_legacy",
+      "unique_episode_keys": 1839
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-03-v5/val_unseen/completion.json",
+          "sha256": "d0dd42d784e8b8cc9cf2de0d0bf2b5ee2634a86637edcac0f9e6f15568a45eef"
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-fstta-03-v5.json",
+          "sha256": "cc1bc0db99990b4ecfc3edf9a6d9d6d3f7348e6be403f32ec2cf700a71299ee0"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-03-v5/val_unseen/console.log",
+          "sha256": "6c6906a00afcfade329d516c12cea4241381ada2bb3361a58a975d535190cee8"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-03-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "1d43c90c4cdaa9e9db96bacbc6f88beac6a3d0e847e934202c146f760e09d076"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-fstta-03-v5.log",
+          "sha256": "6c6906a00afcfade329d516c12cea4241381ada2bb3361a58a975d535190cee8"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-03-v5/val_unseen/result.json",
+          "sha256": "c6ed08d8bb15e3b138fe12c0f4cdf47166cc05b4fa46c9b6a6d7383ce9d611a7"
+        }
+      },
+      "complete": true,
+      "completion_referenced_manifest_sha256": "50b28cb40bb2fc6f6a3fc023d251c2d408d5a7289d0b60f07d7d3eb96488b35c",
+      "diagnostics": {
+        "action_steps": 39625,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1839,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.00048457933007739484,
+        "slow_updates": 459,
+        "updates": 12564
+      },
+      "episodes": 1839,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": true,
+      "has_final_aggregate": true,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": true,
+      "method": "fstta",
+      "metrics": {
+        "SPL": 50.84973905580289,
+        "SR": 57.041871547698975,
+        "episodes": 1839
+      },
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": null,
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-06,
+        "lr_slow": 9e-06,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 4,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-fstta-03-v5",
+      "split": "val_unseen",
+      "status": "complete_legacy",
+      "unique_episode_keys": 1839
+    },
+    {
+      "actual_run_manifest_in_archive": false,
+      "artifacts": {
+        "completion": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-04-v5/val_unseen/completion.json",
+          "sha256": "14aaa4b0751f80523884030bab2da00272fe0141c8c170e4b12b0afe12220ec7"
+        },
+        "config": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/configs/streamvln-vu-fstta-04-v5.json",
+          "sha256": "5a78a3e98189b846af32b6d20131a7ed124eb2334be137a51123c0be28a696ba"
+        },
+        "console_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-04-v5/val_unseen/console.log",
+          "sha256": "c2c5ccca93572f058ef5b1c7cf0cc8ef2d87d3d225ecbcf6ec87403d269a1d8d"
+        },
+        "diagnostics": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-04-v5/val_unseen/tta_diagnostics.json",
+          "sha256": "fa78732f5b3c54e352712de40a342e75d53928fbe88da2a867a1220113011c3a"
+        },
+        "launcher_log": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/launcher_logs/streamvln-vu-fstta-04-v5.log",
+          "sha256": "c2c5ccca93572f058ef5b1c7cf0cc8ef2d87d3d225ecbcf6ec87403d269a1d8d"
+        },
+        "result": {
+          "exists": true,
+          "path": "中间结果/streamvln_val_unseen_search_v5/jobs/streamvln-vu-fstta-04-v5/val_unseen/result.json",
+          "sha256": "6f09076bd69fc01ab25430124c9d3e011afa257917b92a045a947adc97f188a0"
+        }
+      },
+      "complete": true,
+      "completion_referenced_manifest_sha256": "676e59722ca886b6835a9a69f3d7c9b50858ae7119786009ef3a90a746eab4f4",
+      "diagnostics": {
+        "action_steps": 39625,
+        "adapted_parameter_count": 3584,
+        "adapted_parameter_names": [
+          "norm.weight"
+        ],
+        "episodes": 1839,
+        "readout_protocol": "native_residual",
+        "relative_param_drift": 0.00017130268679466099,
+        "slow_updates": 114,
+        "updates": 12563
+      },
+      "episodes": 1839,
+      "error": null,
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "has_completion_record": true,
+      "has_final_aggregate": true,
+      "matches_expected_episode_order_prefix": true,
+      "matches_full_expected_episode_order": true,
+      "method": "fstta",
+      "metrics": {
+        "SPL": 50.80704962170866,
+        "SR": 56.9331169128418,
+        "episodes": 1839
+      },
+      "metrics_unit": "percent_for_SR_SPL",
+      "next_expected_episode": null,
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-06,
+        "lr_slow": 9e-06,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "legacy_archive_without_actual_run_manifest",
+      "run_tag": "streamvln-vu-fstta-04-v5",
+      "split": "val_unseen",
+      "status": "complete_legacy",
+      "unique_episode_keys": 1839
+    }
+  ],
+  "schema": "navtta.streamvln_v5_failure_audit.v1",
+  "source_reference": {
+    "audit_reference": "vln/results/legacy/streamvln_compact_v4_audit/summary.json",
+    "metrics": {
+      "SPL": 50.517907572917686,
+      "SR": 56.66123032569885,
+      "episodes": 1839
+    },
+    "provenance_status": "legacy_archive_without_actual_run_manifest",
+    "result_sha256": "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069",
+    "run_tag": "streamvln-vu-compact-source-v4"
+  },
+  "split_usage": "val_unseen_development_search",
+  "status_counts": {
+    "complete_legacy": 4,
+    "failed_cli": 4,
+    "failed_missing_memory_features": 1,
+    "interrupted_sighup": 4,
+    "partial_at_snapshot": 3
+  }
+}
