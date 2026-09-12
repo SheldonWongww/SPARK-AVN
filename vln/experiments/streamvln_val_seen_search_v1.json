@@ -1,0 +1,290 @@
+{
+  "expected_episodes": {
+    "val_seen": 778,
+    "val_unseen": 1839
+  },
+  "experiment_id": "streamvln_val_seen_search_v1",
+  "historical_audit": {
+    "path": "vln/results/legacy/streamvln_v6_seen_search_audit/summary.json",
+    "sha256": "af9f283c422b9e01606933d71ff74006011e2b3c92a0874ad9c8e69f17165214"
+  },
+  "method_gpu_order": [
+    "fstta",
+    "eam",
+    "feedtta",
+    "atena"
+  ],
+  "methods": {
+    "atena": [
+      {
+        "candidate_id": "active_query_low_lr",
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 3e-07,
+          "lr_self": 3e-08,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.25,
+          "optimizer": "AdamW",
+          "query_threshold": 0.15,
+          "self_loss_weight": 0.1,
+          "streamvln_readout_protocol": "native_residual",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.0
+        },
+        "rationale": "Lower the v6 winner threshold to query more uncertain seen episodes; GOAT low-LR search motivates .15."
+      },
+      {
+        "candidate_id": "r2rce_low_self_lr",
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 5e-07,
+          "lr_self": 1e-08,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.3,
+          "self_loss_weight": 0.1,
+          "streamvln_readout_protocol": "native_residual",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.0
+        },
+        "rationale": "ETPNav R2R-CE seen winner motivates query/self LR decoupling and lambda=.5."
+      },
+      {
+        "candidate_id": "self_emphasis_low_lr",
+        "parameters": {
+          "action_selection": "argmax",
+          "episodic": false,
+          "lr_query": 1e-07,
+          "lr_self": 1e-08,
+          "max_grad_norm": 1.0,
+          "mix_lambda": 0.5,
+          "optimizer": "AdamW",
+          "query_threshold": 0.5,
+          "self_loss_weight": 0.25,
+          "streamvln_readout_protocol": "native_residual",
+          "update_scope": "replay_reachable_high_level_navigation",
+          "weight_decay": 0.0
+        },
+        "rationale": "SMT single-source self-loss evidence motivates a low-query-LR, higher-self-weight arm; threshold is calibrated to StreamVLN instead of copying AVN 1.0."
+      }
+    ],
+    "eam": [
+      {
+        "candidate_id": "low_lr_conf08_mem32",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 8,
+          "confidence_scale": 0.8,
+          "episodic": false,
+          "lr": 3e-07,
+          "max_grad_norm": 1.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "streamvln_readout_protocol": "native_residual",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "rationale": "Reduce the v6 seen losing LR by 10x while retaining its active ensemble gate."
+      },
+      {
+        "candidate_id": "mid_lr_conf08_mem32",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 8,
+          "confidence_scale": 0.8,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 1.0,
+          "memory_size": 32,
+          "optimizer": "Adam",
+          "streamvln_readout_protocol": "native_residual",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "rationale": "Use the smaller v6 unseen LR and R2R-CE 1e-6 evidence."
+      },
+      {
+        "candidate_id": "mid_lr_conf06_mem64",
+        "parameters": {
+          "action_selection": "argmax",
+          "batch_size": 8,
+          "confidence_scale": 0.6,
+          "episodic": false,
+          "lr": 1e-06,
+          "max_grad_norm": 1.0,
+          "memory_size": 64,
+          "optimizer": "Adam",
+          "streamvln_readout_protocol": "native_residual",
+          "update_interval": 1,
+          "weight_decay": 0.0
+        },
+        "rationale": "Test a more selective gate and longer replay; avoid c=.4, whose v6 runs made zero executed-action changes."
+      }
+    ],
+    "feedtta": [
+      {
+        "candidate_id": "low_lr_gamma07",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": -0.2,
+          "episodic": false,
+          "gamma": 0.7,
+          "lr": 3e-07,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "configured_prefixes",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "streamvln_readout_protocol": "native_residual",
+          "weight_decay": 0.0
+        },
+        "rationale": "Conservative seen intensity with StreamVLN-preferred gamma=.7 and paper-main SGR."
+      },
+      {
+        "candidate_id": "mid_lr_gamma07",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": -0.2,
+          "episodic": false,
+          "gamma": 0.7,
+          "lr": 1e-06,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "configured_prefixes",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "streamvln_readout_protocol": "native_residual",
+          "weight_decay": 0.0
+        },
+        "rationale": "Rerun the low-LR successful v6 unseen point on the full seen stream."
+      },
+      {
+        "candidate_id": "vln_argmax_sgr",
+        "parameters": {
+          "action_selection": "argmax",
+          "alpha": 0.1,
+          "episodic": false,
+          "gamma": 0.8,
+          "lr": 2e-06,
+          "max_grad_norm": 1.0,
+          "normalize_gradient": false,
+          "optimizer": "Adam",
+          "optimizer_eps": 1e-05,
+          "p": 0.05,
+          "scope_profile": "configured_prefixes",
+          "sgr_mode": "paper_main",
+          "sgr_seed": 0,
+          "streamvln_readout_protocol": "native_residual",
+          "weight_decay": 0.0
+        },
+        "rationale": "R2R argmax experiments support 2e-6 to 5e-6, gamma=.8/.9 and positive-alpha SGR; retain the StreamVLN readout scope."
+      }
+    ],
+    "fstta": [
+      {
+        "candidate_id": "low_lr_long_slow",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 1e-07,
+          "lr_slow": 3e-07,
+          "m": 3,
+          "max_grad_norm": 1.0,
+          "n": 32,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "streamvln_readout_protocol": "native_residual",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "rationale": "Lower FAST/SLOW learning rates and N=32 as the conservative seen bracket."
+      },
+      {
+        "candidate_id": "v6_lr_long_slow",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 3e-07,
+          "lr_slow": 9e-07,
+          "m": 3,
+          "max_grad_norm": 1.0,
+          "n": 32,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "streamvln_readout_protocol": "native_residual",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "rationale": "Retain v6 learning rates and halve SLOW update frequency; AVN motivates the longer window."
+      },
+      {
+        "candidate_id": "fast_m1_active_slow",
+        "parameters": {
+          "a": 0.9,
+          "action_selection": "argmax",
+          "b": 1.1,
+          "episodic": false,
+          "fast_grad_mode": "concordant",
+          "lr_fast": 3e-07,
+          "lr_slow": 3e-06,
+          "m": 1,
+          "max_grad_norm": 1.0,
+          "n": 16,
+          "norm_scope": "last_ln",
+          "optimizer": "AdamW",
+          "q": 0.1,
+          "reset_optimizer_each_episode": true,
+          "reset_slow_optimizer_each_window": false,
+          "reset_var_hist_each_episode": false,
+          "rho": 0.95,
+          "slow_optimizer": "AdamW",
+          "streamvln_readout_protocol": "native_residual",
+          "tau": 0.7,
+          "use_fast_lr_scaler": true,
+          "use_slow": true,
+          "weight_decay": 0.0
+        },
+        "rationale": "Probe more frequent FAST and a modestly stronger SLOW branch; R2R M=1 and R2R-CE active-window results motivate this arm."
+      }
+    ]
+  },
+  "result_role": "hyperparameter_development",
+  "schema": "navtta.streamvln_seen_search.v1",
+  "seed": 0,
+  "selection": {
+    "primary_metric": "SPL",
+    "secondary_metric": "SR"
+  },
+  "split": "val_seen"
+}

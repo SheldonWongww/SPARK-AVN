@@ -1,0 +1,1248 @@
+{
+  "archive": "中间结果/streamvln_val_unseen_search_v6",
+  "avn_atena_examples": [
+    {
+      "diagnostic_summary": {
+        "query_rate": 0.002,
+        "relative_param_drift": 3.2047249987954274e-05,
+        "sample_argmax_match_rate": 0.8590556798336932,
+        "updates": 2000
+      },
+      "formal_result_eligible": false,
+      "metrics": {
+        "distance_to_goal": 4.7785,
+        "na": 154.8945,
+        "normalized_distance_to_goal": 0.2895428375461957,
+        "reward": 11.805039649749174,
+        "sna": 0.4446271582786906,
+        "softspl": 0.37103780314085166,
+        "spl": 0.3054985686636557,
+        "success": 0.5665,
+        "sws": 0.0275
+      },
+      "path": "中间结果/smt-four-val-v1-seed0/atena/single_source/jobs/smtv1-f64d7be4-atena-single-s16/result.json",
+      "point": {
+        "id": "s16",
+        "lr_query": "1e-7",
+        "lr_self": "1e-8",
+        "mix_lambda": "0.5",
+        "query_threshold": "1.0",
+        "self_loss_weight": "0.25",
+        "variant": "self_loss_probe"
+      },
+      "provenance_status": "compact_archive_without_actual_manifest",
+      "sha256": "75f0b764b5e85e3983f138de9f32bef720f98e72e6f6dfba73dfda036d83d612"
+    },
+    {
+      "diagnostic_summary": {
+        "query_rate": 0.9695,
+        "relative_param_drift": 7.593620830448344e-05,
+        "sample_argmax_match_rate": 0.8634208581905752,
+        "updates": 2000
+      },
+      "formal_result_eligible": false,
+      "metrics": {
+        "distance_to_goal": 4.832,
+        "na": 146.168,
+        "normalized_distance_to_goal": 0.29269823393713923,
+        "reward": 11.923805800816975,
+        "sna": 0.45461308052686983,
+        "softspl": 0.3734023333562207,
+        "spl": 0.30351986254251934,
+        "success": 0.56,
+        "sws": 0.023
+      },
+      "path": "中间结果/smt-four-val-v1-seed0/atena/single_source/jobs/smtv1-f64d7be4-atena-single-c00/result.json",
+      "point": {
+        "id": "c00",
+        "lr_query": "3e-8",
+        "lr_self": "1e-8",
+        "mix_lambda": "0.5",
+        "query_threshold": "0.1",
+        "self_loss_weight": "0.1",
+        "variant": "core"
+      },
+      "provenance_status": "compact_archive_without_actual_manifest",
+      "sha256": "063c5cc2383080dddf666f1eab9685bedd065469ddf4203ed1b25a07689bcb97"
+    },
+    {
+      "diagnostic_summary": {
+        "query_rate": 0.0395,
+        "relative_param_drift": 0.00012790574692189693,
+        "sample_argmax_match_rate": 0.7640473038652983,
+        "updates": 2000
+      },
+      "formal_result_eligible": false,
+      "metrics": {
+        "distance_to_goal": 8.208,
+        "na": 102.3595,
+        "normalized_distance_to_goal": 0.6000319177654481,
+        "reward": 4.827398026673123,
+        "sna": 0.1538775847270716,
+        "softspl": 0.2542439481283809,
+        "spl": 0.10777254461189378,
+        "success": 0.195,
+        "sws": 0.007
+      },
+      "path": "中间结果/smt-four-val-v1-seed0/atena/multi_source/jobs/smtv1-f64d7be4-atena-multi-c03/result.json",
+      "point": {
+        "id": "c03",
+        "lr_query": "3e-8",
+        "lr_self": "1e-8",
+        "mix_lambda": "0.5",
+        "query_threshold": "1.0",
+        "self_loss_weight": "0.1",
+        "variant": "core"
+      },
+      "provenance_status": "compact_archive_without_actual_manifest",
+      "sha256": "27fd22a2e214a992d4fdc7117728bc17b25bb4ea393c5ffc8aee935eca21348e"
+    }
+  ],
+  "cross_task_reports": [
+    {
+      "path": "vln/results/analysis/hparam_search/R2R_FSTTA_FEEDTTA_POSTFIX_V1.md",
+      "sha256": "78d6bf839d2e942ef313137ee951ce171b2ffac9787fb0cdea56038a3e647aaa"
+    },
+    {
+      "path": "vln/results/analysis/hparam_search/R2R_LOW_LR_REFINEMENT_20260821.md",
+      "sha256": "fde8f2d240a1627d8f14dcf554c5c65cc86a40b6dc2b93de8d6ffe548e6822fa"
+    },
+    {
+      "path": "vln/results/analysis/hparam_search/R2R_CE_HPARAM_SEARCH_FINAL_ANALYSIS_V1.md",
+      "sha256": "8df2eb900474b283dc707f6dcb9383b07a57fdd4d17a4fbd35b1fe2ced42307e"
+    },
+    {
+      "path": "avn/results/analysis/hparam_search/FSTTA_HYPERPARAMETER_SEARCH_REPORT.md",
+      "sha256": "c1eb768a8f80a4c42f96b4861a346dd979487edc5dedfaa3a458454a724e1252"
+    },
+    {
+      "path": "avn/results/analysis/hparam_search/EAM_HYPERPARAMETER_SEARCH_REPORT.md",
+      "sha256": "25243b692ec3701619c397624d1b193415c96d4bea995d263431f756a705bc1d"
+    },
+    {
+      "path": "avn/results/analysis/hparam_search/FEEDTTA_HYPERPARAMETER_SEARCH_REPORT.md",
+      "sha256": "f743073f2c9dcfd91a9a4452b5a20e3251225c8dd0711d2c7a5e10f889b74723"
+    }
+  ],
+  "formal_result_eligible": false,
+  "limitations": [
+    "FeedTTA val_seen contains 622 episodes and ATENA contains 625; neither has a terminal aggregate.",
+    "Actual run manifests and Source result.json were not included in the supplied v6 archive.",
+    "Both seen and unseen have informed development; this campaign is val_seen hyperparameter development, not untouched held-out confirmation.",
+    "AVN examples use sampled actions and different adaptation scopes; transfer mechanisms, not absolute learning rates."
+  ],
+  "purpose": "historical_design_evidence_only",
+  "schema": "navtta.streamvln_seen_design_audit.v1",
+  "source_val_seen": {
+    "episodes": 778,
+    "evidence_path": "中间结果/streamvln_val_unseen_search_v6/launcher_logs/streamvln-vs-source-frozen-v6.log",
+    "evidence_sha256": "520727a34f72ace12e4b268b93d732d5d5a5375368323951cd089123217084d3",
+    "formal_result_eligible": false,
+    "metrics": {
+      "SPL": 62.52548827815243,
+      "SR": 68.50899457931519
+    },
+    "provenance_status": "terminal_launcher_aggregate_only"
+  },
+  "streamvln_records": [
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": false,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12982559204101562,
+          "baseline_logit_linf_sum": 584.1487565040588,
+          "frozen_fp32_vs_adapted_fp32_flips": 1,
+          "native_comparisons": 13229,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 50552.4375,
+          "native_vs_adapted_flips": 98,
+          "native_vs_executed_flips": 98,
+          "native_vs_frozen_fp32_flips": 50,
+          "native_vs_prepared_flips": 98,
+          "residual_logit_linf_max": 0.000179290771484375,
+          "residual_logit_linf_sum": 0.5318145751953125
+        },
+        "episodes": 625,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3565,
+            "max_abs_change": 9.298324584960938e-05,
+            "relative_l2": 7.1194235715665855e-06
+          }
+        },
+        "query_rate": 0.3408,
+        "relative_param_drift": 7.1194235715665855e-06,
+        "slow_updates": 0,
+        "updates": 625
+      },
+      "episodes_observed": 625,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vs-atena-frozen-v6.json": "992da5ea03f7daccf9c559f3e29e0a399be6054f959bd9087057a5a58e12133f",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-atena-frozen-v6/val_seen/result.json": "3b8370635bbb55a56951440c6e8887daa9efe150f0be9e2f0033ed6e2e1158be",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-atena-frozen-v6/val_seen/tta_diagnostics.json": "402b6aea6051ab302b64dd798999bb326c37327fef9c456ce57473e67a41cf3a"
+      },
+      "expected_episodes": 778,
+      "formal_result_eligible": false,
+      "method": "atena",
+      "metrics": null,
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-07,
+        "lr_self": 3e-08,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.3,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vs-atena-frozen-v6",
+      "split": "val_seen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.13054275512695312,
+          "baseline_logit_linf_sum": 692.2853751182556,
+          "frozen_fp32_vs_adapted_fp32_flips": 48,
+          "native_comparisons": 15675,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 61684.0625,
+          "native_vs_adapted_flips": 133,
+          "native_vs_executed_flips": 124,
+          "native_vs_frozen_fp32_flips": 75,
+          "native_vs_prepared_flips": 124,
+          "residual_logit_linf_max": 0.24103546142578125,
+          "residual_logit_linf_sum": 1019.1027736663818
+        },
+        "aux_gate_rate": 0.9961084529505582,
+        "episodes": 778,
+        "policy_parameter_drift": {
+          "auxiliary.norm.weight": {
+            "changed_elements": 3584,
+            "max_abs_change": 0.03869819641113281,
+            "relative_l2": 0.004568926524370909
+          },
+          "primary.norm.weight": {
+            "changed_elements": 0,
+            "max_abs_change": 0.0,
+            "relative_l2": 0.0
+          }
+        },
+        "relative_param_drift": 0.004568926524370909,
+        "slow_updates": 0,
+        "source_gate_rate": 0.9960446570972886,
+        "updates": 15668
+      },
+      "episodes_observed": 778,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vs-eam-frozen-v6.json": "8c5d2f06b8c6df05378cdbf2c1123bf45e7c6f7a92c7309f35f1a1fc020c31f1",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-eam-frozen-v6/val_seen/result.json": "b57af8ba83a8da51b98de62039aa6b2c9e47947654f4596ffb8931ca09a7da18",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-eam-frozen-v6/val_seen/tta_diagnostics.json": "2043b816e4314a6b7d939f1d5f4af6da2bca5b556a7e07e0565029527d238014"
+      },
+      "expected_episodes": 778,
+      "formal_result_eligible": false,
+      "method": "eam",
+      "metrics": {
+        "SPL": 61.653685065333896,
+        "SR": 67.3521876335144
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.8,
+        "episodic": false,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vs-eam-frozen-v6",
+      "split": "val_seen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": false,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.13046646118164062,
+          "baseline_logit_linf_sum": 567.4780316352844,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 12851,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 49500.0,
+          "native_vs_adapted_flips": 95,
+          "native_vs_executed_flips": 95,
+          "native_vs_frozen_fp32_flips": 59,
+          "native_vs_prepared_flips": 95,
+          "residual_logit_linf_max": 0.001384735107421875,
+          "residual_logit_linf_sum": 5.38964056968689
+        },
+        "episodes": 622,
+        "feedback_episodes": 622,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3581,
+            "max_abs_change": 0.0004048347473144531,
+            "relative_l2": 3.3268290280830115e-05
+          }
+        },
+        "relative_param_drift": 3.3268290280830115e-05,
+        "slow_updates": 0,
+        "updates": 622
+      },
+      "episodes_observed": 622,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vs-feedtta-frozen-v6.json": "b6a0a70302fa615d52b1e06391dacb37cd58eaf29a4f76c12826ae6cca67d9cf",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-feedtta-frozen-v6/val_seen/result.json": "2f93300bd0a875b05694105201378e2f5ce4087c85f5876922a4672e05c26ae5",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-feedtta-frozen-v6/val_seen/tta_diagnostics.json": "93c8fbd5895219067fddd802288cf1b6ffd73f1d391dffb46da01c2fd20ea721"
+      },
+      "expected_episodes": 778,
+      "formal_result_eligible": false,
+      "method": "feedtta",
+      "metrics": null,
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.7,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vs-feedtta-frozen-v6",
+      "split": "val_seen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.13118362426757812,
+          "baseline_logit_linf_sum": 692.9862270355225,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 15646,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 61452.0,
+          "native_vs_adapted_flips": 131,
+          "native_vs_executed_flips": 131,
+          "native_vs_frozen_fp32_flips": 67,
+          "native_vs_prepared_flips": 131,
+          "residual_logit_linf_max": 0.000331878662109375,
+          "residual_logit_linf_sum": 1.629256248474121
+        },
+        "episodes": 778,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3561,
+            "max_abs_change": 6.580352783203125e-05,
+            "relative_l2": 7.729845492576715e-06
+          },
+          "slow_anchor": {
+            "changed_elements": 3569,
+            "max_abs_change": 4.57763671875e-05,
+            "relative_l2": 6.342024789773859e-06
+          }
+        },
+        "relative_param_drift": 7.729845492576715e-06,
+        "slow_skipped_updates": 0,
+        "slow_updates": 48,
+        "updates": 4933
+      },
+      "episodes_observed": 778,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vs-fstta-frozen-v6.json": "fbbd8252474ba25102226159ea2a55548b86aecd33de5af9f498608a2be08f57",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-fstta-frozen-v6/val_seen/result.json": "f5812a4c7c402ba371971de3521fb749083ff50d1c9d6531c979241c39207cf2",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-fstta-frozen-v6/val_seen/tta_diagnostics.json": "4e6e6c201c84907c2915a6a26914c2c4ea83738e7bc8c7883da0ded57e997a6f"
+      },
+      "expected_episodes": 778,
+      "formal_result_eligible": false,
+      "method": "fstta",
+      "metrics": {
+        "SPL": 61.86575619161822,
+        "SR": 67.73778796195984
+      },
+      "parameters": {
+        "a": 0.9,
+        "action_selection": "argmax",
+        "b": 1.1,
+        "episodic": false,
+        "fast_grad_mode": "concordant",
+        "lr_fast": 3e-07,
+        "lr_slow": 9e-07,
+        "m": 3,
+        "max_grad_norm": 1.0,
+        "n": 16,
+        "norm_scope": "last_ln",
+        "optimizer": "AdamW",
+        "q": 0.1,
+        "reset_optimizer_each_episode": true,
+        "reset_slow_optimizer_each_window": false,
+        "reset_var_hist_each_episode": false,
+        "rho": 0.95,
+        "slow_optimizer": "AdamW",
+        "streamvln_readout_protocol": "native_residual",
+        "tau": 0.7,
+        "use_fast_lr_scaler": true,
+        "use_slow": true,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vs-fstta-frozen-v6",
+      "split": "val_seen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.1319732666015625,
+          "baseline_logit_linf_sum": 716.8327870368958,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 16186,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 62131.6875,
+          "native_vs_adapted_flips": 65,
+          "native_vs_executed_flips": 65,
+          "native_vs_frozen_fp32_flips": 65,
+          "native_vs_prepared_flips": 65,
+          "residual_logit_linf_max": 0.0001964569091796875,
+          "residual_logit_linf_sum": 1.7615405321121216
+        },
+        "episodes": 778,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 7,
+            "max_abs_change": 4.456937313079834e-05,
+            "relative_l2": 1.7967616372516204e-07
+          }
+        },
+        "relative_param_drift": 1.7967616372516204e-07,
+        "slow_updates": 0,
+        "updates": 16186
+      },
+      "episodes_observed": 778,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vs-tent-frozen-v6.json": "c77270b1cbdce10247d0fd3116c9585e77442a4d723a3637c4df63857170a141",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-tent-frozen-v6/val_seen/result.json": "61b3de21b677eafa5f41d1fe89e842f8674a854dbaaf4eddeb5fcdff5d24a10b",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vs-tent-frozen-v6/val_seen/tta_diagnostics.json": "90d85c399fc002d28ff14a1ee5fe268deb1506df44807cf8844e094b32208839"
+      },
+      "expected_episodes": 778,
+      "formal_result_eligible": false,
+      "method": "tent",
+      "metrics": {
+        "SPL": 62.65744641753741,
+        "SR": 68.50899457931519
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "lr": 3e-08,
+        "max_grad_norm": 1.0,
+        "norm_scope": "last_ln",
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "legacy_v4",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vs-tent-frozen-v6",
+      "split": "val_seen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12202072143554688,
+          "baseline_logit_linf_sum": 1726.3663907051086,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 39766,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 133236.0,
+          "native_vs_adapted_flips": 386,
+          "native_vs_executed_flips": 386,
+          "native_vs_frozen_fp32_flips": 223,
+          "native_vs_prepared_flips": 386,
+          "residual_logit_linf_max": 0.000492095947265625,
+          "residual_logit_linf_sum": 3.61113178730011
+        },
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3567,
+            "max_abs_change": 0.0004076957702636719,
+            "relative_l2": 2.8709475373034365e-05
+          }
+        },
+        "query_rate": 0.5671560630777597,
+        "relative_param_drift": 2.8709475373034365e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-atena-01-v6.json": "816d7d5ac4c54cdb28abe79a7d00eba3d22611b9c6e2abe26778e24c2cde03d4",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-01-v6/val_unseen/result.json": "a61ef3c8dcaecfcc457a087b84199498b497ee1c4150e2f980fa3ba63e340521",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-01-v6/val_unseen/tta_diagnostics.json": "2d731ca7b8e90c16a59877ff911316faabd90d2e8a3c727710df93af226023f1"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "atena",
+      "metrics": {
+        "SPL": 50.51840539789234,
+        "SR": 56.9331169128418
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-07,
+        "lr_self": 3e-08,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.3,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-01-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12663650512695312,
+          "baseline_logit_linf_sum": 1733.169602394104,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 39956,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 135140.0,
+          "native_vs_adapted_flips": 80,
+          "native_vs_executed_flips": 80,
+          "native_vs_frozen_fp32_flips": 230,
+          "native_vs_prepared_flips": 80,
+          "residual_logit_linf_max": 4.57763671875e-05,
+          "residual_logit_linf_sum": 0.5975713729858398
+        },
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3560,
+            "max_abs_change": 9.441375732421875e-05,
+            "relative_l2": 9.515013516647741e-06
+          }
+        },
+        "query_rate": 0.11310494834148994,
+        "relative_param_drift": 9.515013516647741e-06,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-atena-02-v6.json": "09305691f4286ad60e8836c857eeaad7a7d3be497e2f695f2048d0e441f322c0",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-02-v6/val_unseen/result.json": "e01cd7bfca84eb39818f902d7b4a259ca85fa3a0b72e30c1fe4b45b64aae578d",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-02-v6/val_unseen/tta_diagnostics.json": "935fdde848dfde84c5293f0126aeb503e46ef896efb3c5d7dff55d8067e7b0b6"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "atena",
+      "metrics": {
+        "SPL": 50.504803705777945,
+        "SR": 56.71560764312744
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-07,
+        "lr_self": 3e-08,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.5,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-02-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.13022994995117188,
+          "baseline_logit_linf_sum": 1731.976282119751,
+          "frozen_fp32_vs_adapted_fp32_flips": 4,
+          "native_comparisons": 39975,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 134296.625,
+          "native_vs_adapted_flips": 32,
+          "native_vs_executed_flips": 32,
+          "native_vs_frozen_fp32_flips": 245,
+          "native_vs_prepared_flips": 32,
+          "residual_logit_linf_max": 0.00461578369140625,
+          "residual_logit_linf_sum": 80.67041611671448
+        },
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3581,
+            "max_abs_change": 0.001468658447265625,
+            "relative_l2": 7.057838956825435e-05
+          }
+        },
+        "query_rate": 0.5622620989668298,
+        "relative_param_drift": 7.057838956825435e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-atena-03-v6.json": "12cbf42af9cbaf9c95e46edf383fd003329af136bceb1f5f6610bc8f9358b963",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-03-v6/val_unseen/result.json": "64f4b9be26e992c6fc7d31f573b66aa043ea4370a4365081a3a50826a5ff6ae7",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-03-v6/val_unseen/tta_diagnostics.json": "9ff05e3c225ac1ce4489952347ab1ee98fcf11de55e30c87e41bab2d7200a3db"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "atena",
+      "metrics": {
+        "SPL": 50.29676089544639,
+        "SR": 56.606853008270264
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-06,
+        "lr_self": 3e-07,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.3,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-03-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12696456909179688,
+          "baseline_logit_linf_sum": 1722.6554036140442,
+          "frozen_fp32_vs_adapted_fp32_flips": 8,
+          "native_comparisons": 39771,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 133647.9375,
+          "native_vs_adapted_flips": 22,
+          "native_vs_executed_flips": 22,
+          "native_vs_frozen_fp32_flips": 214,
+          "native_vs_prepared_flips": 22,
+          "residual_logit_linf_max": 0.007232666015625,
+          "residual_logit_linf_sum": 71.18503737449646
+        },
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3583,
+            "max_abs_change": 0.0012950897216796875,
+            "relative_l2": 0.0001540090306662023
+          }
+        },
+        "query_rate": 0.12887438825448613,
+        "relative_param_drift": 0.0001540090306662023,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-atena-04-v6.json": "ff3fce033c17701ca1294d28a9d5837a0065e845041eb405edafc89368bb182b",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-04-v6/val_unseen/result.json": "b3d5d2e14e60c9fbb01c24a9b9b35f98b264b51ded8e399c29417ca52ffadea9",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-atena-04-v6/val_unseen/tta_diagnostics.json": "a4fd8b3e0737940d6db62655d0c08656d184e00369a1af6c004e24a35aa88117"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "atena",
+      "metrics": {
+        "SPL": 50.478478047389444,
+        "SR": 56.4437210559845
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "episodic": false,
+        "lr_query": 3e-06,
+        "lr_self": 3e-07,
+        "max_grad_norm": 1.0,
+        "mix_lambda": 0.25,
+        "optimizer": "AdamW",
+        "query_threshold": 0.5,
+        "self_loss_weight": 0.1,
+        "streamvln_readout_protocol": "native_residual",
+        "update_scope": "replay_reachable_high_level_navigation",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-atena-04-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12696456909179688,
+          "baseline_logit_linf_sum": 1722.9054884910583,
+          "frozen_fp32_vs_adapted_fp32_flips": 227,
+          "native_comparisons": 39771,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 134054.3125,
+          "native_vs_adapted_flips": 474,
+          "native_vs_executed_flips": 0,
+          "native_vs_frozen_fp32_flips": 199,
+          "native_vs_prepared_flips": 0,
+          "residual_logit_linf_max": 0.27620697021484375,
+          "residual_logit_linf_sum": 3076.821677207947
+        },
+        "aux_gate_rate": 0.7347564808528827,
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "auxiliary.norm.weight": {
+            "changed_elements": 3584,
+            "max_abs_change": 0.03743934631347656,
+            "relative_l2": 0.005628189537674189
+          },
+          "primary.norm.weight": {
+            "changed_elements": 0,
+            "max_abs_change": 0.0,
+            "relative_l2": 0.0
+          }
+        },
+        "relative_param_drift": 0.005628189537674189,
+        "slow_updates": 0,
+        "source_gate_rate": 0.7284956375248296,
+        "updates": 39763
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-eam-01-v6.json": "a857fb2e1e6f1adb7ba4a16998585b4cd3845224be109246523dacc438fb822f",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-01-v6/val_unseen/result.json": "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-01-v6/val_unseen/tta_diagnostics.json": "be424b9fc712a6702f9d9d9161348493d9234afe045b665825bb8c03ce92deda"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "eam",
+      "metrics": {
+        "SPL": 50.517907572917686,
+        "SR": 56.66123032569885
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.4,
+        "episodic": false,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-01-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.121429443359375,
+          "baseline_logit_linf_sum": 1731.00297498703,
+          "frozen_fp32_vs_adapted_fp32_flips": 79,
+          "native_comparisons": 39927,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 134125.5625,
+          "native_vs_adapted_flips": 383,
+          "native_vs_executed_flips": 361,
+          "native_vs_frozen_fp32_flips": 208,
+          "native_vs_prepared_flips": 361,
+          "residual_logit_linf_max": 0.07907867431640625,
+          "residual_logit_linf_sum": 1091.9376239776611
+        },
+        "aux_gate_rate": 0.9931124301850878,
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "auxiliary.norm.weight": {
+            "changed_elements": 3584,
+            "max_abs_change": 0.031249046325683594,
+            "relative_l2": 0.0026983770076185465
+          },
+          "primary.norm.weight": {
+            "changed_elements": 0,
+            "max_abs_change": 0.0,
+            "relative_l2": 0.0
+          }
+        },
+        "relative_param_drift": 0.0026983770076185465,
+        "slow_updates": 0,
+        "source_gate_rate": 0.9928870188093271,
+        "updates": 39920
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-eam-02-v6.json": "7622241bc6b36ad690ada45ef47e5356221dda24f8666c17f97057f1c2e095ff",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-02-v6/val_unseen/result.json": "4c691cd1cc896606ab692f699dd3a01cd6cd29e65c2f1c54e1fbb6d1c6092792",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-02-v6/val_unseen/tta_diagnostics.json": "9245b06f969f1c5afbfc2452d56c8a09a8e6b8ca36f943e6178aa1ebf6255f3d"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "eam",
+      "metrics": {
+        "SPL": 50.66092593922365,
+        "SR": 56.987494230270386
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.8,
+        "episodic": false,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-02-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12696456909179688,
+          "baseline_logit_linf_sum": 1722.9054884910583,
+          "frozen_fp32_vs_adapted_fp32_flips": 633,
+          "native_comparisons": 39771,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 134054.3125,
+          "native_vs_adapted_flips": 862,
+          "native_vs_executed_flips": 0,
+          "native_vs_frozen_fp32_flips": 199,
+          "native_vs_prepared_flips": 0,
+          "residual_logit_linf_max": 0.7789268493652344,
+          "residual_logit_linf_sum": 8736.428088188171
+        },
+        "aux_gate_rate": 0.7460964019008826,
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "auxiliary.norm.weight": {
+            "changed_elements": 3584,
+            "max_abs_change": 0.10477924346923828,
+            "relative_l2": 0.015793774276971817
+          },
+          "primary.norm.weight": {
+            "changed_elements": 0,
+            "max_abs_change": 0.0,
+            "relative_l2": 0.0
+          }
+        },
+        "relative_param_drift": 0.015793774276971817,
+        "slow_updates": 0,
+        "source_gate_rate": 0.7284956375248296,
+        "updates": 39763
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-eam-03-v6.json": "82f67ffbae7a2a63cc6804f5f5cdf0889d30b201a2c24afa03ad0e45f901a001",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-03-v6/val_unseen/result.json": "833c2040a8da12c819b81d83212917f4ba2dceff77e801c1bbeefffb68c04069",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-03-v6/val_unseen/tta_diagnostics.json": "7ec83689d7f87788f7db8b9481bd165b332505c444b7fadc88caadc1353c22ba"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "eam",
+      "metrics": {
+        "SPL": 50.517907572917686,
+        "SR": 56.66123032569885
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.4,
+        "episodic": false,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-03-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12835693359375,
+          "baseline_logit_linf_sum": 1739.6198568344116,
+          "frozen_fp32_vs_adapted_fp32_flips": 210,
+          "native_comparisons": 40160,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 134969.4375,
+          "native_vs_adapted_flips": 444,
+          "native_vs_executed_flips": 362,
+          "native_vs_frozen_fp32_flips": 204,
+          "native_vs_prepared_flips": 362,
+          "residual_logit_linf_max": 0.2522125244140625,
+          "residual_logit_linf_sum": 2980.435962677002
+        },
+        "aux_gate_rate": 0.9933764940239044,
+        "episodes": 1839,
+        "policy_parameter_drift": {
+          "auxiliary.norm.weight": {
+            "changed_elements": 3584,
+            "max_abs_change": 0.09232473373413086,
+            "relative_l2": 0.008062565699219704
+          },
+          "primary.norm.weight": {
+            "changed_elements": 0,
+            "max_abs_change": 0.0,
+            "relative_l2": 0.0
+          }
+        },
+        "relative_param_drift": 0.008062565699219704,
+        "slow_updates": 0,
+        "source_gate_rate": 0.9929282868525896,
+        "updates": 40153
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-eam-04-v6.json": "6c1f70a2c4188feb13d1b8aac6d62fc178ba59ef732b4923a9458b1408129fbd",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-04-v6/val_unseen/result.json": "0dbd83ce1051115de47ea57be1abc5464c1690dffff608789bb8d7210b792517",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-eam-04-v6/val_unseen/tta_diagnostics.json": "c49a84fd3e88cec4366288e287e459c280463176ae3848fe04e5838c8a13c4ed"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "eam",
+      "metrics": {
+        "SPL": 51.063386108332054,
+        "SR": 57.4225127696991
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "batch_size": 8,
+        "confidence_scale": 0.8,
+        "episodic": false,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "memory_size": 32,
+        "optimizer": "Adam",
+        "streamvln_readout_protocol": "native_residual",
+        "update_interval": 1,
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-eam-04-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12835693359375,
+          "baseline_logit_linf_sum": 1739.1207299232483,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 40160,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 135430.75,
+          "native_vs_adapted_flips": 206,
+          "native_vs_executed_flips": 206,
+          "native_vs_frozen_fp32_flips": 212,
+          "native_vs_prepared_flips": 206,
+          "residual_logit_linf_max": 0.00064849853515625,
+          "residual_logit_linf_sum": 5.2801560163497925
+        },
+        "episodes": 1839,
+        "feedback_episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3579,
+            "max_abs_change": 0.00022649765014648438,
+            "relative_l2": 1.6217498341575265e-05
+          }
+        },
+        "relative_param_drift": 1.6217498341575265e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-feedtta-01-v6.json": "393ce97ae4e8477a2a96457f494b972c32d591f4605687b2481652f00c77bba8",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-01-v6/val_unseen/result.json": "047dd546c8f625febe32620ca1345537c889fcde7f34caf2ebbe0e2d7e71479e",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-01-v6/val_unseen/tta_diagnostics.json": "23e92b0bf7ed75374ebef84f391db111dbb2e2d861bf3f06c3f196830c6328b4"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "feedtta",
+      "metrics": {
+        "SPL": 50.7392217057764,
+        "SR": 57.15062618255615
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.7,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-01-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.11810684204101562,
+          "baseline_logit_linf_sum": 1736.6062207221985,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 40011,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 135108.75,
+          "native_vs_adapted_flips": 154,
+          "native_vs_executed_flips": 154,
+          "native_vs_frozen_fp32_flips": 208,
+          "native_vs_prepared_flips": 154,
+          "residual_logit_linf_max": 0.000385284423828125,
+          "residual_logit_linf_sum": 5.2810274958610535
+        },
+        "episodes": 1839,
+        "feedback_episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3568,
+            "max_abs_change": 0.00022125244140625,
+            "relative_l2": 1.1783400623244233e-05
+          }
+        },
+        "relative_param_drift": 1.1783400623244233e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-feedtta-02-v6.json": "1a584dd413ae00b05a9a9e1b16fcb4cdf68fb15ac50fdee70fb6f8c0bb335fb5",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-02-v6/val_unseen/result.json": "8b80696ada3e08c9d5ccd3582e027f412cf00d8dfca479258e3dd4642bcaf795",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-02-v6/val_unseen/tta_diagnostics.json": "f33317ed33d3330cab24949362b8aa6fdc61ece4f1141a6f469ebefc37fc035c"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "feedtta",
+      "metrics": {
+        "SPL": 49.93214431479353,
+        "SR": 56.22621178627014
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.95,
+        "lr": 1e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-02-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.12841796875,
+          "baseline_logit_linf_sum": 1734.5486092567444,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 39956,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 133498.0625,
+          "native_vs_adapted_flips": 186,
+          "native_vs_executed_flips": 186,
+          "native_vs_frozen_fp32_flips": 228,
+          "native_vs_prepared_flips": 186,
+          "residual_logit_linf_max": 0.001270294189453125,
+          "residual_logit_linf_sum": 17.01898467540741
+        },
+        "episodes": 1839,
+        "feedback_episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3583,
+            "max_abs_change": 0.0006060600280761719,
+            "relative_l2": 4.262657239451073e-05
+          }
+        },
+        "relative_param_drift": 4.262657239451073e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-feedtta-03-v6.json": "af62c5c2b3afd6ae7559073c42c4c6c3c3b47c2b70b802047a384c3986dba8af",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-03-v6/val_unseen/result.json": "5a2f9916c51e6c5a3d49915a34e72d07bfb0cb765f4594e8222ec687246a4859",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-03-v6/val_unseen/tta_diagnostics.json": "7bced00ffb3398f08a81ea40e833a6881052d1bf0b2d7bfe6d6ab2d0f8009765"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "feedtta",
+      "metrics": {
+        "SPL": 50.956366469453066,
+        "SR": 57.531267404556274
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.7,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-03-v6",
+      "split": "val_unseen"
+    },
+    {
+      "canonical_prefix_verified": true,
+      "complete_stream": true,
+      "diagnostics": {
+        "action_comparisons": {
+          "baseline_logit_linf_max": 0.11469268798828125,
+          "baseline_logit_linf_sum": 1745.2806994915009,
+          "frozen_fp32_vs_adapted_fp32_flips": 0,
+          "native_comparisons": 40295,
+          "native_margin_min": 0.0,
+          "native_margin_sum": 135691.0625,
+          "native_vs_adapted_flips": 150,
+          "native_vs_executed_flips": 150,
+          "native_vs_frozen_fp32_flips": 214,
+          "native_vs_prepared_flips": 150,
+          "residual_logit_linf_max": 0.00124359130859375,
+          "residual_logit_linf_sum": 15.763073325157166
+        },
+        "episodes": 1839,
+        "feedback_episodes": 1839,
+        "policy_parameter_drift": {
+          "primary.norm.weight": {
+            "changed_elements": 3576,
+            "max_abs_change": 0.0006990432739257812,
+            "relative_l2": 3.3283937227679417e-05
+          }
+        },
+        "relative_param_drift": 3.3283937227679417e-05,
+        "slow_updates": 0,
+        "updates": 1839
+      },
+      "episodes_observed": 1839,
+      "evidence": {
+        "中间结果/streamvln_val_unseen_search_v6/configs/streamvln-vu-feedtta-04-v6.json": "12e16717326b5aa15e23440260f954cd65403659ffc85fac22d1124503164fef",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-04-v6/val_unseen/result.json": "321d31ddcb2b5e7b16677b06136da0b53b6fa1a58c20bf4fcc69c076261de4a7",
+        "中间结果/streamvln_val_unseen_search_v6/jobs/streamvln-vu-feedtta-04-v6/val_unseen/tta_diagnostics.json": "fa25aa73f5a5e5b3ff80723df8add9182585af78d9f2a5b311322f4a7884e453"
+      },
+      "expected_episodes": 1839,
+      "formal_result_eligible": false,
+      "method": "feedtta",
+      "metrics": {
+        "SPL": 49.866730402435046,
+        "SR": 56.17183446884155
+      },
+      "parameters": {
+        "action_selection": "argmax",
+        "alpha": -0.2,
+        "episodic": false,
+        "gamma": 0.95,
+        "lr": 3e-06,
+        "max_grad_norm": 1.0,
+        "normalize_gradient": false,
+        "optimizer": "Adam",
+        "optimizer_eps": 1e-05,
+        "p": 0.05,
+        "scope_profile": "configured_prefixes",
+        "sgr_mode": "paper_main",
+        "sgr_seed": 0,
+        "streamvln_readout_protocol": "native_residual",
+        "weight_decay": 0.0
+      },
+      "provenance_status": "archive_missing_actual_run_manifest",
+      "run_tag": "streamvln-vu-feedtta-04-v6",
+      "split": "val_unseen"
+    }
+  ]
+}

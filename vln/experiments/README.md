@@ -1,5 +1,15 @@
 # VLN experiment specifications
 
+## StreamVLN val_seen three-candidate search
+
+[STREAMVLN_VAL_SEEN_SEARCH_V1.md](STREAMVLN_VAL_SEEN_SEARCH_V1.md) and
+`streamvln_val_seen_search_v1.json` define 12 full 778-episode development jobs:
+three candidates each for FSTTA, EAM, FeedTTA and ATENA. Each method owns one
+GPU and runs its candidates serially. The separate entry point is
+`vln/scripts/run_streamvln_val_seen_search.py`; selection uses only complete
+val_seen streams, ranked by SPL then SR. FeedTTA/ATENA consume binary feedback.
+The previous v6 unseen-search/frozen-seen campaign remains separately recorded.
+
 ## Targeted sixteen-cell gap campaign
 
 `vln_targeted_gap_campaign_v2.json` and
