@@ -180,6 +180,42 @@ tail -n 80 "avn/results/logs/reval_search/$NAVTTA_AVN_BATCH/_launcher/scheduler.
 
 `--resume` 重新验证已有完成证据后跳过有效任务；`--retry-failed` 为失败/中断/失效任务新建 attempt，保留旧 attempt。若只需检查已完成任务并继续未启动任务，可省略 `--retry-failed`。修改任何冻结运行身份后应采用新 batch ID；不能把改代码后的结果接入旧 batch。单独运行 `--stage search` 要求同 batch 已有四个验证通过的 2000-episode Source，可先运行 `--stage reval`，随后通过 `--resume --stage search` 接续。
 
+### ENMuS ATENA cuDNN 修复后直接重评与搜索
+
+2026-09-14 修复：ENMuS 的目标描述器包含 GRU/LSTM，cuDNN 的 eval 前向不能用于 ATENA 的反向回放。ENMuS ATENA 现在仅在策略前向作用域内关闭 cuDNN，动作前向、首次参数可达性检查和 episode 结束回放采用相同后端；保留模型的 eval、Dropout 和 BatchNorm 状态。其他方法及 SMT+Audio 沿用原有路径。该回退也会影响此作用域内卷积的性能，六任务并发仍需以服务器实际资源占用为准。
+
+更新代码后使用新 batch，旧 batch 的验证记录保留。若前面的 smoke 已检查过环境，可以直接运行以下完整评估流程；每次启动仍自动预检真实资产和环境。先等旧调度器及其 worker 全部退出再更新代码。两个阶段之间不得更新代码或环境。
+
+```bash
+cd /data1/wxy/code/NavTTA
+export NAVTTA_AVN_PYTHON=/data1/wxy/anaconda3/envs/enmus/bin/python3
+export NAVTTA_AVN_BATCH=avn-reval-search-cudnnfix-20260914
+mkdir -p "avn/results/logs/reval_search/$NAVTTA_AVN_BATCH/_launcher"
+screen -dmS "$NAVTTA_AVN_BATCH" bash -c '
+set -euo pipefail
+cd /data1/wxy/code/NavTTA
+exec >> "avn/results/logs/reval_search/$NAVTTA_AVN_BATCH/_launcher/scheduler.log" 2>&1
+"$NAVTTA_AVN_PYTHON" -u avn/scripts/run_avn_reval_search.py \
+  --spec avn/experiments/avn_reval_search_v1.json \
+  --stage reval --batch-id "$NAVTTA_AVN_BATCH" \
+  --smt-python "$NAVTTA_AVN_PYTHON" --enmus-python "$NAVTTA_AVN_PYTHON"
+exec "$NAVTTA_AVN_PYTHON" -u avn/scripts/run_avn_reval_search.py \
+  --spec avn/experiments/avn_reval_search_v1.json \
+  --stage search --batch-id "$NAVTTA_AVN_BATCH" \
+  --smt-python "$NAVTTA_AVN_PYTHON" --enmus-python "$NAVTTA_AVN_PYTHON" \
+  --resume
+'
+```
+
+该流程运行 10 次完整重评和 96 次搜索，共 106 次。Source 必须随新代码重新产生，不能继承旧 batch。12 个 smoke 任务未运行，会保留 pending 状态；搜索完成后 batch 状态为 `completed-search`。若本新 batch 中断，先以 `--stage reval --resume --retry-failed` 补齐重评，再以 `--stage search --resume --retry-failed` 补齐搜索；不要用 `--stage all`，否则会补跑 smoke。
+
+修复的独立回归测试不需要 Habitat、数据或 checkpoint，可在服务器的 ENMuS 环境运行；有 CUDA/cuDNN 时包含真实 GRU/LSTM 的 ATENA 反向更新验证：
+
+```bash
+CUDA_VISIBLE_DEVICES=3 PYTHONPATH=core "$NAVTTA_AVN_PYTHON" \
+  -m unittest discover -s avn/tests -p test_enmus_atena_replay.py -v
+```
+
 ## 7. 日志与结果分层
 
 ```text

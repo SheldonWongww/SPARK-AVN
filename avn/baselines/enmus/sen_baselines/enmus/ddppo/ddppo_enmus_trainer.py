@@ -44,6 +44,9 @@ from navtta_avn.enmus_eval_protocol import (
     AUDIT_MEASURE, AUDIT_UUID, build_eval_protocol, plain_config,
     record_completed_episode, write_audio_schedule, write_json,
 )
+from navtta_avn.enmus_replay import (
+    forward_policy_for_replay, policy_forward_context,
+)
 
 
 @baseline_registry.register_trainer(name="ddppo_enmus")
@@ -1106,7 +1109,10 @@ class DDPPOTrainer(PPOTrainer):
                     ),
                 )
             tta_adapter = build_adapter(
-                self.actor_critic, tta_cfg, fusion_protocol=fusion_protocol
+                self.actor_critic, tta_cfg, fusion_protocol=fusion_protocol,
+                forward_policy=(
+                    forward_policy_for_replay if tta_method == "atena" else None
+                ),
             )
             if tta_method == "atena" and tta_adapter.diagnostics().get(
                 "requires_task_trainability_wiring", False
@@ -1217,7 +1223,9 @@ class DDPPOTrainer(PPOTrainer):
                         if tta_method == "eam" else {}
                     )
                 )
-                with torch.set_grad_enabled(tta_adapter.requires_source_grad):
+                with policy_forward_context(tta_method), torch.set_grad_enabled(
+                    tta_adapter.requires_source_grad
+                ):
                     features, test_recurrent_hidden_states, test_em_features = self.actor_critic.net(
                         policy_inputs["observations"],
                         policy_inputs["rnn_hidden_states"],
